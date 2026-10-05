@@ -794,10 +794,12 @@ def start_problems(desc, inputs):
                 parse_block_spec(spec, opt.counts_blocks)
             except ValueError as e:
                 out.append(f"{opt.label}: {e}")
-    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     exts = {e.lower() for e in IMAGE_EXTENSIONS}
     if "clip" in desc.media:
         exts |= {e.lower() for e in VIDEO_EXTENSIONS}       # the clip formats the dataset layer reads
+    if "voice" in desc.media:
+        exts |= {e.lower() for e in AUDIO_EXTENSIONS}
     out += checks.training_folder(_s(v.get("image_folder")), _s(v.get("caption_ext", ".txt")),
                                   check_captions=not slider_on(desc, inputs, "prompts"), media_exts=exts)
     out += clip_problems(desc, _s(v.get("image_folder")))
@@ -811,11 +813,11 @@ def clip_problems(desc, folder):
     """Every clip in the training folder that is off the family's ClipSpec, with the reason - before anything
     caches, so a wrong frame rate or frame count is refused at Start, not found an hour into caching. Plus the
     driver's own media checks (media_problem) for anything the spec cannot say."""
-    if "clip" not in desc.media or not desc.clip_spec or not folder or not os.path.isdir(folder):
+    if not ({"clip", "voice"} & set(desc.media)) or not folder or not os.path.isdir(folder):
         return []
     from fizgig.families import clips
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
-    vid = {e.lower() for e in VIDEO_EXTENSIONS}
+    vid = {e.lower() for e in VIDEO_EXTENSIONS} if "clip" in desc.media else set()
     aud = {e.lower() for e in AUDIO_EXTENSIONS} if "voice" in desc.media else set()
     driver, out = None, []
     for name in sorted(os.listdir(folder)):
@@ -826,7 +828,7 @@ def clip_problems(desc, folder):
         st = os.stat(path)
         key = (path, st.st_mtime, st.st_size)
         if key not in _CLIP_CHECKED:
-            why = clips.problem(path, desc.clip_spec, desc.display_name) if ext in vid else ""
+            why = clips.problem(path, desc.clip_spec, desc.display_name) if ext in vid and desc.clip_spec else ""
             if not why and desc.driver:
                 if driver is None:
                     driver = desc.load_driver()

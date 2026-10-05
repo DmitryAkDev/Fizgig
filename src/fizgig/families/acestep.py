@@ -1,0 +1,122 @@
+"""ACE-Step 1.5 through the standard layer: text-to-music (songs with vocals and lyrics, instrumentals), 48 kHz
+stereo. A 2B flow DiT over an Oobleck VAE, Qwen3-Embedding-0.6B text and lyric conditioning. Driver: acestep/driver.py.
+
+Facts from the official repository (github.com/ace-step/ACE-Step-1.5: the handler, trainer and docs), Side-Step's
+guides and ComfyUI's implementation (comfy/ldm/ace/ace_step15.py, text_encoders/ace15.py, lora.py), Oct 2026.
+"""
+from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings
+
+_COMFY = "Comfy-Org/ace_step_1.5_ComfyUI_files"
+_REPO = "https://github.com/ace-step/ACE-Step-1.5"
+_TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
+
+
+def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)"):
+    return {
+        "NETWORK_DIM": rank, "NETWORK_ALPHA": alpha, "NETWORK_TYPE": kind, "LEARNING_RATE": lr,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 50, "SEED": 42, "ADAPTIVE_LR": False,
+        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 4, "MAX_GRAD_NORM": 1.0,
+        "BLOCKS_SWAP": "Auto (detect from GPU)", "FAMILY_PRECISION": "Auto (fits your free VRAM)",
+        "FAMILY_EMA": "Off", "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
+        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": False,
+    }
+
+
+ACESTEP15 = FamilyDescription(
+    key="acestep15",
+    arch_id="acestep15",
+    display_name="ACE-Step 1.5",
+    gui_label="ACE-Step 1.5 (music, experimental)",
+    lora_name_suffix="acestep15",
+    aliases=("ace-step", "acestep", "ace-step-1.5"),
+    experimental=True,
+
+    model_files=(
+        ModelFile("acestep15_dit", "ACE-Step 1.5 Turbo DiT", True, _COMFY,
+                  "split_files/diffusion_models/acestep_v1.5_turbo.safetensors", 4.79, role="dit",
+                  hint="The Turbo model (8 steps) - what most people generate with, and what the official trainer "
+                       "trains LoRAs on."),
+        ModelFile("acestep15_vae", "ACE-Step 1.5 VAE", True, _COMFY, "split_files/vae/ace_1.5_vae.safetensors", 0.34,
+                  role="vae", hint="The Oobleck audio VAE: 48 kHz stereo to 64 channels at 25 per second."),
+        ModelFile("acestep15_text_encoder", "Qwen3 0.6B text encoder", True, _COMFY,
+                  "split_files/text_encoders/qwen_0.6b_ace15.safetensors", 1.19, role="text_encoder",
+                  hint="Encodes the captions and lyrics for caching, then unloads before training."),
+    ),
+    prefs_title="Model Paths (ACE-Step 1.5)",
+    text_encoder_label="Qwen3 0.6B",
+    vae_label="ACE-Step 1.5 VAE",
+
+    media=("voice",),
+    latent_channels=64,
+    spatial_factor=1,
+    bucket_step=1,
+    native_megapixels=1.0,
+
+    n_blocks=24,                      # config.json num_hidden_layers
+    block_prefix="layers",
+    block_note="24 DiT layers, sliding-window (even) and full (odd) self-attention, each with cross-attention to "
+               "the caption, lyrics and timbre. The LoRA wraps q/k/v/o of both attentions (the official trainer's "
+               "targets).",
+    workbench=(),
+
+    lora=LoRAFormat(
+        key_template="base_model.model.layers.{block}.{module}.{ab}.weight",
+        down="lora_A", up="lora_B",
+        block_modules=tuple(f"{a}.{p}" for a in ("self_attn", "cross_attn")
+                            for p in ("q_proj", "k_proj", "v_proj", "o_proj")),
+        alpha_key="{prefix}.alpha",
+        file_prefix="base_model.model.",
+        note="PEFT keys on the decoder (the official trainer's LoRA files), plus .alpha; ComfyUI maps "
+             "base_model.model.<path> to diffusion_model.decoder.<path>. LoKR loads under the same names.",
+        source="ComfyUI comfy/lora.py model_lora_keys_unet (ACEStep15)",
+    ),
+
+    driver="fizgig.acestep.driver:AceStepDriver",
+    modelspec_arch="ACE-Step-1.5",
+    implementation=_REPO,
+    precisions=("bf16",),
+    optimizers=("adamw", "adamw8bit"),
+    network_types=("lora", "lokr"),
+    adaptive_lr=False,
+    loss_watch=False,
+    helper_files=(("ACE-Step/Ace-Step1.5", ("Qwen3-Embedding-0.6B/*.json", "Qwen3-Embedding-0.6B/*.txt",
+                                            "Qwen3-Embedding-0.6B/*.jinja", "acestep-v15-turbo/silence_latent.pt")),),
+
+    sampling=(
+        SamplingSettings("ACE-Step 1.5 Turbo", steps=8, cfg=1.0, sigmas=_TURBO_T + (0.0,),
+                         note="The official Turbo schedule (shift 3, 8 steps), no CFG.",
+                         source=f"{_REPO} acestep/models/turbo/modeling_acestep_v15_turbo.py SHIFT_TIMESTEPS"),
+    ),
+    samples_cfg_free=True,
+    preview_steps=8,
+    preview_cfg=1.0,
+    samples_text=(
+        ("banner", "Each sample prompt is a song: \"caption | lyrics\", lyric lines separated by \" / \" (e.g. "
+                   "\"[verse] / first line / second line\"). Leave out the lyrics for an instrumental."),
+    ),
+    options=(
+        FamilyOption("ACESTEP_PREVIEW_SECONDS", "Sample length", tab="samples", choices=(
+            ("30 seconds", "preview_seconds=30"), ("60 seconds", "preview_seconds=60"),
+            ("10 seconds", "preview_seconds=10"), ("120 seconds", "preview_seconds=120")),
+            hint="How long each preview song is. 8 Turbo steps take about 2 s for 30 s of music on a 5090."),
+    ),
+
+    presets=(
+        # the official LoRA defaults: rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4; the tutorial's epochs:
+        # 10-20 songs -> 800, ~100 songs -> 500 (LoRA_Training_Tutorial.md). Not yet measured in Fizgig.
+        ("✨ ACE-Step Official LoRA (rank 64, 1e-4)", _preset(64, 128, 1e-4, 800)),
+    ),
+
+    notes=(
+        ("Licence: MIT (code and weights); generated music may be used commercially.", _REPO),
+        ("A training song is an audio file with a caption .txt; its lyrics go in <name>.lyrics.txt (none = "
+         "instrumental) and bpm / timesignature / keyscale / language in an optional <name>.json. Songs over 240 s "
+         "are cut to the first 240 s (the official trainer's max_duration).", _REPO),
+        ("Conditioning follows the official handler's text-to-music: the 'Fill the audio semantic mask' prompt with "
+         "the metadata block, lyrics as '# Languages / # Lyric' token embeddings, the silence latent as context and "
+         "as the 30 s timbre reference. The official trainer feeds lyrics raw and a zero timbre reference; Fizgig "
+         "trains the way the model is prompted.", f"{_REPO} acestep/core/generation/handler"),
+        ("Turbo trains on its own 8 timesteps (shift 3) with no CFG dropout, as the official trainer does; Side-Step's "
+         "continuous sampling is for the base / SFT models.", "Side-Step docs: Model Management.md"),
+    ),
+)

@@ -415,7 +415,8 @@ class WorkbenchEngine:
 
     def _settings_key(self):
         ps = self.preview_settings
-        return None if ps is None else (ps.get("steps"), ps.get("cfg"), ps.get("negative"), ps.get("turbo"))
+        opts = tuple(sorted((self.driver.options or {}).items())) if self.driver is not None else ()
+        return (None if ps is None else (ps.get("steps"), ps.get("cfg"), ps.get("negative"), ps.get("turbo"))), opts
 
     def sampling(self):
         """(steps, cfg, sigmas, options) previews use."""

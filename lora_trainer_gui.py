@@ -11536,6 +11536,9 @@ class LoRATrainerGUI:
         .clip-badge { background-color: #8E44AD; color: white; right: 8px; left: auto; }
         /* below the clip badge with clear air — the two overlapped at 34px (Peter) */
         .sound-badge { background-color: #16A085; color: white; right: 8px; left: auto; top: 40px; }
+        /* a sound-only sample (music): its player sits on the tile, so epochs compare by ear without opening each */
+        .tile-audio { width: 100%; height: 32px; margin-top: 8px; }
+        .audio-item img { height: 140px; }
         #lightbox-vid { display: none; max-width: 90vw; max-height: 72vh; border-radius: 4px; }
         #lb-scrub-wrap { display: none; width: min(80vw, 640px); margin-top: 10px; text-align: center; }
         #lb-scrub-wrap.active { display: block; }
@@ -11877,7 +11880,7 @@ class LoRATrainerGUI:
             }
 
             gallery.innerHTML = sorted.map(img => `
-                <div class="gallery-item" onclick="openLightbox('${img.filename}')">
+                <div class="gallery-item${img.sound && !img.video && !img.clip ? ' audio-item' : ''}" onclick="openLightbox('${img.filename}')">
                     <div class="image-container">
                         <img src="${img.filename}" alt="${img.filename}" loading="lazy">
                         <span class="badge epoch-badge">Epoch ${img.epoch}</span>
@@ -11892,6 +11895,7 @@ class LoRATrainerGUI:
                             <span class="meta-item seed">Seed: ${img.seed || '—'}</span>
                             <span class="meta-item time">${img.time}</span>
                         </div>
+                        ${img.sound && !img.video && !img.clip ? `<audio class="tile-audio" controls preload="none" src="${img.sound}" onclick="event.stopPropagation()"></audio>` : ''}
                         ${img.lora ? `<a class="lora-download" href="${img.lora}" download onclick="event.stopPropagation()">⬇ Download LoRA (epoch ${img.epoch})</a>` : ''}
                     </div>
                 </div>`).join('');
@@ -12320,6 +12324,10 @@ class LoRATrainerGUI:
             showLightbox(images[currentLightboxIndex]);
         }
 
+        // one sound at a time: starting a tile's (or the lightbox's) player pauses the others
+        document.addEventListener('play', (e) => {
+            document.querySelectorAll('audio, video').forEach(a => { if (a !== e.target) a.pause(); });
+        }, true);
         document.addEventListener('keydown', (e) => {
             // Arrows on the clip scrub slider step the slider natively; without this guard the
             // same keydown bubbles here and ALSO jumps to the next image — two actions per key.

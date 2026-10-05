@@ -5,7 +5,7 @@ Apache-2.0).
 Changes for Fizgig: plain modules instead of transformers' PreTrainedModel, PyTorch SDPA attention with the same
 sliding-window mask, no KV cache, no audio tokenizer / detokenizer (the 5 Hz LM's hint path - Fizgig trains and
 previews text-to-music, whose context is the silence latent), gradient checkpointing on the DiT layers. Module names
-are the original's, so the checkpoint loads as it is and LoRA keys match ComfyUI's ("base_model.model.decoder....").
+are the original's; AceStep15 roots them at the decoder, so LoRA keys match ComfyUI's ("base_model.model.layers....").
 """
 import json
 from dataclasses import dataclass, field
@@ -277,22 +277,40 @@ class AceStepConditionEncoder(nn.Module):
         return pack_sequences(h, t, m, text_mask)
 
 
-class AceStep15(nn.Module):
-    """The checkpoint's DiT ("decoder"), condition encoder ("encoder") and null condition embedding (the 5 Hz LM hint
-    path, "tokenizer" / "detokenizer", is not built)."""
+class AceStep15(AceStepDiTModel):
+    """The checkpoint's DiT ("decoder") as the root module, with its condition encoder ("encoder") and null condition
+    embedding beside the layers - so the LoRA's module paths are the decoder's own ("layers.3.self_attn.q_proj"), as
+    ComfyUI's ACE-Step 1.5 LoRA keys address them ("base_model.model.layers.3.self_attn.q_proj"). The 5 Hz LM hint
+    path ("tokenizer" / "detokenizer") is not built."""
 
     def __init__(self, c: AceConfig):
-        super().__init__()
-        self.config = c
-        self.decoder = AceStepDiTModel(c)
+        super().__init__(c)
         self.encoder = AceStepConditionEncoder(c)
         self.null_condition_emb = nn.Parameter(torch.zeros(1, 1, c.hidden_size))
+
+    @staticmethod
+    def checkpoint_key(key):
+        """A checkpoint key -> this module's name for it, or None for the LM hint path."""
+        if key.startswith("decoder."):
+            return key[len("decoder."):]
+        if key.startswith("encoder.") or key == "null_condition_emb":
+            return key
+        return None
+
+    def load_checkpoint(self, sd, **kw):
+        """Load a checkpoint state dict (ComfyUI's single file); returns (missing, unexpected) of the kept keys."""
+        mine = {}
+        for k, v in sd.items():
+            name = self.checkpoint_key(k[len("model.diffusion_model."):] if k.startswith("model.diffusion_model.") else k)
+            if name is not None:
+                mine[name] = v
+        return self.load_state_dict(mine, strict=False, **kw)
 
     def condition(self, text, text_mask, lyrics, lyric_mask, refer):
         return self.encoder(text, text_mask, lyrics, lyric_mask, refer)
 
     def forward(self, x, t, encoder_hidden_states, context_latents, t_r=None):
-        return self.decoder(x, t, t if t_r is None else t_r, encoder_hidden_states, context_latents)
+        return super().forward(x, t, t if t_r is None else t_r, encoder_hidden_states, context_latents)
 
 
 def context_latents(silence_latent, length, dtype=None):
