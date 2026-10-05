@@ -1,8 +1,10 @@
-"""ACE-Step 1.5 through the standard layer: text-to-music (songs with vocals and lyrics, instrumentals), 48 kHz
-stereo. A 2B flow DiT over an Oobleck VAE, Qwen3-Embedding-0.6B text and lyric conditioning. Driver: acestep/driver.py.
+"""ACE-Step 1.5 XL through the standard layer: text-to-music (songs with vocals and lyrics, instrumentals), 48 kHz
+stereo. A 4B flow DiT (32 layers, 2560 wide) over an Oobleck VAE, Qwen3-Embedding-0.6B text and lyric conditioning.
+Driver: acestep/driver.py.
 
-Facts from the official repository (github.com/ace-step/ACE-Step-1.5: the handler, trainer and docs), Side-Step's
-guides and ComfyUI's implementation (comfy/ldm/ace/ace_step15.py, text_encoders/ace15.py, lora.py), Oct 2026.
+Facts from the official repository (github.com/ace-step/ACE-Step-1.5: the handler, trainer and docs; the XL model
+repos' code), Side-Step's guides and ComfyUI's implementation (comfy/ldm/ace/ace_step15.py, text_encoders/ace15.py,
+lora.py), Oct 2026.
 """
 from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings
 
@@ -23,26 +25,30 @@ def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)"):
 
 
 ACESTEP15 = FamilyDescription(
-    key="acestep15",
-    arch_id="acestep15",
-    display_name="ACE-Step 1.5",
-    gui_label="ACE-Step 1.5 (music, experimental)",
-    lora_name_suffix="acestep15",
-    aliases=("ace-step", "acestep", "ace-step-1.5"),
+    key="acestep15xl",
+    arch_id="acestep15xl",
+    display_name="ACE-Step 1.5 XL",
+    gui_label="ACE-Step 1.5 XL (music, experimental)",
+    lora_name_suffix="acestep15xl",
+    aliases=("ace-step", "acestep", "ace-step-1.5-xl", "acestep15"),
     experimental=True,
 
     model_files=(
-        ModelFile("acestep15_dit", "ACE-Step 1.5 Turbo DiT", True, _COMFY,
-                  "split_files/diffusion_models/acestep_v1.5_turbo.safetensors", 4.79, role="dit",
-                  hint="The Turbo model (8 steps) - what most people generate with, and what the official trainer "
-                       "trains LoRAs on."),
-        ModelFile("acestep15_vae", "ACE-Step 1.5 VAE", True, _COMFY, "split_files/vae/ace_1.5_vae.safetensors", 0.34,
+        ModelFile("acestep15xl_dit", "ACE-Step 1.5 XL Turbo DiT", True, _COMFY,
+                  "split_files/diffusion_models/acestep_v1.5_xl_turbo_bf16.safetensors", 9.97, role="dit",
+                  hint="The XL Turbo model (8 steps): what LoRAs train on by default, and what the workbench and "
+                       "previews render with."),
+        ModelFile("acestep15xl_sft_dit", "ACE-Step 1.5 XL SFT DiT", False, _COMFY,
+                  "split_files/diffusion_models/acestep_v1.5_xl_sft_bf16.safetensors", 9.97,
+                  hint="Optional: the non-distilled XL model, for the SFT Training Base (30-step previews with "
+                       "guidance - slower, the most detail)."),
+        ModelFile("acestep15xl_vae", "ACE-Step 1.5 VAE", True, _COMFY, "split_files/vae/ace_1.5_vae.safetensors", 0.34,
                   role="vae", hint="The Oobleck audio VAE: 48 kHz stereo to 64 channels at 25 per second."),
-        ModelFile("acestep15_text_encoder", "Qwen3 0.6B text encoder", True, _COMFY,
+        ModelFile("acestep15xl_text_encoder", "Qwen3 0.6B text encoder", True, _COMFY,
                   "split_files/text_encoders/qwen_0.6b_ace15.safetensors", 1.19, role="text_encoder",
                   hint="Encodes the captions and lyrics for caching, then unloads before training."),
     ),
-    prefs_title="Model Paths (ACE-Step 1.5)",
+    prefs_title="Model Paths (ACE-Step 1.5 XL)",
     text_encoder_label="Qwen3 0.6B",
     vae_label="ACE-Step 1.5 VAE",
 
@@ -52,9 +58,9 @@ ACESTEP15 = FamilyDescription(
     bucket_step=1,
     native_megapixels=1.0,
 
-    n_blocks=24,                      # config.json num_hidden_layers
+    n_blocks=32,                      # config.json num_hidden_layers
     block_prefix="layers",
-    block_note="24 DiT layers, sliding-window (even) and full (odd) self-attention, each with cross-attention to "
+    block_note="32 DiT layers, sliding-window (even) and full (odd) self-attention, each with cross-attention to "
                "the caption, lyrics and timbre. The LoRA wraps q/k/v/o of both attentions (the official trainer's "
                "targets).",
     workbench=("repair", "extract"),
@@ -73,7 +79,7 @@ ACESTEP15 = FamilyDescription(
     ),
 
     driver="fizgig.acestep.driver:AceStepDriver",
-    modelspec_arch="ACE-Step-1.5",
+    modelspec_arch="ACE-Step-1.5-XL",
     implementation=_REPO,
     precisions=("bf16",),
     optimizers=("adamw", "adamw8bit"),
@@ -84,22 +90,28 @@ ACESTEP15 = FamilyDescription(
                                             "Qwen3-Embedding-0.6B/*.jinja", "acestep-v15-turbo/silence_latent.pt")),),
 
     sampling=(
-        SamplingSettings("ACE-Step 1.5 Turbo", steps=8, cfg=1.0, sigmas=_TURBO_T + (0.0,),
+        SamplingSettings("ACE-Step 1.5 XL Turbo", steps=8, cfg=1.0, sigmas=_TURBO_T + (0.0,),
                          note="The official Turbo schedule (shift 3, 8 steps), no CFG.",
-                         source=f"{_REPO} acestep/models/turbo/modeling_acestep_v15_turbo.py SHIFT_TIMESTEPS"),
+                         source=f"{_REPO} acestep/models/turbo SHIFT_TIMESTEPS"),
     ),
     samples_cfg_free=True,
     preview_steps=8,
     preview_cfg=1.0,
     samples_text=(
         ("banner", "Each sample prompt is a song: \"caption | lyrics\", lyric lines separated by \" / \" (e.g. "
-                   "\"[verse] / first line / second line\"). Leave out the lyrics for an instrumental."),
+                   "\"[verse] / first line / second line\"). Leave out the lyrics for an instrumental. Songs train "
+                   "for hundreds of epochs, so a preview every 25-50 epochs is plenty."),
     ),
     options=(
+        FamilyOption("ACESTEP_TRAIN_BASE", "Training Base", tab="model", choices=(
+            ("XL Turbo (8 steps) — standard", ""),
+            ("XL SFT (30 steps + guidance)", "--dit=pref:acestep15xl_sft_dit base=sft")),
+            hint="Turbo is what most people generate with. SFT is the non-distilled model: its previews take 30 "
+                 "guided steps (slower) and it needs the SFT DiT in Preferences."),
         FamilyOption("ACESTEP_PREVIEW_SECONDS", "Sample length", tab="samples", choices=(
             ("30 seconds", "preview_seconds=30"), ("60 seconds", "preview_seconds=60"),
             ("10 seconds", "preview_seconds=10"), ("120 seconds", "preview_seconds=120")),
-            hint="How long each preview song is. 8 Turbo steps take about 2 s for 30 s of music on a 5090."),
+            hint="How long each preview song is."),
     ),
 
     presets=(
@@ -117,7 +129,12 @@ ACESTEP15 = FamilyDescription(
          "the metadata block, lyrics as '# Languages / # Lyric' token embeddings, the silence latent as context and "
          "as the 30 s timbre reference. The official trainer feeds lyrics raw and a zero timbre reference; Fizgig "
          "trains the way the model is prompted.", f"{_REPO} acestep/core/generation/handler"),
-        ("Turbo trains on its own 8 timesteps (shift 3) with no CFG dropout, as the official trainer does; Side-Step's "
-         "continuous sampling is for the base / SFT models.", "Side-Step docs: Model Management.md"),
+        ("XL's timbre encoder reads a learned CLS token placed before the reference frames (the XL code); ComfyUI "
+         "reads the first frame without it, which moves the velocity ~2% with the silence reference (measured). "
+         "Fizgig follows the official XL code.", "ACE-Step/acestep-v15-xl-turbo modeling_acestep_v15_xl_turbo.py"),
+        ("Turbo trains on its own 8 timesteps (shift 3) with no CFG dropout, as the official trainer does. SFT trains "
+         "with continuous logit-normal timesteps (mu -0.4, sigma 1) and 15% null-condition dropout (Side-Step's "
+         "corrected mode) and previews with 30 steps, shift 1, APG guidance 7 (the XL SFT code's defaults).",
+         "Side-Step docs: Model Management.md; ACE-Step/acestep-v15-xl-sft"),
     ),
 )

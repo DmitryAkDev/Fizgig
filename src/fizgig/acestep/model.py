@@ -8,7 +8,7 @@ previews text-to-music, whose context is the silence latent), gradient checkpoin
 are the original's; AceStep15 roots them at the decoder, so LoRA keys match ComfyUI's ("base_model.model.layers....").
 """
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import torch
 import torch.nn.functional as F
@@ -20,18 +20,24 @@ from transformers.models.qwen3.modeling_qwen3 import Qwen3MLP, Qwen3RMSNorm, Qwe
 
 @dataclass
 class AceConfig:
-    hidden_size: int = 2048
-    intermediate_size: int = 6144
-    num_hidden_layers: int = 24
-    num_attention_heads: int = 16
+    """ACE-Step 1.5 XL (acestep-v15-xl-turbo / -xl-sft config.json): a 2560-wide, 32-layer DiT over a 2048-wide
+    condition encoder."""
+    hidden_size: int = 2560
+    intermediate_size: int = 9728
+    num_hidden_layers: int = 32
+    num_attention_heads: int = 32
     num_key_value_heads: int = 8
+    encoder_hidden_size: int = 2048
+    encoder_intermediate_size: int = 6144
+    encoder_num_attention_heads: int = 16
+    encoder_num_key_value_heads: int = 8
     head_dim: int = 128
     rms_norm_eps: float = 1e-6
     rope_theta: float = 1e6
     max_position_embeddings: int = 32768
     sliding_window: int = 128
     use_sliding_window: bool = True
-    layer_types: list = field(default_factory=lambda: ["sliding_attention", "full_attention"] * 12)
+    layer_types: list = field(default_factory=lambda: ["sliding_attention", "full_attention"] * 16)
     in_channels: int = 192
     audio_acoustic_hidden_dim: int = 64
     patch_size: int = 2
@@ -47,6 +53,12 @@ class AceConfig:
     def from_json(cls, path):
         d = json.load(open(path))
         return cls(**{k: d[k] for k in cls.__dataclass_fields__ if k in d})
+
+    def encoder_config(self) -> "AceConfig":
+        """The condition encoder's sizes (its own width, MLP and heads)."""
+        return replace(self, hidden_size=self.encoder_hidden_size, intermediate_size=self.encoder_intermediate_size,
+                       num_attention_heads=self.encoder_num_attention_heads,
+                       num_key_value_heads=self.encoder_num_key_value_heads)
 
     def qwen3(self) -> Qwen3Config:
         """The transformers config the Qwen3 building blocks (RMSNorm, rotary, MLP) are made from."""
@@ -169,7 +181,7 @@ class AceStepDiTModel(nn.Module):
                                      _Transpose())
         self.time_embed = TimestepEmbedding(256, c.hidden_size)
         self.time_embed_r = TimestepEmbedding(256, c.hidden_size)
-        self.condition_embedder = nn.Linear(c.hidden_size, c.hidden_size)
+        self.condition_embedder = nn.Linear(c.encoder_hidden_size, c.hidden_size)
         self.norm_out = Qwen3RMSNorm(c.hidden_size, eps=c.rms_norm_eps)
         self.proj_out = nn.Sequential(_Transpose(), nn.ConvTranspose1d(c.hidden_size, c.audio_acoustic_hidden_dim,
                                                                        c.patch_size, c.patch_size), _Transpose())
@@ -244,10 +256,15 @@ class AceStepTimbreEncoder(_SeqEncoder):
         self.special_token = nn.Parameter(torch.zeros(1, 1, c.hidden_size))
         self.layers = nn.ModuleList([AceStepEncoderLayer(c, i, q3) for i in range(c.num_timbre_encoder_hidden_layers)])
 
+    cls = True              # XL: a learned CLS token leads the frames and carries the summary (ComfyUI leaves it out)
+
     def forward(self, refer):
-        """refer (B, T, 64) reference audio latents, one per batch item -> (B, 1, 2048): the first frame after the
-        layers, as the original reads it."""
-        return self._run(self.embed_tokens(refer), None, self.c)[:, :1]
+        """refer (B, T, 64) reference audio latents, one per batch item -> (B, 1, 2048): the CLS token after the
+        layers, as the XL original reads it."""
+        x = self.embed_tokens(refer)
+        if self.cls:
+            x = torch.cat([self.special_token.expand(x.shape[0], 1, -1).to(x.dtype), x], dim=1)
+        return self._run(x, None, self.c)[:, :1]
 
 
 def pack_sequences(h1, h2, m1, m2):
@@ -263,6 +280,7 @@ def pack_sequences(h1, h2, m1, m2):
 class AceStepConditionEncoder(nn.Module):
     def __init__(self, c: AceConfig):
         super().__init__()
+        c = c.encoder_config()
         self.text_projector = nn.Linear(c.text_hidden_dim, c.hidden_size, bias=False)
         self.lyric_encoder = AceStepLyricEncoder(c)
         self.timbre_encoder = AceStepTimbreEncoder(c)
@@ -286,7 +304,7 @@ class AceStep15(AceStepDiTModel):
     def __init__(self, c: AceConfig):
         super().__init__(c)
         self.encoder = AceStepConditionEncoder(c)
-        self.null_condition_emb = nn.Parameter(torch.zeros(1, 1, c.hidden_size))
+        self.null_condition_emb = nn.Parameter(torch.zeros(1, 1, c.encoder_hidden_size))
 
     @staticmethod
     def checkpoint_key(key):

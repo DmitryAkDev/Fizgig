@@ -1,5 +1,5 @@
-"""ACE-Step 1.5 driver for Fizgig's standard layer (families/driver.py) - text-to-music: songs with vocals and lyrics,
-48 kHz stereo.
+"""ACE-Step 1.5 XL driver for Fizgig's standard layer (families/driver.py) - text-to-music: songs with vocals and
+lyrics, 48 kHz stereo. Two bases: XL Turbo (default) and XL SFT (family option base=sft).
 
 * model: acestep/model.py (adapted from the official repository), loaded from ComfyUI's single file; the DiT is the
   root module, its condition encoder (text projector, lyric and timbre encoders) and null condition beside it
@@ -8,9 +8,11 @@
   "# Languages / # Lyric" -> {"lyrics": (Ll, 1024)}. The condition encoder runs inside every forward (frozen, no
   grad), with the silence latent as the timbre reference - the official handler's text-to-music without a reference
 * latents: the Oobleck VAE (acestep/vae.py), 64 channels at 25 per second, (64, T); songs over MAX_SECONDS are cut
-* training: rectified flow, x_t = t noise + (1 - t) x0, target noise - x0, unweighted MSE. The Turbo checkpoint trains
-  on its own 8 timesteps (shift 3), as the official trainer and Side-Step's turbo presets do
-* sampling: Euler over the official Turbo schedule (8 steps, shift 3, no CFG); context = the silence latent + ones
+* training: rectified flow, x_t = t noise + (1 - t) x0, target noise - x0, unweighted MSE. Turbo trains on its own 8
+  timesteps (shift 3), as the official trainer and Side-Step's turbo presets do; SFT on continuous logit-normal
+  timesteps (mu -0.4, sigma 1) with 15% of steps conditioned on the null embedding (Side-Step's corrected mode)
+* sampling: Euler; Turbo over the official schedule (8 steps, shift 3, no CFG), SFT 30 steps at shift 1 with APG
+  guidance 7 against the null condition (the XL SFT code's defaults); context = the silence latent + ones
 * LoRA: q/k/v/o of each layer's self- and cross-attention (the official trainer's targets), keys
   base_model.model.layers.N.self_attn.q_proj.lora_A.weight + .alpha, which ComfyUI loads as ACE-Step 1.5 LoRAs
 """
@@ -37,6 +39,8 @@ REFER_FRAMES = 750                                 # the handler's timbre refere
 TEXT_TOKENS, LYRIC_TOKENS = 256, 2048              # the handler's truncation
 INSTRUCTION = "Fill the audio semantic mask based on the given conditions:"   # text2music (constants.py)
 TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
+SFT_STEPS, SFT_SHIFT, SFT_GUIDANCE = 30, 1.0, 7.0          # acestep-v15-xl-sft generate_audio defaults
+TIMESTEP_MU, TIMESTEP_SIGMA, CFG_DROPOUT = -0.4, 1.0, 0.15  # config.json; Side-Step's corrected training
 LYRICS_SUFFIX = ".lyrics.txt"
 INSTRUMENTAL = "[Instrumental]"
 ATTN = ("q_proj", "k_proj", "v_proj", "o_proj")
@@ -95,6 +99,28 @@ def audio_seconds(path):
         raise ValueError(f"{os.path.basename(path)}: not a readable audio file")
     h, mi, se = m.groups()
     return min(MAX_SECONDS, int(h) * 3600 + int(mi) * 60 + float(se))
+
+
+class _Momentum:
+    """APG's momentum buffer (apg_guidance.MomentumBuffer, momentum -0.75)."""
+
+    def __init__(self, momentum=-0.75):
+        self.momentum, self.average = momentum, 0
+
+    def update(self, value):
+        self.average = value + self.momentum * self.average
+
+
+def apg(cond, uncond, scale, momentum, norm_threshold=2.5):
+    """Adaptive projected guidance (the XL SFT code's apg_forward, eta 0, dims [1] = time): the momentum-averaged
+    (cond - uncond), clamped to norm 2.5 along time, minus its part parallel to cond."""
+    momentum.update(cond - uncond)
+    diff = momentum.average
+    diff = diff * torch.minimum(torch.ones_like(diff), norm_threshold / diff.norm(p=2, dim=1, keepdim=True))
+    c = F.normalize(cond.double(), dim=1)
+    d = diff.double()
+    orthogonal = (d - (d * c).sum(dim=1, keepdim=True) * c).to(cond.dtype)
+    return cond + (scale - 1) * orthogonal
 
 
 def _helper_file(name):
@@ -274,8 +300,17 @@ class AceStepDriver(FamilyDriver):
         """Cached (1, 64, T) -> the model's (1, T, 64)."""
         return latents.float().transpose(1, 2)
 
+    @property
+    def sft(self):
+        """Training (or previewing) on the XL SFT base (family option base=sft)."""
+        return self.options.get("base") == "sft"
+
     def _draw_t(self, n, generator, min_t, max_t):
-        """The Turbo checkpoint's own 8 timesteps, uniformly (the official trainer); a window keeps those inside."""
+        """Turbo: its own 8 timesteps, uniformly (the official trainer); a window keeps those inside. SFT: continuous
+        logit-normal (mu -0.4, sigma 1), rescaled into the window."""
+        if self.sft:
+            t = torch.sigmoid(torch.randn(n, generator=generator) * TIMESTEP_SIGMA + TIMESTEP_MU)
+            return min_t + (max_t - min_t) * t
         ts = [t for t in TURBO_T if min_t <= t <= max_t] or list(TURBO_T)
         idx = torch.randint(len(ts), (n,), generator=generator)
         return torch.tensor([ts[i] for i in idx])
@@ -289,6 +324,8 @@ class AceStepDriver(FamilyDriver):
         tb = t.view(-1, 1, 1)
         xt = tb * noise + (1 - tb) * x0
         enc = self._condition(dit, cond, x0.shape[1], dev)
+        if self.sft and float(torch.rand(1, generator=generator)) < CFG_DROPOUT:
+            enc = dit.null_condition_emb.to(enc).expand_as(enc)      # the guidance's null condition, learned too
         pred = dit(xt.to(DTYPE), t.to(DTYPE), enc, self._context(x0.shape[1], dev)).float()
         return F.mse_loss(pred, noise - x0), {"t": float(t.mean())}
 
@@ -317,7 +354,12 @@ class AceStepDriver(FamilyDriver):
                  noise=None, on_step=None, refs=None, **_ignored):
         device = next(dit.parameters()).device
         x = (self.initial_noise(seed) if noise is None else noise).to(device).float()
-        if sigmas is not None:
+        guided = self.sft
+        if guided:
+            ts = [1.0 - i / SFT_STEPS for i in range(SFT_STEPS)]
+            if SFT_SHIFT != 1.0:
+                ts = [SFT_SHIFT * t / (1 + (SFT_SHIFT - 1) * t) for t in ts]
+        elif sigmas is not None:
             ts = [float(s) for s in sigmas if float(s) > 0.0]
         elif int(steps) == len(TURBO_T):
             ts = list(TURBO_T)
@@ -327,10 +369,17 @@ class AceStepDriver(FamilyDriver):
         ts = ts + [0.0]
         enc = self._condition(dit, cond, x.shape[1], device)
         ctx = self._context(x.shape[1], device)
+        if guided:
+            enc = torch.cat([enc, dit.null_condition_emb.to(enc).expand_as(enc)])
+            ctx = ctx.expand(2, -1, -1)
+            momentum = _Momentum()
         for i in range(len(ts) - 1):
             if on_step is not None:
                 on_step(i, len(ts) - 1)
-            v = dit(x.to(DTYPE), torch.full((1,), ts[i], device=device, dtype=DTYPE), enc, ctx).float()
+            xin = torch.cat([x, x]) if guided else x
+            v = dit(xin.to(DTYPE), torch.full((xin.shape[0],), ts[i], device=device, dtype=DTYPE), enc, ctx).float()
+            if guided:
+                v = apg(v[:1], v[1:], SFT_GUIDANCE, momentum)
             x = x + (ts[i + 1] - ts[i]) * v
         return x
 
