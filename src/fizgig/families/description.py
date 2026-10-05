@@ -510,6 +510,12 @@ class FamilyDescription:
         """The workbench tabs' clip features apply (a family whose media include clips)."""
         return "clip" in self.media
 
+    @property
+    def audio_workbench(self) -> bool:
+        """A sound-only family (music): the workbench renders songs - its previews are heard, the pictures are their
+        waveforms, and the Res setting is the song length in seconds."""
+        return set(self.media) == {"voice"}
+
     def lora_prefix(self, block: int, module: str) -> str:
         """Key stem of one wrapped module, e.g. 'transformer.transformer_blocks.3.attn.to_q'."""
         return self.lora.key_template.split(".{ab}")[0].format(block=block, module=module)

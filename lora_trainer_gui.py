@@ -18256,6 +18256,7 @@ class LoRATrainerGUI:
         desc = self._repair_desc(fam)
         self._refresh_repair_negative_row()
         video = self._wb_video(fam)
+        self._repair_audio_ui(desc)
         krea2 = desc is not None and not desc.category_masters
         if desc is not None and not video:
             # Standard-layer family: previews with its speed LoRA (when set in Preferences) or its default
@@ -19165,6 +19166,7 @@ class LoRATrainerGUI:
         self._repair_preview_hint.grid(row=2, column=0, columnspan=2, pady=(0, 4))
         self.repair_base_holder = base_holder
         self.repair_tweaked_holder = tweaked_holder
+        self._build_repair_audio_row(parent)
         self._repair_popout_window = None
         self._repair_popout_label = None
         self._repair_popout_tk_img = None
@@ -23689,6 +23691,9 @@ class LoRATrainerGUI:
             # Fresh render cycle — clear any pending cancel from a previous aborted pass.
             if hasattr(self.repair_engine, "clear_cancel"):
                 self.repair_engine.clear_cancel()
+            if self._repair_is_audio():
+                self._repair_song_worker(snapshot)
+                return
             print(f"[repair] worker: generating baseline at "
                   f"{snapshot.preview_width}x{snapshot.preview_height}")
             baseline = self.repair_engine.generate_baseline(snapshot)
@@ -23754,6 +23759,194 @@ class LoRATrainerGUI:
                 self._repair_preview_dirty = False
                 print("[repair] dirty flag set during preview — refiring")
                 self._schedule_preview(force=True)
+
+    # ----- music (sound-only families: ACE-Step) ------------------------------------------
+    # Each render is a song. The panes show the waveforms; the player row plays Baseline, Tweaked or the
+    # base model with No LoRA, and switching side keeps the moment in the song, so a slider's effect is heard
+    # at the same bar. A finished render on the side being heard takes over at that moment too.
+    # winsound cannot seek, so a play from mid-song writes the rest of the song to a temp wav.
+
+    _SONG_RATE = 48000
+    _SONG_SIDES = (("baseline", "Baseline"), ("tweaked", "Tweaked"), ("nolora", "No LoRA"))
+
+    def _repair_is_audio(self):
+        d = self._repair_desc()
+        return d is not None and getattr(d, "audio_workbench", False)
+
+    def _build_repair_audio_row(self, parent):
+        row = tk.Frame(parent, bg=COLORS["bg_surface"])
+        row.grid(row=10, column=0, columnspan=2, sticky=tk.EW, pady=(2, 8))
+        row.grid_remove()
+        self._repair_audio_row = row
+        self._repair_songs = {}              # side -> waveform (2, n) at 48 kHz
+        self._repair_song_side = None        # the side being heard (or paused on)
+        self._repair_song_pos = 0.0          # seconds into the song where the current play started
+        self._repair_song_t0 = None          # monotonic time of that start; None = not playing
+        self._repair_song_file = 0
+        self._repair_song_buttons = {}
+        for side, label in self._SONG_SIDES:
+            b = tk.Button(row, text=f"\u25b6 {label}", font=(FONT_FAMILY, 10, "bold"), bg=COLORS["bg_deep"],
+                          fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                          activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4,
+                          cursor="hand2", command=lambda s=side: self._repair_song_play(s))
+            b.pack(side=tk.LEFT, padx=(4, 4))
+            self._repair_song_buttons[side] = b
+        tk.Button(row, text="\u25a0 Stop", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
+                  activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
+                  bd=0, padx=10, pady=4, cursor="hand2", command=self._repair_song_stop
+                  ).pack(side=tk.LEFT, padx=(4, 12))
+        bar = tk.Canvas(row, height=18, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
+        bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        bar.bind("<Button-1>", self._repair_song_seek)
+        bar.bind("<Configure>", lambda e: self._repair_song_draw())
+        self._repair_song_bar = bar
+        self.repair_song_time_var = tk.StringVar(value="0:00 / 0:00")
+        tk.Label(row, textvariable=self.repair_song_time_var, font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"],
+                 bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(0, 4))
+
+    def _repair_audio_ui(self, desc):
+        """Switch the Preview card between pictures and songs for the selected family."""
+        audio = desc is not None and getattr(desc, "audio_workbench", False)
+        row = getattr(self, "_repair_audio_row", None)
+        if row is None:
+            return
+        if audio:
+            row.grid()
+            self._repair_res_label.configure(text="Length (s):")
+            self._repair_res_combo.configure(values=["10", "20", "30", "60", "120"])
+            self._repair_preview_hint.configure(text="\u25b6 Play either side; switching keeps your place in the song. "
+                                                     "Click the bar to jump.")
+            for h in (self.repair_base_holder, self.repair_tweaked_holder):
+                h.configure(height=200)
+        else:
+            self._repair_song_stop()
+            self._repair_songs = {}
+            row.grid_remove()
+            self._repair_res_label.configure(text="Res:")
+            self._repair_res_combo.configure(values=["256", "384", "512", "768", "1024"])
+            self._repair_preview_hint.configure(text="\U0001f50d Click either image for the full-size side-by-side "
+                                                     "compare with likeness + quality metrics")
+            for h in (self.repair_base_holder, self.repair_tweaked_holder):
+                h.configure(height=512)
+        self._repair_song_mark()
+        self._repair_song_draw()
+
+    def _repair_song_duration(self, side=None):
+        wav = self._repair_songs.get(side or self._repair_song_side or "baseline")
+        return 0.0 if wav is None else wav.shape[1] / self._SONG_RATE
+
+    def _repair_song_now(self):
+        """Seconds into the song now (the paused position when nothing plays)."""
+        if self._repair_song_t0 is None:
+            return self._repair_song_pos
+        import time as _t
+        return self._repair_song_pos + (_t.monotonic() - self._repair_song_t0)
+
+    def _repair_song_play(self, side, at=None):
+        import tempfile
+        import time as _t
+        wav = self._repair_songs.get(side)
+        if wav is None:
+            self.repair_status_var.set("That song is not rendered yet." if side != "nolora" else
+                                       "The No LoRA song renders after the first preview.")
+            return
+        pos = self._repair_song_now() if at is None else float(at)
+        dur = wav.shape[1] / self._SONG_RATE
+        if pos >= dur - 0.05 or pos < 0:
+            pos = 0.0
+        try:
+            from fizgig.minimax.common import write_wav
+            self._repair_stop_wav()
+            self._repair_song_file ^= 1          # alternate files: the one just stopped may still be held
+            path = os.path.join(tempfile.gettempdir(), f"fizgig_song_{self._repair_song_file}.wav")
+            write_wav(path, wav[:, int(pos * self._SONG_RATE):], sample_rate=self._SONG_RATE)
+            self._repair_play_wav(path)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not play the song: {e}")
+            return
+        self._repair_song_side, self._repair_song_pos, self._repair_song_t0 = side, pos, _t.monotonic()
+        self._repair_song_mark()
+        self._repair_song_tick()
+
+    def _repair_song_stop(self):
+        if getattr(self, "_repair_song_t0", None) is None:
+            return
+        self._repair_song_pos = min(self._repair_song_now(), self._repair_song_duration())
+        self._repair_song_t0 = None
+        self._repair_stop_wav()
+        self._repair_song_mark()
+        self._repair_song_draw()
+
+    def _repair_song_seek(self, event):
+        w = max(1, self._repair_song_bar.winfo_width())
+        pos = max(0.0, min(1.0, event.x / w)) * self._repair_song_duration()
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side, at=pos)
+        else:
+            self._repair_song_pos = pos
+            self._repair_song_draw()
+
+    def _repair_song_mark(self):
+        playing = self._repair_song_t0 is not None
+        for side, b in self._repair_song_buttons.items():
+            on = playing and side == self._repair_song_side
+            b.configure(bg=COLORS["accent"] if on else COLORS["bg_deep"],
+                        state="normal" if side in self._repair_songs else "disabled")
+
+    def _repair_song_tick(self):
+        if self._repair_song_t0 is None:
+            return
+        if self._repair_song_now() >= self._repair_song_duration():
+            self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
+            self._repair_song_mark()
+        self._repair_song_draw()
+        if self._repair_song_t0 is not None:
+            self.master.after(100, self._repair_song_tick)
+
+    def _repair_song_draw(self):
+        bar = getattr(self, "_repair_song_bar", None)
+        if bar is None:
+            return
+        bar.delete("all")
+        w, h = bar.winfo_width(), bar.winfo_height()
+        dur = self._repair_song_duration()
+        now = min(self._repair_song_now(), dur) if dur else 0.0
+        if dur:
+            bar.create_rectangle(0, 0, int(w * now / dur), h, fill=COLORS["accent"], width=0)
+
+        def fmt(t):
+            return f"{int(t) // 60}:{int(t) % 60:02d}"
+        self.repair_song_time_var.set(f"{fmt(now)} / {fmt(dur)}")
+
+    def _repair_song_worker(self, snapshot):
+        """Worker thread: the Baseline and Tweaked songs at the Length setting (the snapshot's preview width,
+        in seconds), and the base model's song (No LoRA) once per LoRA, prompt, seed and length."""
+        import copy
+        eng = self.repair_engine
+        eng.driver.set_options({"preview_seconds": int(snapshot.preview_width)})
+        print(f"[repair] worker: songs, {snapshot.preview_width} s")
+        songs = {"baseline": eng.generate_baseline(snapshot), "tweaked": eng.generate_preview(snapshot)}
+        key = (eng.primary_path, snapshot.seed, snapshot.prompt, int(snapshot.preview_width))
+        if getattr(self, "_repair_nolora_key", None) != key and not self._repair_preview_dirty:
+            base = copy.deepcopy(snapshot)
+            base.primary_scale, base.donor_scale = 0.0, 0.0
+            songs["nolora"] = eng.generate_preview(base)
+            self._repair_nolora_key = key
+        self.master.after(0, lambda: self._set_repair_songs(songs))
+
+    def _set_repair_songs(self, songs):
+        """New renders landed (Tk thread): {side: Song}. The panes show their waveforms; a side being heard
+        continues from the same moment in its new version."""
+        for side, song in songs.items():
+            if song is not None:
+                self._repair_songs[side] = song.wave
+        if self._repair_song_t0 is not None and self._repair_song_side in songs:
+            self._repair_song_play(self._repair_song_side)
+        else:
+            self._repair_song_mark()
+            self._repair_song_draw()
+        if "baseline" in songs and "tweaked" in songs:
+            self._set_repair_preview_images(songs["baseline"].picture(), songs["tweaked"].picture())
 
     # ----- H3 clips + the in-app clip player ---------------------------------------------
     # H3 previews are clips. The main panel keeps showing each clip's middle frame (the
@@ -25405,6 +25598,8 @@ class LoRATrainerGUI:
 
     def _repair_popout_preview(self):
         """Open (or raise) a resizable pop-out showing baseline and tweaked side by side."""
+        if self._repair_is_audio():
+            return                       # songs are heard on the player row, not compared as pictures
         if self._repair_is_video() and self._repair_clips.get("tweaked") is not None:
             self._repair_clip_player_open()
             return

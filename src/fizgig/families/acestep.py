@@ -57,7 +57,8 @@ ACESTEP15 = FamilyDescription(
     block_note="24 DiT layers, sliding-window (even) and full (odd) self-attention, each with cross-attention to "
                "the caption, lyrics and timbre. The LoRA wraps q/k/v/o of both attentions (the official trainer's "
                "targets).",
-    workbench=(),
+    workbench=("repair", "extract"),
+    repair_size=30,                   # an audio family's Res is the song length in seconds
 
     lora=LoRAFormat(
         key_template="base_model.model.layers.{block}.{module}.{ab}.weight",
