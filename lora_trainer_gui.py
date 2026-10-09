@@ -18515,7 +18515,17 @@ class LoRATrainerGUI:
                 self.repair_dit_choice_var.set("distilled")
                 self._repair_dit_radio_a.configure(text=self._workbench_samples_note(desc), state="disabled")
                 self._repair_dit_radio_b.pack_forget()
+            elif not (sp or _ck):
+                # no faster preview path (ACE-Step's training model is already Turbo): one line naming what renders,
+                # not a greyed "Default" beside a "slow" choice that loads the same model at the same steps
+                self.repair_dit_choice_var.set("base")
+                self._repair_dit_radio_a.configure(text=f"{ds.name} ({ds.steps}-step)", state="disabled")
+                self._repair_dit_radio_b.pack_forget()
+                self._repair_dit_single = True
             else:
+                if getattr(self, "_repair_dit_single", False):     # back from a one-line family: the fast default
+                    self.repair_dit_choice_var.set("distilled")
+                    self._repair_dit_single = False
                 self._repair_dit_radio_a.configure(
                     text=(f"{_ck[1].name} ({_ck[1].steps}-step, default)" if _ck else
                           f"{sp.name.split(' (')[0]} ({sp.settings.steps}-step, default)" if sp else "Default"),
