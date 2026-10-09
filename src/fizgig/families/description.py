@@ -55,7 +55,12 @@ class ModelFile:
 
     @property
     def fetch_is_optional(self) -> bool:
-        return (not self.required) if self.fetch_optional is None else bool(self.fetch_optional)
+        """Whether the download button leaves this file to the optional tick. A training adapter is never optional
+        by default: it isn't required to start a run, but training without it is the wrong run (Peter, 9 Oct 2026 -
+        Qwen's and Z-Image's adapters had slipped into optional through `required=False`)."""
+        if self.fetch_optional is not None:
+            return bool(self.fetch_optional)
+        return not self.required and self.role != "training_adapter"
 
 
 @dataclass(frozen=True)
@@ -343,10 +348,18 @@ class FamilyDescription:
     # Training tab shows the fine-tune card and the launch sends --finetune. Optional - most families never need it
     finetune: bool = False
     ft_learning_rate: float = 1e-5    # the learning rate choosing Fine-tune sets (H3's tested rate is 3e-5)
+    # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or
+    # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
+    # so the best point doesn't fall between two saved epochs. None turns the hint off for the family
+    lr_hint: tuple = (2e-4, 125)
     # training previews may render on the preview checkpoint (the preview_dit file, sampled with
     # preview_checkpoint_sampling) instead of the training model - Klein's Distilled previews. The driver brings the
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)
     train_preview_checkpoint: bool = False
+    # its Samples tab tick: the label, whether it starts ticked (each family's choice is then kept), and the Steps note
+    preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
+    preview_checkpoint_on: bool = True
+    preview_checkpoint_steps_note: str = "Base samples only — Distilled is locked at 4 steps"
     # measured training memory for the Auto plan: {precision: (peak GB with no block swap, GB saved per swapped
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
     # {} = Auto just takes the first precision
@@ -411,12 +424,6 @@ class FamilyDescription:
     preview_speed_steps: int = 0      # preview steps with it (0 = the SpeedLoRA's own)
     preview_speed_strength: Optional[float] = None   # preview strength for it (None = the SpeedLoRA's own; 0 = off
     # by default: previews render without it until the Samples tab's Turbo strength is raised)
-    # (steps, strength) preview defaults an older release shipped; the Samples tab replaces them with the current
-    # ones, so a setting saved under the old default moves on instead of sticking
-    retired_preview_defaults: tuple = ()
-    # a one-time reset: when this tag is new to a user, the Samples tab replaces their saved preview steps and turbo
-    # strength with the current defaults once (the tag is remembered, so later choices stick). Change it to reset again.
-    preview_reset: str = ""
 
     # built-in Training-tab presets: ((name, {GUI setting key: value}), ...); the first is applied on a first visit
     presets: tuple = ()

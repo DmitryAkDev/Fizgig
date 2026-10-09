@@ -415,6 +415,12 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
         ref_kw = {"refs": [r.to(device) for r in refs]} if refs else {}
         lats = []
         mults = SLIDER_PREVIEW_MULTIPLIERS if slider else (None,)
+        # previews run the blocks uncompiled (Compile Blocks): eval mode, the preview size and the speed LoRA are each a
+        # new graph, and building them took ~5 minutes of Triton/MSVC work on the first preview after every start or
+        # resume - a handful of eager steps costs seconds. Training keeps its compiled graphs
+        _eager = torch.compiler.set_stance("force_eager")
+        _eager.__enter__()
+        done.add("eager")
         for i, cond in enumerate(encoded):
             for m in mults:
                 if m is not None:
@@ -449,6 +455,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             else:
                 paths += driver.save_preview(frames[0], p)
     finally:
+        if "eager" in done:
+            _eager.__exit__(None, None, None)
         if slider:
             net.set_trainable_multiplier(1.0)  # a preview that failed mid-dial must not leave the LoRA scaled
         if "decode_park" in done:
@@ -824,8 +832,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         driver.slider_setup(group)           # e.g. H3: still previews unless the pairs are clips
     for ds in group.datasets:
         if getattr(ds, "batch_size", 1) != 1:
-            raise RuntimeError(f"{desc.display_name} trains at batch size 1 here (conditioning lengths differ per "
-                               f"image). Set Batch Size to 1.")
+            raise RuntimeError("Fizgig trains one image at a time: set batch_size = 1 in the dataset config. For a "
+                               "larger effective batch use --gradient_accumulation_steps (the same averaged "
+                               "gradient, at the memory of batch 1).")
     loader = DataLoader(group, batch_size=1, shuffle=True, num_workers=0,
                         collate_fn=(lambda b: b[0]) if slider_prompts else _Collator(shared_epoch, group))
     steps_per_epoch = len(loader)
@@ -1222,6 +1231,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
         ov = _read_sample_override(output_dir)
+        if ov and slider:       # a slider preview is its own prompt across strengths: an override never applies
+            logger.info("[sample override] ignored - slider previews always show the slider's own prompt")
+            ov = None
         if ov:
             logger.info(f"[sample override] active - '{ov['prompt'][:60]}' seed={ov['seed']} {ov['width']}x{ov['height']}")
             try:

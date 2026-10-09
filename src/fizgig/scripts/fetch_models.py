@@ -7,7 +7,7 @@ writes the paths into prefs.json for you.
     python -m fizgig.scripts.fetch_models --family krea2      # ~45 GB, no HF account needed
     python -m fizgig.scripts.fetch_models --family klein      # ~39 GB, needs an HF token
     python -m fizgig.scripts.fetch_models --family minimax    # ~47 GB, no HF account needed
-    python -m fizgig.scripts.fetch_models --family qwen_image21 --include-optional   # ~38 GB, no HF account needed
+    python -m fizgig.scripts.fetch_models --family qwen_image21    # ~41 GB, no HF account needed
     python -m fizgig.scripts.fetch_models --family tools      # ~1.6 GB helper models
     python -m fizgig.scripts.fetch_models --all
 
@@ -462,8 +462,8 @@ def main():
                    help="Repeatable. Krea 2 needs no HF account; Klein is gated.")
     p.add_argument("--all", action="store_true", help="Every family, including the helper models.")
     p.add_argument("--include-optional", action="store_true",
-                   help="Also fetch the optional files (Krea 2 Turbo DiT ~13 GB, "
-                        "MiniMax ref2va DiT ~21 GB).")
+                   help="Also fetch the optional files (Krea 2 Turbo DiT ~13 GB, MiniMax ref2va DiT ~21 GB, "
+                        "SDXL's separate VAE, Anima's Turbo LoRA).")
     p.add_argument("--models-dir", default=None, help="Default: <repo>/models")
     p.add_argument("--token", default=None, help="HuggingFace token for gated repos (or HF_TOKEN).")
     p.add_argument("--dry-run", action="store_true", help="Show what would be fetched.")

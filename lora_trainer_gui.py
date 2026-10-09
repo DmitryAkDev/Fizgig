@@ -436,7 +436,13 @@ for _label, _desc in DESCRIBED_FAMILIES.items():
 _ARCH_ALIASES = {"MiniMax H3 (experimental)": "MiniMax H3",
                  "Krea 2 (experimental)": "Krea 2",       # pre-rename saves (2026-07-28)
                  "MiniMax H3 (driver)": "MiniMax H3",     # saves made while the drivers sat beside the originals
-                 "Klein (driver)": "Flux 2 Klein Base 9B"}
+                 "Klein (driver)": "Flux 2 Klein Base 9B",
+                 # 9 Oct 2026: no picker says "experimental" (Peter); settings saved under these carry over
+                 "Qwen Image 2.1 (experimental)": "Qwen Image 2.1",
+                 "SDXL (any checkpoint, experimental)": "SDXL (any checkpoint)",
+                 "Anima (experimental)": "Anima",
+                 "Z-Image Turbo (experimental)": "Z-Image Turbo",
+                 "ACE-Step 1.5 XL (music, experimental)": "ACE-Step 1.5 XL (music)"}
 for _old, _new in _ARCH_ALIASES.items():
     if _new in ARCHITECTURES:           # "Krea 2" is a described family: absent if the families failed to load
         ARCHITECTURES[_old] = ARCHITECTURES[_new]
@@ -738,6 +744,16 @@ def load_last_used():
                 defaults.update(saved)
         except Exception:
             pass
+    # Settings kept per model under a label that has since been renamed (_ARCH_ALIASES) move to the current label:
+    # output folders, Samples values, negatives... - the current label's own entry wins if both exist
+    for _v in defaults.values():
+        if isinstance(_v, dict):
+            for _old, _new in _ARCH_ALIASES.items():
+                if _old in _v:
+                    _moved = _v.pop(_old)
+                    _v.setdefault(_new, _moved)
+    if isinstance(defaults.get("architecture"), str):
+        defaults["architecture"] = _ARCH_ALIASES.get(defaults["architecture"], defaults["architecture"])
     # Migrate pre-Start-tab last_used files: if image_folder isn't set but one
     # of the legacy keys (caption_folder / dataset_image_dir / image_prep_source)
     # has a value, seed image_folder from the best candidate.
@@ -1522,8 +1538,10 @@ class LoRATrainerGUI:
         _od = self.last_used.get("lora_output_dirs")
         self._output_dir_memory = dict(_od) if isinstance(_od, dict) else {}
         _start_arch = str(self.last_used.get("architecture") or "")
+        self._output_dir_family = None          # whose folder the Output Directory field holds (None = not known)
         if self._output_dir_memory.get(_start_arch):
             self.settings["LORA_OUTPUT_DIR"] = self._output_dir_memory[_start_arch]
+            self._output_dir_family = _start_arch
         elif self.last_used.get("lora_output_dir"):
             self.settings["LORA_OUTPUT_DIR"] = self.last_used["lora_output_dir"]
 
@@ -2074,8 +2092,21 @@ class LoRATrainerGUI:
                 except Exception:
                     pass
 
+    def _remember_output_dir(self) -> None:
+        """File the Output Directory field under its family in the per-family memory - only while the field holds
+        THAT family's folder: mid-switch the selector has moved on but the field still shows the old family's, and
+        filing it then gave families each other's folders (Peter, 9 Oct: Krea 2 had Z-Image's)."""
+        try:
+            e = self.entries.get("LORA_OUTPUT_DIR") if hasattr(self, "entries") else None
+            fam = str(self.architecture_var.get()) if hasattr(self, "architecture_var") else ""
+            if e is not None and fam and e.get().strip() and getattr(self, "_output_dir_family", None) == fam:
+                self._output_dir_memory[fam] = e.get().strip()
+        except Exception:
+            pass
+
     def _save_last_used_paths(self, *args):
         """Save last-used folder paths and settings to config file"""
+        self._remember_output_dir()          # in memory first: it applies even when nothing is written to disk
         if _persist_disabled():
             return
         # Seed from what's already remembered, THEN overwrite with live widget values. Keys that
@@ -2132,10 +2163,7 @@ class LoRATrainerGUI:
         if "LORA_OUTPUT_DIR" in self.entries:
             data["lora_output_dir"] = self.entries["LORA_OUTPUT_DIR"].get()
             try:
-                _fam = str(self.architecture_var.get()) if hasattr(self, "architecture_var") else ""
-                if _fam and data["lora_output_dir"].strip():
-                    self._output_dir_memory[_fam] = data["lora_output_dir"].strip()
-                data["lora_output_dirs"] = dict(self._output_dir_memory)
+                data["lora_output_dirs"] = dict(self._output_dir_memory)      # filed by _remember_output_dir
             except Exception:
                 pass
         # Remember the last LoRA Royale checkpoint folder + render inputs
@@ -3831,8 +3859,9 @@ class LoRATrainerGUI:
         self._add_field_to_section(output_content, "LORA_NAME", "LoRA Name", "text", 1)
 
         # Save LoRA output directory when it changes
+        self.entries["LORA_OUTPUT_DIR"].bind("<KeyRelease>", lambda e: self._output_dir_edited(save=False), add="+")
         self.entries["LORA_OUTPUT_DIR"].bind("<FocusOut>", lambda e: self._save_last_used_paths())
-        self.entries["LORA_OUTPUT_DIR"].bind("<Return>", lambda e: self._save_last_used_paths())
+        self.entries["LORA_OUTPUT_DIR"].bind("<Return>", lambda e: self._output_dir_edited())
         self._output_dir_hint = ttk.Label(
             output_content,
             text="Remembered per model family — Klein, Krea 2, MiniMax H3 and Qwen Image 2.1 each keep their "
@@ -3890,6 +3919,20 @@ class LoRATrainerGUI:
                        "stability events).",
                   foreground=COLORS["text_explain"], font=HINT_FONT, justify=tk.LEFT, wraplength=720)
         self._adaptive_desc_label.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=(20, 5), pady=(0, 6))
+        # Large-dataset hint (Peter, 8 Oct): a hot rate on many steps an epoch can step past the best point between
+        # two saves. Sits in the blank space right of Min / Max; shown by _refresh_lr_hint only when it applies.
+        self._lr_hint = tk.Frame(training_content, bg=COLORS["accent"])                 # 3 px accent bar
+        _lh_body = tk.Frame(self._lr_hint, bg=COLORS["accent_subtle"])
+        _lh_body.pack(fill=tk.BOTH, expand=True, padx=(3, 0))
+        tk.Label(_lh_body, text="💡  Hint: a large dataset", font=(FONT_FAMILY, 10, "bold"),
+                 fg=COLORS["text_primary"], bg=COLORS["accent_subtle"]).pack(anchor=tk.W, padx=12, pady=(8, 2))
+        self._lr_hint_text = tk.Label(_lh_body, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_explain"],
+                                      bg=COLORS["accent_subtle"], wraplength=480, justify=tk.LEFT)
+        self._lr_hint_text.pack(anchor=tk.W, padx=12)
+        self._lr_hint_btn = ttk.Button(_lh_body, text="", command=self._apply_lr_hint)
+        self._lr_hint_btn.pack(anchor=tk.W, padx=12, pady=(6, 9))
+        self._lr_hint_count_cache = (None, None, 0)       # (folder, folder mtime, image count)
+        self.master.after(1500, self._lr_hint_tick)
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
         # LoRA LR Ratio — hidden, always 1 (LoRA+ default). Widget exists for preset/save compat.
@@ -4523,9 +4566,22 @@ class LoRATrainerGUI:
         ttk.Label(scheduler_content, text="Batch Size:").grid(row=4, column=0, sticky=tk.W, padx=(12, 8), pady=4)
         bs_frame = tk.Frame(scheduler_content, bg=COLORS["bg_surface"])
         bs_frame.grid(row=4, column=1, columnspan=2, sticky=tk.W, padx=5, pady=4)
-        ttk.Entry(bs_frame, textvariable=self.dataset_batch_size_var, width=6).pack(side=tk.LEFT, padx=(0, 10))
-        tk.Label(bs_frame, text="(recommended: 1 — higher values need more VRAM)",
-                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"]).pack(side=tk.LEFT)
+        # Every family trains one image at a time (the shared trainer, families/train.py), so the box is fixed at 1 -
+        # it used to accept any value and the run then refused it after caching (#181). Gradient Accumulation gives
+        # the same averaged gradient as a larger batch, at batch-1 memory.
+        self.dataset_batch_size_var.set("1")
+        ttk.Entry(bs_frame, textvariable=self.dataset_batch_size_var, width=6,
+                  state="disabled").pack(side=tk.LEFT, padx=(0, 10))
+        tk.Label(bs_frame, text="Every model trains one image at a time. For a larger effective batch, raise "
+                                "Gradient Accumulation (Optimizer section): the same averaged gradient, at the memory "
+                                "of batch 1.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=560,
+                 justify=tk.LEFT).pack(side=tk.LEFT)
+
+        def _batch_stays_one(*_):
+            if self.dataset_batch_size_var.get() != "1":       # a preset or saved setting from before
+                self.dataset_batch_size_var.set("1")
+        self.dataset_batch_size_var.trace_add("write", _batch_stays_one)
 
         ttk.Label(scheduler_content, text="Bucket Options:").grid(row=5, column=0, sticky=tk.W, padx=(12, 8), pady=4)
         bucket_frame = tk.Frame(scheduler_content, bg=COLORS["bg_surface"])
@@ -4849,15 +4905,17 @@ class LoRATrainerGUI:
     def get_preset_dir_for_architecture(self, arch):
         """Get the preset directory for an architecture, creating if needed"""
         preset_dir = os.path.join(PRESETS_DIR, arch)
-        # One-shot folder rename from the pre-2026-07-28 arch name, or user-saved Krea 2
-        # presets would silently vanish from the dropdown.
-        if arch == "Krea 2" and not os.path.isdir(preset_dir):
-            _legacy = os.path.join(PRESETS_DIR, "Krea 2 (experimental)")
-            if os.path.isdir(_legacy):
-                try:
-                    os.rename(_legacy, preset_dir)
-                except OSError:
-                    pass
+        # One-shot folder rename from a model's old label (_ARCH_ALIASES), or user-saved presets would
+        # silently vanish from the dropdown
+        if not os.path.isdir(preset_dir):
+            for _old, _new in _ARCH_ALIASES.items():
+                _legacy = os.path.join(PRESETS_DIR, _old)
+                if _new == arch and os.path.isdir(_legacy):
+                    try:
+                        os.rename(_legacy, preset_dir)
+                        break
+                    except OSError:
+                        pass
         os.makedirs(preset_dir, exist_ok=True)
         return preset_dir
 
@@ -4951,6 +5009,8 @@ class LoRATrainerGUI:
 
     def _apply_preset_values_inner(self, preset):
         for key, value in preset.items():
+            if key in self._NON_TRAINING_ENTRY_KEYS and key != "RESUME_TRAINING":
+                continue            # the Samples tab's values are the model's own, never a preset's
             if key in self.entries:
                 entry = self.entries[key]
                 if isinstance(entry, ttk.Combobox):
@@ -5282,7 +5342,9 @@ class LoRATrainerGUI:
         if isinstance(arch, str) and arch and arch in ARCHITECTURES and self.architecture_var.get() != arch:
             self.architecture_var.set(arch)
             try:
-                self.update_ui_for_architecture()
+                # the picker's own switch: the Samples boxes, output folder and settings follow the model, so the
+                # queued values below are kept for this model, never the one that was on screen
+                self._on_architecture_selected()
             except Exception as e:
                 self.update_console(f"[queue] arch switch to {arch!r} failed: {e}\n")
         self._apply_preset_values(item.get("preset", {}))
@@ -5305,6 +5367,8 @@ class LoRATrainerGUI:
                     entry.set(v)
                 elif isinstance(entry, ttk.Combobox):
                     entry.set(str(v))
+                elif str(entry.cget("textvariable") or ""):
+                    entry.setvar(str(entry.cget("textvariable")), str(v))   # reaches a greyed box too
                 else:
                     entry.delete(0, tk.END)
                     entry.insert(0, str(v))
@@ -6093,7 +6157,8 @@ class LoRATrainerGUI:
         d = dict(self.settings)
         # the family card as Start stores it (start_training): the switches only where the family offers them
         _fr = self._ft_resume_active() if self._family_ft_on(desc) else None
-        d.update(FAMILY_EDIT=self._family_edit_on(desc), FAMILY_SLIDER=self._family_slider_on(desc),
+        d.update(FAMILY_TURBO_STRENGTH=self._turbo_strength_for(desc),      # its own, never the shared box
+                 FAMILY_EDIT=self._family_edit_on(desc), FAMILY_SLIDER=self._family_slider_on(desc),
                  FAMILY_FT=self._family_ft_on(desc), FAMILY_FT_FUSED=bool(self.entries["FAMILY_FT_FUSED"].get()),
                  FAMILY_SLIDER_ULTRA=bool(self.entries["FAMILY_SLIDER_ULTRA"].get()),
                  FAMILY_FAST_ID=bool(self.entries["FAMILY_FAST_ID"].get()),
@@ -7845,6 +7910,93 @@ class LoRATrainerGUI:
                     fg=COLORS["text_muted"] if on else COLORS["text_secondary"])
         except Exception:
             pass
+        self._refresh_lr_hint()
+
+    def _lr_hint_image_count(self, folder):
+        """Training images in the Start folder (top level, as the dataset reads it), recounted only when the folder
+        or its modification time changes."""
+        try:
+            mt = os.stat(folder).st_mtime
+        except OSError:
+            return 0
+        f, m, n = self._lr_hint_count_cache
+        if f == folder and m == mt:
+            return n
+        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+        exts = {e.lower() for e in IMAGE_EXTENSIONS}
+        try:
+            n = sum(1 for e in os.scandir(folder) if e.is_file() and os.path.splitext(e.name)[1].lower() in exts)
+        except OSError:
+            n = 0
+        self._lr_hint_count_cache = (folder, mt, n)
+        return n
+
+    def _lr_hint_state(self):
+        """(adaptive, steps per epoch) when the large-dataset hint applies, else None: a standard LoRA on a family
+        with lr_hint, whose learning rate (adaptive: Min LR) is at or above the hint's rate, on more than its steps
+        an epoch (images / batch size)."""
+        desc = self._family_desc()
+        hint = getattr(desc, "lr_hint", (2e-4, 125)) if desc is not None else (2e-4, 125)
+        if not hint or getattr(self, "_family_kind_var", None) is None or self._family_kind_var.get() != "standard":
+            return None
+        rate, steps = hint
+        adaptive = bool(self.adaptive_lr_var.get())
+        try:
+            raw = (self.entries["ADAPTIVE_LR_MIN"].get() if adaptive else self.entries["LEARNING_RATE"].get()).split(" ")[0]
+            lr = float(raw)
+            batch = max(1, int(float(self.dataset_batch_size_var.get() or 1)))
+        except (ValueError, KeyError, tk.TclError):
+            return None
+        if lr < rate * 0.999:
+            return None
+        n = self._lr_hint_image_count(self.image_folder_var.get().strip())
+        per_epoch = -(-n // batch)
+        return (adaptive, per_epoch, n, raw.strip()) if per_epoch > steps else None
+
+    def _refresh_lr_hint(self):
+        card = getattr(self, "_lr_hint", None)
+        if card is None:
+            return
+        st = self._lr_hint_state()
+        if st == getattr(self, "_lr_hint_shown", "unset"):
+            return
+        self._lr_hint_shown = st
+        if st is None:
+            card.grid_remove()
+            return
+        adaptive, per_epoch, n, lr = st
+        steps = (f"{n} images" if per_epoch == n else f"{n} images ({per_epoch} steps an epoch)")
+        if adaptive:
+            self._lr_hint_text.configure(text=(
+                f"With {steps}, a Min LR of {lr} moves the LoRA a long way each epoch, so the best point can "
+                "fall between two saves. A Min LR of 1e-4 and a Max LR of 2e-4 suit a dataset this size."))
+            self._lr_hint_btn.configure(text="Use 1e-4 / 2e-4")
+        else:
+            self._lr_hint_text.configure(text=(
+                f"With {steps}, a learning rate of {lr} moves the LoRA a long way each epoch, so the best point "
+                "can fall between two saves. 1e-4 suits a dataset this size."))
+            self._lr_hint_btn.configure(text="Use 1e-4")
+        card.grid(row=2, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+
+    def _apply_lr_hint(self):
+        """The hint's one-click change: adaptive Min 1e-4 / Max 2e-4, or a learning rate of 1e-4."""
+        if self.adaptive_lr_var.get():
+            self.entries["ADAPTIVE_LR_MIN"].set("1e-4")
+            self.entries["ADAPTIVE_LR_MAX"].set("2e-4")
+        else:
+            e = self.entries["LEARNING_RATE"]
+            e.delete(0, tk.END)
+            e.insert(0, "1e-4")
+        self._refresh_lr_hint()
+
+    def _lr_hint_tick(self):
+        """Presets, the Start folder, batch size and kind all change the hint, many of them programmatically (a
+        Combobox.set fires no event), so it re-checks itself every second; the image count is cached."""
+        try:
+            self._refresh_lr_hint()
+        except Exception:
+            pass
+        self.master.after(1000, self._lr_hint_tick)
 
     def _parse_blocks_swap(self) -> int:
         """Extract integer from the BLOCKS_SWAP combobox value.
@@ -7953,8 +8105,18 @@ class LoRATrainerGUI:
                 e.delete(0, tk.END)
                 e.insert(0, d)
             self.settings["LORA_OUTPUT_DIR"] = d
+            self._output_dir_family = str(arch)      # whose folder the field now holds
+            if hasattr(self, "sample_output_label"):
+                self.update_sample_output_label()    # the Samples tab's line follows the family's folder
         except Exception:
             pass
+
+    def _output_dir_edited(self, save=True) -> None:
+        """The user typed or browsed an Output Directory: it is the folder of the family on screen."""
+        if hasattr(self, "architecture_var"):
+            self._output_dir_family = str(self.architecture_var.get())
+        if save:
+            self._save_last_used_paths()
 
     def _get_path(self, key: str) -> str:
         """Resolve a model/path setting from the current source of truth.
@@ -10472,13 +10634,29 @@ class LoRATrainerGUI:
         self.sample_prompt_text.bind("<KeyRelease>", lambda e: self._save_last_used_paths())
         # Issue #49: "Multi-line prompt" read as ONE prompt that may contain line breaks — two
         # users only discovered multiple prompts by accident. Say what a line actually does.
-        _prompt_hint = tk.Label(
-            prompt_card,
+        _prompt_hint = tk.Frame(prompt_card, bg=COLORS["bg_surface"])     # hint + tip, hidden together in Edit mode
+        _prompt_hint.grid(row=1, column=1, columnspan=2, sticky=tk.EW, pady=(0, 6))
+        tk.Label(
+            _prompt_hint,
             text="Each line is a SEPARATE prompt — press Enter to add another sample per "
                  "epoch. Keep a single prompt on one line (long ones wrap by themselves).",
             font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
-            bg=COLORS["bg_surface"], wraplength=520, justify=tk.LEFT)
-        _prompt_hint.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(0, 6))
+            bg=COLORS["bg_surface"], wraplength=520, justify=tk.LEFT).pack(anchor=tk.W)
+        # Overtraining tip (Peter, 7 Oct): a prompt the dataset can't answer is the first thing to fail
+        _tip = tk.Frame(_prompt_hint, bg=COLORS["accent"])                  # 3 px accent bar down the left
+        _tip.pack(fill=tk.X, pady=(10, 0))
+        _tip_body = tk.Frame(_tip, bg=COLORS["accent_subtle"])
+        _tip_body.pack(fill=tk.X, padx=(3, 0))
+        tk.Label(_tip_body, text="💡  Tip: catch overtraining early", font=(FONT_FAMILY, 10, "bold"),
+                 fg=COLORS["text_primary"], bg=COLORS["accent_subtle"]).pack(anchor=tk.W, padx=12, pady=(8, 2))
+        tk.Label(
+            _tip_body,
+            text="Give one prompt something your dataset doesn't have: a pose, angle or setting none of your "
+                 "photos show. Early epochs follow it. When the LoRA starts to overtrain, that's the first thing "
+                 "to fail, as the previews drift back to your photos. The last epoch that still follows it is a "
+                 "good one to keep.",
+            font=(FONT_FAMILY, 9), fg=COLORS["text_explain"], bg=COLORS["accent_subtle"],
+            wraplength=900, justify=tk.LEFT).pack(anchor=tk.W, padx=12, pady=(0, 9))
         # Edit LoRA (Training tab): previews apply the edit instruction to the test photo, so no prompts here
         self._sample_edit_note = tk.Label(
             prompt_card,
@@ -10520,8 +10698,11 @@ class LoRATrainerGUI:
         # Turbo LoRA strength for standard-layer families' previews (shown only when the family has one set).
         self._family_turbo_label = tk.Label(_steps_frame, text="Turbo strength:", font=(FONT_FAMILY, 10),
                                             fg=COLORS["text_secondary"], bg=COLORS["bg_surface"])
+        # Each family has its own value (last_used["turbo_strengths"], read by _turbo_strength_for); the box only shows
+        # and edits the family on screen, so it starts empty and is filled by _generic_samples_ui
         self.entries["FAMILY_TURBO_STRENGTH"] = ttk.Entry(_steps_frame, width=6)
-        self.entries["FAMILY_TURBO_STRENGTH"].insert(0, str(self.settings.get("FAMILY_TURBO_STRENGTH", "")))
+        self.entries["FAMILY_TURBO_STRENGTH"].bind("<KeyRelease>", self._turbo_box_typed, add="+")
+        self.entries["FAMILY_TURBO_STRENGTH"].bind("<FocusOut>", self._turbo_box_left, add="+")
         ToolTip(self.entries["FAMILY_TURBO_STRENGTH"],
                 "How strongly the turbo LoRA loads for previews. Below 1.0 (around 0.7) with more steps often gives "
                 "cleaner, more detailed previews; 1.0 with the turbo's own step count is the fastest.")
@@ -10653,7 +10834,7 @@ class LoRATrainerGUI:
         self.use_distilled_check = ttk.Checkbutton(
             freq_card, text="Use Distilled model for samples (4-step, matches ComfyUI)",
             variable=self.use_distilled_samples_var,
-            command=self._on_distilled_samples_toggled,
+            command=self._sample_checkpoint_clicked,
         )
         self.use_distilled_check.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(4, 0))
 
@@ -10812,6 +10993,21 @@ class LoRATrainerGUI:
             except Exception:
                 pass
 
+    def _sample_checkpoint_file(self, desc):
+        """The family's preview checkpoint file when it is set in Preferences and exists, else ""."""
+        ck = desc.preview_checkpoint() if desc is not None else None
+        p = self.prefs_vars.get(ck[0].pref_key, tk.StringVar()).get().strip() if ck else ""
+        return p if p and os.path.exists(p) else ""
+
+    def _sample_checkpoint_clicked(self):
+        """The preview-checkpoint tick clicked: the choice is the on-screen family's (one shared tick - Klein starts on,
+        Qwen off), kept across restarts in last_used["sample_checkpoint"]."""
+        desc = self._family_desc()
+        if desc is not None and desc.train_preview_checkpoint:
+            self._sample_checkpoint_family = desc.key
+            self.last_used.setdefault("sample_checkpoint", {})[desc.key] = bool(self.use_distilled_samples_var.get())
+        self._on_distilled_samples_toggled()
+
     def _on_distilled_samples_toggled(self):
         """Grey out fields that Distilled overrides when the checkbox is ticked. Klein only: a described family
         renders on its own training model, so a tick left over from Klein must not lock its Steps / CFG (and MiniMax
@@ -10819,7 +11015,8 @@ class LoRATrainerGUI:
         _d = self._family_desc()
         if (_d is not None and not _d.train_preview_checkpoint) or self._is_refmod_arch():
             return
-        use_distilled = self.use_distilled_samples_var.get()
+        # the tick only counts with its file set: without it samples render on the training model at these settings
+        use_distilled = self.use_distilled_samples_var.get() and (_d is None or bool(self._sample_checkpoint_file(_d)))
         state = "disabled" if use_distilled else "normal"
         grey = COLORS["text_muted"] if use_distilled else COLORS["text_primary"]
 
@@ -10912,7 +11109,8 @@ class LoRATrainerGUI:
         if _arch_changed and _arch_old:
             try:
                 _od_e = self.entries.get("LORA_OUTPUT_DIR") if hasattr(self, "entries") else None
-                if _od_e is not None and _od_e.get().strip():
+                if (_od_e is not None and _od_e.get().strip()
+                        and getattr(self, "_output_dir_family", None) == _arch_old):
                     self._output_dir_memory[_arch_old] = _od_e.get().strip()
             except Exception:
                 pass
@@ -10977,6 +11175,9 @@ class LoRATrainerGUI:
                 self._restore_output_dir_for_family(_arch_new)
         except Exception:
             pass
+        if _arch_changed and getattr(self, "_output_dir_family", None) != _arch_new:
+            # the restore above sits in a try with the presets: an error there must not leave the old family's folder
+            self._restore_output_dir_for_family(_arch_new)
         # Retag the LoRA name LAST — _apply_preset_values above rewrites every field including
         # LORA_NAME, so doing this earlier would just be clobbered. On a return visit the
         # restored name already carries the right suffix and this is a no-op; on a first visit
@@ -11026,38 +11227,28 @@ class LoRATrainerGUI:
             # changed. This method fires on every Base Model combobox event — including
             # re-picking the same family — and unconditionally overwriting CFG/flow-shift/
             # steps/width/height silently reverted the user's preview config (e.g. a
-            # 1024x1024 preview back to 768x768). On a real switch, the outgoing family's
-            # values are stashed and restored when the user switches back.
+            # 1024x1024 preview back to 768x768). Each family's values are kept across restarts
+            # (last_used["sample_settings"], written as they are edited) and restored on a switch.
             _prev = getattr(self, "_sample_defaults_arch", None)
             if _prev != arch:
-                if not hasattr(self, "_arch_sample_stash"):
-                    self._arch_sample_stash = {}
+                _store = self.last_used.setdefault("sample_settings", {})
                 if _prev is not None:
-                    self._arch_sample_stash[_prev] = {
-                        "cfg": self.sample_cfg_scale_var.get(),
-                        "shift": self.sample_flow_shift_var.get(),
-                        "steps": self.sample_steps_var.get(),
-                        "w": self.sample_width_var.get(),
-                        "h": self.sample_height_var.get(),
-                    }
-                stash = self._arch_sample_stash.get(arch)
-                if stash is not None:
-                    self.sample_cfg_scale_var.set(stash["cfg"])
-                    self.sample_flow_shift_var.set(stash["shift"])
-                    self.sample_steps_var.set(stash["steps"])
-                    self.sample_width_var.set(stash["w"])
-                    self.sample_height_var.set(stash["h"])
-                else:
-                    if config.get("sample_cfg_default") is not None:
-                        self.sample_cfg_scale_var.set(str(config["sample_cfg_default"]))
-                    if config.get("sample_flow_shift_default") is not None:
-                        self.sample_flow_shift_var.set(str(config["sample_flow_shift_default"]))
-                    if config.get("sample_steps_default") is not None:
-                        self.sample_steps_var.set(str(config["sample_steps_default"]))
-                    if config.get("sample_width_default") is not None:
-                        self.sample_width_var.set(str(config["sample_width_default"]))
-                    if config.get("sample_height_default") is not None:
-                        self.sample_height_var.set(str(config["sample_height_default"]))
+                    _store[_prev] = self._sample_box_values()
+                stash = _store.get(arch)
+                self._sample_settings_loading = True        # a load, not an edit: nothing to remember
+                try:
+                    self._apply_sample_defaults(arch, config, stash)
+                finally:
+                    self._sample_settings_loading = False
+                if not getattr(self, "_sample_settings_traced", False):
+                    def _keep_settings(*_):
+                        _a = getattr(self, "_sample_defaults_arch", None)
+                        if _a and not getattr(self, "_sample_settings_loading", False):
+                            self.last_used.setdefault("sample_settings", {})[_a] = self._sample_box_values()
+                    for _v in (self.sample_cfg_scale_var, self.sample_flow_shift_var, self.sample_steps_var,
+                               self.sample_width_var, self.sample_height_var):
+                        _v.trace_add("write", _keep_settings)
+                    self._sample_settings_traced = True
                 self._sample_defaults_arch = arch
                 # the negative prompt is kept per family across restarts (last_used["sample_negatives"]): the user's
                 # own text for this family, else its description's default (preview_negative)
@@ -11223,14 +11414,71 @@ class LoRATrainerGUI:
             except tk.TclError:
                 pass          # packed, not gridded — leave it alone
 
+    # ---- the Samples tab's Turbo strength: one value per family ------------------------------------------------
+    # last_used["turbo_strengths"][family key] is the only value: launches and the workbench read it through
+    # _turbo_strength_for, never the box. The box is one widget shared by every family, so it only shows and edits
+    # the family on screen (_turbo_box_family = whose value it holds) - a value it shows can never be filed under,
+    # or launched for, another family (Qwen's 0 kept turning up on Krea 2).
+    def _turbo_strength_for(self, desc):
+        """The family's own Turbo strength as typed, else its description default ("" when it has no speed LoRA)."""
+        v = str(self.last_used.get("turbo_strengths", {}).get(desc.key) or "").strip()
+        if v:
+            return v
+        sp = desc.preview_speed_defaults()
+        return f"{sp[1]:g}" if sp and sp[1] is not None else ""
+
+    def _show_turbo_strength(self, desc):
+        e = self.entries.get("FAMILY_TURBO_STRENGTH")
+        if e is None:
+            return
+        e.delete(0, tk.END)
+        e.insert(0, self._turbo_strength_for(desc))
+        self._turbo_box_family = desc.key
+
+    def _turbo_box_typed(self, _ev=None):
+        """A keystroke in the box: the value is for the family on screen."""
+        desc = self._family_desc()
+        if desc is None:
+            return
+        self._turbo_box_family = desc.key
+        self.last_used.setdefault("turbo_strengths", {})[desc.key] = self.entries["FAMILY_TURBO_STRENGTH"].get().strip()
+        self._save_last_used_paths()
+        # Steps / CFG follow a turbo turned on or off once typing pauses - also when Start is clicked without leaving
+        # the box first
+        _job = getattr(self, "_turbo_follow_job", None)
+        if _job is not None:
+            try:
+                self.master.after_cancel(_job)
+            except Exception:
+                pass
+        self._turbo_follow_job = self.master.after(
+            500, lambda d=desc: self._generic_samples_ui(d) if getattr(self._family_desc(), "key", None) == d.key else None)
+
+    def _turbo_box_left(self, _ev=None):
+        """Focus left the box: store it only if it holds the on-screen family's value, else show that family's."""
+        desc = self._family_desc()
+        if desc is None:
+            return
+        if getattr(self, "_turbo_box_family", None) == desc.key:
+            self._turbo_box_typed()
+            self._generic_samples_ui(desc)      # turbo on/off: Steps and CFG follow (only boxes still on a default)
+        else:
+            self._show_turbo_strength(desc)
+
     def _generic_samples_ui(self, desc):
         """Standard layer: the Samples tab for a described family. Previews render on the live training model at
         the family's settings, so Klein's sample-model choices don't apply."""
         muted = COLORS["text_muted"]
         if hasattr(self, "use_distilled_check"):
-            if desc.train_preview_checkpoint:       # Klein: its Distilled previews
-                self.use_distilled_check.configure(state=tk.NORMAL,
-                                                   text="Use Distilled model for samples (4-step, matches ComfyUI)")
+            if desc.train_preview_checkpoint:       # Klein's Distilled, Qwen's Turbo: the family's own tick
+                # live only when its file is set: without it (an update before the download) samples stay as they were
+                self.use_distilled_check.configure(
+                    state=tk.NORMAL if self._sample_checkpoint_file(desc) else tk.DISABLED,
+                    text=desc.preview_checkpoint_tick)
+                if getattr(self, "_sample_checkpoint_family", None) != desc.key:
+                    self.use_distilled_samples_var.set(bool(self.last_used.get("sample_checkpoint", {}).get(
+                        desc.key, desc.preview_checkpoint_on)))
+                    self._sample_checkpoint_family = desc.key
             else:
                 self.use_distilled_check.configure(
                     state=tk.DISABLED, text=f"Use Distilled model for samples — Klein only ({desc.display_name} "
@@ -11244,62 +11492,39 @@ class LoRATrainerGUI:
             for _w in (getattr(self, "_family_turbo_label", None), self.entries.get("FAMILY_TURBO_STRENGTH")):
                 if _w is not None and _w.winfo_manager():
                     _w.pack_forget()
-            if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(sp_steps)):
-                self.sample_steps_var.set(str(desc.preview_steps))
             sp = speed_on = None
-        # The Turbo strength box is one widget: each family keeps its own value (last_used["turbo_strengths"]) -
-        # switching stores the box for the family left and shows the one entered, or its default (Qwen's 0 must not
-        # become Krea 2's).
-        if "FAMILY_TURBO_STRENGTH" in self.entries:
-            _e = self.entries["FAMILY_TURBO_STRENGTH"]
-            _map = self.last_used.setdefault("turbo_strengths", {})
-            _prev = getattr(self, "_turbo_strength_family", None)
-            if _prev != desc.key:
-                if _prev:
-                    _map[_prev] = _e.get().strip()
-                _e.delete(0, tk.END)
-                _e.insert(0, _map.get(desc.key) or (f"{sp_strength:g}" if sp_strength is not None else ""))
-                self._turbo_strength_family = desc.key
-                if not getattr(self, "_turbo_strength_bound", False):
-                    def _keep(_ev=None):
-                        _f = getattr(self, "_turbo_strength_family", None)
-                        if _f:
-                            self.last_used.setdefault("turbo_strengths", {})[_f] = _e.get().strip()
-                            self._save_last_used_paths()
-                    _e.bind("<FocusOut>", _keep, add="+")
-                    _e.bind("<KeyRelease>", _keep, add="+")
-                    self._turbo_strength_bound = True
-        want = sp_steps if speed_on else desc.preview_steps
-        other = desc.preview_steps if speed_on else sp_steps
-        # A family's retired turbo defaults (desc.retired_preview_defaults) are replaced too, so settings saved by an
-        # older release move to the current default instead of sticking.
-        _old_steps = {str(s) for s, _ in getattr(desc, "retired_preview_defaults", ())}
-        _old_strengths = {f"{float(v):g}" for _, v in getattr(desc, "retired_preview_defaults", ())}
-        if speed_on and self.sample_steps_var.get().strip() in _old_steps:
-            self.sample_steps_var.set(str(want))
-        if speed_on and hasattr(self, "_family_turbo_label"):
-            _e = self.entries["FAMILY_TURBO_STRENGTH"]
+        # The Turbo strength box shows the family on screen's own value, refilled whenever it may hold another's
+        if "FAMILY_TURBO_STRENGTH" in self.entries and getattr(self, "_turbo_box_family", None) != desc.key:
+            self._show_turbo_strength(desc)
+        # Steps and CFG follow the turbo: its own (Qwen's Turbo LoRA: 8 steps, CFG 1) while it renders - file set AND
+        # strength above 0 - else the family's (Qwen: 25, CFG 3). They switch only on a first visit or when the turbo
+        # turns on or off since the family was last shown (last_used["samples_turbo_live"]), and only a box still on
+        # the other default - so a value restored from the family's saved settings is never replaced (a typed CFG 3 at
+        # turbo strength 0 used to flip to 1 on every switch back; reported by @mabseyuk)
+        try:
+            _strength = float(self._turbo_strength_for(desc) or 0) if speed_on else 0.0
+        except ValueError:
+            _strength = 0.0
+        turbo_live = bool(speed_on and _strength > 0)
+        _seen = self.last_used.setdefault("samples_turbo_live", {})
+        _prev = _seen.get(desc.key)
+        _first = desc.gui_label not in self.last_used.get("sample_settings", {})    # nothing kept: only defaults showing
+        _flip = _first or (_prev is not None and _prev != turbo_live)
+        _seen[desc.key] = turbo_live
+        want = sp_steps if turbo_live else desc.preview_steps
+        other = desc.preview_steps if turbo_live else sp_steps
+        if hasattr(self, "sample_steps_var"):
+            _cur = self.sample_steps_var.get().strip()
+            if not _cur or (_flip and _cur == str(other)):
+                self.sample_steps_var.set(str(want))
+        if sp is not None and hasattr(self, "sample_cfg_scale_var"):
+            want_cfg, other_cfg = ((sp.settings.cfg, desc.preview_cfg) if turbo_live else (desc.preview_cfg, sp.settings.cfg))
             try:
-                _cur = f"{float(_e.get().strip()):g}"
+                cur = float(self.sample_cfg_scale_var.get().strip() or "nan")
             except ValueError:
-                _cur = ""
-            if _cur in _old_strengths:
-                _e.delete(0, tk.END)
-                _e.insert(0, f"{sp_strength:g}")
-        if hasattr(self, "sample_steps_var") and self.sample_steps_var.get().strip() in ("", str(other)):
-            self.sample_steps_var.set(str(want))       # only switch between the two defaults, never a user value
-        _tag = getattr(desc, "preview_reset", "")
-        _done = self.last_used.setdefault("preview_resets", {})
-        if _tag and _done.get(desc.key) != _tag and hasattr(self, "sample_steps_var"):
-            # the family's one-time reset: saved steps / turbo strength go to the current defaults, once
-            self.sample_steps_var.set(str(want))
-            if "FAMILY_TURBO_STRENGTH" in self.entries and sp_strength is not None:
-                self.entries["FAMILY_TURBO_STRENGTH"].delete(0, tk.END)
-                self.entries["FAMILY_TURBO_STRENGTH"].insert(0, f"{sp_strength:g}")
-            _done[desc.key] = _tag
-            self._save_last_used_paths()
-            self.update_console(f"[samples] {desc.display_name} previews reset to the new default: {want} steps"
-                                + (f", turbo strength {sp_strength:g}" if sp_strength is not None else "") + "\n")
+                cur = None
+            if cur is not None and (cur != cur or (_flip and abs(cur - other_cfg) < 1e-9)) and want_cfg != other_cfg:
+                self.sample_cfg_scale_var.set(f"{want_cfg:g}")
         if hasattr(self, "_family_turbo_label"):
             for _w, _kw in ((self._family_turbo_label, {"padx": (14, 4)}), (self.entries["FAMILY_TURBO_STRENGTH"], {})):
                 if speed_on and not _w.winfo_manager():
@@ -11307,7 +11532,7 @@ class LoRATrainerGUI:
                 elif not speed_on:
                     _w.pack_forget()
             if speed_on and not self.entries["FAMILY_TURBO_STRENGTH"].get().strip():
-                self.entries["FAMILY_TURBO_STRENGTH"].insert(0, f"{sp_strength:g}")
+                self._show_turbo_strength(desc)        # empty = the family's default
         if hasattr(self, "sample_steps_note"):
             self.sample_steps_note.configure(
                 text=((f"{desc.display_name}: {sp_steps} steps on the plain model by default. For fast previews set "
@@ -11318,8 +11543,8 @@ class LoRATrainerGUI:
                        f"standard one") if speed_on else
                       f"{desc.display_name}: {desc.preview_steps} steps at CFG {desc.preview_cfg:g}"
                       + (f" - set the {sp.name} in Preferences for {sp_steps}-step previews" if sp else "")))
-        if desc.train_preview_checkpoint and hasattr(self, "sample_steps_note"):     # Klein's own line
-            self.sample_steps_note.configure(text="Base samples only — Distilled is locked at 4 steps")
+        if desc.train_preview_checkpoint and hasattr(self, "sample_steps_note"):     # the checkpoint family's own line
+            self.sample_steps_note.configure(text=desc.preview_checkpoint_steps_note)
         _sampler = dict(desc.samples_text).get("sampler")
         if _sampler and hasattr(self, "sample_steps_note"):      # a family that names its sampler (SDXL)
             self.sample_steps_note.configure(text=f"{self.sample_steps_note.cget('text')} · {_sampler}")
@@ -11348,6 +11573,25 @@ class LoRATrainerGUI:
             self.cache_sample_model_label.configure(
                 text="Cache sample model in RAM:" if _ck else "Cache sample model in RAM (Klein only):",
                 foreground=COLORS["text_secondary"] if _ck else muted)
+
+    def _sample_box_values(self):
+        """The Samples tab's per-family boxes (CFG, flow shift, steps, size) as last_used["sample_settings"] keeps them."""
+        return {"cfg": self.sample_cfg_scale_var.get(), "shift": self.sample_flow_shift_var.get(),
+                "steps": self.sample_steps_var.get(), "w": self.sample_width_var.get(),
+                "h": self.sample_height_var.get()}
+
+    def _apply_sample_defaults(self, arch, config, stash):
+        """Fill the per-family boxes: the family's kept values (stash), else its defaults."""
+        for var, key, dkey in ((self.sample_cfg_scale_var, "cfg", "sample_cfg_default"),
+                               (self.sample_flow_shift_var, "shift", "sample_flow_shift_default"),
+                               (self.sample_steps_var, "steps", "sample_steps_default"),
+                               (self.sample_width_var, "w", "sample_width_default"),
+                               (self.sample_height_var, "h", "sample_height_default")):
+            v = (stash or {}).get(key)
+            if v in (None, "") and config.get(dkey) is not None:
+                v = str(config[dkey])
+            if v not in (None, ""):
+                var.set(v)
 
     def update_sample_output_label(self):
         """Update the sample output path label to show actual path"""
@@ -16106,7 +16350,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select source LoRA",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.extract_source_var.get()),
         )
         if filepath:
             self.extract_source_var.set(filepath)
@@ -16446,7 +16690,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select a .safetensors file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.metadata_file_var.get()),
         )
         if filepath:
             self.metadata_file_var.set(filepath)
@@ -17796,7 +18040,7 @@ class LoRATrainerGUI:
         filepath = filedialog.askopenfilename(
             title="Select LoRA file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.profiler_lora_var.get()),
         )
         if filepath:
             self.profiler_lora_var.set(filepath)
@@ -18157,23 +18401,26 @@ class LoRATrainerGUI:
             "Range ±3.0. Greyed-out rows are blocks the LoRA doesn't touch. "
             "Colour bands match the Profiler's 5-bucket scheme: blue Style+Comp, teal Style/ID, green Identity, olive ID/Detail, orange Details.",
         )
-        # Bulk row above the sliders (H3 only — shown / hidden with the family): reset, all
-        # off, all on, invert — the primary rows; the donor stays as it is.
+        # Bulk row above the sliders, every family (Peter, 7 Oct): reset, all off, all on, invert on the primary rows;
+        # H3 adds Alternate + Toggle detail blocks (its block numbers) and, while a donor is loaded, every family gets
+        # Donor: all on / all off at the end of the row.
         self._repair_bulk_row = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
-        for _txt, _cmd, _tip in (
-                ("Reset all", self._reset_repair_sliders, "Every slider back to its default."),
-                ("All off", lambda: self._repair_bulk_primary("off"),
+        self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6))
+        self._repair_bulk_h3 = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])   # packed by the family switch
+        for _parent, _txt, _cmd, _tip in (
+                (self._repair_bulk_row, "Reset all", self._reset_repair_sliders, "Every slider back to its default."),
+                (self._repair_bulk_row, "All off", lambda: self._repair_bulk_primary("off"),
                  "Untick every block's primary enable (strengths kept)."),
-                ("All on", lambda: self._repair_bulk_primary("on"),
+                (self._repair_bulk_row, "All on", lambda: self._repair_bulk_primary("on"),
                  "Tick every block's primary enable (strengths kept)."),
-                ("Invert", lambda: self._repair_bulk_primary("invert"),
+                (self._repair_bulk_row, "Invert", lambda: self._repair_bulk_primary("invert"),
                  "Flip every block's primary enable: on becomes off, off becomes on."),
-                ("Alternate", lambda: self._repair_bulk_primary("alternate"),
+                (self._repair_bulk_h3, "Alternate", lambda: self._repair_bulk_primary("alternate"),
                  "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
                  "refiners untouched. Invert for the other half."),
-                ("Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
+                (self._repair_bulk_h3, "Toggle detail blocks", lambda: self._repair_bulk_primary("detail"),
                  "Blocks 46-49 — the detail end of the model — all on or all off together.")):
-            _b = ttk.Button(self._repair_bulk_row, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
+            _b = ttk.Button(_parent, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
@@ -18183,9 +18430,9 @@ class LoRATrainerGUI:
         self._repair_bank_chips = {}
         tk.Label(self._repair_bank_strip, text="Library:", bg=COLORS["bg_surface"],
                  fg=COLORS["text_secondary"], font=(FONT_FAMILY, 8)).pack(side=tk.LEFT, padx=(0, 6))
-        # Donor all on / all off (every family, shown while a donor is loaded): every donor slider to 1 (ticked) or 0,
-        # one render
-        self._repair_donor_bulk_row = tk.Frame(sliders_card, bg=COLORS["bg_surface"])
+        # Donor all on / all off (every family, at the end of the bulk row while a donor is loaded): every donor
+        # slider to 1 (ticked) or 0, one render
+        self._repair_donor_bulk_row = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])
         for _txt, _on, _tip in (("Donor: all on", True, "Every donor slider to 1 (and ticked)."),
                                 ("Donor: all off", False, "Every donor slider to 0.")):
             _b = ttk.Button(self._repair_donor_bulk_row, text=_txt, command=lambda o=_on: self._repair_bulk_donor(o),
@@ -18266,7 +18513,7 @@ class LoRATrainerGUI:
             if desc.workbench_follows_samples:
                 # one line in place of the choice: the Samples tab sets these previews
                 self.repair_dit_choice_var.set("distilled")
-                self._repair_dit_radio_a.configure(text=self._WORKBENCH_SAMPLES_NOTE, state="disabled")
+                self._repair_dit_radio_a.configure(text=self._workbench_samples_note(desc), state="disabled")
                 self._repair_dit_radio_b.pack_forget()
             else:
                 self._repair_dit_radio_a.configure(
@@ -18389,12 +18636,13 @@ class LoRATrainerGUI:
                 if _kf:
                     self._repair_kf_relabel()
                 if not _banks:
-                    self._repair_bulk_row.pack_forget()
+                    self._repair_bulk_h3.pack_forget()
                     self._repair_bank_strip.pack_forget()
                 else:
-                    if not self._repair_bulk_row.winfo_manager():
-                        self._repair_bulk_row.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
-                                                   before=self._repair_sliders_host)
+                    if not self._repair_bulk_h3.winfo_manager():
+                        _after = ({"before": self._repair_donor_bulk_row}
+                                  if self._repair_donor_bulk_row.winfo_manager() else {})
+                        self._repair_bulk_h3.pack(side=tk.LEFT, **_after)
                     if not self._repair_bank_strip.winfo_manager():
                         self._repair_bank_strip.pack(side=tk.TOP, fill=tk.X, pady=(0, 6),
                                                      before=self._repair_sliders_host)
@@ -18407,7 +18655,7 @@ class LoRATrainerGUI:
                 self._repair_h3_model_combo.grid_remove()
                 self._repair_h3_base_label.grid_remove()
                 self._repair_h3_base_combo.grid_remove()
-                self._repair_bulk_row.pack_forget()
+                self._repair_bulk_h3.pack_forget()
                 self._repair_bank_strip.pack_forget()
                 if not self._repair_res_label.winfo_manager():
                     # Keep the Res pair ahead of the Turbo tick when that is showing (Klein);
@@ -19624,7 +19872,7 @@ class LoRATrainerGUI:
         primary_enabled = tk.BooleanVar(value=True)
         primary_strength = tk.DoubleVar(value=1.0)
         donor_enabled = tk.BooleanVar(value=True)
-        donor_strength = tk.DoubleVar(value=0.0)
+        donor_strength = tk.DoubleVar(value=1.0)
 
         chk_p = ttk.Checkbutton(rowf, variable=primary_enabled,
                                 command=lambda b=block_id: self._on_block_changed(b))
@@ -19764,12 +20012,18 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
-    def _lora_initialdir(self) -> str:
-        """Start folder for every LoRA-loading Browse dialog: the folder the last LoRA was
-        picked from (remembered across restarts), else the input_lora_dir pref, else wherever
-        trained LoRAs are written. Without the fallback a fresh session's dialog opens in the
+    def _lora_initialdir(self, current: str = "") -> str:
+        """Start folder for every LoRA-loading Browse dialog: the folder of the LoRA already in
+        that box (`current`, Peter 7 Oct), else the folder the last LoRA was picked from
+        (remembered across restarts), else the input_lora_dir pref, else wherever trained LoRAs
+        are written. Without the fallback a fresh session's dialog opens in the
         process cwd — on a pod that's the git clone, which contains no .safetensors and made
         the picker look broken (found on RunPod)."""
+        current = (current or "").strip()
+        if current:
+            d = current if os.path.isdir(current) else os.path.dirname(current)
+            if d and os.path.isdir(d):
+                return os.path.normpath(d)     # backslashes: the Windows dialog can ignore a forward-slash folder
         d = self._remembered_dir("lora_browse_dir")
         if d:
             return d
@@ -19887,10 +20141,12 @@ class LoRATrainerGUI:
         self._on_preview_param_changed()
 
     def _browse_repair_lora(self, var):
+        # An empty donor box opens where the primary is
+        cur = var.get() or (self.repair_primary_var.get() if var is getattr(self, "repair_donor_var", None) else "")
         filepath = filedialog.askopenfilename(
             title="Select LoRA file",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(cur),
         )
         if filepath:
             var.set(filepath)
@@ -19944,17 +20200,12 @@ class LoRATrainerGUI:
         workbench_follows_samples): the live boxes when the Training tab is on that family, else what the tab last
         held for it (its per-family stash), else the family's defaults."""
         cur = self._family_desc()
-        sp_def = desc.preview_speed_defaults() or (None, None)
         if cur is not None and cur.key == desc.key:
             steps, cfg = self.sample_steps_var.get().strip(), self.sample_cfg_scale_var.get().strip()
-            turbo = self.entries["FAMILY_TURBO_STRENGTH"].get().strip() if "FAMILY_TURBO_STRENGTH" in self.entries \
-                else ""
         else:
-            stash = getattr(self, "_arch_sample_stash", {}).get(desc.gui_label) or {}
+            stash = self.last_used.get("sample_settings", {}).get(desc.gui_label) or {}
             steps, cfg = stash.get("steps") or str(desc.preview_steps), stash.get("cfg") or f"{desc.preview_cfg:g}"
-            turbo = self.last_used.get("turbo_strengths", {}).get(desc.key) or ""
-        if not turbo and sp_def[1] is not None:
-            turbo = f"{sp_def[1]:g}"
+        turbo = self._turbo_strength_for(desc)          # the family's own value, whichever family is on screen
         return {"steps": steps, "cfg": cfg, "turbo": turbo or "0",
                 "negative": self.sample_negative_var.get().strip() if getattr(self, "sample_negative_var", None)
                 else ""}
@@ -19977,10 +20228,20 @@ class LoRATrainerGUI:
             ps["negative"] = self.repair_negative_var.get().strip()
         return ps
 
+    def _workbench_samples_note(self, desc):
+        """What a follows-the-Samples-tab workbench renders with: the family's preview checkpoint at its own recipe when
+        it is set in Preferences (Qwen's Turbo), else the Samples tab's settings."""
+        ck = desc.preview_checkpoint() if desc is not None else None
+        if ck and self._sample_checkpoint_file(desc):
+            return (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. Clear it in "
+                    f"Preferences to preview with the Samples tab's settings instead.")
+        return self._WORKBENCH_SAMPLES_NOTE
+
     def _show_samples_note(self, label, desc):
         if label is None:
             return
         if desc is not None and desc.workbench_follows_samples:
+            label.configure(text=self._workbench_samples_note(desc))
             if not label.winfo_manager():
                 label.pack(anchor=tk.W, pady=(6, 0))
         else:
@@ -23059,7 +23320,7 @@ class LoRATrainerGUI:
             for vars_ in self.repair_block_vars.values():
                 vars_["donor_rowf"].grid()
             if not self._repair_donor_bulk_row.winfo_manager():
-                self._repair_donor_bulk_row.pack(side=tk.TOP, anchor=tk.W, pady=(0, 6), before=self._repair_sliders_host)
+                self._repair_donor_bulk_row.pack(side=tk.LEFT, padx=(18, 0))
             self._repair_master_donor_radio.state(["!disabled"])
             for cat in self.repair_donor_category_vars:
                 self.repair_donor_category_vars[cat].set(False)
@@ -27715,8 +27976,10 @@ class LoRATrainerGUI:
         if not (self._rms_clips.get("baseline") and self._rms_clips.get("tweaked")):
             return
         self._repair_clip_player_open(clips=self._rms_clips, sides=["tweaked", "baseline"],   # With mods LEFT, like the tab
-                                      labels={"baseline": "No mod (base, same seed)", "tweaked": "With mods"},
-                                      title="RefMod Studio — Clip player (With mods vs No mod)",
+                                      labels={"baseline": self._rms_baseline_title.cget("text"),
+                                              "tweaked": self._rms_tweaked_title.cget("text").split(" — ")[0]},
+                                      title=f"RefMod Studio — Clip player ({self._rms_tweaked_title.cget('text').split(' — ')[0]} "
+                                            f"vs {self._rms_baseline_title.cget('text').split(' (')[0]})",
                                       metrics=False, nolora=False, stem="refmod", status_var=self.rms_status_var)
 
     def _rms_popout(self, pil, title):
@@ -27827,6 +28090,7 @@ class LoRATrainerGUI:
         self.rms_status_var.set(f"Sweep: {kind} — {len(jobs)} clips of {self._RMS_SWEEP_FRAMES} frames…")
 
         def _work():
+            self._rms_sync_lora(eng, jobs[0]["lora"] if jobs else None)   # the LoRA on the tab, as Render does
             for i, job in enumerate(jobs):
                 clip = eng.render_refmod(seed=job["seed"], prompt=job["prompt"], width=job["width"], height=job["height"],
                                          frames=self._RMS_SWEEP_FRAMES, regime="custom", ref_latents=job["latents"],
@@ -27870,7 +28134,7 @@ class LoRATrainerGUI:
             clips["baseline"] = base
             sides.append("baseline")
         self._repair_clip_player_open(clips=clips, sides=sides,
-                                      labels={"tweaked": job["label"], "baseline": "No mod (base, same seed)"},
+                                      labels={"tweaked": job["label"], "baseline": self._rms_baseline_title.cget("text")},
                                       title=f"RefMod Studio — sweep: {job['label']}",
                                       metrics=False, nolora=False, stem="rms_sweep", status_var=self.rms_status_var)
 
@@ -29257,7 +29521,11 @@ class LoRATrainerGUI:
         if "[preview] resolution settled:" in line:
             import re as _re_res
             _m = _re_res.search(r"resolution settled: (\d+)x(\d+)", line)
-            if _m and hasattr(self, "sample_width_var"):
+            _run = getattr(self, "_run_arch_label", None)
+            if _m and hasattr(self, "sample_width_var") and _run and _run != self.architecture_var.get():
+                _rec = self.last_used.setdefault("sample_settings", {}).setdefault(_run, {})
+                _rec["w"], _rec["h"] = _m.group(1), _m.group(2)     # another model on screen: file it as the run's
+            elif _m and hasattr(self, "sample_width_var"):
                 self.sample_width_var.set(_m.group(1))
                 self.sample_height_var.set(_m.group(2))
                 self.update_console(f"[samples] preview resolution saved as the new "
@@ -29292,25 +29560,40 @@ class LoRATrainerGUI:
         path = filedialog.askopenfilename(
             title="Select Context LoRA",
             filetypes=[("SafeTensors", "*.safetensors"), ("All files", "*.*")],
-            initialdir=self._lora_initialdir(),
+            initialdir=self._lora_initialdir(self.entries["CONTEXT_LORA_PATH"].get()),
         )
         if path:
             self.entries["CONTEXT_LORA_PATH"].delete(0, tk.END)
             self.entries["CONTEXT_LORA_PATH"].insert(0, path)
             self._remember_browse_dir("lora_browse_dir", path)
 
+    @staticmethod
+    def _existing_dir(path):
+        """The folder a Browse should open in for `path`: the folder itself, a file's folder, or the nearest parent
+        that exists ("" when nothing does)."""
+        p = os.path.normpath(str(path or "").strip()) if str(path or "").strip() else ""
+        while p and not os.path.isdir(p):
+            parent = os.path.dirname(p)
+            if parent == p:
+                return ""
+            p = parent
+        return p
+
     def browse_file(self, setting_name, input_type):
-        # Resume Training points at a saved state dir, which lives under the LoRA
-        # output folder — open the Browse there so users don't hunt for it.
-        initial = self._current_output_dir() if setting_name == "RESUME_TRAINING" else ""
+        # Open where the field already points (Peter, 9 Oct: the Output Directory's Browse started somewhere else).
+        # Resume Training points at a saved state dir, which lives under the LoRA output folder.
+        cur = self.entries[setting_name].get() if setting_name in self.entries else ""
+        initial = self._existing_dir(cur) or (self._current_output_dir() if setting_name == "RESUME_TRAINING" else "")
         if input_type == "directory":
-            path = filedialog.askdirectory(initialdir=initial)
+            path = filedialog.askdirectory(initialdir=initial or None)
         else:
-            path = filedialog.askopenfilename(initialdir=initial)
+            path = filedialog.askopenfilename(initialdir=initial or None)
         if path:
             self.settings[setting_name] = path
             self.entries[setting_name].delete(0, tk.END)
             self.entries[setting_name].insert(0, self.settings[setting_name])
+            if setting_name == "LORA_OUTPUT_DIR":
+                self._output_dir_edited()
 
     def _tidy_lora_name(self):
         """Clean the LoRA Name field in place. Returns (name, error or None).
@@ -29609,6 +29892,7 @@ class LoRATrainerGUI:
 
         # Snapshot current settings for the "Load Last Train" button
         self._save_last_train_settings()
+        self._run_arch_label = self.architecture_var.get()      # the run's model (the settled preview size is its)
         # ...and as the queue window's pinned "training now" card: editing a queued job loads
         # its settings into this tab, so the window needs a way back to the run in progress.
         self._active_run_item = self._queue_snapshot()
@@ -29734,7 +30018,7 @@ class LoRATrainerGUI:
             **({"FAMILY_TRAINING_ADAPTER": bool(self.entries["FAMILY_TRAINING_ADAPTER"].get()),
                 "FAMILY_EMA": self.entries["FAMILY_EMA"].get(),
                 "FAMILY_PRECISION": self.entries["FAMILY_PRECISION"].get(),
-                "FAMILY_TURBO_STRENGTH": self.entries["FAMILY_TURBO_STRENGTH"].get(),
+                "FAMILY_TURBO_STRENGTH": self._turbo_strength_for(self._family_desc()),
                 **({"FAMILY_TURBO_STEPS": self.entries["FAMILY_TURBO_STEPS"].get(),       # H3's Turbo preview row
                     "FAMILY_TURBO_PACE": self.entries["FAMILY_TURBO_PACE"].get()}
                    if self._family_desc().samples_turbo_pace else {}),
@@ -30104,8 +30388,7 @@ class LoRATrainerGUI:
             # would otherwise be missed (swaps only between the two defaults, never a typed value).
             try:
                 self._generic_samples_ui(desc)
-                if "FAMILY_TURBO_STRENGTH" in self.entries:     # it may just have run the family's one-time reset
-                    self.settings["FAMILY_TURBO_STRENGTH"] = self.entries["FAMILY_TURBO_STRENGTH"].get()
+                self.settings["FAMILY_TURBO_STRENGTH"] = self._turbo_strength_for(desc)
             except Exception:
                 pass
         plan = launch.LaunchPlan()
@@ -30243,6 +30526,11 @@ class LoRATrainerGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to write pause flag:\n{e}")
             return
+        # BEFORE the confirmation: the dialog is modal but Tk keeps running check_process under it, so a run that
+        # reached its pause while the dialog was still open exited as "running" - read as a FINISHED run (the
+        # training ended, the queue advanced, a pod auto-stopped). Peter, 9 Oct.
+        self.training_state = "pausing"
+        self._refresh_training_buttons()
         if self._family_desc() is not None and self._family_ft_on():
             # a family fine-tune only ever saves a whole rotation, so the pause waits for the rotation to end
             self.update_console("\n=== PAUSE REQUESTED - the fine-tune finishes the rotation it is in, saves that "
@@ -30262,8 +30550,6 @@ class LoRATrainerGUI:
                 "and exit cleanly to free GPU memory.\n\n"
                 "Click Resume Training afterwards to continue.",
             )
-        self.training_state = "pausing"
-        self._refresh_training_buttons()
 
     def _detect_latest_state_dir(self):
         """Find the highest-numbered <output_name>-NNNNNN-state/ directory in the output dir."""
