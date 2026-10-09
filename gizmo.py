@@ -1112,7 +1112,8 @@ def audio_playback_backend():
 _PLAYBACK = None            # resolved once, on first use
 
 
-def _play_wav(path):
+def _play_wav(path, loop=False):
+    """loop: repeat seamlessly until stopped (winsound only; returns whether it loops)."""
     global _PLAYBACK
     if _PLAYBACK is None:
         _PLAYBACK = audio_playback_backend() or ""
@@ -1120,10 +1121,11 @@ def _play_wav(path):
         raise RuntimeError("no way to play audio on this machine")
     if _PLAYBACK == "winsound":
         import winsound
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-    else:
-        subprocess.Popen([_PLAYBACK, path], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | (winsound.SND_LOOP if loop else 0))
+        return bool(loop)
+    subprocess.Popen([_PLAYBACK, path], stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+    return False
 
 
 def _stop_wav():

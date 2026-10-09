@@ -24054,6 +24054,9 @@ class LoRATrainerGUI:
         self._repair_song_pos = 0.0          # seconds into the song where the current play started
         self._repair_song_t0 = None          # monotonic time of that start; None = not playing
         self._repair_song_file = 0
+        self._repair_song_looping = False    # the player itself is looping the whole song
+        self.repair_song_loop_var = tk.BooleanVar(value=False)
+        self.repair_song_restart_var = tk.BooleanVar(value=False)
         self._repair_song_buttons = {}
         for side, label in self._SONG_SIDES:
             b = tk.Button(row, text=f"\u25b6 {label}", font=(FONT_FAMILY, 10, "bold"), bg=COLORS["bg_deep"],
@@ -24062,6 +24065,15 @@ class LoRATrainerGUI:
                           cursor="hand2", command=lambda s=side: self._repair_song_play(s))
             b.pack(side=tk.LEFT, padx=(4, 4))
             self._repair_song_buttons[side] = b
+            if side == "tweaked":
+                # Loop: the song repeats. Restart on tweak: each new Tweaked render plays from the top (off: the
+                # side being heard carries on at the same moment in its new version)
+                for text, var, cmd in (("🔁 Loop", self.repair_song_loop_var, self._repair_song_loop_toggled),
+                                       ("⏮ Restart on tweak", self.repair_song_restart_var, None)):
+                    tk.Checkbutton(row, text=text, variable=var, command=cmd, font=(FONT_FAMILY, 9),
+                                   bg=COLORS["bg_surface"], fg=COLORS["text_primary"], selectcolor=COLORS["bg_deep"],
+                                   activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"],
+                                   bd=0, highlightthickness=0, cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
         tk.Button(row, text="\u25a0 Stop", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
                   activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
                   bd=0, padx=10, pady=4, cursor="hand2", command=self._repair_song_stop
@@ -24111,7 +24123,11 @@ class LoRATrainerGUI:
         if self._repair_song_t0 is None:
             return self._repair_song_pos
         import time as _t
-        return self._repair_song_pos + (_t.monotonic() - self._repair_song_t0)
+        now = self._repair_song_pos + (_t.monotonic() - self._repair_song_t0)
+        if self._repair_song_looping:
+            dur = self._repair_song_duration()
+            return now % dur if dur else 0.0
+        return now
 
     def _repair_song_play(self, side, at=None):
         import tempfile
@@ -24131,7 +24147,9 @@ class LoRATrainerGUI:
             self._repair_song_file ^= 1          # alternate files: the one just stopped may still be held
             path = os.path.join(tempfile.gettempdir(), f"fizgig_song_{self._repair_song_file}.wav")
             write_wav(path, wav[:, int(pos * self._SONG_RATE):], sample_rate=self._SONG_RATE)
-            self._repair_play_wav(path)
+            # from the top with Loop on, the player loops the file itself (no gap); from mid-song it plays the
+            # rest and the tick restarts it at the top
+            self._repair_song_looping = self._repair_play_wav(path, loop=self.repair_song_loop_var.get() and pos == 0)
         except Exception as e:
             self.repair_status_var.set(f"Could not play the song: {e}")
             return
@@ -24144,9 +24162,15 @@ class LoRATrainerGUI:
             return
         self._repair_song_pos = min(self._repair_song_now(), self._repair_song_duration())
         self._repair_song_t0 = None
+        self._repair_song_looping = False
         self._repair_stop_wav()
         self._repair_song_mark()
         self._repair_song_draw()
+
+    def _repair_song_loop_toggled(self):
+        """Loop switched while a song plays: carry on from the same moment, looping or not."""
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side)
 
     def _repair_song_seek(self, event):
         w = max(1, self._repair_song_bar.winfo_width())
@@ -24167,7 +24191,10 @@ class LoRATrainerGUI:
     def _repair_song_tick(self):
         if self._repair_song_t0 is None:
             return
-        if self._repair_song_now() >= self._repair_song_duration():
+        if not self._repair_song_looping and self._repair_song_now() >= self._repair_song_duration():
+            if self.repair_song_loop_var.get():
+                self._repair_song_play(self._repair_song_side, at=0.0)  # Loop: again from the top
+                return
             self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
             self._repair_song_mark()
         self._repair_song_draw()
@@ -24211,7 +24238,10 @@ class LoRATrainerGUI:
         for side, song in songs.items():
             if song is not None:
                 self._repair_songs[side] = song.wave
-        if self._repair_song_t0 is not None and self._repair_song_side in songs:
+        playing = self._repair_song_t0 is not None
+        if "tweaked" in songs and songs["tweaked"] is not None and self.repair_song_restart_var.get():
+            self._repair_song_play("tweaked", at=0.0)    # Restart on tweak: hear the new version from the top
+        elif playing and self._repair_song_side in songs:
             self._repair_song_play(self._repair_song_side)
         else:
             self._repair_song_mark()
@@ -25330,13 +25360,15 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
-    def _repair_play_wav(self, path):
+    def _repair_play_wav(self, path, loop=False):
+        """-> True when the player itself loops the file (seamless; winsound only)."""
         try:
             import gizmo as _gz
             if path and os.path.isfile(path):
-                _gz._play_wav(path)
+                return bool(_gz._play_wav(path, loop=loop))
         except Exception:
             pass
+        return False
 
     def _repair_clip_player_open(self, clips=None, labels=None, title=None, metrics=True,
                                  nolora=True, stem="repair", status_var=None, sides=None):
