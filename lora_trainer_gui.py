@@ -24054,7 +24054,9 @@ class LoRATrainerGUI:
         self._repair_song_pos = 0.0          # seconds into the song where the current play started
         self._repair_song_t0 = None          # monotonic time of that start; None = not playing
         self._repair_song_file = 0
-        self._repair_song_looping = False    # the player itself is looping the whole song
+        self._repair_song_looping = False    # the player itself is looping (the whole song, or the section)
+        self._repair_song_region = None      # (start, end) seconds: the section Loop repeats; None = the whole song
+        self._repair_song_drag = None        # the bar press: x, then the drag's end x
         self.repair_song_loop_var = tk.BooleanVar(value=False)
         self.repair_song_restart_var = tk.BooleanVar(value=False)
         self._repair_song_buttons = {}
@@ -24080,7 +24082,11 @@ class LoRATrainerGUI:
                   ).pack(side=tk.LEFT, padx=(4, 12))
         bar = tk.Canvas(row, height=18, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
         bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
-        bar.bind("<Button-1>", self._repair_song_seek)
+        # click = jump; drag = the section to loop; right-click = loop the whole song again
+        bar.bind("<ButtonPress-1>", self._repair_song_press)
+        bar.bind("<B1-Motion>", self._repair_song_drag_to)
+        bar.bind("<ButtonRelease-1>", self._repair_song_release)
+        bar.bind("<Button-3>", lambda e: self._repair_song_set_region(None))
         bar.bind("<Configure>", lambda e: self._repair_song_draw())
         self._repair_song_bar = bar
         self.repair_song_time_var = tk.StringVar(value="0:00 / 0:00")
@@ -24098,7 +24104,8 @@ class LoRATrainerGUI:
             self._repair_res_label.configure(text="Length (s):")
             self._repair_res_combo.configure(values=["10", "20", "30", "60", "120"])
             self._repair_preview_hint.configure(text="\u25b6 Play either side; switching keeps your place in the song. "
-                                                     "Click the bar to jump.")
+                                                     "Click the bar to jump; drag across it to loop a section "
+                                                     "(right-click: the whole song).")
             for h in (self.repair_base_holder, self.repair_tweaked_holder):
                 h.configure(height=200)
         else:
@@ -24118,6 +24125,14 @@ class LoRATrainerGUI:
         wav = self._repair_songs.get(side or self._repair_song_side or "baseline")
         return 0.0 if wav is None else wav.shape[1] / self._SONG_RATE
 
+    def _repair_song_span(self):
+        """(start, end) seconds Loop repeats: the section when one is set and Loop is on, else the whole song."""
+        dur = self._repair_song_duration()
+        r = self._repair_song_region
+        if r and self.repair_song_loop_var.get() and r[0] < dur:
+            return r[0], min(r[1], dur)
+        return 0.0, dur
+
     def _repair_song_now(self):
         """Seconds into the song now (the paused position when nothing plays)."""
         if self._repair_song_t0 is None:
@@ -24125,8 +24140,8 @@ class LoRATrainerGUI:
         import time as _t
         now = self._repair_song_pos + (_t.monotonic() - self._repair_song_t0)
         if self._repair_song_looping:
-            dur = self._repair_song_duration()
-            return now % dur if dur else 0.0
+            a, b = self._repair_song_span()
+            return a + (now - a) % (b - a) if b > a else a
         return now
 
     def _repair_song_play(self, side, at=None):
@@ -24139,6 +24154,9 @@ class LoRATrainerGUI:
             return
         pos = self._repair_song_now() if at is None else float(at)
         dur = wav.shape[1] / self._SONG_RATE
+        a, b = self._repair_song_span()
+        if self.repair_song_loop_var.get() and self._repair_song_region and not (a <= pos < b - 0.05):
+            pos = a                              # outside the section: start at its beginning
         if pos >= dur - 0.05 or pos < 0:
             pos = 0.0
         try:
@@ -24146,10 +24164,12 @@ class LoRATrainerGUI:
             self._repair_stop_wav()
             self._repair_song_file ^= 1          # alternate files: the one just stopped may still be held
             path = os.path.join(tempfile.gettempdir(), f"fizgig_song_{self._repair_song_file}.wav")
-            write_wav(path, wav[:, int(pos * self._SONG_RATE):], sample_rate=self._SONG_RATE)
-            # from the top with Loop on, the player loops the file itself (no gap); from mid-song it plays the
-            # rest and the tick restarts it at the top
-            self._repair_song_looping = self._repair_play_wav(path, loop=self.repair_song_loop_var.get() and pos == 0)
+            loop = self.repair_song_loop_var.get()
+            end = b if loop else dur
+            write_wav(path, wav[:, int(pos * self._SONG_RATE):int(end * self._SONG_RATE)], sample_rate=self._SONG_RATE)
+            # from the loop's start the player loops the file itself (no gap); from mid-way it plays to the loop's
+            # end and the tick restarts it at the start
+            self._repair_song_looping = self._repair_play_wav(path, loop=loop and abs(pos - a) < 1e-6)
         except Exception as e:
             self.repair_status_var.set(f"Could not play the song: {e}")
             return
@@ -24172,9 +24192,45 @@ class LoRATrainerGUI:
         if self._repair_song_t0 is not None:
             self._repair_song_play(self._repair_song_side)
 
-    def _repair_song_seek(self, event):
+    def _repair_song_x_to_t(self, x):
         w = max(1, self._repair_song_bar.winfo_width())
-        pos = max(0.0, min(1.0, event.x / w)) * self._repair_song_duration()
+        return max(0.0, min(1.0, x / w)) * self._repair_song_duration()
+
+    def _repair_song_press(self, event):
+        self._repair_song_drag = [event.x, event.x]
+
+    def _repair_song_drag_to(self, event):
+        if self._repair_song_drag is not None:
+            self._repair_song_drag[1] = event.x
+            self._repair_song_draw()
+
+    def _repair_song_release(self, event):
+        d, self._repair_song_drag = self._repair_song_drag, None
+        if d is None:
+            return
+        if abs(event.x - d[0]) < 5:              # a click: jump there
+            self._repair_song_seek(event)
+            return
+        t0, t1 = sorted((self._repair_song_x_to_t(d[0]), self._repair_song_x_to_t(event.x)))
+        if t1 - t0 < 0.25:
+            self._repair_song_draw()
+            return
+        self._repair_song_set_region((t0, t1))
+
+    def _repair_song_set_region(self, region):
+        """The section Loop repeats (None = the whole song). Setting one ticks Loop; a playing song jumps into it."""
+        self._repair_song_region = region
+        if region:
+            self.repair_song_loop_var.set(True)
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side, at=region[0] if region else None)
+        else:
+            if region:
+                self._repair_song_pos = region[0]
+            self._repair_song_draw()
+
+    def _repair_song_seek(self, event):
+        pos = self._repair_song_x_to_t(event.x)
         if self._repair_song_t0 is not None:
             self._repair_song_play(self._repair_song_side, at=pos)
         else:
@@ -24191,9 +24247,11 @@ class LoRATrainerGUI:
     def _repair_song_tick(self):
         if self._repair_song_t0 is None:
             return
-        if not self._repair_song_looping and self._repair_song_now() >= self._repair_song_duration():
+        a, b = self._repair_song_span()
+        end = b if self.repair_song_loop_var.get() else self._repair_song_duration()
+        if not self._repair_song_looping and self._repair_song_now() >= end:
             if self.repair_song_loop_var.get():
-                self._repair_song_play(self._repair_song_side, at=0.0)  # Loop: again from the top
+                self._repair_song_play(self._repair_song_side, at=a)    # Loop: again from the start
                 return
             self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
             self._repair_song_mark()
@@ -24211,6 +24269,16 @@ class LoRATrainerGUI:
         now = min(self._repair_song_now(), dur) if dur else 0.0
         if dur:
             bar.create_rectangle(0, 0, int(w * now / dur), h, fill=COLORS["accent"], width=0)
+            r = self._repair_song_region
+            drag = getattr(self, "_repair_song_drag", None)
+            if drag is not None and abs(drag[1] - drag[0]) >= 5:
+                x0, x1 = sorted(drag)
+                bar.create_rectangle(x0, 1, x1, h - 1, outline=COLORS["queue_blue"], width=2)
+            elif r:
+                x0, x1 = int(w * r[0] / dur), int(w * min(r[1], dur) / dur)
+                live = self.repair_song_loop_var.get()
+                bar.create_rectangle(x0, 1, x1, h - 1, outline=COLORS["queue_blue"] if live else COLORS["text_muted"],
+                                     width=2, dash=() if live else (3, 2))
 
         def fmt(t):
             return f"{int(t) // 60}:{int(t) % 60:02d}"
@@ -24238,9 +24306,13 @@ class LoRATrainerGUI:
         for side, song in songs.items():
             if song is not None:
                 self._repair_songs[side] = song.wave
+        r = self._repair_song_region
+        if r and r[0] >= self._repair_song_duration() - 0.25:
+            self._repair_song_region = None             # a shorter Length: the section is past the end
         playing = self._repair_song_t0 is not None
         if "tweaked" in songs and songs["tweaked"] is not None and self.repair_song_restart_var.get():
-            self._repair_song_play("tweaked", at=0.0)    # Restart on tweak: hear the new version from the top
+            # Restart on tweak: hear the new version from the top (of the loop section, when one is set)
+            self._repair_song_play("tweaked", at=self._repair_song_span()[0])
         elif playing and self._repair_song_side in songs:
             self._repair_song_play(self._repair_song_side)
         else:
