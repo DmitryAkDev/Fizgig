@@ -18421,6 +18421,9 @@ class LoRATrainerGUI:
                  "Tick every block's primary enable (strengths kept)."),
                 (self._repair_bulk_row, "Invert", lambda: self._repair_bulk_primary("invert"),
                  "Flip every block's primary enable: on becomes off, off becomes on."),
+                (self._repair_bulk_row, "\U0001f3b2 I'm feeling lucky", self._repair_feeling_lucky,
+                 "A random slider mix within the ranges the model's block map suits; Ctrl+Z goes back to the mix "
+                 "before."),
                 (self._repair_bulk_h3, "Alternate", lambda: self._repair_bulk_primary("alternate"),
                  "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
                  "refiners untouched. Invert for the other half."),
@@ -23624,6 +23627,52 @@ class LoRATrainerGUI:
         # v2 hook
         self.repair_engine.mark_blocks_changed([block_id])
         self._schedule_preview()
+
+    # ----- I'm feeling lucky -------------------------------------------------------------
+    _LUCKY_DEFAULT = ((0, 10 ** 6, 0.4, 1.4, 0.1, 0.0),)
+
+    def _repair_feeling_lucky(self):
+        """A random slider mix for the primary, zone by zone (description.lucky_zones). One undo step."""
+        import random
+        V = getattr(self, "repair_block_vars", {})
+        if not V:
+            return
+        desc = self._repair_desc()
+        zones = (getattr(desc, "lucky_zones", ()) if desc is not None else ()) or self._LUCKY_DEFAULT
+        eng = self.repair_engine
+        live = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
+        order = list(V)
+        offs = inverted = 0
+        changed = []
+        self._repair_master_mutating = True            # one preview at the end
+        try:
+            for i, bid in enumerate(order):
+                if live and bid not in live:
+                    continue                           # a block the LoRA doesn't touch stays as it is
+                z = next((z for z in zones if z[0] <= i <= z[1]), None)
+                if z is None:
+                    continue
+                _, _, lo, hi, p_off, p_inv = z
+                on, x = True, round(random.uniform(lo, hi) / 0.05) * 0.05
+                roll = random.random()
+                if roll < p_off:
+                    on, x, offs = False, 1.0, offs + 1
+                elif roll < p_off + p_inv:
+                    x, inverted = -round(random.uniform(0.3, 1.5) / 0.05) * 0.05, inverted + 1
+                V[bid]["primary_enabled"].set(on)
+                V[bid]["primary_strength"].set(round(x, 2))
+                changed.append(bid)
+        finally:
+            self._repair_master_mutating = False
+        try:
+            self._on_master_target_changed()
+        except Exception:
+            pass
+        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled, {offs} off, {inverted} inverted "
+                                   "(Ctrl+Z for the mix before; Save Preset… to keep it).")
+        if changed and eng is not None and getattr(eng, "primary_network", None) is not None:
+            eng.mark_blocks_changed(changed)
+            self._schedule_preview(force=True)
 
     # ----- undo (block sliders) -----------------------------------------------------------
     # One step per settled change: a drag, a quick-set button, a master slider move or a preset load each record the

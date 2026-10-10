@@ -444,6 +444,10 @@ class FamilyDescription:
     clip_regimes: tuple = ()
     # Repair Studio built-ins beyond Reset All: (name, ((block id, strength), ...)) - every other block at 1.0
     repair_presets: tuple = ()
+    # Repair Studio's "I'm feeling lucky" (a random slider mix): ((first, last, low, high, p_off, p_invert), ...) over
+    # block positions in the block map - each block in a zone gets a strength in [low, high], is switched off with
+    # chance p_off or inverted with chance p_invert. () = one gentle zone over every block
+    lucky_zones: tuple = ()
     # what each block carries, measured with the Profiler: ((block id, category), ...), category one of
     # "identity" / "look" / "style_ident_overlap" (Repair Studio's colours). Unlisted blocks stay uncoloured.
     block_categories: tuple = ()
