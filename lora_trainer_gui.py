@@ -19294,6 +19294,16 @@ class LoRATrainerGUI:
         self._repair_src_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
         ToolTip(self._repair_src_rec_btn, "Record from your microphone (the one picked in Gizmo's settings) for the "
                                           "Length setting, then use the take as the source.")
+        ttk.Label(src_ctl, text="Use:").pack(side=tk.LEFT)
+        self.repair_src_mode_var = tk.StringVar(value=self._SRC_MODES[0][1])
+        _mode = ttk.Combobox(src_ctl, textvariable=self.repair_src_mode_var, state="readonly", width=24,
+                             values=[l for _, l in self._SRC_MODES])
+        _mode.pack(side=tk.LEFT, padx=(4, 0))
+        _mode.bind("<<ComboboxSelected>>", lambda e: self._repair_src_toggled())
+        ToolTip(_mode, "Whole song: the render follows the song and/or starts from its sound (Follow, Denoise).\n"
+                       "Repaint the loop section: only the section you drag across the waveform is made new - "
+                       "the rest of the song stays exactly as it is.\n"
+                       "Extend to the Length: the song carries on past its end, up to the Length setting.")
         r += 1
         src_amt = ttk.Frame(parent)
         src_amt.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
@@ -19317,7 +19327,20 @@ class LoRATrainerGUI:
                          "Denoise: start from the song's actual sound with noise added, running only the rest of "
                          "the steps. Lower keeps more of the real recording; 1.0 = start from noise.\n"
                          "They work together or alone. Any audio or video file works.")
-        self._repair_src_rows = (self._repair_src_label, self._repair_src_entry, src_ctl, src_amt)
+        rep_amt = ttk.Frame(parent)
+        rep_amt.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+        ttk.Label(rep_amt, text="Strength").pack(side=tk.LEFT)
+        self.repair_src_strength_var = tk.DoubleVar(value=0.5)
+        ttk.Scale(rep_amt, from_=0.0, to=1.0, orient=tk.HORIZONTAL, length=120,
+                  variable=self.repair_src_strength_var, command=lambda v: self._repair_src_changed()).pack(
+            side=tk.LEFT, padx=4)
+        self.repair_src_rep_readout = tk.StringVar(value="")
+        ttk.Label(rep_amt, textvariable=self.repair_src_rep_readout).pack(side=tk.LEFT)
+        ToolTip(rep_amt, "How freely the new section is made. Lower holds it closer to the song around it and blends "
+                         "the joins more gently; higher lets it go its own way, with shorter joins. 0.5 is "
+                         "ACE-Step's default. Outside the section you always hear the song exactly as it was.")
+        self._repair_src_amt, self._repair_src_rep_amt = src_amt, rep_amt
+        self._repair_src_rows = (self._repair_src_label, self._repair_src_entry, src_ctl, src_amt, rep_amt)
         r += 1
         self._repair_sound_label = ttk.Label(parent, text="Sound like:")
         self._repair_sound_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
@@ -23816,10 +23839,14 @@ class LoRATrainerGUI:
             return
         ok = self._repair_src_supported()
         self._repair_src_tick_frame.grid() if ok else self._repair_src_tick_frame.grid_remove()
+        whole = self._repair_src_mode() == "song"
         for rows, var in ((self._repair_src_rows, self.repair_src_on_var),
                           (self._repair_sound_rows, self.repair_sound_on_var)):
             show = ok and var.get()
             for w in rows:
+                if w is self._repair_src_amt and not whole or w is self._repair_src_rep_amt and whole:
+                    w.grid_remove()
+                    continue
                 w.grid() if show else w.grid_remove()
         self._repair_src_push()
 
@@ -23841,20 +23868,75 @@ class LoRATrainerGUI:
     def _repair_snap(v):
         return round(float(v) / 0.05) * 0.05
 
+    _SRC_MODES = (("song", "Whole song"), ("repaint", "Repaint the loop section"), ("extend", "Extend to the Length"))
+
+    def _repair_src_mode(self):
+        var = getattr(self, "repair_src_mode_var", None)
+        label = var.get() if var is not None else ""
+        return next((k for k, l in self._SRC_MODES if l == label), "song")
+
+    def _repair_src_seconds(self, path):
+        """The source song's length in seconds (cached per file), or None when it cannot be read."""
+        try:
+            stamp = (path, os.path.getsize(path), int(os.path.getmtime(path)))
+        except OSError:
+            return None
+        c = getattr(self, "_repair_src_len_cache", None)
+        if c is None or c[0] != stamp:
+            try:
+                from fizgig.acestep.driver import audio_seconds
+                c = (stamp, float(audio_seconds(path)))
+            except Exception:
+                c = (stamp, None)
+            self._repair_src_len_cache = c
+        return c[1]
+
+    def _repair_src_length(self):
+        try:
+            return float(self.repair_res_var.get() or 30)
+        except (TypeError, ValueError):
+            return 30.0
+
     def _repair_src_effective(self):
-        """(source path, denoise, follow, reference path) the engine renders with; None for a path not in use."""
+        """(source path, denoise, follow, reference path, repaint section (start, end) s, repaint strength) the
+        engine renders with; None for a path or section not in use."""
         ok = self._repair_src_supported()
         path = self.repair_src_path_var.get().strip()
         d, f = self._repair_snap(self.repair_src_denoise_var.get()), self._repair_snap(self.repair_src_follow_var.get())
-        if not (ok and self.repair_src_on_var.get() and path and os.path.isfile(path)) or (d >= 1.0 and f <= 0.0):
-            path, d, f = None, 1.0, 0.0
+        mode, rp = self._repair_src_mode(), None
+        s = self._repair_snap(self.repair_src_strength_var.get())
+        live = bool(ok and self.repair_src_on_var.get() and path and os.path.isfile(path))
+        if live and mode == "repaint":
+            r = getattr(self, "_repair_song_region", None)
+            rp = (round(r[0], 2), round(r[1], 2)) if r else None
+        elif live and mode == "extend":
+            dur, length = self._repair_src_seconds(path), self._repair_src_length()
+            rp = (round(dur, 2), length) if dur is not None and dur < length - 0.25 else None
+        if mode != "song":
+            d, f = 1.0, 0.0
+            live = live and rp is not None
+        elif d >= 1.0 and f <= 0.0:
+            live = False
+        if not live:
+            path, d, f, rp = None, 1.0, 0.0, None
         ref = self.repair_sound_path_var.get().strip()
         if not (ok and self.repair_sound_on_var.get() and ref and os.path.isfile(ref)):
             ref = None
-        return path, d, f, ref
+        return path, d, f, ref, rp, s
 
     def _repair_src_push(self):
-        path, d, f, ref = self._repair_src_effective()
+        path, d, f, ref, rp, rs = self._repair_src_effective()
+        mode = self._repair_src_mode()
+        rtxt = f"{rs:.2f}"
+        if rp is not None:
+            rtxt += f" - remakes {rp[0]:.1f}\u2013{rp[1]:.1f} s, keeps the rest"
+        elif mode == "repaint":
+            rtxt += " - drag across the waveform to choose the section"
+        elif mode == "extend":
+            dur = self._repair_src_seconds(self.repair_src_path_var.get().strip())
+            rtxt += (" - pick a song" if dur is None else
+                     f" - set Length above the song's {dur:.0f} s to extend it")
+        self.repair_src_rep_readout.set(rtxt)
         shown, fshown = self._repair_snap(self.repair_src_denoise_var.get()), self._repair_snap(
             self.repair_src_follow_var.get())
         txt, ftxt = f"{shown:.2f}", f"{fshown:.2f}"
@@ -23877,6 +23959,7 @@ class LoRATrainerGUI:
         self.repair_src_follow_readout.set(ftxt)
         if eng is not None and hasattr(eng, "source_path"):
             eng.source_path, eng.source_denoise, eng.source_follow = path, d, f
+            eng.source_repaint, eng.repaint_strength = rp, rs
             eng.reference_path = ref
 
     def _repair_src_changed(self, path=False):
@@ -25108,6 +25191,8 @@ class LoRATrainerGUI:
         row.grid(row=10, column=0, columnspan=2, sticky=tk.EW, pady=(2, 8))
         row.grid_remove()
         self._repair_audio_row = row
+        outer, row = row, tk.Frame(row, bg=COLORS["bg_surface"])     # the buttons; the waveform strip below them
+        row.pack(side=tk.TOP, fill=tk.X)
         self._repair_songs = {}              # side -> waveform (2, n) at 48 kHz
         self._repair_song_side = None        # the side being heard (or paused on)
         self._repair_song_pos = 0.0          # seconds into the song where the current play started
@@ -25142,9 +25227,17 @@ class LoRATrainerGUI:
         tk.Button(row, text="💾 Save Tweaked WAV", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
                   fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
                   activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
-                  command=self._repair_song_save).pack(side=tk.LEFT, padx=(4, 12))
-        bar = tk.Canvas(row, height=18, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
-        bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+                  command=self._repair_song_save).pack(side=tk.LEFT, padx=(4, 4))
+        keep = tk.Button(row, text="\u2935 Use as source", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
+                         fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                         activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4,
+                         cursor="hand2", command=self._repair_song_keep)
+        keep.pack(side=tk.LEFT, padx=(4, 12))
+        ToolTip(keep, "Make the Tweaked song the song to start from, set to Repaint: drag across the waveform to "
+                      "choose a section to make new (the rest stays exactly as it is), or switch Use to Extend.")
+        # the song being heard (or last heard), full width: a moving playhead; click = jump, drag = the section
+        bar = tk.Canvas(outer, height=72, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
+        bar.pack(side=tk.TOP, fill=tk.X, expand=True, padx=(4, 8), pady=(6, 0))
         # click = jump; drag = the section to loop; right-click = loop the whole song again
         bar.bind("<ButtonPress-1>", self._repair_song_press)
         bar.bind("<B1-Motion>", self._repair_song_drag_to)
@@ -25167,8 +25260,8 @@ class LoRATrainerGUI:
             self._repair_res_label.configure(text="Length (s):")
             self._repair_res_combo.configure(values=["10", "20", "30", "60", "120"])
             self._repair_preview_hint.configure(text="\u25b6 Play either side; switching keeps your place in the song. "
-                                                     "Click the bar to jump; drag across it to loop a section "
-                                                     "(right-click: the whole song).")
+                                                     "Click the waveform to jump; drag across it to loop a "
+                                                     "section (right-click: the whole song).")
             for h in (self.repair_base_holder, self.repair_tweaked_holder):
                 h.configure(height=200)
         else:
@@ -25185,7 +25278,7 @@ class LoRATrainerGUI:
         self._repair_song_draw()
 
     def _repair_song_duration(self, side=None):
-        wav = self._repair_songs.get(side or self._repair_song_side or "baseline")
+        wav = self._repair_songs.get(side or self._repair_song_strip_side() or "baseline")
         return 0.0 if wav is None else wav.shape[1] / self._SONG_RATE
 
     def _repair_song_span(self):
@@ -25310,6 +25403,8 @@ class LoRATrainerGUI:
         self._repair_song_region = region
         if region:
             self.repair_song_loop_var.set(True)
+        if self._repair_src_mode() == "repaint" and self.repair_src_on_var.get():
+            self._repair_src_changed()                  # Repaint the loop section: the new section renders
         if self._repair_song_t0 is not None:
             self._repair_song_play(self._repair_song_side, at=region[0] if region else None)
         else:
@@ -25356,7 +25451,16 @@ class LoRATrainerGUI:
         dur = self._repair_song_duration()
         now = min(self._repair_song_now(), dur) if dur else 0.0
         if dur:
-            bar.create_rectangle(0, 0, int(w * now / dur), h, fill=COLORS["accent"], width=0)
+            x = int(w * now / dur)
+            imgs = self._repair_song_strip_images(w, h)
+            if imgs is not None:
+                dim, bright = imgs
+                bar.create_image(0, 0, image=dim, anchor=tk.NW)
+                if x > 0:
+                    from PIL import ImageTk
+                    self._repair_song_strip_played = ImageTk.PhotoImage(bright.crop((0, 0, x, h)))
+                    bar.create_image(0, 0, image=self._repair_song_strip_played, anchor=tk.NW)
+            bar.create_line(x, 0, x, h, fill=COLORS["accent"], width=2)
             r = self._repair_song_region
             drag = getattr(self, "_repair_song_drag", None)
             if drag is not None and abs(drag[1] - drag[0]) >= 5:
@@ -25371,6 +25475,68 @@ class LoRATrainerGUI:
         def fmt(t):
             return f"{int(t) // 60}:{int(t) % 60:02d}"
         self.repair_song_time_var.set(f"{fmt(now)} / {fmt(dur)}")
+
+    def _repair_song_strip_side(self):
+        side = self._repair_song_side
+        if side in self._repair_songs:
+            return side
+        return next((s for s in ("tweaked", "baseline", "nolora") if s in self._repair_songs), None)
+
+    def _repair_song_strip_images(self, w, h):
+        """The waveform of the song being heard at the strip's size: (dim PhotoImage, bright PIL image for the part
+        already played), cached per song and size."""
+        side = self._repair_song_strip_side()
+        if side is None or w < 4 or h < 4:
+            return None
+        wav = self._repair_songs[side]
+        key = (id(wav), tuple(wav.shape), w, h)
+        c = getattr(self, "_repair_song_strip_cache", None)
+        if c is not None and c[0] == key:
+            return c[1], c[2]
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageTk
+        a = np.abs(np.asarray(wav.float().mean(0) if hasattr(wav, "float") else wav.mean(0), dtype=np.float32))
+        n = max(1, a.shape[0] // w)
+        cols = a[:n * w].reshape(w, n) if a.shape[0] >= w else np.resize(a, (w, 1))
+        peak = max(1e-6, float(cols.max()))
+        pk, rms = cols.max(1) / peak, np.sqrt((cols ** 2).mean(1)) / peak
+        rgb = tuple(v // 257 for v in self.master.winfo_rgb(COLORS["bg_deep"]))
+        mid = h / 2
+
+        def draw(c_peak, c_rms):
+            img = Image.new("RGB", (w, h), rgb)
+            d = ImageDraw.Draw(img)
+            for x in range(w):
+                d.line([(x, mid - pk[x] * mid * 0.92), (x, mid + pk[x] * mid * 0.92)], fill=c_peak)
+                d.line([(x, mid - rms[x] * mid * 0.92), (x, mid + rms[x] * mid * 0.92)], fill=c_rms)
+            return img
+        dim = ImageTk.PhotoImage(draw((52, 62, 82), (82, 98, 124)))
+        bright = draw((70, 110, 170), (140, 190, 250))
+        self._repair_song_strip_cache = (key, dim, bright)
+        return dim, bright
+
+    def _repair_song_keep(self):
+        """The Tweaked song becomes the song to start from (a take file), set to Repaint the loop section."""
+        wav = self._repair_songs.get("tweaked")
+        if wav is None:
+            self.repair_status_var.set("Nothing to use yet: the Tweaked song renders after the first preview.")
+            return
+        import tempfile
+        try:
+            from fizgig.minimax.common import write_wav
+            path = os.path.join(tempfile.gettempdir(), f"fizgig_take_{int(time.time() * 1000)}.wav")
+            write_wav(path, wav, sample_rate=self._SONG_RATE)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not keep the song: {e}")
+            return
+        if self._repair_src_mode() == "song":
+            self.repair_src_mode_var.set(dict(self._SRC_MODES)["repaint"])
+        self.repair_src_on_var.set(True)
+        self._repair_src_toggled()
+        self.repair_src_path_var.set(path)
+        self.repair_status_var.set("The Tweaked song is now the source: drag across the waveform to choose the "
+                                   "section to repaint" + (", then press Update." if not self._repair_song_region
+                                                           else " (or keep this one), then press Update."))
 
     def _repair_song_worker(self, snapshot):
         """Worker thread: the Baseline and Tweaked songs at the Length setting (the snapshot's preview width,

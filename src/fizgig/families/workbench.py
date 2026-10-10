@@ -196,6 +196,8 @@ class WorkbenchEngine:
         self.source_path = None
         self.source_denoise = 1.0
         self.source_follow = 0.0
+        self.source_repaint = None          # (start, end) seconds: remake only that section of the source (repaint;
+        self.repaint_strength = 0.5         # past its end = extend), the rest kept; the handler's balanced strength
         self._source_cache = {}
         self.reference_path = None
         self._reference_cache = {}
@@ -689,7 +691,8 @@ class WorkbenchEngine:
         return (self.prompt_b, round(float(self.prompt_blend or 0), 4)) if self._prompt_b_live() else None
 
     def _source_live(self):
-        return bool(self.source_path and (float(self.source_denoise) < 1.0 or float(self.source_follow or 0) > 0)
+        return bool(self.source_path and (float(self.source_denoise) < 1.0 or float(self.source_follow or 0) > 0
+                                          or self.source_repaint is not None)
                     and getattr(self.driver, "supports_audio_source", False))
 
     @staticmethod
@@ -702,8 +705,11 @@ class WorkbenchEngine:
     def _source_key(self):
         if not self._source_live():
             return None
+        rp = self.source_repaint
         return (self.source_path, self._file_stamp(self.source_path), round(float(self.source_denoise), 4),
-                round(float(self.source_follow or 0), 4))
+                round(float(self.source_follow or 0), 4),
+                None if rp is None else (round(float(rp[0]), 3), round(float(rp[1]), 3),
+                                         round(float(self.repaint_strength), 4)))
 
     def _source_latent(self, seconds):
         key = (self._source_key()[:2], round(float(seconds), 3))
@@ -712,10 +718,19 @@ class WorkbenchEngine:
                 self.vae.to(self.device)
             try:
                 self._source_cache = {key: self.driver.encode_source(self.vae, self.source_path, seconds)}
+                self._source_wave = None
             finally:
                 if self.lowmem:
                     self.vae.to("cpu")
         return self._source_cache[key]
+
+    def _source_wave_at(self, seconds):
+        """The source's own waveform at the render's length (a repaint's splice), torch (2, n), cached."""
+        key = (self._source_key()[:2], round(float(seconds), 3))
+        if getattr(self, "_source_wave", None) is None or self._source_wave[0] != key:
+            import torch as _t
+            self._source_wave = (key, _t.from_numpy(self.driver.source_wave(self.source_path, seconds)))
+        return self._source_wave[1]
 
     def _reference_live(self):
         return bool(self.reference_path and getattr(self.driver, "supports_audio_source", False))
@@ -781,6 +796,9 @@ class WorkbenchEngine:
                                             **({"source": source, "denoise": float(self.source_denoise),
                                                 "follow": float(self.source_follow or 0)}
                                                if source is not None else {}),
+                                            **({"repaint": tuple(self.source_repaint),
+                                                "repaint_strength": float(self.repaint_strength)}
+                                               if source is not None and self.source_repaint is not None else {}),
                                             **({"refer": refer} if refer is not None else {}),
                                             **({"refs": [r.to(self.device) for r in refs]} if refs else {}))
         if act is None:
@@ -802,13 +820,18 @@ class WorkbenchEngine:
             self.vae.to(self.device)
         try:
             try:
-                return self.driver.decode(self.vae, lat, width, height)
+                out = self.driver.decode(self.vae, lat, width, height)
             except torch.OutOfMemoryError:
                 if self._act is None or not self._act.out:
                     raise
                 logger.warning("Turbo Preview: out of memory decoding beside the cache - cache dropped")
                 self._invalidate_activation_cache()
-                return self.driver.decode(self.vae, lat, width, height)
+                out = self.driver.decode(self.vae, lat, width, height)
+            if source is not None and self.source_repaint is not None:
+                # the handler's waveform splice: outside the section, the source's own audio
+                out.wave = self.driver.splice_source(out.wave, self._source_wave_at(width), self.source_repaint,
+                                                     self.repaint_strength)
+            return out
         finally:
             if self.lowmem:
                 self.vae.to("cpu")

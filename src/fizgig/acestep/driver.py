@@ -39,6 +39,7 @@ REFER_FRAMES = 750                                 # the handler's timbre refere
 TEXT_TOKENS, LYRIC_TOKENS = 256, 2048              # the handler's truncation
 INSTRUCTION = "Fill the audio semantic mask based on the given conditions:"   # text2music (constants.py)
 COVER_INSTRUCTION = "Generate audio semantic tokens based on the given conditions:"   # cover (constants.py)
+REPAINT_INSTRUCTION = "Repaint the mask area based on the given conditions:"         # repaint (constants.py)
 REFER_SEGMENT = 10                                 # the handler's reference: three 10 s pieces, front / middle / back
 TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 SFT_STEPS, SFT_SHIFT, SFT_GUIDANCE = 30, 1.0, 7.0          # acestep-v15-xl-sft generate_audio defaults
@@ -160,13 +161,16 @@ class _TextEncoder:
         return self.model(input_ids=c.to(self.device)).last_hidden_state[0].to(DTYPE).cpu()
 
     @torch.no_grad()
-    def encode(self, caption_text, lyric_text, cover_text=None):
-        """-> {"text", "lyrics"} (+ "text_cover": the caption under the cover instruction, when given)."""
+    def encode(self, caption_text, lyric_text, cover_text=None, repaint_text=None):
+        """-> {"text", "lyrics"} (+ "text_cover" / "text_repaint": the caption under the cover / repaint
+        instruction, when given)."""
         ly = self.tok(lyric_text, truncation=True, max_length=LYRIC_TOKENS, return_tensors="pt").input_ids
         lyrics = self.model.embed_tokens(ly.to(self.device))[0]
         out = {"text": self._text(caption_text), "lyrics": lyrics.to(DTYPE).cpu()}
         if cover_text is not None:
             out["text_cover"] = self._text(cover_text)
+        if repaint_text is not None:
+            out["text_repaint"] = self._text(repaint_text)
         return out
 
     def unload(self):
@@ -299,7 +303,8 @@ class AceStepDriver(FamilyDriver):
         """Sample prompts ("<caption> | <lyrics>"), at the preview length."""
         seconds = self._preview_seconds()
         return [te.encode(caption_prompt(c, seconds), lyrics_prompt(ly),
-                          caption_prompt(c, seconds, instruction=COVER_INSTRUCTION))
+                          caption_prompt(c, seconds, instruction=COVER_INSTRUCTION),
+                          caption_prompt(c, seconds, instruction=REPAINT_INSTRUCTION))
                 for c, ly in map(parse_prompt, captions)]
 
     def _preview_seconds(self):
@@ -404,16 +409,56 @@ class AceStepDriver(FamilyDriver):
         lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
         return lat[:, :REFER_FRAMES].cpu()
 
-    @torch.no_grad()
-    def encode_source(self, vae, path, seconds):
-        """Any audio (or video) file -> its latent (1, T, 64) at the render's length: the first `seconds`, padded
-        with silence when shorter. The posterior's mean, so the same file always gives the same start."""
-        from fizgig.acestep import vae as V
+    @staticmethod
+    def source_wave(path, seconds):
+        """The source song as a render uses it: the first `seconds` at 48 kHz, (2, n), zero-padded when shorter."""
         wav = read_audio(path, seconds)
         n = int(round(float(seconds) * 48000))
         if wav.shape[1] < n:
             wav = np.pad(wav, ((0, 0), (0, n - wav.shape[1])))
-        x = torch.from_numpy(wav[:, :n].copy()).to(vae.device, vae.dtype)[None]
+        return np.ascontiguousarray(wav[:, :n])
+
+    @staticmethod
+    def repaint_frames(region, frames):
+        """(start, end) seconds -> the official latent span [a, b): int(sec * 48000 // 1920), clamped, b > a."""
+        a = max(0, min(int(float(region[0]) * 48000 // 1920), frames - 1))
+        return a, max(a + 1, min(int(float(region[1]) * 48000 // 1920), frames))
+
+    @staticmethod
+    def repaint_config(strength):
+        """The handler's balanced mode (_resolve_repaint_config): strength s -> (the share of the steps that hold
+        the rest of the song to the source, latent crossfade frames, waveform crossfade seconds)."""
+        inv = 1.0 - min(max(float(strength), 0.0), 1.0)
+        return inv, round(25 * inv), 0.05 * inv
+
+    @staticmethod
+    def splice_source(wave, source_wave, region, strength):
+        """apply_repaint_waveform_splice: the source's own waveform outside the repainted section (no VAE round
+        trip there), a linear crossfade at its edges. wave / source_wave (2, n) torch at 48 kHz."""
+        n = min(wave.shape[-1], source_wave.shape[-1])
+        a = max(0, min(int(float(region[0]) * 48000), n))
+        b = max(a, min(int(float(region[1]) * 48000), n))
+        if a == 0 and b >= n:
+            return wave
+        cf = int(AceStepDriver.repaint_config(strength)[2] * 48000)
+        m = torch.zeros(n)
+        m[a:b] = 1.0
+        if cf > 0:
+            lo = max(a - cf, 0)
+            if a - lo > 0:
+                m[lo:a] = torch.linspace(0.0, 1.0, a - lo + 2)[1:-1]
+            hi = min(b + cf, n)
+            if hi - b > 0:
+                m[b:hi] = torch.linspace(1.0, 0.0, hi - b + 2)[1:-1]
+        src = source_wave[:, :n].to(wave.dtype)
+        out = m * wave[:, :n] + (1.0 - m) * src
+        return torch.cat([out, wave[:, n:]], dim=-1) if wave.shape[-1] > n else out
+
+    @torch.no_grad()
+    def encode_source(self, vae, path, seconds):
+        """Any audio (or video) file -> its latent (1, T, 64) at the render's length: the first `seconds`, padded
+        with silence when shorter. The posterior's mean, so the same file always gives the same start."""
+        x = torch.from_numpy(self.source_wave(path, seconds)).to(vae.device, vae.dtype)[None]
         lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
         frames = self._frames()
         if lat.shape[1] < frames:
@@ -441,14 +486,18 @@ class AceStepDriver(FamilyDriver):
     @torch.no_grad()
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None, cond_b=None, prompt_blend=0.0, source=None, denoise=1.0,
-                 follow=0.0, refer=None, **_ignored):
+                 follow=0.0, refer=None, repaint=None, repaint_strength=0.5, **_ignored):
         """cond_b + prompt_blend w: every step runs the model with both prompts and mixes the predictions,
         (1 - w) * A + w * B (guided SFT: each guided on its own, then mixed) - exact at w 0 (A) and 1 (B), any prompt
         lengths. source + denoise d (audio to audio): the render starts from the source latent noised to the first
         timestep at or below d, and runs only the steps from there (d 1 = from pure noise, as without a source).
         follow f (the official cover, audio_cover_strength): the first int(steps * f) of the steps run follow the
         source's melody guide (its 5 Hz codes, CoverGuide) under the cover instruction, the rest are text to music.
-        refer: a reference song's latents for the timbre encoder (sound like), every step."""
+        refer: a reference song's latents for the timbre encoder (sound like), every step.
+        repaint (start, end) seconds (the official repaint; past the source's end = extend): only that section is
+        made new, from noise, under the repaint instruction; the rest of the song is the source's, held to it
+        (noised to each step's level) for the first share of the steps, its edges crossfaded in the latent
+        (repaint_strength: the handler's balanced mode, 0.5 its default). denoise and follow do not apply."""
         device = next(dit.parameters()).device
         w = min(max(float(prompt_blend or 0.0), 0.0), 1.0) if cond_b is not None else 0.0
         if w >= 1.0:
@@ -456,6 +505,18 @@ class AceStepDriver(FamilyDriver):
         x = (self.initial_noise(seed) if noise is None else noise).to(device).float()
         guided = self.sft
         ts = self.schedule(steps, sigmas, options)
+        rp = None
+        if source is not None and repaint is not None:
+            clean = source.to(device).float()
+            a, b = self.repaint_frames(repaint, clean.shape[1])
+            mask = torch.zeros(clean.shape[1], dtype=torch.bool, device=device)
+            mask[a:b] = True
+            src = clean.clone()
+            src[:, a:b] = self._context(clean.shape[1], device)[:, a:b, :64].float()   # the tiled silence latent
+            inj, cf, _ = self.repaint_config(repaint_strength)
+            rp = (clean, mask, torch.cat([src, mask[None, :, None].float().expand_as(src)], -1).to(DTYPE),
+                  round(inj * len(ts)), cf, mask[None, :, None].expand_as(clean), x.clone())
+            denoise, follow = 1.0, 0.0
         if source is not None and float(denoise) < 1.0:
             src = source.to(device).float()
             t0 = self.source_start(ts, denoise)
@@ -468,12 +529,14 @@ class AceStepDriver(FamilyDriver):
         cover_steps = int((len(ts) - 1) * f)
 
         def stage(cover):
-            if cover:
+            if rp is not None:
+                ctx = rp[2]
+            elif cover:
                 hint = self.cover_guide(device)(source.to(device, DTYPE), self.silence.to(device, DTYPE))
                 ctx = torch.cat([hint, torch.ones_like(hint)], dim=-1)
             else:
                 ctx = self._context(x.shape[1], device)
-            key = "text_cover" if cover else "text"
+            key = "text_repaint" if rp is not None else "text_cover" if cover else "text"
             ps = [self._condition(dit, cond, x.shape[1], device, refer, key)]
             if w > 0.0:
                 ps.append(self._condition(dit, cond_b, x.shape[1], device, refer, key))
@@ -498,7 +561,29 @@ class AceStepDriver(FamilyDriver):
                 vs.append(apg(v[:1], v[1:], SFT_GUIDANCE, momenta[k]) if guided else v)
             v = vs[0] if len(vs) == 1 else (1.0 - w) * vs[0] + w * vs[1]
             x = x + (ts[i + 1] - ts[i]) * v
+            if rp is not None and i < rp[3] and i < len(ts) - 2:
+                # _repaint_step_injection: the rest of the song back to the source at the next step's noise level
+                tn = ts[i + 1]
+                x = torch.where(rp[5], x, tn * rp[6] + (1.0 - tn) * rp[0])
+        if rp is not None and rp[4] > 0:
+            x = self._repaint_blend(x, rp[0], rp[1], rp[4])
         return x
+
+    @staticmethod
+    def _repaint_blend(x, clean, mask, cf):
+        """_repaint_boundary_blend: the soft mask (1 in the section, linear ramps cf frames into the rest)."""
+        soft = mask.float().clone()
+        idx = torch.nonzero(mask).squeeze(-1)
+        if 0 < idx.numel() < mask.numel():
+            left, right, T = int(idx[0]), int(idx[-1]) + 1, mask.numel()
+            lo = max(left - cf, 0)
+            if left - lo > 0:
+                soft[lo:left] = torch.linspace(0.0, 1.0, left - lo + 2, device=soft.device)[1:-1]
+            hi = min(right + cf, T)
+            if hi - right > 0:
+                soft[right:hi] = torch.linspace(1.0, 0.0, hi - right + 2, device=soft.device)[1:-1]
+        s = soft[None, :, None].expand_as(x)
+        return s * x + (1.0 - s) * clean
 
     @torch.no_grad()
     def decode(self, vae, latents, width=0, height=0):
