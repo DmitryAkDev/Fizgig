@@ -18432,6 +18432,22 @@ class LoRATrainerGUI:
             _b = ttk.Button(_parent, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
+            if _cmd == self._repair_feeling_lucky:
+                # the roll's bounds, right beside the button (remembered per family)
+                _lb = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])
+                _lb.pack(side=tk.LEFT, padx=(0, 10))
+                self.repair_lucky_min_var = tk.StringVar(value=str(self._LUCKY_BOUNDS[0]))
+                self.repair_lucky_max_var = tk.StringVar(value=str(self._LUCKY_BOUNDS[1]))
+                for _t, _v in (("Min", self.repair_lucky_min_var), ("Max", self.repair_lucky_max_var)):
+                    tk.Label(_lb, text=_t, bg=COLORS["bg_surface"], fg=COLORS["text_secondary"],
+                             font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 3))
+                    _sp = ttk.Spinbox(_lb, from_=-3.0, to=3.0, increment=0.1, width=5, textvariable=_v,
+                                      command=self._repair_lucky_bounds_changed)
+                    _sp.pack(side=tk.LEFT, padx=(0, 6))
+                    _sp.bind("<FocusOut>", lambda e: self._repair_lucky_bounds_changed())
+                    _sp.bind("<Return>", lambda e: self._repair_lucky_bounds_changed())
+                ToolTip(_lb, "The lowest and highest strength a lucky roll may give any block (the model's own ranges "
+                             "still shape each band). A Min of 0 or more means nothing is inverted.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
         # five blocks — ● built (hover for the thumb, click to restore that state and see
         # it), ○ still to build.
@@ -18669,6 +18685,7 @@ class LoRATrainerGUI:
                 self._refresh_repair_h3_sound_state()
             else:
                 self._repair_blend_show(True)
+                self._repair_lucky_load_bounds()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(True)          # every family's load-strength boxes (16 Sep 2026)
@@ -19779,6 +19796,7 @@ class LoRATrainerGUI:
         for child in parent.winfo_children():
             child.destroy()
         self.repair_block_vars = {}
+        self._repair_locks = {}                  # block id -> its locked values (a new layout starts unlocked)
         # a new slider layout starts a new undo history
         self._repair_undo_stack, self._repair_redo_stack = [], []
         self._repair_undo_committed = None
@@ -19904,9 +19922,18 @@ class LoRATrainerGUI:
         donor_enabled = tk.BooleanVar(value=True)
         donor_strength = tk.DoubleVar(value=1.0)
 
-        chk_p = ttk.Checkbutton(rowf, variable=primary_enabled,
+        _head = tk.Frame(rowf, bg=COLORS["bg_surface"])
+        _head.grid(row=0, column=0, padx=(2, 4))
+        # the block's lock: a locked block keeps its values against every control (the guard traces below)
+        lock_lbl = tk.Label(_head, text="\U0001f513", bg=COLORS["bg_surface"], fg=COLORS["text_muted"],
+                            cursor="hand2", font=(FONT_FAMILY, self._REPAIR_SMALL_FONT))
+        lock_lbl.pack(side=tk.LEFT, padx=(0, 2))
+        lock_lbl.bind("<Button-1>", lambda e, b=block_id: self._repair_toggle_lock(b))
+        ToolTip(lock_lbl, "Lock this block: its sliders and ticks (primary and donor) can't change - not by hand, "
+                          "the bulk buttons, master sliders, presets, I'm feeling lucky or undo - until you unlock it.")
+        chk_p = ttk.Checkbutton(_head, variable=primary_enabled,
                                 command=lambda b=block_id: self._on_block_changed(b))
-        chk_p.grid(row=0, column=0, padx=(2, 4))
+        chk_p.pack(side=tk.LEFT)
         # Block label (category-coloured for Klein; neutral for Krea 2)
         lbl = tk.Label(rowf, text=lbl_text, fg=color, bg=COLORS["bg_surface"],
                        width=max(10, len(lbl_text) + 1), anchor=tk.W,
@@ -19980,6 +20007,11 @@ class LoRATrainerGUI:
         donor_strength.trace_add("write", _mk_strength_trace(donor_strength, val_lbl_d, block_id, "donor"))
         primary_enabled.trace_add("write", _mk_enabled_trace(primary_enabled, block_id, "primary"))
         donor_enabled.trace_add("write", _mk_enabled_trace(donor_enabled, block_id, "donor"))
+        # The lock guard, added LAST so Tk runs it FIRST (traces fire newest first): a write to a locked block is put
+        # straight back, so the traces above only ever see the locked value - whatever made the write
+        for _key, _var in (("primary_enabled", primary_enabled), ("primary_strength", primary_strength),
+                           ("donor_enabled", donor_enabled), ("donor_strength", donor_strength)):
+            _var.trace_add("write", lambda *_a, k=_key, vv=_var, b=block_id: self._repair_lock_guard(b, k, vv))
 
         self.repair_block_vars[block_id] = {
             # StringVars / BooleanVars
@@ -19992,6 +20024,7 @@ class LoRATrainerGUI:
             "donor_lbl": val_lbl_d,
             # row frames
             "donor_rowf": donor_rowf,
+            "lock_lbl": lock_lbl,
             # widget handles (for _refresh_block_slider_activity greying)
             "chk_p": chk_p,
             "scale_p": scale_p,
@@ -23628,6 +23661,35 @@ class LoRATrainerGUI:
 
     # ----- I'm feeling lucky -------------------------------------------------------------
     _LUCKY_DEFAULT = ((0, 10 ** 6, 0.4, 1.4, 0.1, 0.0),)
+    _LUCKY_BOUNDS = (-1.5, 1.5)
+
+    def _repair_lucky_bounds(self):
+        """(min, max) from the boxes beside the button, within the sliders' -3..3 (defaults when unreadable)."""
+        out = []
+        for var, dflt in ((getattr(self, "repair_lucky_min_var", None), self._LUCKY_BOUNDS[0]),
+                          (getattr(self, "repair_lucky_max_var", None), self._LUCKY_BOUNDS[1])):
+            try:
+                out.append(max(-3.0, min(3.0, float(var.get()))))
+            except (AttributeError, ValueError, tk.TclError):
+                out.append(dflt)
+        return tuple(sorted(out))
+
+    def _repair_lucky_bounds_changed(self):
+        lo, hi = self._repair_lucky_bounds()
+        try:
+            self.last_used.setdefault("repair_lucky_bounds", {})[self.repair_family_var.get()] = [lo, hi]
+            self._save_last_used_paths()
+        except Exception:
+            pass
+
+    def _repair_lucky_load_bounds(self):
+        """The selected family's remembered bounds into the boxes (the defaults when it has none)."""
+        if getattr(self, "repair_lucky_min_var", None) is None:
+            return
+        lo, hi = (self.last_used.get("repair_lucky_bounds", {}) or {}).get(self.repair_family_var.get(),
+                                                                         self._LUCKY_BOUNDS)
+        self.repair_lucky_min_var.set(f"{float(lo):g}")
+        self.repair_lucky_max_var.set(f"{float(hi):g}")
 
     def _repair_feeling_lucky(self):
         """A random slider mix for the primary, zone by zone (description.lucky_zones). One undo step."""
@@ -23640,13 +23702,14 @@ class LoRATrainerGUI:
         eng = self.repair_engine
         live = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
         order = list(V)
+        b_lo, b_hi = self._repair_lucky_bounds()
         offs = inverted = 0
         changed = []
         self._repair_master_mutating = True            # one preview at the end
         try:
             for i, bid in enumerate(order):
-                if live and bid not in live:
-                    continue                           # a block the LoRA doesn't touch stays as it is
+                if (live and bid not in live) or bid in getattr(self, "_repair_locks", {}):
+                    continue                           # untouched by the LoRA, or locked: stays as it is
                 z = next((z for z in zones if z[0] <= i <= z[1]), None)
                 if z is None:
                     continue
@@ -23655,8 +23718,11 @@ class LoRATrainerGUI:
                 roll = random.random()
                 if roll < p_off:
                     on, x, offs = False, 1.0, offs + 1
-                elif roll < p_off + p_inv:
-                    x, inverted = -round(random.uniform(0.3, 1.5) / 0.05) * 0.05, inverted + 1
+                elif roll < p_off + p_inv and b_lo < 0:
+                    x = -round(random.uniform(0.3, 1.5) / 0.05) * 0.05
+                if on:
+                    x = min(max(x, b_lo), b_hi)               # the bounds beside the button
+                    inverted += x < 0
                 V[bid]["primary_enabled"].set(on)
                 V[bid]["primary_strength"].set(round(x, 2))
                 changed.append(bid)
@@ -23666,11 +23732,74 @@ class LoRATrainerGUI:
             self._on_master_target_changed()
         except Exception:
             pass
-        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled, {offs} off, {inverted} inverted "
-                                   "(Ctrl+Z for the mix before; Save Preset… to keep it).")
+        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled within {b_lo:g} to {b_hi:g}, "
+                                   f"{offs} off, {inverted} inverted (Ctrl+Z for the mix before; Save Preset\u2026 "
+                                   "to keep it).")
         if changed and eng is not None and getattr(eng, "primary_network", None) is not None:
             eng.mark_blocks_changed(changed)
             self._schedule_preview(force=True)
+
+    # ----- block locks ---------------------------------------------------------------------
+    # A locked block keeps the values it had when locked. The guard sits on the block's tk variables (the one place
+    # every control writes), so a hand drag, a tick, the quick-set / bulk buttons, a master slider, a preset, a lucky
+    # roll or an undo cannot move it; its widgets grey out as a sign.
+
+    @staticmethod
+    def _repair_lock_norm(key, value):
+        return bool(value) if key.endswith("enabled") else round(float(value), 4)
+
+    def _repair_lock_values(self, bid):
+        v = self.repair_block_vars[bid]
+        return {k: self._repair_lock_norm(k, v[k].get())
+                for k in ("primary_enabled", "primary_strength", "donor_enabled", "donor_strength")}
+
+    def _repair_lock_guard(self, bid, key, var):
+        lk = getattr(self, "_repair_locks", {}).get(bid)
+        if lk is None or getattr(self, "_repair_lock_reverting", False):
+            return
+        try:
+            cur = self._repair_lock_norm(key, var.get())
+        except (tk.TclError, ValueError):
+            cur = None
+        if cur != lk[key]:
+            self._repair_lock_reverting = True
+            try:
+                var.set(lk[key])
+            finally:
+                self._repair_lock_reverting = False
+
+    def _repair_toggle_lock(self, bid):
+        if bid not in self.repair_block_vars:
+            return
+        locks = self.__dict__.setdefault("_repair_locks", {})
+        if bid in locks:
+            del locks[bid]
+        else:
+            locks[bid] = self._repair_lock_values(bid)
+        self._repair_lock_widgets(bid)
+        n = len(locks)
+        self.repair_status_var.set((f"{self._repair_block_display(bid)[0]} locked" if bid in locks else
+                                    f"{self._repair_block_display(bid)[0]} unlocked")
+                                   + (f" ({n} block{'s' if n != 1 else ''} locked)." if n else "."))
+
+    def _repair_lock_widgets(self, bid):
+        """The row's look: 🔒 + greyed controls while locked; unlocking hands the row back to the LoRA-aware greying."""
+        v = self.repair_block_vars.get(bid)
+        if v is None:
+            return
+        locked = bid in getattr(self, "_repair_locks", {})
+        v["lock_lbl"].configure(text="\U0001f512" if locked else "\U0001f513",
+                                fg=COLORS["queue_blue"] if locked else COLORS["text_muted"])
+        if locked:
+            for w in (v["chk_p"], v["scale_p"], v["chk_d"], v["scale_d"]):
+                try:
+                    w.state(["disabled"])
+                except Exception:
+                    pass
+            for btn in v.get("btns_p", []) + v.get("btns_d", []):
+                btn.configure(state="disabled")
+        else:
+            self._refresh_block_slider_activity()
 
     # ----- undo (block sliders) -----------------------------------------------------------
     # One step per settled change: a drag, a quick-set button, a master slider move or a preset load each record the
@@ -23756,7 +23885,7 @@ class LoRATrainerGUI:
         try:
             for bid, (pe, ps, de, ds) in snap.items():
                 v = self.repair_block_vars.get(bid)
-                if v is None:
+                if v is None or bid in getattr(self, "_repair_locks", {}):
                     continue
                 if (bool(v["primary_enabled"].get()), round(float(v["primary_strength"].get()), 4),
                         bool(v["donor_enabled"].get()), round(float(v["donor_strength"].get()), 4)) == (pe, ps, de, ds):
@@ -29435,6 +29564,8 @@ class LoRATrainerGUI:
             d_color = "#888" if d_active else grey_fg
             v["donor_tag_lbl"].configure(foreground=d_color)
             v["donor_lbl"].configure(foreground=d_color if d_active else grey_fg)
+        for block_id in list(getattr(self, "_repair_locks", {})):
+            self._repair_lock_widgets(block_id)
 
     # ---------------- Presets (built-in + user JSON) -----------------
 
