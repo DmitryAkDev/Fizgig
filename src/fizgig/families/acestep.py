@@ -13,13 +13,13 @@ _REPO = "https://github.com/ace-step/ACE-Step-1.5"
 _TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 
 
-def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)"):
+def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=50):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": alpha, "NETWORK_TYPE": kind, "LEARNING_RATE": lr,
-        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 50, "SEED": 42, "ADAPTIVE_LR": False,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": save_every, "SEED": 42, "ADAPTIVE_LR": False,
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 4, "MAX_GRAD_NORM": 1.0,
         "BLOCKS_SWAP": "Auto (detect from GPU)", "FAMILY_PRECISION": "Auto (fits your free VRAM)",
-        "FAMILY_EMA": "Off", "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
+        "FAMILY_EMA": ema, "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": False,
     }
 
@@ -128,6 +128,10 @@ ACESTEP15 = FamilyDescription(
     ),
 
     presets=(
+        # Peter's best by ear so far (10 Oct 2026, fzgfunk + cinematic): alpha BELOW rank (a 0.5 scale, a quarter of
+        # the official 2.0 - steadier, fewer errors), EMA sized to the run; a checkpoint every 5 epochs to pick by ear
+        ("✨ ACE-Step Gentle LoRA (rank 64, alpha 32, EMA)",
+         _preset(64, 32, 1e-4, 40, ema="Short run (window = ¼ of the run)", save_every=5)),
         # the official LoRA defaults: rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4; the tutorial's epochs:
         # 10-20 songs -> 800, ~100 songs -> 500 (LoRA_Training_Tutorial.md). Not yet measured in Fizgig.
         ("✨ ACE-Step Official LoRA (rank 64, 1e-4)", _preset(64, 128, 1e-4, 800)),
