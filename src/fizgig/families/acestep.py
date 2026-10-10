@@ -13,7 +13,7 @@ _REPO = "https://github.com/ace-step/ACE-Step-1.5"
 _TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 
 
-def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=50):
+def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=1):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": alpha, "NETWORK_TYPE": kind, "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": save_every, "SEED": 42, "ADAPTIVE_LR": False,
@@ -122,16 +122,16 @@ ACESTEP15 = FamilyDescription(
             hint="Turbo is what most people generate with. SFT is the non-distilled model: its previews take 30 "
                  "guided steps (slower) and it needs the SFT DiT in Preferences."),
         FamilyOption("ACESTEP_PREVIEW_SECONDS", "Sample length", tab="samples", choices=(
-            ("30 seconds", "preview_seconds=30"), ("60 seconds", "preview_seconds=60"),
-            ("10 seconds", "preview_seconds=10"), ("120 seconds", "preview_seconds=120")),
-            hint="How long each preview song is."),
+            ("10 seconds", "preview_seconds=10"), ("30 seconds", "preview_seconds=30"),
+            ("60 seconds", "preview_seconds=60"), ("120 seconds", "preview_seconds=120")),
+            default="60 seconds", hint="How long each preview song is."),
     ),
 
     presets=(
-        # Peter's best by ear so far (10 Oct 2026, fzgfunk + cinematic): alpha BELOW rank (a 0.5 scale, a quarter of
-        # the official 2.0 - steadier, fewer errors), EMA sized to the run; a checkpoint every 5 epochs to pick by ear
-        ("✨ ACE-Step Gentle LoRA (rank 64, alpha 32, EMA)",
-         _preset(64, 32, 1e-4, 40, ema="Short run (window = ¼ of the run)", save_every=5)),
+        # Peter's best by ear so far (11 Oct 2026, fzgfunk + cinematic): alpha a QUARTER of rank (a 0.25 scale, an eighth of
+        # the official 2.0 - better than 64:32 and still quick), EMA sized to the run
+        ("✨ ACE-Step Gentle LoRA (rank 64, alpha 16, EMA)",
+         _preset(64, 16, 1e-4, 40, ema="Short run (window = ¼ of the run)")),
         # the official LoRA defaults: rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4; the tutorial's epochs:
         # 10-20 songs -> 800, ~100 songs -> 500 (LoRA_Training_Tutorial.md). Not yet measured in Fizgig.
         ("✨ ACE-Step Official LoRA (rank 64, 1e-4)", _preset(64, 128, 1e-4, 800)),

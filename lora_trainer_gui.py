@@ -11483,7 +11483,7 @@ class LoRATrainerGUI:
                     if o.tab == "samples" and not o.setting and o.kind == "choice"]:
             labels = opt.choice_labels()
             val = kept.get(opt.key)
-            val = val if val in labels else labels[0]
+            val = val if val in labels else opt.pick(opt.default)
             self.settings[opt.key] = val
             lab = ttk.Label(card, text=f"{opt.label}:")
             lab.grid(row=r, column=0, sticky=tk.W, padx=(0, 10), pady=4)
