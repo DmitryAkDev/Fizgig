@@ -18308,6 +18308,12 @@ class LoRATrainerGUI:
         # mousewheel hand-off is handled by <Enter>/<Leave> bind_all swapping
         # on each scrollable canvas independently.
         frame = self._build_repair_outer_scroll(self.repair_studio_tab)
+        # Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z): the block sliders' undo history (_repair_undo)
+        self._repair_undo_stack, self._repair_redo_stack = [], []
+        self._repair_undo_committed = None
+        self._repair_undo_after = None
+        for seq, redo in (("<Control-z>", False), ("<Control-y>", True), ("<Control-Z>", True)):
+            self.master.bind_all(seq, lambda e, r=redo: self._repair_undo_key(e, r), add="+")
 
         # Bg_deep container — all cards pack into this.
         outer = tk.Frame(frame, bg=COLORS["bg_deep"])
@@ -19772,6 +19778,10 @@ class LoRATrainerGUI:
         for child in parent.winfo_children():
             child.destroy()
         self.repair_block_vars = {}
+        # a new slider layout starts a new undo history
+        self._repair_undo_stack, self._repair_redo_stack = [], []
+        self._repair_undo_committed = None
+        self.master.after_idle(self._repair_undo_mark_clean)
         if self._repair_is_video():
             self._build_repair_slider_panel_h3(parent)
             return
@@ -23604,6 +23614,7 @@ class LoRATrainerGUI:
         self._schedule_preview(force=True)
 
     def _on_block_changed(self, block_id: str):
+        self._repair_undo_note()
         if self.repair_engine is None or self.repair_engine.primary_network is None:
             return
         # During a master-slider bulk update, skip the per-block preview schedule;
@@ -23613,6 +23624,111 @@ class LoRATrainerGUI:
         # v2 hook
         self.repair_engine.mark_blocks_changed([block_id])
         self._schedule_preview()
+
+    # ----- undo (block sliders) -----------------------------------------------------------
+    # One step per settled change: a drag, a quick-set button, a master slider move or a preset load each record the
+    # sliders once they have been still for _UNDO_SETTLE_MS. Ctrl+Z steps back, Ctrl+Y / Ctrl+Shift+Z forward, while
+    # Repair Studio is the tab on screen and the keyboard is not in a text box.
+    _UNDO_SETTLE_MS = 400
+    _UNDO_DEPTH = 200
+
+    def _repair_undo_snapshot(self):
+        out = {}
+        for bid, v in getattr(self, "repair_block_vars", {}).items():
+            try:
+                out[bid] = (bool(v["primary_enabled"].get()), round(float(v["primary_strength"].get()), 4),
+                            bool(v["donor_enabled"].get()), round(float(v["donor_strength"].get()), 4))
+            except (KeyError, tk.TclError, ValueError):
+                continue
+        return out
+
+    def _repair_undo_mark_clean(self):
+        self._repair_undo_committed = self._repair_undo_snapshot()
+
+    def _repair_undo_note(self):
+        if getattr(self, "_repair_undo_restoring", False):
+            return
+        if self._repair_undo_after is not None:
+            try:
+                self.master.after_cancel(self._repair_undo_after)
+            except Exception:
+                pass
+        self._repair_undo_after = self.master.after(self._UNDO_SETTLE_MS, self._repair_undo_commit)
+
+    def _repair_undo_commit(self):
+        self._repair_undo_after = None
+        cur, prev = self._repair_undo_snapshot(), self._repair_undo_committed
+        if prev is None or set(prev) != set(cur):
+            self._repair_undo_committed = cur          # no history for this layout yet
+            return
+        if cur == prev:
+            return
+        self._repair_undo_stack.append(prev)
+        del self._repair_undo_stack[:-self._UNDO_DEPTH]
+        self._repair_redo_stack.clear()
+        self._repair_undo_committed = cur
+
+    def _repair_undo_key(self, event, redo=False):
+        try:
+            if self.notebook.tab(self.notebook.select(), "text") != "Repair Studio":
+                return None
+            focus = self.master.focus_get()
+        except Exception:
+            return None
+        if focus is not None and focus.winfo_class() in ("Entry", "TEntry", "Text", "TCombobox", "Spinbox",
+                                                         "TSpinbox"):
+            return None                                # typing: the box's own keys
+        self._repair_undo(redo=redo)
+        return "break"
+
+    def _repair_undo(self, redo=False):
+        if self._repair_undo_after is not None:        # a change still settling counts as a step first
+            try:
+                self.master.after_cancel(self._repair_undo_after)
+            except Exception:
+                pass
+            self._repair_undo_commit()
+        src, dst = ((self._repair_redo_stack, self._repair_undo_stack) if redo else
+                    (self._repair_undo_stack, self._repair_redo_stack))
+        if not src:
+            self.repair_status_var.set("Nothing to redo." if redo else "Nothing to undo.")
+            return
+        snap = src.pop()
+        if self._repair_undo_committed is not None:
+            dst.append(self._repair_undo_committed)
+        self._repair_undo_restore(snap)
+        self._repair_undo_committed = snap
+        n = len(self._repair_undo_stack)
+        self.repair_status_var.set(("Redone" if redo else "Undone") + f" ({n} step{'s' if n != 1 else ''} to undo, "
+                                   f"{len(self._repair_redo_stack)} to redo).")
+
+    def _repair_undo_restore(self, snap):
+        changed = []
+        self._repair_undo_restoring = True
+        self._repair_master_mutating = True            # one preview at the end, not one per slider
+        try:
+            for bid, (pe, ps, de, ds) in snap.items():
+                v = self.repair_block_vars.get(bid)
+                if v is None:
+                    continue
+                if (bool(v["primary_enabled"].get()), round(float(v["primary_strength"].get()), 4),
+                        bool(v["donor_enabled"].get()), round(float(v["donor_strength"].get()), 4)) == (pe, ps, de, ds):
+                    continue
+                v["primary_enabled"].set(pe)
+                v["primary_strength"].set(ps)
+                v["donor_enabled"].set(de)
+                v["donor_strength"].set(ds)
+                changed.append(bid)
+        finally:
+            self._repair_master_mutating = False
+            self._repair_undo_restoring = False
+        try:
+            self._on_master_target_changed()           # the master sliders show the restored averages
+        except Exception:
+            pass
+        if changed and self.repair_engine is not None and self.repair_engine.primary_network is not None:
+            self.repair_engine.mark_blocks_changed(changed)
+            self._schedule_preview()
 
     def _on_preview_param_changed(self):
         # seed/prompt/resolution change → invalidate baseline cache and regen.
