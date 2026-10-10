@@ -166,6 +166,10 @@ class WorkbenchEngine:
         # negative, turbo (strength; 0 = no speed LoRA). None = the family's fixed preview recipe.
         self.preview_settings = None
         self._speed_path = ""
+        # Prompt B (a driver with supports_prompt_blend): the second prompt and how much of it (0 = prompt A only).
+        # Applies to every render, the Baseline too, so Baseline vs Tweaked still shows only the sliders
+        self.prompt_b = None
+        self.prompt_blend = 0.0
 
     # ---- the block map ------------------------------------------------------------------------------
     def block_groups(self):
@@ -627,7 +631,15 @@ class WorkbenchEngine:
         return s.steps, s.cfg, s.sigmas, s.options
 
     @torch.no_grad()
-    def render(self, cond, width, height, seed, *, steps=None, noise=None, refs=None, neg_cond=None):
+    def _prompt_b_live(self):
+        return bool(self.prompt_b and float(self.prompt_blend or 0) > 0
+                    and getattr(self.driver, "supports_prompt_blend", False))
+
+    def _prompt_b_key(self):
+        return (self.prompt_b, round(float(self.prompt_blend or 0), 4)) if self._prompt_b_live() else None
+
+    def render(self, cond, width, height, seed, *, steps=None, noise=None, refs=None, neg_cond=None, cond_b=None,
+               blend=0.0):
         """One image from conditioning with the adapters as currently set (refs: an edit's reference latents;
         neg_cond: the negative, used when the CFG is above 1)."""
         d_steps, cfg, sigmas, options = self.sampling()
@@ -662,6 +674,8 @@ class WorkbenchEngine:
                 return self.driver.generate(self.dit, self._cond_to_device(cond), width, height, steps=steps,
                                             seed=int(seed), cfg=cfg, sigmas=sigmas, options=options, noise=noise,
                                             on_step=_step, **({"neg_cond": neg_cond} if neg_cond is not None else {}),
+                                            **({"cond_b": self._cond_to_device(cond_b), "prompt_blend": float(blend)}
+                                               if cond_b is not None else {}),
                                             **({"refs": [r.to(self.device) for r in refs]} if refs else {}))
         if act is None:
             lat = _generate()
@@ -715,6 +729,9 @@ class WorkbenchEngine:
                                size=(width, height))[0]
         refs = self._edit_refs(state, ref, width, height, prev_latent, prev_latent_strength) \
             if self.reference_kind == "edit" else None
+        cond_b = None
+        if override_ctx is None and self._prompt_b_live():
+            cond_b = self.encode([self.prompt_b], ref=ref, ref_mp=ref_mp, size=(width, height))[0]
         noise = None
         if seed_b is not None:
             noise = _slerp(float(travel_t or 0.0), self.driver.initial_noise(seed, width, height),
@@ -733,13 +750,15 @@ class WorkbenchEngine:
         if override_ctx is None and noise is None and prev_latent is None and not self._act_bypass:
             self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self._blend_sig(), self.donor_path,
                               self._speed_path,
-                              self._settings_key(), round(float(getattr(state, "primary_scale", 1.0)), 4),
+                              self._settings_key(), self._prompt_b_key(),
+                              round(float(getattr(state, "primary_scale", 1.0)), 4),
                               round(float(getattr(state, "donor_scale", 1.0)), 4),
                               prompt if prompt is not None else state.prompt, ref, round(float(ref_mp), 4),
                               round(float(getattr(state, "ref_strength", 1.0) or 0.0), 4),
                               int(seed), width, height), self._cache_sig(state))
         try:
-            return self.render(cond, width, height, seed, steps=steps, noise=noise, refs=refs, neg_cond=neg)
+            return self.render(cond, width, height, seed, steps=steps, noise=noise, refs=refs, neg_cond=neg,
+                               cond_b=cond_b, blend=float(self.prompt_blend or 0))
         finally:
             self._act_ctx = None
 
@@ -780,7 +799,8 @@ class WorkbenchEngine:
     def generate_baseline(self, state):
         """The primary with every slider at 1.0 (at its load strength), donor off. Cached until the prompt, seed,
         size or load strength changes."""
-        key = (self.primary_path, self._blend_sig(), state.seed, state.prompt, state.preview_width, state.preview_height,
+        key = (self.primary_path, self._blend_sig(), self._prompt_b_key(), state.seed, state.prompt,
+               state.preview_width, state.preview_height,
                round(float(getattr(state, "primary_scale", 1.0)), 4), self._state_reference(state),
                round(float(getattr(state, "ref_strength", 1.0) or 0.0), 4),
                self._settings_key())

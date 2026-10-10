@@ -18663,6 +18663,8 @@ class LoRATrainerGUI:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
                 self._repair_blend_show(False)        # H3 has its own engine: no mix
+                for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
+                    _w.grid_remove()
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
                 self._repair_scale_controls(True)
@@ -18686,6 +18688,7 @@ class LoRATrainerGUI:
             else:
                 self._repair_blend_show(True)
                 self._repair_lucky_load_bounds()
+                self._repair_pb_layout()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(True)          # every family's load-strength boxes (16 Sep 2026)
@@ -19194,6 +19197,54 @@ class LoRATrainerGUI:
                                      variable=self.repair_turbo_var,
                                      command=self._on_turbo_toggled)
         self._repair_turbo_chk.pack(side=tk.RIGHT)
+        r += 1
+
+        # Prompt B (a family whose driver blends two prompts, supports_prompt_blend): hidden behind its tick
+        self._repair_pb_tick_frame = ttk.Frame(parent)
+        self._repair_pb_tick_frame.grid(row=r, column=1, sticky=tk.W, padx=4, pady=(0, 2))
+        self.repair_pb_on_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self._repair_pb_tick_frame, text="Blend in a Prompt B", variable=self.repair_pb_on_var,
+                        command=self._repair_pb_toggled, style="Surface.TCheckbutton").pack(side=tk.LEFT)
+        r += 1
+        self._repair_pb_label = ttk.Label(parent, text="Prompt B:")
+        self._repair_pb_label.grid(row=r, column=0, sticky=tk.NW, padx=4, pady=2)
+        self.repair_prompt_b_var = tk.StringVar(value="")
+        self._repair_pb_text = TextEntry(
+            parent, self.repair_prompt_b_var, height=2, wrap="word", bg=COLORS["bg_surface"],
+            fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"], font=(FONT_FAMILY, 10),
+            relief="flat", highlightthickness=1, highlightbackground=COLORS["border"],
+            highlightcolor=COLORS["border_focus"])
+        self._repair_pb_text.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        # the ghost example: shown while the box is empty, a click goes through to the box
+        self._repair_pb_ghost = tk.Label(self._repair_pb_text, text="", bg=COLORS["bg_surface"],
+                                         fg=COLORS["text_muted"], font=(FONT_FAMILY, 10), anchor=tk.W,
+                                         justify=tk.LEFT, cursor="xterm")
+        self._repair_pb_ghost.bind("<Button-1>", lambda e: self._repair_pb_text.focus_set())
+        self._repair_pb_text.bind("<Configure>", lambda e: self._repair_pb_ghost.configure(
+            wraplength=max(200, e.width - 12)))
+        self.repair_prompt_b_var.trace_add("write", lambda *_: self._repair_pb_changed(text=True))
+        pb_ctl = ttk.Frame(parent)
+        pb_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
+        self._repair_pb_ctl = pb_ctl
+        ttk.Label(pb_ctl, text="A").pack(side=tk.LEFT)
+        self.repair_pb_blend_var = tk.DoubleVar(value=0.5)
+        ttk.Scale(pb_ctl, from_=0.0, to=1.0, orient=tk.HORIZONTAL, length=150, variable=self.repair_pb_blend_var,
+                  command=lambda v: self._repair_pb_changed()).pack(side=tk.LEFT, padx=4)
+        ttk.Label(pb_ctl, text="B").pack(side=tk.LEFT)
+        self.repair_pb_readout = tk.StringVar(value="")
+        ttk.Label(pb_ctl, textvariable=self.repair_pb_readout, width=14).pack(side=tk.LEFT, padx=(6, 8))
+        self.repair_pb_keep_lyrics_var = tk.BooleanVar(value=True)
+        self._repair_pb_keep_chk = ttk.Checkbutton(pb_ctl, text="Keep Prompt A's lyrics",
+                                                   variable=self.repair_pb_keep_lyrics_var,
+                                                   command=lambda: self._repair_pb_changed(),
+                                                   style="Surface.TCheckbutton")
+        self._repair_pb_keep_chk.pack(side=tk.LEFT)
+        ToolTip(pb_ctl, "Every step runs the model with both prompts and mixes the two: 0 = Prompt A alone, 1 = "
+                        "Prompt B alone. Baseline gets the same blend, so Baseline vs Tweaked still shows only the "
+                        "sliders. Keep Prompt A's lyrics: Prompt B changes the style while A's words are sung.")
+        self._repair_pb_rows = (self._repair_pb_label, self._repair_pb_text, pb_ctl)
+        for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
+            _w.grid_remove()                              # hidden until a family that blends prompts is picked
         r += 1
 
         # Negative prompt row: shown for a family whose Repair Studio renders use CFG above 1 and that takes a negative
@@ -23542,6 +23593,84 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+    # ----- Prompt B ------------------------------------------------------------------------
+    _PB_GHOST_MUSIC = ("Style only, no lyrics - e.g. dark synthwave, gothic choir vocals, analog arpeggios, deep "
+                       "pulsing bass, cathedral reverb. Prompt A's lyrics are sung (Keep Prompt A's lyrics).")
+    _PB_GHOST = "A second prompt to blend with the first - e.g. the same scene as an oil painting, golden hour."
+
+    def _repair_pb_supported(self):
+        desc = self._repair_desc()
+        if desc is None or not getattr(desc, "driver", ""):
+            return False
+        try:
+            import importlib
+            mod, _, cls = desc.driver.partition(":")
+            return bool(getattr(getattr(importlib.import_module(mod), cls), "supports_prompt_blend", False))
+        except Exception:
+            return False
+
+    def _repair_pb_layout(self):
+        """The tick for a family that blends prompts; the box, slider and lyrics tick only while it is ticked."""
+        if getattr(self, "_repair_pb_tick_frame", None) is None:
+            return
+        ok = self._repair_pb_supported()
+        self._repair_pb_tick_frame.grid() if ok else self._repair_pb_tick_frame.grid_remove()
+        show = ok and self.repair_pb_on_var.get()
+        for w in self._repair_pb_rows:
+            w.grid() if show else w.grid_remove()
+        audio = self._repair_is_audio()
+        self._repair_pb_keep_chk.pack(side=tk.LEFT) if audio else self._repair_pb_keep_chk.pack_forget()
+        self._repair_pb_ghost.configure(text=self._PB_GHOST_MUSIC if audio else self._PB_GHOST)
+        self._repair_pb_ghost_update()
+
+    def _repair_pb_ghost_update(self):
+        if self.repair_prompt_b_var.get().strip():
+            self._repair_pb_ghost.place_forget()
+        else:
+            self._repair_pb_ghost.place(x=4, y=2, relwidth=1.0, width=-12)
+
+    def _repair_pb_effective(self):
+        """The Prompt B the engine renders, or None: B as typed, or (Keep Prompt A's lyrics, music) B's style part
+        with A's lyrics."""
+        if not (self._repair_pb_supported() and self.repair_pb_on_var.get()):
+            return None
+        b = self.repair_prompt_b_var.get().strip()
+        if not b:
+            return None
+        if self._repair_is_audio() and self.repair_pb_keep_lyrics_var.get():
+            a = self.repair_prompt_var.get()
+            lyrics = a.split("|", 1)[1].strip() if "|" in a else ""
+            style = b.split("|", 1)[0].strip()
+            return f"{style} | {lyrics}" if lyrics else style
+        return b
+
+    def _repair_pb_push(self):
+        """Prompt B into the engine (each render reads it)."""
+        eng = self.repair_engine
+        w = round(float(self.repair_pb_blend_var.get()) / 0.05) * 0.05
+        self.repair_pb_readout.set(f"{(1 - w) * 100:.0f}% A \u00b7 {w * 100:.0f}% B")
+        if eng is not None and hasattr(eng, "prompt_b"):
+            eff = self._repair_pb_effective()
+            eng.prompt_b, eng.prompt_blend = eff, (w if eff else 0.0)
+
+    def _repair_pb_toggled(self):
+        self._repair_pb_layout()
+        self._repair_pb_changed()
+
+    def _repair_pb_changed(self, text=False):
+        if text:
+            self._repair_pb_ghost_update()
+        key = (self._repair_pb_effective(), round(float(self.repair_pb_blend_var.get()) / 0.05) * 0.05)
+        if key == getattr(self, "_repair_pb_last", None):
+            self._repair_pb_push()                     # the readout follows the slider
+            return
+        self._repair_pb_last = key
+        self._repair_pb_push()
+        if text:
+            self._repair_mark_update_needed()          # typing: Update renders it, as for Prompt A
+        else:
+            self._schedule_preview()
+
     def _repair_mark_update_needed(self):
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""
         if self.repair_engine is not None and self.repair_engine.primary_network is not None:
@@ -24006,6 +24135,7 @@ class LoRATrainerGUI:
             # let it go; the new render's worker brings that clip back.
             self.repair_engine.request_cancel()
         # Sync state from UI to repair_state (prompt/seed/res live in entries, not bound)
+        self._repair_pb_push()
         prompt_text = self.repair_prompt_var.get().strip()
         if not prompt_text:
             # Distilled with empty conditioning → 4 steps of unguided denoising =
@@ -24917,7 +25047,8 @@ class LoRATrainerGUI:
         eng.driver.set_options({"preview_seconds": int(snapshot.preview_width)})
         print(f"[repair] worker: songs, {snapshot.preview_width} s")
         songs = {"baseline": eng.generate_baseline(snapshot), "tweaked": eng.generate_preview(snapshot)}
-        key = (eng.primary_path, snapshot.seed, snapshot.prompt, int(snapshot.preview_width))
+        key = (eng.primary_path, snapshot.seed, snapshot.prompt, int(snapshot.preview_width),
+               eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None)
         if getattr(self, "_repair_nolora_key", None) != key and not self._repair_preview_dirty:
             base = copy.deepcopy(snapshot)
             base.primary_scale, base.donor_scale = 0.0, 0.0

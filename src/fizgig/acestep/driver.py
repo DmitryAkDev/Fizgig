@@ -349,10 +349,18 @@ class AceStepDriver(FamilyDriver):
         g = torch.Generator("cpu").manual_seed(int(seed))
         return torch.randn((1, frames or self._frames(), 64), generator=g, dtype=torch.float32)
 
+    supports_prompt_blend = True        # generate(cond_b=, prompt_blend=): Repair Studio's Prompt B
+
     @torch.no_grad()
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
-                 noise=None, on_step=None, refs=None, **_ignored):
+                 noise=None, on_step=None, refs=None, cond_b=None, prompt_blend=0.0, **_ignored):
+        """cond_b + prompt_blend w: every step runs the model with both prompts and mixes the predictions,
+        (1 - w) * A + w * B (guided SFT: each guided on its own, then mixed) - exact at w 0 (A) and 1 (B), any prompt
+        lengths."""
         device = next(dit.parameters()).device
+        w = min(max(float(prompt_blend or 0.0), 0.0), 1.0) if cond_b is not None else 0.0
+        if w >= 1.0:
+            cond, w = cond_b, 0.0                   # all B: one pass
         x = (self.initial_noise(seed) if noise is None else noise).to(device).float()
         guided = self.sft
         if guided:
@@ -367,19 +375,24 @@ class AceStepDriver(FamilyDriver):
             shift = float(dict(options or ()).get("shift", 3.0))
             ts = [shift * t / (1 + (shift - 1) * t) for t in (1.0 - i / int(steps) for i in range(int(steps)))]
         ts = ts + [0.0]
-        enc = self._condition(dit, cond, x.shape[1], device)
         ctx = self._context(x.shape[1], device)
+        prompts = [self._condition(dit, cond, x.shape[1], device)]
+        if w > 0.0:
+            prompts.append(self._condition(dit, cond_b, x.shape[1], device))
         if guided:
-            enc = torch.cat([enc, dit.null_condition_emb.to(enc).expand_as(enc)])
+            prompts = [torch.cat([e, dit.null_condition_emb.to(e).expand_as(e)]) for e in prompts]
             ctx = ctx.expand(2, -1, -1)
-            momentum = _Momentum()
+            momenta = [_Momentum() for _ in prompts]
         for i in range(len(ts) - 1):
             if on_step is not None:
                 on_step(i, len(ts) - 1)
             xin = torch.cat([x, x]) if guided else x
-            v = dit(xin.to(DTYPE), torch.full((xin.shape[0],), ts[i], device=device, dtype=DTYPE), enc, ctx).float()
-            if guided:
-                v = apg(v[:1], v[1:], SFT_GUIDANCE, momentum)
+            t = torch.full((xin.shape[0],), ts[i], device=device, dtype=DTYPE)
+            vs = []
+            for k, enc in enumerate(prompts):
+                v = dit(xin.to(DTYPE), t, enc, ctx).float()
+                vs.append(apg(v[:1], v[1:], SFT_GUIDANCE, momenta[k]) if guided else v)
+            v = vs[0] if len(vs) == 1 else (1.0 - w) * vs[0] + w * vs[1]
             x = x + (ts[i + 1] - ts[i]) * v
         return x
 
