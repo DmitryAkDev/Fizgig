@@ -66,8 +66,7 @@ ACESTEP15 = FamilyDescription(
     workbench=("repair", "extract"),
     # I'm feeling lucky, from Peter's by-ear block map (10 Oct 2026, fzgfunk): 0-5 structure (groove, arrangement)
     # and 28-31 the tidy-up of detail stay near 1; 6-15 moves most (his favourite mix inverted 6); 16-27 is nuance
-    lucky_zones=((0, 5, 0.8, 1.2, 0.0, 0.0), (6, 15, 0.0, 1.5, 0.15, 0.1), (16, 27, 0.0, 1.3, 0.2, 0.0),
-                 (28, 31, 0.9, 1.1, 0.0, 0.0)),
+    lucky_zones=((0, 5, 0.8, 1.2, 0.0), (6, 15, 0.0, 1.5, 0.1), (16, 27, 0.0, 1.3, 0.0), (28, 31, 0.9, 1.1, 0.0)),
     repair_size=30,                   # an audio family's Res is the song length in seconds
 
     lora=LoRAFormat(

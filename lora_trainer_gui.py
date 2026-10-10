@@ -18441,8 +18441,8 @@ class LoRATrainerGUI:
                 for _t, _v in (("Min", self.repair_lucky_min_var), ("Max", self.repair_lucky_max_var)):
                     tk.Label(_lb, text=_t, bg=COLORS["bg_surface"], fg=COLORS["text_secondary"],
                              font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 3))
-                    _sp = ttk.Spinbox(_lb, from_=-3.0, to=3.0, increment=0.1, width=5, textvariable=_v,
-                                      command=self._repair_lucky_bounds_changed)
+                    # a plain themed Entry: ttk.Spinbox has no dark style here (its text vanishes unfocused)
+                    _sp = ttk.Entry(_lb, textvariable=_v, width=5)
                     _sp.pack(side=tk.LEFT, padx=(0, 6))
                     _sp.bind("<FocusOut>", lambda e: self._repair_lucky_bounds_changed())
                     _sp.bind("<Return>", lambda e: self._repair_lucky_bounds_changed())
@@ -19797,7 +19797,6 @@ class LoRATrainerGUI:
             child.destroy()
         self.repair_block_vars = {}
         self._repair_locks = {}                  # block id -> its locked values (a new layout starts unlocked)
-        self._repair_lucky_offs = set()          # blocks a lucky roll switched off (the rest of the offs are yours)
         # a new slider layout starts a new undo history
         self._repair_undo_stack, self._repair_redo_stack = [], []
         self._repair_undo_committed = None
@@ -19933,8 +19932,7 @@ class LoRATrainerGUI:
         ToolTip(lock_lbl, "Lock this block: its sliders and ticks (primary and donor) can't change - not by hand, "
                           "the bulk buttons, master sliders, presets, I'm feeling lucky or undo - until you unlock it.")
         chk_p = ttk.Checkbutton(_head, variable=primary_enabled,
-                                command=lambda b=block_id: (self._repair_lucky_offs.discard(b),
-                                                            self._on_block_changed(b)))
+                                command=lambda b=block_id: self._on_block_changed(b))
         chk_p.pack(side=tk.LEFT)
         # Block label (category-coloured for Klein; neutral for Krea 2)
         lbl = tk.Label(rowf, text=lbl_text, fg=color, bg=COLORS["bg_surface"],
@@ -23662,7 +23660,7 @@ class LoRATrainerGUI:
         self._schedule_preview()
 
     # ----- I'm feeling lucky -------------------------------------------------------------
-    _LUCKY_DEFAULT = ((0, 10 ** 6, 0.4, 1.4, 0.1, 0.0),)
+    _LUCKY_DEFAULT = ((0, 10 ** 6, 0.4, 1.4, 0.0),)
     _LUCKY_BOUNDS = (-1.5, 1.5)
 
     def _repair_lucky_bounds(self):
@@ -23705,34 +23703,26 @@ class LoRATrainerGUI:
         live = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
         order = list(V)
         b_lo, b_hi = self._repair_lucky_bounds()
-        mine = self.__dict__.setdefault("_repair_lucky_offs", set())
-        kept_off = 0
-        offs = inverted = 0
+        kept_off = inverted = 0
         changed = []
         self._repair_master_mutating = True            # one preview at the end
         try:
             for i, bid in enumerate(order):
                 if (live and bid not in live) or bid in getattr(self, "_repair_locks", {}):
                     continue                           # untouched by the LoRA, or locked: stays as it is
-                if not V[bid]["primary_enabled"].get() and bid not in mine:
+                if not V[bid]["primary_enabled"].get():
                     kept_off += 1
-                    continue                           # you ticked it off: it stays off
+                    continue                           # ticked off: the dice never touch a tick
                 z = next((z for z in zones if z[0] <= i <= z[1]), None)
                 if z is None:
                     continue
-                _, _, lo, hi, p_off, p_inv = z
-                on, x = True, round(random.uniform(lo, hi) / 0.05) * 0.05
-                roll = random.random()
-                if roll < p_off:
-                    on, x, offs = False, 1.0, offs + 1
-                    mine.add(bid)
-                elif roll < p_off + p_inv and b_lo < 0:
+                _, _, lo, hi, p_inv = z
+                # evenly over the band: no value (0 included) more likely than another; the tick is never touched
+                x = round(random.uniform(lo, hi) / 0.05) * 0.05
+                if random.random() < p_inv and b_lo < 0:
                     x = -round(random.uniform(0.3, 1.5) / 0.05) * 0.05
-                if on:
-                    x = min(max(x, b_lo), b_hi)               # the bounds beside the button
-                    inverted += x < 0
-                    mine.discard(bid)
-                V[bid]["primary_enabled"].set(on)
+                x = min(max(x, b_lo), b_hi)                    # the bounds beside the button
+                inverted += x < 0
                 V[bid]["primary_strength"].set(round(x, 2))
                 changed.append(bid)
         finally:
@@ -23742,8 +23732,8 @@ class LoRATrainerGUI:
         except Exception:
             pass
         self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled within {b_lo:g} to {b_hi:g}, "
-                                   f"{offs} off, {inverted} inverted"
-                                   + (f", {kept_off} you ticked off kept off" if kept_off else "")
+                                   f"{inverted} inverted"
+                                   + (f", {kept_off} ticked off left alone" if kept_off else "")
                                    + " (Ctrl+Z for the mix before; Save Preset\u2026 to keep it).")
         if changed and eng is not None and getattr(eng, "primary_network", None) is not None:
             eng.mark_blocks_changed(changed)
