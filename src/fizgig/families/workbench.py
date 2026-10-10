@@ -267,7 +267,7 @@ class WorkbenchEngine:
             return False
         if n == 0:
             return False
-        self.unload_epochs()
+        self.unload_epochs(PRIMARY)
         self.net.move_adapter(PRIMARY, self.device)
         self.primary_path = path
         self.primary_block_ids = self.net.adapter_blocks(PRIMARY)
@@ -285,6 +285,7 @@ class WorkbenchEngine:
         # The donor comes in through its block sliders only (strength 0 by default); anything it adapts outside
         # the block map stays off, as on the other engines.
         self.net.set_outside(DONOR, False)
+        self._clear_blend_state(DONOR)
         self.donor_network = self.net
         self.donor_path = path
         self.donor_block_ids = self.net.adapter_blocks(DONOR)
@@ -292,6 +293,7 @@ class WorkbenchEngine:
 
     def unload_donor(self):
         if self.donor_network is not None:
+            self.unload_epochs(DONOR)
             self.net.remove(DONOR)
             self.donor_network = None
             self.donor_path = None
@@ -307,76 +309,100 @@ class WorkbenchEngine:
             return None
 
     # ---- epoch blend ------------------------------------------------------------------------------------
-    def _clear_blend_state(self):
-        self.epoch_files = {}               # epoch -> file of the primary's run (find_epochs)
-        self.epoch_adapters = {}            # epoch -> loaded adapter name (the primary's own epoch maps to PRIMARY)
-        self.primary_epoch = None
-        self.blend = None                   # {epoch: weight} while blending, else None
+    # Per LoRA (PRIMARY, DONOR): its own run's epochs (from its own folder), its own EMA weights, all under that LoRA's
+    # block sliders and load strength.
+    MAX_EPOCHS_LOADED = 12              # per LoRA
 
-    MAX_EPOCHS_LOADED = 12
+    def _clear_blend_state(self, role=None):
+        if role is None or not hasattr(self, "_eb"):
+            self._eb = {}
+        for r in ((PRIMARY, DONOR) if role is None else (role,)):
+            # files: epoch -> file of the run; adapters: epoch -> loaded adapter (its own epoch -> the role's
+            # adapter); own: the loaded file's epoch; blend: {epoch: weight} while blending, else None
+            self._eb[r] = {"files": {}, "adapters": {}, "own": None, "blend": None}
 
-    def find_epochs(self):
-        """The primary's run: [epochs], oldest first (run_epochs). Nothing loads until a blend needs it."""
-        if self.primary_network is None:
-            raise RuntimeError("Load the primary LoRA first.")
-        files = dict(run_epochs(self.primary_path))
-        self.epoch_files = files
-        own = [e for e, f in files.items() if os.path.normcase(os.path.abspath(f)) ==
-               os.path.normcase(os.path.abspath(self.primary_path))]
-        self.primary_epoch = own[0] if own else None
-        self.epoch_adapters = {self.primary_epoch: PRIMARY} if self.primary_epoch is not None else {}
-        return sorted(files)
+    @property
+    def primary_epoch(self):
+        return self._eb[PRIMARY]["own"]
+
+    def epoch_of(self, role=PRIMARY):
+        """The loaded file's own epoch in its run (None = unnumbered and alone)."""
+        return self._eb[role]["own"]
+
+    def find_epochs(self, role=PRIMARY):
+        """The run of the primary's (or the donor's) file: [epochs], oldest first (run_epochs). Nothing loads until a
+        blend needs it."""
+        path = self.primary_path if role == PRIMARY else self.donor_path
+        if not path or not self.net or not self.net.has(role):
+            raise RuntimeError(f"Load the {'primary' if role == PRIMARY else 'donor'} LoRA first.")
+        self._drop_epoch_adapters(role)
+        eb = self._eb[role]
+        eb["files"] = dict(run_epochs(path))
+        own = [e for e, f in eb["files"].items()
+               if os.path.normcase(os.path.abspath(f)) == os.path.normcase(os.path.abspath(path))]
+        eb["own"] = own[0] if own else None
+        eb["adapters"] = {eb["own"]: role} if eb["own"] is not None else {}
+        return sorted(eb["files"])
 
     def _sync_epochs(self):
-        """Attach the epochs the blend weights and nothing else past MAX_EPOCHS_LOADED (renders call it; the engine is
-        theirs)."""
-        if not self.blend:
-            return
-        for e in sorted(self.blend):
-            if e not in self.epoch_adapters and e in self.epoch_files:
-                name = f"{EPOCH}{e}"
-                self._attach(self.epoch_files[e], name)
-                self.epoch_adapters[e] = name
-        spare = [e for e, n in self.epoch_adapters.items() if n != PRIMARY and e not in self.blend]
-        while len(self.epoch_adapters) > self.MAX_EPOCHS_LOADED and spare:
-            e = spare.pop(0)
-            self.net.remove(self.epoch_adapters.pop(e))
+        """Attach the epochs each blend weights, and drop unused ones past MAX_EPOCHS_LOADED (renders call it; the
+        engine is theirs)."""
+        for role, eb in self._eb.items():
+            if not eb["blend"] or not self.net or not self.net.has(role):
+                continue
+            for e in sorted(eb["blend"]):
+                if e not in eb["adapters"] and e in eb["files"]:
+                    name = f"{EPOCH}{'d' if role == DONOR else 'p'}{e}"
+                    self._attach(eb["files"][e], name)
+                    if role == DONOR:
+                        self.net.set_outside(name, False)     # as the donor itself: its blocks only
+                    eb["adapters"][e] = name
+            spare = [e for e, n in eb["adapters"].items() if n != role and e not in eb["blend"]]
+            while len(eb["adapters"]) > self.MAX_EPOCHS_LOADED and spare:
+                self.net.remove(eb["adapters"].pop(spare.pop(0)))
 
-    def unload_epochs(self):
-        for e, name in list(getattr(self, "epoch_adapters", {}).items()):
-            if name != PRIMARY and self.net is not None and self.net.has(name):
+    def _drop_epoch_adapters(self, role):
+        for e, name in list(self._eb[role]["adapters"].items()):
+            if name != role and self.net is not None and self.net.has(name):
                 self.net.remove(name)
-        self._clear_blend_state()
+
+    def unload_epochs(self, role=PRIMARY):
+        self._drop_epoch_adapters(role)
+        self._clear_blend_state(role)
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
 
-    def set_blend(self, weights):
-        """{epoch: weight} (ema_weights) to mix the loaded epochs, or None for the primary alone. Takes effect at the
-        next render; the Baseline follows it too (the blended LoRA with its sliders at 1)."""
-        weights = {int(e): float(w) for e, w in (weights or {}).items() if int(e) in self.epoch_files} or None
-        if weights != self.blend:
-            self.blend = weights
+    def set_blend(self, weights, role=PRIMARY):
+        """{epoch: weight} (ema_weights) to mix that LoRA's run, or None for its file alone. Takes effect at the next
+        render; the Baseline follows it too (the blended LoRA with its sliders at 1)."""
+        eb = self._eb[role]
+        weights = {int(e): float(w) for e, w in (weights or {}).items() if int(e) in eb["files"]} or None
+        if weights != eb["blend"]:
+            eb["blend"] = weights
             self._invalidate_baseline_cache()
             self._invalidate_activation_cache()
 
     def _blend_sig(self):
-        return tuple(sorted((e, round(w, 5)) for e, w in self.blend.items())) if self.blend else None
+        return tuple((r, tuple(sorted((e, round(w, 5)) for e, w in eb["blend"].items())))
+                     for r, eb in sorted(self._eb.items()) if eb["blend"]) or None
 
-    def _primary_names(self):
-        """(adapter, weight) pairs the primary's sliders and load strength drive: the blended epochs, or PRIMARY."""
-        if not self.blend:
-            return [(PRIMARY, 1.0)] + [(n, 0.0) for n in self.epoch_adapters.values() if n != PRIMARY]
-        return [(name, self.blend.get(e, 0.0)) for e, name in self.epoch_adapters.items()] + \
-            ([] if PRIMARY in self.epoch_adapters.values() else [(PRIMARY, 0.0)])
+    def _role_names(self, role):
+        """(adapter, weight) pairs that LoRA's sliders and load strength drive: its blended epochs, or its file."""
+        eb = self._eb[role]
+        if not eb["blend"]:
+            return [(role, 1.0)] + [(n, 0.0) for n in eb["adapters"].values() if n != role]
+        return [(name, eb["blend"].get(e, 0.0)) for e, name in eb["adapters"].items()] + \
+            ([] if role in eb["adapters"].values() else [(role, 0.0)])
 
     # ---- slider state -------------------------------------------------------------------------------
     def apply_state(self, state):
         """Per-block strength / on-off and each LoRA's load strength, live (no reload)."""
         if self.primary_network is None:
             return
-        scale = float(getattr(state, "primary_scale", 1.0))
-        targets = [(n, "primary", scale * w) for n, w in self._primary_names()]
-        targets.append((DONOR, "donor", float(getattr(state, "donor_scale", 1.0))))
+        targets = []
+        for role, who in ((PRIMARY, "primary"), (DONOR, "donor")):
+            scale = float(getattr(state, f"{who}_scale", 1.0))
+            targets += [(n, who, scale * w) for n, w in self._role_names(role)]
         for name, who, strength in targets:
             if not self.net.has(name):
                 continue
@@ -790,7 +816,8 @@ class WorkbenchEngine:
         self._sync_epochs()
         self.apply_state(flat)
         try:
-            names = [n for n, w in self._primary_names() if w] + ([DONOR] if use_donor else [])
+            names = [n for n, w in self._role_names(PRIMARY) if w] + \
+                ([n for n, w in self._role_names(DONOR) if w] if use_donor else [])
             sd, ranks = self.net.bake(names)
         finally:
             self.apply_state(state)
@@ -806,9 +833,10 @@ class WorkbenchEngine:
             metadata["ss_network_alpha"] = str(float(max(ranks.values())))
         metadata["ss_repair_studio_config"] = json.dumps(state.to_json(), separators=(",", ":"))
         metadata["ss_repair_studio_use_at"] = f"{use_at:g}"
-        if self.blend:
-            metadata["ss_repair_studio_epoch_blend"] = json.dumps(
-                {str(e): round(w, 5) for e, w in sorted(self.blend.items())}, separators=(",", ":"))
+        for role, key in ((PRIMARY, "ss_repair_studio_epoch_blend"), (DONOR, "ss_repair_studio_donor_epoch_blend")):
+            bl = self._eb[role]["blend"]
+            if bl and (role == PRIMARY or use_donor):
+                metadata[key] = json.dumps({str(e): round(w, 5) for e, w in sorted(bl.items())}, separators=(",", ":"))
         if use_donor:
             metadata["ss_repair_studio_donor_path"] = os.path.basename(self.donor_path)
             combined = {m: r for m, r in ranks.items() if self.driver.block_of(m) in blended}

@@ -18637,7 +18637,7 @@ class LoRATrainerGUI:
             if video:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
-                for _w in (self._repair_blend_label, self._repair_blend_frame, self._repair_blend_info):
+                for _w in self._repair_blend_widgets():
                     _w.grid_remove()             # H3 has its own engine: no epoch blend
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
@@ -18660,7 +18660,7 @@ class LoRATrainerGUI:
                                                      before=self._repair_sliders_host)
                 self._refresh_repair_h3_sound_state()
             else:
-                for _w in (self._repair_blend_label, self._repair_blend_frame, self._repair_blend_info):
+                for _w in self._repair_blend_widgets():
                     _w.grid()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
@@ -19052,39 +19052,8 @@ class LoRATrainerGUI:
         r += 1
 
         # Epoch blend (standard-layer families): the primary's whole run mixed as an EMA, chosen by ear
-        self._repair_blend_label = ttk.Label(parent, text="Epoch blend:")
-        self._repair_blend_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        bf = ttk.Frame(parent)
-        bf.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=2)
-        self._repair_blend_frame = bf
-        self.repair_blend_var = tk.BooleanVar(value=False)
-        self._repair_blend_epochs = []           # before the dials: setting one runs its command
-        ttk.Checkbutton(bf, text="Blend this run's epochs", variable=self.repair_blend_var,
-                        command=self._repair_blend_toggled, style="Surface.TCheckbutton").pack(side=tk.LEFT)
-        ttk.Label(bf, text="Up to").pack(side=tk.LEFT, padx=(14, 4))
-        self._repair_blend_upto = ttk.Scale(bf, from_=0, to=1, orient=tk.HORIZONTAL, length=170,
-                                            command=lambda v: self._repair_blend_moved())
-        self._repair_blend_upto.pack(side=tk.LEFT)
-        self.repair_blend_upto_text = tk.StringVar(value="")
-        ttk.Label(bf, textvariable=self.repair_blend_upto_text, width=9).pack(side=tk.LEFT, padx=(4, 10))
-        ttk.Label(bf, text="History").pack(side=tk.LEFT, padx=(0, 4))
-        self._repair_blend_hist = ttk.Scale(bf, from_=0.0, to=0.95, orient=tk.HORIZONTAL, length=150,
-                                            command=lambda v: self._repair_blend_moved())
-        self._repair_blend_hist.set(0.5)
-        self._repair_blend_hist.pack(side=tk.LEFT)
-        self.repair_blend_hist_text = tk.StringVar(value="")
-        ttk.Label(bf, textvariable=self.repair_blend_hist_text, width=22).pack(side=tk.LEFT, padx=(4, 0))
-        ToolTip(bf, "Mixes the saved epochs of the primary's run as an exponential moving average, live. "
-                    "Up to: the newest epoch in the mix. History: how much of the earlier epochs comes with it "
-                    "(0 = that epoch alone). The block sliders apply to the whole mix, and Save bakes it into "
-                    "one LoRA.")
-        r += 1
-        self.repair_blend_info_var = tk.StringVar(value="")
-        self._repair_blend_info = ttk.Label(parent, textvariable=self.repair_blend_info_var,
-                                            foreground=COLORS["text_explain"])
-        self._repair_blend_info.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
-        self._repair_blend_controls(False)
-        r += 1
+        self._repair_blend = {}
+        r = self._build_repair_blend_row(parent, r, "primary")
 
         # Donor LoRA
         ttk.Label(parent, text="Donor LoRA (optional):").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
@@ -19102,6 +19071,7 @@ class LoRATrainerGUI:
         self._build_repair_scale_control(donor_btn_frame, self.repair_donor_scale_var,
                                          "the donor")
         r += 1
+        r = self._build_repair_blend_row(parent, r, "donor")     # the donor's own run, from its own folder
 
         # MiniMax H3 only (shown / hidden with the family): which H3 checkpoint the studio
         # runs — fl2va (first / last frame) or ref2va (reference images, <Picture N> in the
@@ -23375,6 +23345,7 @@ class LoRATrainerGUI:
             for cat in self.repair_donor_category_vars:
                 self.repair_donor_category_vars[cat].set(False)
             self._refresh_block_slider_activity()
+            self._repair_blend_reset_ui(role="donor")
             n_donor = len(engine.donor_block_ids)
             self.repair_status_var.set(
                 f"Donor loaded: {os.path.basename(path)} "
@@ -23602,6 +23573,7 @@ class LoRATrainerGUI:
     def _unload_repair_donor(self):
         if self.repair_engine is None or self.repair_engine.donor_network is None:
             return
+        self._repair_blend_reset_ui(role="donor")
         lock = getattr(self.repair_engine, "_wire_lock", None)
         if lock is not None:
             # a render holds the engine (H3: renders and LoRA wiring share a lock) - stop it and come back, rather
@@ -24072,79 +24044,129 @@ class LoRATrainerGUI:
                 self._schedule_preview(force=True)
 
     # ----- epoch blend ---------------------------------------------------------------------
-    # The primary's run mixed as an EMA (families/workbench.py: find_epochs / set_blend). The dials only change
-    # strengths; the engine loads each epoch the first time a blend needs it.
+    # A LoRA's run mixed as an EMA (families/workbench.py: find_epochs / set_blend), one row per LoRA: the primary's
+    # and the donor's, each from its own folder. The dials only change strengths; the engine loads each epoch the
+    # first time a blend needs it.
 
-    def _repair_blend_controls(self, on):
-        for w in (self._repair_blend_upto, self._repair_blend_hist):
+    def _build_repair_blend_row(self, parent, r, role):
+        """The Epoch blend row (+ its mix line) for role "primary" / "donor"; returns the next grid row."""
+        B = {"epochs": [], "last": None}
+        self._repair_blend[role] = B
+        B["label"] = ttk.Label(parent, text="Epoch blend:" if role == "primary" else "Donor epoch blend:")
+        B["label"].grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        bf = ttk.Frame(parent)
+        bf.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=2)
+        B["frame"] = bf
+        B["var"] = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bf, text=f"Blend the {role}'s epochs", variable=B["var"],
+                        command=lambda: self._repair_blend_toggled(role), style="Surface.TCheckbutton"
+                        ).pack(side=tk.LEFT)
+        ttk.Label(bf, text="Up to").pack(side=tk.LEFT, padx=(14, 4))
+        B["upto"] = ttk.Scale(bf, from_=0, to=1, orient=tk.HORIZONTAL, length=170,
+                              command=lambda v: self._repair_blend_moved(role))
+        B["upto"].pack(side=tk.LEFT)
+        B["upto_text"] = tk.StringVar(value="")
+        ttk.Label(bf, textvariable=B["upto_text"], width=9).pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Label(bf, text="History").pack(side=tk.LEFT, padx=(0, 4))
+        B["hist"] = ttk.Scale(bf, from_=0.0, to=0.95, orient=tk.HORIZONTAL, length=150,
+                              command=lambda v: self._repair_blend_moved(role))
+        B["hist"].set(0.5)
+        B["hist"].pack(side=tk.LEFT)
+        B["hist_text"] = tk.StringVar(value="")
+        ttk.Label(bf, textvariable=B["hist_text"], width=22).pack(side=tk.LEFT, padx=(4, 0))
+        ToolTip(bf, f"Mixes the saved epochs of the {role}'s run (the files beside it) as an exponential moving "
+                    "average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs "
+                    f"comes with it (0 = that epoch alone). The {role}'s block sliders apply to the whole mix, and "
+                    "Save bakes it into the LoRA.")
+        r += 1
+        B["info_var"] = tk.StringVar(value="")
+        B["info"] = ttk.Label(parent, textvariable=B["info_var"], foreground=COLORS["text_explain"])
+        B["info"].grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+        self._repair_blend_controls(role, False)
+        return r + 1
+
+    def _repair_blend_widgets(self):
+        return [w for B in self._repair_blend.values() for w in (B["label"], B["frame"], B["info"])]
+
+    def _repair_blend_controls(self, role, on):
+        for w in (self._repair_blend[role]["upto"], self._repair_blend[role]["hist"]):
             w.state(["!disabled"] if on else ["disabled"])
 
-    def _repair_blend_reset_ui(self, note=""):
-        """Untick and clear (a new primary, a reset session, another family)."""
-        self.repair_blend_var.set(False)
-        self._repair_blend_epochs = []
-        self._repair_blend_controls(False)
-        self.repair_blend_upto_text.set("")
-        self.repair_blend_hist_text.set("")
-        self.repair_blend_info_var.set(note)
+    def _repair_blend_reset_ui(self, note="", role=None):
+        """Untick and clear (a new primary or donor, a reset session, another family)."""
+        for rl in ((role,) if role else tuple(self._repair_blend)):
+            B = self._repair_blend[rl]
+            B["var"].set(False)
+            B["epochs"], B["last"] = [], None
+            self._repair_blend_controls(rl, False)
+            B["upto_text"].set("")
+            B["hist_text"].set("")
+            B["info_var"].set(note)
 
-    def _repair_blend_toggled(self):
-        eng = self.repair_engine
-        if not self.repair_blend_var.get():
+    def _repair_blend_toggled(self, role):
+        from fizgig.families.workbench import DONOR, PRIMARY
+        B, eng = self._repair_blend[role], self.repair_engine
+        key = PRIMARY if role == "primary" else DONOR
+        if not B["var"].get():
             if eng is not None and hasattr(eng, "set_blend"):
-                eng.set_blend(None)
-            self._repair_blend_controls(False)
-            self.repair_blend_info_var.set("Off: the primary file alone.")
+                eng.set_blend(None, role=key)
+            B["last"] = None
+            self._repair_blend_controls(role, False)
+            B["info_var"].set(f"Off: the {role} file alone.")
             self._schedule_preview(force=True)
             return
-        if eng is None or getattr(eng, "primary_network", None) is None or not hasattr(eng, "find_epochs"):
-            self.repair_blend_var.set(False)
-            self.repair_status_var.set("Load the primary LoRA first, then tick Epoch blend.")
+        loaded = eng is not None and hasattr(eng, "find_epochs") and getattr(
+            eng, "primary_network" if role == "primary" else "donor_network", None) is not None
+        if not loaded:
+            B["var"].set(False)
+            self.repair_status_var.set(f"Load the {role} LoRA first, then tick its epoch blend.")
             return
         try:
-            epochs = eng.find_epochs()
+            epochs = eng.find_epochs(role=key)
         except Exception as e:
-            self._repair_blend_reset_ui()
-            self.repair_status_var.set(f"Could not read the run's epochs: {e}")
+            self._repair_blend_reset_ui(role=role)
+            self.repair_status_var.set(f"Could not read the {role}'s epochs: {e}")
             return
         if len(epochs) < 2:
-            self._repair_blend_reset_ui("Only one epoch of this run is beside the file, so there is nothing to blend.")
+            self._repair_blend_reset_ui(f"Only one epoch of the {role}'s run is beside its file, so there is "
+                                        "nothing to blend.", role=role)
             return
-        self._repair_blend_epochs = epochs
-        self._repair_blend_controls(True)            # first: a disabled dial ignores set()
-        self._repair_blend_upto.configure(from_=0, to=len(epochs) - 1)
-        own = getattr(eng, "primary_epoch", None)
-        self._repair_blend_upto.set(epochs.index(own) if own in epochs else len(epochs) - 1)
-        self._repair_blend_moved()
+        B["epochs"] = epochs
+        self._repair_blend_controls(role, True)       # first: a disabled dial ignores set()
+        B["upto"].configure(from_=0, to=len(epochs) - 1)
+        own = eng.epoch_of(key)
+        B["upto"].set(epochs.index(own) if own in epochs else len(epochs) - 1)
+        self._repair_blend_moved(role)
 
-    def _repair_blend_values(self):
-        """(up-to epoch, history) from the dials, the Up to dial snapped to a saved epoch."""
-        eps = self._repair_blend_epochs
-        i = int(round(float(self._repair_blend_upto.get())))
-        i = max(0, min(len(eps) - 1, i))
-        return eps[i], round(float(self._repair_blend_hist.get()) / 0.05) * 0.05
+    def _repair_blend_values(self, role):
+        """(up-to epoch, history) from the dials, Up to snapped to a saved epoch."""
+        B = self._repair_blend[role]
+        eps = B["epochs"]
+        i = max(0, min(len(eps) - 1, int(round(float(B["upto"].get())))))
+        return eps[i], round(float(B["hist"].get()) / 0.05) * 0.05
 
-    def _repair_blend_moved(self):
-        if not self._repair_blend_epochs:
+    def _repair_blend_moved(self, role):
+        B = self._repair_blend.get(role)
+        if not B or not B["epochs"]:
             return
-        from fizgig.families.workbench import ema_weights
-        up_to, hist = self._repair_blend_values()
-        self.repair_blend_upto_text.set(f"epoch {up_to}")
-        self.repair_blend_hist_text.set("0 (that epoch alone)" if hist < 0.025 else
-                                        f"{hist:.2f} (about {1 / (1 - hist):.0f} epochs)")
-        if not self.repair_blend_var.get():
+        from fizgig.families.workbench import DONOR, PRIMARY, ema_weights
+        up_to, hist = self._repair_blend_values(role)
+        B["upto_text"].set(f"epoch {up_to}")
+        B["hist_text"].set("0 (that epoch alone)" if hist < 0.025 else
+                           f"{hist:.2f} (about {1 / (1 - hist):.0f} epochs)")
+        if not B["var"].get():
             return
-        w = ema_weights(self._repair_blend_epochs, up_to, hist)
+        w = ema_weights(B["epochs"], up_to, hist)
         top = sorted(w.items(), key=lambda kv: -kv[0])
         shown = " \u00b7 ".join(f"e{e} {v * 100:.0f}%" for e, v in top[:6])
-        self.repair_blend_info_var.set(f"Mix: {shown}" + (f" \u00b7 +{len(top) - 6} more" if len(top) > 6 else ""))
+        B["info_var"].set(f"Mix: {shown}" + (f" \u00b7 +{len(top) - 6} more" if len(top) > 6 else ""))
         key = tuple(sorted((e, round(v, 5)) for e, v in w.items()))
-        if key == getattr(self, "_repair_blend_last", None):
+        if key == B["last"]:
             return
-        self._repair_blend_last = key
+        B["last"] = key
         eng = self.repair_engine
         if eng is not None and hasattr(eng, "set_blend"):
-            eng.set_blend(w)
+            eng.set_blend(w, role=PRIMARY if role == "primary" else DONOR)
             self._schedule_preview()
 
     # ----- music (sound-only families: ACE-Step) ------------------------------------------
