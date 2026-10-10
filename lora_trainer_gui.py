@@ -18446,8 +18446,14 @@ class LoRATrainerGUI:
                     _sp.pack(side=tk.LEFT, padx=(0, 6))
                     _sp.bind("<FocusOut>", lambda e: self._repair_lucky_bounds_changed())
                     _sp.bind("<Return>", lambda e: self._repair_lucky_bounds_changed())
-                ToolTip(_lb, "The lowest and highest strength a lucky roll may give any block (the model's own ranges "
-                             "still shape each band). A Min of 0 or more means nothing is inverted.")
+                self.repair_lucky_hold_var = tk.BooleanVar(value=True)
+                self._repair_lucky_hold_chk = ttk.Checkbutton(_lb, text="Hold structure + tidy-up",
+                                                              variable=self.repair_lucky_hold_var,
+                                                              style="Surface.TCheckbutton")
+                self._repair_lucky_hold_chk.pack(side=tk.LEFT, padx=(4, 0))
+                ToolTip(_lb, "A lucky roll gives every block a strength anywhere between Min and Max, evenly (a "
+                             "negative Min allows inverted blocks). Hold keeps the bands the model's block map marks "
+                             "as structure and tidy-up near 1; untick it to roll every block across Min-Max.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
         # five blocks — ● built (hover for the thumb, click to restore that state and see
         # it), ○ still to build.
@@ -19220,8 +19226,8 @@ class LoRATrainerGUI:
                                          fg=COLORS["text_muted"], font=(FONT_FAMILY, 10), anchor=tk.W,
                                          justify=tk.LEFT, cursor="xterm")
         self._repair_pb_ghost.bind("<Button-1>", lambda e: self._repair_pb_text.focus_set())
-        self._repair_pb_text.bind("<Configure>", lambda e: self._repair_pb_ghost.configure(
-            wraplength=max(200, e.width - 12)))
+        self._repair_pb_text.bind("<Configure>", lambda e: (self._repair_pb_ghost.configure(
+            wraplength=max(200, e.width - 12)), self._repair_pb_grow()))
         self.repair_prompt_b_var.trace_add("write", lambda *_: self._repair_pb_changed(text=True))
         pb_ctl = ttk.Frame(parent)
         pb_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
@@ -23594,9 +23600,8 @@ class LoRATrainerGUI:
             pass
 
     # ----- Prompt B ------------------------------------------------------------------------
-    _PB_GHOST_MUSIC = ("Style only, no lyrics - e.g. dark synthwave, gothic choir vocals, analog arpeggios, deep "
-                       "pulsing bass, cathedral reverb. Prompt A's lyrics are sung (Keep Prompt A's lyrics).")
-    _PB_GHOST = "A second prompt to blend with the first - e.g. the same scene as an oil painting, golden hour."
+    _PB_GHOST_MUSIC = "Style words to blend in, no lyrics.\ne.g. dark synthwave, gothic choir, analog arpeggios, cathedral reverb"
+    _PB_GHOST = "A second prompt to blend in.\ne.g. the same scene as an oil painting, golden hour"
 
     def _repair_pb_supported(self):
         desc = self._repair_desc()
@@ -23628,6 +23633,28 @@ class LoRATrainerGUI:
             self._repair_pb_ghost.place_forget()
         else:
             self._repair_pb_ghost.place(x=4, y=2, relwidth=1.0, width=-12)
+        self._repair_pb_grow()
+
+    def _repair_pb_grow(self):
+        """The box grows to fit what it shows - the grey example while empty, else the text (2 to 8 lines)."""
+        w = getattr(self, "_repair_pb_text", None)
+        if w is None:
+            return
+        try:
+            import tkinter.font as tkfont
+            line = max(1, tkfont.Font(font=w.cget("font")).metrics("linespace"))
+            txt = self.repair_prompt_b_var.get()
+            if txt.strip():
+                per_line = max(40, int(w.winfo_width() or 0) // 7)
+                lines = 1 + len(txt) // per_line
+            else:
+                self._repair_pb_ghost.update_idletasks()
+                lines = -(-int(self._repair_pb_ghost.winfo_reqheight()) // line)
+            lines = max(2, min(8, lines))
+            if int(w.cget("height")) != lines:
+                w.configure(height=lines)
+        except Exception:
+            pass
 
     def _repair_pb_effective(self):
         """The Prompt B the engine renders, or None: B as typed, or (Keep Prompt A's lyrics, music) B's style part
@@ -23789,8 +23816,7 @@ class LoRATrainerGUI:
         self._schedule_preview()
 
     # ----- I'm feeling lucky -------------------------------------------------------------
-    _LUCKY_DEFAULT = ((0, 10 ** 6, 0.4, 1.4, 0.0),)
-    _LUCKY_BOUNDS = (-1.5, 1.5)
+    _LUCKY_BOUNDS = (0.0, 1.5)
 
     def _repair_lucky_bounds(self):
         """(min, max) from the boxes beside the button, within the sliders' -3..3 (defaults when unreadable)."""
@@ -23821,18 +23847,20 @@ class LoRATrainerGUI:
         self.repair_lucky_max_var.set(f"{float(hi):g}")
 
     def _repair_feeling_lucky(self):
-        """A random slider mix for the primary, zone by zone (description.lucky_zones). One undo step."""
+        """A random slider mix for the primary: every block evenly between Min and Max, the held bands
+        (description.lucky_zones, while Hold is ticked) within their own range. One undo step."""
         import random
         V = getattr(self, "repair_block_vars", {})
         if not V:
             return
         desc = self._repair_desc()
-        zones = (getattr(desc, "lucky_zones", ()) if desc is not None else ()) or self._LUCKY_DEFAULT
+        hold = getattr(self, "repair_lucky_hold_var", None)
+        zones = (getattr(desc, "lucky_zones", ()) if desc is not None else ()) if (hold is None or hold.get()) else ()
         eng = self.repair_engine
         live = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
         order = list(V)
         b_lo, b_hi = self._repair_lucky_bounds()
-        kept_off = inverted = 0
+        kept_off = inverted = held = 0
         changed = []
         self._repair_master_mutating = True            # one preview at the end
         try:
@@ -23843,14 +23871,13 @@ class LoRATrainerGUI:
                     kept_off += 1
                     continue                           # ticked off: the dice never touch a tick
                 z = next((z for z in zones if z[0] <= i <= z[1]), None)
-                if z is None:
-                    continue
-                _, _, lo, hi, p_inv = z
-                # evenly over the band: no value (0 included) more likely than another; the tick is never touched
+                lo, hi = (z[2], z[3]) if z is not None else (b_lo, b_hi)
+                lo, hi = max(lo, b_lo), min(hi, b_hi)          # Min / Max bound the held bands too
+                if lo > hi:
+                    lo = hi = min(max(1.0, b_lo), b_hi)
+                held += z is not None
+                # evenly over the range: no value (0 included) more likely than another; the tick is never touched
                 x = round(random.uniform(lo, hi) / 0.05) * 0.05
-                if random.random() < p_inv and b_lo < 0:
-                    x = -round(random.uniform(0.3, 1.5) / 0.05) * 0.05
-                x = min(max(x, b_lo), b_hi)                    # the bounds beside the button
                 inverted += x < 0
                 V[bid]["primary_strength"].set(round(x, 2))
                 changed.append(bid)
@@ -23860,8 +23887,8 @@ class LoRATrainerGUI:
             self._on_master_target_changed()
         except Exception:
             pass
-        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled within {b_lo:g} to {b_hi:g}, "
-                                   f"{inverted} inverted"
+        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled, {b_lo:g} to {b_hi:g}"
+                                   + (f" ({held} held near 1)" if held else "") + f", {inverted} inverted"
                                    + (f", {kept_off} ticked off left alone" if kept_off else "")
                                    + " (Ctrl+Z for the mix before; Save Preset\u2026 to keep it).")
         if changed and eng is not None and getattr(eng, "primary_network", None) is not None:

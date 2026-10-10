@@ -444,9 +444,10 @@ class FamilyDescription:
     clip_regimes: tuple = ()
     # Repair Studio built-ins beyond Reset All: (name, ((block id, strength), ...)) - every other block at 1.0
     repair_presets: tuple = ()
-    # Repair Studio's "I'm feeling lucky" (a random slider mix): ((first, last, low, high, p_invert), ...) over block
-    # positions in the block map - each block in a zone gets a strength spread evenly over [low, high], or inverted
-    # with chance p_invert. The dice never untick a block. () = one gentle zone over every block
+    # Repair Studio's "I'm feeling lucky" (a random slider mix): every block rolls evenly between the Min / Max boxes
+    # beside the button, except the bands held here while "Hold" is ticked: ((first, last, low, high), ...) over
+    # block positions in the block map, each held block rolled within [low, high] instead. The dice never untick a
+    # block. () = nothing held
     lucky_zones: tuple = ()
     # what each block carries, measured with the Profiler: ((block id, category), ...), category one of
     # "identity" / "look" / "style_ident_overlap" (Repair Studio's colours). Unlisted blocks stay uncoloured.
