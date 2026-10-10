@@ -16,6 +16,10 @@ saved epochs at EMA weights (find_epochs + ema_weights) or any LoRAs of the fami
 (set_sources, the primary's LoRA mix). They load as a mix first needs them (at most MAX_EPOCHS_LOADED per LoRA stay
 on the card).
 
+Model EQ: a LoRA made from the model's own weights (scripts/extract_model_lora.py, marker ss_fizgig_model_lora) maps
+each block's slider s to (s - 1) x its gain - 1.0 and an unticked block are the stock model. Primary, donor or in a
+mix alike; a save bakes the mapped strengths into an ordinary LoRA without the marker.
+
 Turbo Preview (description.activation_cache, switched by the tab's tick through `turbo_preview`): a slider-only change
 replays the blocks before the earliest changed one from the last render (families/act_cache.py).
 
@@ -39,6 +43,23 @@ from fizgig.families.lora import FamilyLoRA
 logger = logging.getLogger(__name__)
 
 PRIMARY, DONOR, SPEED = "primary", "donor", "speed_lora"
+MODEL_EQ_MARKER, MODEL_EQ_GAIN = "ss_fizgig_model_lora", "ss_fizgig_model_lora_gain"
+
+
+def model_eq_gain(path):
+    """A Model EQ LoRA's gain (scripts/extract_model_lora.py writes the marker), or None for any other file."""
+    try:
+        from safetensors import safe_open
+        with safe_open(path, "pt") as f:
+            meta = f.metadata() or {}
+    except Exception:
+        return None
+    if meta.get(MODEL_EQ_MARKER) != "1":
+        return None
+    try:
+        return float(meta.get(MODEL_EQ_GAIN, 0.25))
+    except ValueError:
+        return 0.25
 EPOCH = "epoch_"                    # + the epoch number: one adapter per blended epoch (the primary keeps PRIMARY)
 
 _EPOCH_RE = re.compile(r"^(?P<stem>.+)-(?P<n>\d{6})\.safetensors$", re.I)
@@ -242,7 +263,17 @@ class WorkbenchEngine:
             raise ValueError(f"{os.path.basename(path)} adapts nothing in {self.desc.display_name} "
                              "(a LoRA for another model?)")
         self.net.move_adapter(name, self.device)
+        gain = model_eq_gain(path)
+        eq = self.__dict__.setdefault("_eq", {})
+        eq.pop(name, None)
+        if gain is not None:
+            eq[name] = gain
+            self.net.set_outside(name, False)          # an EQ acts through its block sliders only
         return n
+
+    def is_model_eq(self, role=PRIMARY):
+        """The role's file is a Model EQ LoRA (its sliders read 1.0 = the stock model)."""
+        return role in getattr(self, "_eq", {})
 
     def load_primary(self, path):
         if self.pipeline is None:
@@ -452,12 +483,15 @@ class WorkbenchEngine:
         for role, who in ((PRIMARY, "primary"), (DONOR, "donor")):
             scale = float(getattr(state, f"{who}_scale", 1.0))
             targets += [(n, who, scale * w) for n, w in self._role_names(role)]
+        eq = getattr(self, "_eq", {})
         for name, who, strength in targets:
             if not self.net.has(name):
                 continue
+            mult = {b: float(getattr(bs, f"{who}_strength")) for b, bs in state.blocks.items()}
+            if name in eq:                               # Model EQ: 1.0 = stock
+                mult = {b: (m - 1.0) * eq[name] for b, m in mult.items()}
             self.net.set_blocks(
-                name, mult={b: float(getattr(bs, f"{who}_strength")) for b, bs in state.blocks.items()},
-                enabled={b: bool(getattr(bs, f"{who}_enabled")) for b, bs in state.blocks.items()})
+                name, mult=mult, enabled={b: bool(getattr(bs, f"{who}_enabled")) for b, bs in state.blocks.items()})
             self.net.set_strength(name, strength)
 
     def mark_blocks_changed(self, blocks):
@@ -891,8 +925,8 @@ class WorkbenchEngine:
                 metadata = {str(k): str(v) for k, v in (f.metadata() or {}).items()}
         except Exception:
             metadata = {}
-        for stale in ("sshs_model_hash", "sshs_legacy_hash", "modelspec.hash_sha256"):
-            metadata.pop(stale, None)
+        for stale in ("sshs_model_hash", "sshs_legacy_hash", "modelspec.hash_sha256", MODEL_EQ_MARKER, MODEL_EQ_GAIN):
+            metadata.pop(stale, None)              # a baked Model EQ is an ordinary LoRA, used at 1.0
         if ranks:
             metadata["ss_network_dim"] = str(max(ranks.values()))
             metadata["ss_network_alpha"] = str(float(max(ranks.values())))
@@ -946,6 +980,7 @@ class WorkbenchEngine:
         self.primary_block_ids, self.donor_block_ids = set(), set()
         self.primary_hash = None
         self._clear_blend_state()
+        self._eq = {}
         self._prompt_cache = {}
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()

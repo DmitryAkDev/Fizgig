@@ -18669,6 +18669,7 @@ class LoRATrainerGUI:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
                 self._repair_blend_show(False)        # H3 has its own engine: no mix
+                self._repair_model_eq_buttons()
                 for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
                     _w.grid_remove()
                 self._repair_h3_label.grid()
@@ -18695,6 +18696,7 @@ class LoRATrainerGUI:
                 self._repair_blend_show(True)
                 self._repair_lucky_load_bounds()
                 self._repair_pb_layout()
+                self._repair_model_eq_buttons()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(True)          # every family's load-strength boxes (16 Sep 2026)
@@ -19078,6 +19080,10 @@ class LoRATrainerGUI:
         primary_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
         ttk.Button(primary_btn_frame, text="Browse",
                    command=self._browse_and_load_primary).pack(side=tk.LEFT)
+        self._repair_eq_btn_p = ttk.Button(primary_btn_frame, text="Model EQ",
+                                           command=lambda: self._repair_use_model_eq("primary"))
+        ToolTip(self._repair_eq_btn_p, "The model's own weights as the primary (Preferences: Model EQ LoRA): the block "
+                                       "sliders EQ the stock model, 1.0 = unchanged.")
         self.repair_primary_scale_var = tk.StringVar(value="1.0")
         self._repair_scale_widgets = []
         self._build_repair_scale_control(primary_btn_frame, self.repair_primary_scale_var,
@@ -19098,6 +19104,10 @@ class LoRATrainerGUI:
         donor_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
         ttk.Button(donor_btn_frame, text="Browse",
                    command=self._browse_and_load_donor).pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_eq_btn_d = ttk.Button(donor_btn_frame, text="Model EQ",
+                                           command=lambda: self._repair_use_model_eq("donor"))
+        ToolTip(self._repair_eq_btn_d, "The model's own weights as the donor: EQ the model under your primary LoRA "
+                                       "(donor sliders at 1.0 = the stock model).")
         ttk.Button(donor_btn_frame, text="Unload Donor",
                    command=self._unload_repair_donor).pack(side=tk.LEFT)
         self.repair_donor_scale_var = tk.StringVar(value="1.0")
@@ -23384,7 +23394,8 @@ class LoRATrainerGUI:
             self._find_repair_profile_match()
             self.repair_status_var.set(
                 f"Primary loaded: {os.path.basename(path)} "
-                f"({n_active}/{len(self.repair_state.blocks)} blocks). Generating preview…")
+                f"({n_active}/{len(self.repair_state.blocks)} blocks).{self._repair_eq_note('primary')} "
+                "Generating preview\u2026")
             if on_done is not None:
                 on_done()          # a chained donor load schedules the preview itself
             else:
@@ -23448,9 +23459,21 @@ class LoRATrainerGUI:
             self._refresh_block_slider_activity()
             self._repair_blend_reset_ui(role="donor")
             n_donor = len(engine.donor_block_ids)
+            eq_note = self._repair_eq_note("donor")
+            if eq_note:                                   # a Model EQ donor starts at the stock model
+                self._repair_master_mutating = True
+                try:
+                    for bid in engine.donor_block_ids:
+                        v = self.repair_block_vars.get(bid)
+                        if v is not None:
+                            v["donor_enabled"].set(True)
+                            v["donor_strength"].set(1.0)
+                finally:
+                    self._repair_master_mutating = False
             self.repair_status_var.set(
                 f"Donor loaded: {os.path.basename(path)} "
-                f"({n_donor}/{len(self.repair_state.blocks)} blocks). Enable per-block to mix in.")
+                f"({n_donor}/{len(self.repair_state.blocks)} blocks)."
+                + (eq_note if eq_note else " Enable per-block to mix in."))
             if on_done is not None:
                 on_done()
 
@@ -23735,12 +23758,56 @@ class LoRATrainerGUI:
         """Reset the Start button text back to 'Start'."""
         self._repair_start_btn.configure(text="Start")
 
-    def _browse_and_load_primary(self):
+    # ----- Model EQ (a LoRA of the model's own weights; families/workbench.py model_eq_gain) -----
+    def _repair_model_eq_path(self):
+        desc = self._repair_desc()
+        key = desc.pref_for("model_eq") if desc is not None else ""
+        p = self.prefs_vars[key].get().strip() if key and key in getattr(self, "prefs_vars", {}) else ""
+        return p if p and os.path.isfile(p) else ""
+
+    def _repair_model_eq_buttons(self):
+        """The Model EQ buttons beside Browse, for a family whose Model EQ LoRA is set in Preferences."""
+        on = bool(self._repair_model_eq_path()) and not self._repair_is_video()
+        for b, pad in ((getattr(self, "_repair_eq_btn_p", None), (4, 0)), (getattr(self, "_repair_eq_btn_d", None), (0, 4))):
+            if b is None:
+                continue
+            if on and not b.winfo_manager():
+                b.pack(side=tk.LEFT, padx=pad)
+            elif not on and b.winfo_manager():
+                b.pack_forget()
+
+    def _repair_use_model_eq(self, role):
+        path = self._repair_model_eq_path()
+        if not path:
+            self.repair_status_var.set("Set the Model EQ LoRA in Preferences first.")
+            return
+        if role == "primary":
+            self._browse_and_load_primary(path=path)
+            self.repair_status_var.set("Model EQ as the primary: press Start / Update to load it (1.0 = the stock model).")
+        else:
+            self._browse_and_load_donor(path=path)
+
+    def _repair_eq_note(self, role):
+        eng = self.repair_engine
+        if eng is None or not hasattr(eng, "is_model_eq"):
+            return ""
+        from fizgig.families.workbench import DONOR, PRIMARY
+        key = PRIMARY if role == "primary" else DONOR
+        if not eng.is_model_eq(key):
+            return ""
+        g = eng._eq[key]
+        return (f" Model EQ: 1.0 = the stock model, 0 / 2 = -{g * 100:.0f}% / +{g * 100:.0f}% of each block's main "
+                "directions.")
+
+    def _browse_and_load_primary(self, path=None):
         """Browse for a primary LoRA. Picking a file changes NOTHING — no reload, no render
         (Peter, 22 Aug: the user may want to set the prompt/seed/sliders first). The Start
         button arms as Update; its click does the swap-and-render (_repair_start already
         handles a changed primary with a full reset + reload)."""
-        self._browse_repair_lora(self.repair_primary_var)
+        if path is None:
+            self._browse_repair_lora(self.repair_primary_var)
+        else:
+            self.repair_primary_var.set(path)
         path = self.repair_primary_var.get().strip()
         if not path or not os.path.exists(path):
             return
@@ -23748,12 +23815,15 @@ class LoRATrainerGUI:
                 and self.repair_engine.primary_path != path:
             self._repair_mark_update_needed()
 
-    def _browse_and_load_donor(self):
+    def _browse_and_load_donor(self, path=None):
         """Browse for a donor LoRA. With a primary loaded and the engine idle, the donor
         loads right away so its sliders appear on the pick (Peter, 5 Sep: it used to need
         an Update click first); mid-render, or before a primary, the pick arms Update and
         Start / Update does the load."""
-        self._browse_repair_lora(self.repair_donor_var)
+        if path is None:
+            self._browse_repair_lora(self.repair_donor_var)
+        else:
+            self.repair_donor_var.set(path)
         path = self.repair_donor_var.get().strip()
         if not path or not os.path.exists(path):
             return

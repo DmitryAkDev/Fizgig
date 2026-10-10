@@ -44,6 +44,10 @@ ACESTEP15 = FamilyDescription(
                        "guidance - slower, the most detail)."),
         ModelFile("acestep15xl_vae", "ACE-Step 1.5 VAE", True, _COMFY, "split_files/vae/ace_1.5_vae.safetensors", 0.34,
                   role="vae", hint="The Oobleck audio VAE: 48 kHz stereo to 64 channels at 25 per second."),
+        ModelFile("acestep15xl_model_eq", "Model EQ LoRA (Fizgig)", False, role="model_eq",
+                  hint="Optional: ACE-Step XL Turbo's own weights as a LoRA. In Repair Studio its block sliders "
+                       "become an EQ of the model itself - 1.0 is the stock model - and a save bakes your EQ into "
+                       "an ordinary LoRA. Load it as the primary or the donor with the Model EQ buttons."),
         ModelFile("acestep15xl_text_encoder", "Qwen3 0.6B text encoder", True, _COMFY,
                   "split_files/text_encoders/qwen_0.6b_ace15.safetensors", 1.19, role="text_encoder",
                   hint="Encodes the captions and lyrics for caching, then unloads before training."),
