@@ -10621,6 +10621,7 @@ class LoRATrainerGUI:
             "Output size, steps and seed apply to all of them.",
         )
         prompt_card.grid_columnconfigure(1, weight=1)
+        self._samples_prompt_card = prompt_card       # a family's own Samples rows (_samples_family_option_rows)
 
         ttk.Label(prompt_card, text="Prompt:").grid(row=0, column=0, sticky=tk.NW, padx=(0, 10), pady=4)
         self.sample_prompt_text = tk.Text(
@@ -11298,6 +11299,7 @@ class LoRATrainerGUI:
             # A described family greys / relabels the sample controls itself (RefMod has no samples).
             if self._family_desc() is not None:
                 self._generic_samples_ui(self._family_desc())
+            self._samples_family_option_rows(self._family_desc())
             # ...then let MiniMax override the wording that is still Klein's. Runs AFTER, so the
             # Klein path above is untouched.
             self._apply_samples_minimax(bool(config.get("is_minimax")))
@@ -11464,6 +11466,45 @@ class LoRATrainerGUI:
             self._generic_samples_ui(desc)      # turbo on/off: Steps and CFG follow (only boxes still on a default)
         else:
             self._show_turbo_strength(desc)
+
+    def _samples_family_option_rows(self, desc):
+        """The Samples tab's rows for a family's own sample options (description.options, tab "samples", e.g.
+        ACE-Step's song length), in the Sample length slot. An option tied to an old Samples control (H3's
+        SAMPLE_FRAMES) uses that control instead. Kept per option key in last_used["sample_options"], so per family."""
+        card = getattr(self, "_samples_prompt_card", None)
+        if card is None:
+            return
+        for w in getattr(self, "_samples_family_opt_widgets", ()):
+            w.destroy()
+        self._samples_family_opt_widgets = []
+        kept = self.last_used.setdefault("sample_options", {})
+        r = 8
+        for opt in [o for o in (desc.options if desc is not None else ())
+                    if o.tab == "samples" and not o.setting and o.kind == "choice"]:
+            labels = opt.choice_labels()
+            val = kept.get(opt.key)
+            val = val if val in labels else labels[0]
+            self.settings[opt.key] = val
+            lab = ttk.Label(card, text=f"{opt.label}:")
+            lab.grid(row=r, column=0, sticky=tk.W, padx=(0, 10), pady=4)
+            var = tk.StringVar(value=val)
+            box = ttk.Combobox(card, textvariable=var, state="readonly", values=labels,
+                               width=max(24, max(len(x) for x in labels) + 2))
+            box.grid(row=r, column=1, columnspan=2, sticky=tk.W, pady=4)
+            self._samples_family_opt_widgets += [lab, box]
+            if opt.hint:
+                h = tk.Label(card, text=opt.hint, font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
+                             bg=COLORS["bg_surface"], wraplength=560, justify=tk.LEFT)
+                h.grid(row=r + 1, column=1, columnspan=2, sticky=tk.W, pady=(0, 4))
+                self._samples_family_opt_widgets.append(h)
+
+            def _store(*_a, o=opt, v=var):
+                self._family_option_store(o, v.get())
+                self.last_used.setdefault("sample_options", {})[o.key] = v.get()
+                self._save_last_used_paths()
+            var.trace_add("write", _store)
+            box._fizgig_var = var                 # the var lives as long as its box
+            r += 2
 
     def _generic_samples_ui(self, desc):
         """Standard layer: the Samples tab for a described family. Previews render on the live training model at
