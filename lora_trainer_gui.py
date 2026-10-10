@@ -18671,7 +18671,7 @@ class LoRATrainerGUI:
                 self._repair_blend_show(False)        # H3 has its own engine: no mix
                 self._repair_model_eq_buttons()
                 for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows + \
-                        (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_ref_rows:
+                        (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_sound_rows:
                     _w.grid_remove()
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
@@ -19272,9 +19272,9 @@ class LoRATrainerGUI:
         ttk.Checkbutton(self._repair_src_tick_frame, text="Start from a song (audio to audio)",
                         variable=self.repair_src_on_var, command=self._repair_src_toggled,
                         style="Surface.TCheckbutton").pack(side=tk.LEFT)
-        self.repair_ref_on_var = tk.BooleanVar(value=False)
+        self.repair_sound_on_var = tk.BooleanVar(value=False)
         _rt = ttk.Checkbutton(self._repair_src_tick_frame, text="Sound like a recording (reference)",
-                              variable=self.repair_ref_on_var, command=self._repair_src_toggled,
+                              variable=self.repair_sound_on_var, command=self._repair_src_toggled,
                               style="Surface.TCheckbutton")
         _rt.pack(side=tk.LEFT, padx=(16, 0))
         ToolTip(_rt, "The model hears a recording (30 s of it: a piece from the start, middle and end) and makes the "
@@ -19319,22 +19319,22 @@ class LoRATrainerGUI:
                          "They work together or alone. Any audio or video file works.")
         self._repair_src_rows = (self._repair_src_label, self._repair_src_entry, src_ctl, src_amt)
         r += 1
-        self._repair_ref_label = ttk.Label(parent, text="Sound like:")
-        self._repair_ref_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        self.repair_ref_path_var = tk.StringVar(value="")
-        self._repair_ref_entry = ttk.Entry(parent, textvariable=self.repair_ref_path_var)
-        self._repair_ref_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
-        self.repair_ref_path_var.trace_add("write", lambda *_: self._repair_src_changed(path=True))
+        self._repair_sound_label = ttk.Label(parent, text="Sound like:")
+        self._repair_sound_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        self.repair_sound_path_var = tk.StringVar(value="")
+        self._repair_sound_entry = ttk.Entry(parent, textvariable=self.repair_sound_path_var)
+        self._repair_sound_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_sound_path_var.trace_add("write", lambda *_: self._repair_src_changed(path=True))
         ref_ctl = ttk.Frame(parent)
         ref_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
         ttk.Button(ref_ctl, text="Browse", command=lambda: self._repair_src_browse("ref")).pack(side=tk.LEFT)
-        self._repair_ref_rec_btn = ttk.Button(ref_ctl, text="\U0001f399 Record",
+        self._repair_sound_rec_btn = ttk.Button(ref_ctl, text="\U0001f399 Record",
                                               command=lambda: self._repair_src_record("ref"))
-        self._repair_ref_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
-        ToolTip(self._repair_ref_rec_btn, "Record from your microphone for the Length setting, then use the take "
+        self._repair_sound_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
+        ToolTip(self._repair_sound_rec_btn, "Record from your microphone for the Length setting, then use the take "
                                           "as the reference.")
-        self._repair_ref_rows = (self._repair_ref_label, self._repair_ref_entry, ref_ctl)
-        for _w in (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_ref_rows:
+        self._repair_sound_rows = (self._repair_sound_label, self._repair_sound_entry, ref_ctl)
+        for _w in (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_sound_rows:
             _w.grid_remove()
         r += 1
 
@@ -23817,7 +23817,7 @@ class LoRATrainerGUI:
         ok = self._repair_src_supported()
         self._repair_src_tick_frame.grid() if ok else self._repair_src_tick_frame.grid_remove()
         for rows, var in ((self._repair_src_rows, self.repair_src_on_var),
-                          (self._repair_ref_rows, self.repair_ref_on_var)):
+                          (self._repair_sound_rows, self.repair_sound_on_var)):
             show = ok and var.get()
             for w in rows:
                 w.grid() if show else w.grid_remove()
@@ -23829,7 +23829,7 @@ class LoRATrainerGUI:
 
     def _repair_src_browse(self, which="src"):
         from tkinter import filedialog
-        var = self.repair_ref_path_var if which == "ref" else self.repair_src_path_var
+        var = self.repair_sound_path_var if which == "ref" else self.repair_src_path_var
         cur = var.get().strip()
         p = filedialog.askopenfilename(parent=self.master, title="Reference recording" if which == "ref"
                                        else "Source song", filetypes=self._SRC_TYPES,
@@ -23848,8 +23848,8 @@ class LoRATrainerGUI:
         d, f = self._repair_snap(self.repair_src_denoise_var.get()), self._repair_snap(self.repair_src_follow_var.get())
         if not (ok and self.repair_src_on_var.get() and path and os.path.isfile(path)) or (d >= 1.0 and f <= 0.0):
             path, d, f = None, 1.0, 0.0
-        ref = self.repair_ref_path_var.get().strip()
-        if not (ok and self.repair_ref_on_var.get() and ref and os.path.isfile(ref)):
+        ref = self.repair_sound_path_var.get().strip()
+        if not (ok and self.repair_sound_on_var.get() and ref and os.path.isfile(ref)):
             ref = None
         return path, d, f, ref
 
@@ -23895,8 +23895,8 @@ class LoRATrainerGUI:
         song (or, which "ref", the reference)."""
         if getattr(self, "_repair_src_recording", False):
             return
-        btn = self._repair_ref_rec_btn if which == "ref" else self._repair_src_rec_btn
-        var = self.repair_ref_path_var if which == "ref" else self.repair_src_path_var
+        btn = self._repair_sound_rec_btn if which == "ref" else self._repair_src_rec_btn
+        var = self.repair_sound_path_var if which == "ref" else self.repair_src_path_var
         try:
             import gizmo as _gz
             from fizgig.families.clips import ffmpeg
