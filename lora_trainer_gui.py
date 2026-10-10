@@ -24079,7 +24079,11 @@ class LoRATrainerGUI:
         tk.Button(row, text="\u25a0 Stop", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
                   activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
                   bd=0, padx=10, pady=4, cursor="hand2", command=self._repair_song_stop
-                  ).pack(side=tk.LEFT, padx=(4, 12))
+                  ).pack(side=tk.LEFT, padx=(4, 4))
+        tk.Button(row, text="💾 Save Tweaked WAV", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
+                  fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                  activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
+                  command=self._repair_song_save).pack(side=tk.LEFT, padx=(4, 12))
         bar = tk.Canvas(row, height=18, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
         bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
         # click = jump; drag = the section to loop; right-click = loop the whole song again
@@ -24186,6 +24190,31 @@ class LoRATrainerGUI:
         self._repair_stop_wav()
         self._repair_song_mark()
         self._repair_song_draw()
+
+    def _repair_song_save(self):
+        """The whole Tweaked song as rendered, 48 kHz 16-bit stereo WAV. Named <LoRA>_tweaked_seed<N>.wav in the
+        LoRA's folder by default."""
+        wav = self._repair_songs.get("tweaked")
+        if wav is None:
+            self.repair_status_var.set("Nothing to save yet: the Tweaked song renders after the first preview.")
+            return
+        from tkinter import filedialog
+        lora = self.repair_primary_var.get().strip()
+        stem = os.path.splitext(os.path.basename(lora))[0] if lora else "song"
+        seed = self.repair_seed_var.get().strip()
+        path = filedialog.asksaveasfilename(
+            parent=self.master, title="Save the Tweaked song", defaultextension=".wav",
+            filetypes=[("WAV audio", "*.wav")], initialdir=os.path.dirname(lora) if lora else None,
+            initialfile=f"{stem}_tweaked" + (f"_seed{seed}" if seed else "") + ".wav")
+        if not path:
+            return
+        try:
+            from fizgig.minimax.common import write_wav
+            write_wav(path, wav, sample_rate=self._SONG_RATE)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not save the song: {e}")
+            return
+        self.repair_status_var.set(f"Saved {os.path.basename(path)} ({wav.shape[1] / self._SONG_RATE:.0f} s)")
 
     def _repair_song_loop_toggled(self):
         """Loop switched while a song plays: carry on from the same moment, looping or not."""
