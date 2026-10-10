@@ -191,6 +191,10 @@ class WorkbenchEngine:
         # Applies to every render, the Baseline too, so Baseline vs Tweaked still shows only the sliders
         self.prompt_b = None
         self.prompt_blend = 0.0
+        # audio to audio (a driver with supports_audio_source): the source file and the denoise (1 = no source)
+        self.source_path = None
+        self.source_denoise = 1.0
+        self._source_cache = {}
 
     # ---- the block map ------------------------------------------------------------------------------
     def block_groups(self):
@@ -680,8 +684,33 @@ class WorkbenchEngine:
     def _prompt_b_key(self):
         return (self.prompt_b, round(float(self.prompt_blend or 0), 4)) if self._prompt_b_live() else None
 
+    def _source_live(self):
+        return bool(self.source_path and float(self.source_denoise) < 1.0
+                    and getattr(self.driver, "supports_audio_source", False))
+
+    def _source_key(self):
+        if not self._source_live():
+            return None
+        try:
+            stamp = (os.path.getsize(self.source_path), int(os.path.getmtime(self.source_path)))
+        except OSError:
+            stamp = None
+        return (self.source_path, stamp, round(float(self.source_denoise), 4))
+
+    def _source_latent(self, seconds):
+        key = (self._source_key()[:2], round(float(seconds), 3))
+        if key not in self._source_cache:
+            if self.lowmem:
+                self.vae.to(self.device)
+            try:
+                self._source_cache = {key: self.driver.encode_source(self.vae, self.source_path, seconds)}
+            finally:
+                if self.lowmem:
+                    self.vae.to("cpu")
+        return self._source_cache[key]
+
     def render(self, cond, width, height, seed, *, steps=None, noise=None, refs=None, neg_cond=None, cond_b=None,
-               blend=0.0):
+               blend=0.0, source=None):
         """One image from conditioning with the adapters as currently set (refs: an edit's reference latents;
         neg_cond: the negative, used when the CFG is above 1)."""
         d_steps, cfg, sigmas, options = self.sampling()
@@ -718,6 +747,8 @@ class WorkbenchEngine:
                                             on_step=_step, **({"neg_cond": neg_cond} if neg_cond is not None else {}),
                                             **({"cond_b": self._cond_to_device(cond_b), "prompt_blend": float(blend)}
                                                if cond_b is not None else {}),
+                                            **({"source": source, "denoise": float(self.source_denoise)}
+                                               if source is not None else {}),
                                             **({"refs": [r.to(self.device) for r in refs]} if refs else {}))
         if act is None:
             lat = _generate()
@@ -771,6 +802,7 @@ class WorkbenchEngine:
                                size=(width, height))[0]
         refs = self._edit_refs(state, ref, width, height, prev_latent, prev_latent_strength) \
             if self.reference_kind == "edit" else None
+        source = self._source_latent(width) if self._source_live() else None
         cond_b = None
         if override_ctx is None and self._prompt_b_live():
             cond_b = self.encode([self.prompt_b], ref=ref, ref_mp=ref_mp, size=(width, height))[0]
@@ -792,7 +824,7 @@ class WorkbenchEngine:
         if override_ctx is None and noise is None and prev_latent is None and not self._act_bypass:
             self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self._blend_sig(), self.donor_path,
                               self._speed_path,
-                              self._settings_key(), self._prompt_b_key(),
+                              self._settings_key(), self._prompt_b_key(), self._source_key(),
                               round(float(getattr(state, "primary_scale", 1.0)), 4),
                               round(float(getattr(state, "donor_scale", 1.0)), 4),
                               prompt if prompt is not None else state.prompt, ref, round(float(ref_mp), 4),
@@ -800,7 +832,7 @@ class WorkbenchEngine:
                               int(seed), width, height), self._cache_sig(state))
         try:
             return self.render(cond, width, height, seed, steps=steps, noise=noise, refs=refs, neg_cond=neg,
-                               cond_b=cond_b, blend=float(self.prompt_blend or 0))
+                               cond_b=cond_b, blend=float(self.prompt_blend or 0), source=source)
         finally:
             self._act_ctx = None
 
@@ -841,7 +873,8 @@ class WorkbenchEngine:
     def generate_baseline(self, state):
         """The primary with every slider at 1.0 (at its load strength), donor off. Cached until the prompt, seed,
         size or load strength changes."""
-        key = (self.primary_path, self._blend_sig(), self._prompt_b_key(), state.seed, state.prompt,
+        key = (self.primary_path, self._blend_sig(), self._prompt_b_key(), self._source_key(), state.seed,
+               state.prompt,
                state.preview_width, state.preview_height,
                round(float(getattr(state, "primary_scale", 1.0)), 4), self._state_reference(state),
                round(float(getattr(state, "ref_strength", 1.0) or 0.0), 4),

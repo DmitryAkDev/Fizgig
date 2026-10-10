@@ -350,30 +350,64 @@ class AceStepDriver(FamilyDriver):
         return torch.randn((1, frames or self._frames(), 64), generator=g, dtype=torch.float32)
 
     supports_prompt_blend = True        # generate(cond_b=, prompt_blend=): Repair Studio's Prompt B
+    supports_audio_source = True        # generate(source=, denoise=): Repair Studio's audio to audio
+
+    @torch.no_grad()
+    def encode_source(self, vae, path, seconds):
+        """Any audio (or video) file -> its latent (1, T, 64) at the render's length: the first `seconds`, padded
+        with silence when shorter. The posterior's mean, so the same file always gives the same start."""
+        from fizgig.acestep import vae as V
+        wav = read_audio(path, seconds)
+        n = int(round(float(seconds) * 48000))
+        if wav.shape[1] < n:
+            wav = np.pad(wav, ((0, 0), (0, n - wav.shape[1])))
+        x = torch.from_numpy(wav[:, :n].copy()).to(vae.device, vae.dtype)[None]
+        lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
+        frames = self._frames()
+        if lat.shape[1] < frames:
+            lat = torch.cat([lat, lat.new_zeros(1, frames - lat.shape[1], lat.shape[2])], 1)
+        return lat[:, :frames].cpu()
+
+    @staticmethod
+    def source_start(ts, denoise):
+        """The first of the schedule's timesteps at or below `denoise` (where an audio-to-audio render starts), or
+        None when even the last is above it (the source comes back unchanged)."""
+        return next((t for t in ts if t <= float(denoise) + 1e-6), None)
+
+    def schedule(self, steps, sigmas=None, options=()):
+        """The timesteps a render runs (before the final 0)."""
+        if self.sft:
+            ts = [1.0 - i / SFT_STEPS for i in range(SFT_STEPS)]
+            return [SFT_SHIFT * t / (1 + (SFT_SHIFT - 1) * t) for t in ts] if SFT_SHIFT != 1.0 else ts
+        if sigmas is not None:
+            return [float(s) for s in sigmas if float(s) > 0.0]
+        if int(steps) == len(TURBO_T):
+            return list(TURBO_T)
+        shift = float(dict(options or ()).get("shift", 3.0))
+        return [shift * t / (1 + (shift - 1) * t) for t in (1.0 - i / int(steps) for i in range(int(steps)))]
 
     @torch.no_grad()
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
-                 noise=None, on_step=None, refs=None, cond_b=None, prompt_blend=0.0, **_ignored):
+                 noise=None, on_step=None, refs=None, cond_b=None, prompt_blend=0.0, source=None, denoise=1.0,
+                 **_ignored):
         """cond_b + prompt_blend w: every step runs the model with both prompts and mixes the predictions,
         (1 - w) * A + w * B (guided SFT: each guided on its own, then mixed) - exact at w 0 (A) and 1 (B), any prompt
-        lengths."""
+        lengths. source + denoise d (audio to audio): the render starts from the source latent noised to the first
+        timestep at or below d, and runs only the steps from there (d 1 = from pure noise, as without a source)."""
         device = next(dit.parameters()).device
         w = min(max(float(prompt_blend or 0.0), 0.0), 1.0) if cond_b is not None else 0.0
         if w >= 1.0:
             cond, w = cond_b, 0.0                   # all B: one pass
         x = (self.initial_noise(seed) if noise is None else noise).to(device).float()
         guided = self.sft
-        if guided:
-            ts = [1.0 - i / SFT_STEPS for i in range(SFT_STEPS)]
-            if SFT_SHIFT != 1.0:
-                ts = [SFT_SHIFT * t / (1 + (SFT_SHIFT - 1) * t) for t in ts]
-        elif sigmas is not None:
-            ts = [float(s) for s in sigmas if float(s) > 0.0]
-        elif int(steps) == len(TURBO_T):
-            ts = list(TURBO_T)
-        else:
-            shift = float(dict(options or ()).get("shift", 3.0))
-            ts = [shift * t / (1 + (shift - 1) * t) for t in (1.0 - i / int(steps) for i in range(int(steps)))]
+        ts = self.schedule(steps, sigmas, options)
+        if source is not None and float(denoise) < 1.0:
+            src = source.to(device).float()
+            t0 = self.source_start(ts, denoise)
+            if t0 is None:
+                return src                          # below the last step: the source as it is
+            ts = [t for t in ts if t <= t0 + 1e-9]
+            x = t0 * x + (1.0 - t0) * src           # the source, noised to where the render starts
         ts = ts + [0.0]
         ctx = self._context(x.shape[1], device)
         prompts = [self._condition(dit, cond, x.shape[1], device)]

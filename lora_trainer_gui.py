@@ -18670,7 +18670,8 @@ class LoRATrainerGUI:
                 self._repair_res_combo.pack_forget()
                 self._repair_blend_show(False)        # H3 has its own engine: no mix
                 self._repair_model_eq_buttons()
-                for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
+                for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows + \
+                        (self._repair_src_tick_frame,) + self._repair_src_rows:
                     _w.grid_remove()
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
@@ -18696,6 +18697,7 @@ class LoRATrainerGUI:
                 self._repair_blend_show(True)
                 self._repair_lucky_load_bounds()
                 self._repair_pb_layout()
+                self._repair_src_layout()
                 self._repair_model_eq_buttons()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
@@ -19261,6 +19263,42 @@ class LoRATrainerGUI:
         self._repair_pb_rows = (self._repair_pb_label, self._repair_pb_text, pb_ctl)
         for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
             _w.grid_remove()                              # hidden until a family that blends prompts is picked
+        r += 1
+
+        # Audio to audio (a family whose driver starts from a source, supports_audio_source): hidden behind its tick
+        self._repair_src_tick_frame = ttk.Frame(parent)
+        self._repair_src_tick_frame.grid(row=r, column=1, sticky=tk.W, padx=4, pady=(0, 2))
+        self.repair_src_on_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self._repair_src_tick_frame, text="Start from a song (audio to audio)",
+                        variable=self.repair_src_on_var, command=self._repair_src_toggled,
+                        style="Surface.TCheckbutton").pack(side=tk.LEFT)
+        r += 1
+        self._repair_src_label = ttk.Label(parent, text="Source:")
+        self._repair_src_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        self.repair_src_path_var = tk.StringVar(value="")
+        self._repair_src_entry = ttk.Entry(parent, textvariable=self.repair_src_path_var)
+        self._repair_src_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_src_path_var.trace_add("write", lambda *_: self._repair_src_changed(path=True))
+        src_ctl = ttk.Frame(parent)
+        src_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
+        ttk.Button(src_ctl, text="Browse", command=self._repair_src_browse).pack(side=tk.LEFT)
+        self._repair_src_rec_btn = ttk.Button(src_ctl, text="\U0001f399 Record", command=self._repair_src_record)
+        self._repair_src_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
+        ToolTip(self._repair_src_rec_btn, "Record from your microphone (the one picked in Gizmo's settings) for the "
+                                          "Length setting, then use the take as the source.")
+        ttk.Label(src_ctl, text="Denoise").pack(side=tk.LEFT)
+        self.repair_src_denoise_var = tk.DoubleVar(value=0.6)
+        ttk.Scale(src_ctl, from_=0.05, to=1.0, orient=tk.HORIZONTAL, length=140,
+                  variable=self.repair_src_denoise_var, command=lambda v: self._repair_src_changed()).pack(
+            side=tk.LEFT, padx=4)
+        self.repair_src_readout = tk.StringVar(value="")
+        ttk.Label(src_ctl, textvariable=self.repair_src_readout, width=30).pack(side=tk.LEFT)
+        ToolTip(src_ctl, "The render starts from your song with noise added and runs only the rest of the steps. "
+                         "Low denoise keeps more of the source (timing, melody, structure); high denoise lets the "
+                         "prompt and LoRA change more. 1.0 = ignore the source. Any audio or video file works.")
+        self._repair_src_rows = (self._repair_src_label, self._repair_src_entry, src_ctl)
+        for _w in (self._repair_src_tick_frame,) + self._repair_src_rows:
+            _w.grid_remove()
         r += 1
 
         # Negative prompt row: shown for a family whose Repair Studio renders use CFG above 1 and that takes a negative
@@ -23721,6 +23759,145 @@ class LoRATrainerGUI:
         else:
             self._schedule_preview()
 
+    # ----- audio to audio ----------------------------------------------------------------
+    _SRC_TYPES = [("Audio or video", "*.wav *.mp3 *.flac *.m4a *.aac *.ogg *.opus *.wma *.aif *.aiff *.mp4 *.mov "
+                                      "*.mkv *.webm"), ("All files", "*.*")]
+
+    def _repair_src_supported(self):
+        desc = self._repair_desc()
+        if desc is None or not getattr(desc, "driver", ""):
+            return False
+        try:
+            import importlib
+            mod, _, cls = desc.driver.partition(":")
+            return bool(getattr(getattr(importlib.import_module(mod), cls), "supports_audio_source", False))
+        except Exception:
+            return False
+
+    def _repair_src_layout(self):
+        if getattr(self, "_repair_src_tick_frame", None) is None:
+            return
+        ok = self._repair_src_supported()
+        self._repair_src_tick_frame.grid() if ok else self._repair_src_tick_frame.grid_remove()
+        show = ok and self.repair_src_on_var.get()
+        for w in self._repair_src_rows:
+            w.grid() if show else w.grid_remove()
+        self._repair_src_push()
+
+    def _repair_src_toggled(self):
+        self._repair_src_layout()
+        self._repair_src_changed()
+
+    def _repair_src_browse(self):
+        from tkinter import filedialog
+        cur = self.repair_src_path_var.get().strip()
+        p = filedialog.askopenfilename(parent=self.master, title="Source song", filetypes=self._SRC_TYPES,
+                                       initialdir=os.path.dirname(cur) if cur else None)
+        if p:
+            self.repair_src_path_var.set(p)
+
+    def _repair_src_effective(self):
+        """(path, denoise) the engine renders from, or (None, 1.0)."""
+        if not (self._repair_src_supported() and self.repair_src_on_var.get()):
+            return None, 1.0
+        path = self.repair_src_path_var.get().strip()
+        if not path or not os.path.isfile(path):
+            return None, 1.0
+        return path, round(float(self.repair_src_denoise_var.get()) / 0.05) * 0.05
+
+    def _repair_src_push(self):
+        path, d = self._repair_src_effective()
+        shown = round(float(self.repair_src_denoise_var.get()) / 0.05) * 0.05
+        txt = f"{shown:.2f}"
+        eng = self.repair_engine
+        drv = getattr(eng, "driver", None)
+        if drv is not None and hasattr(drv, "schedule") and hasattr(drv, "source_start"):
+            try:
+                ts = drv.schedule(drv.description.preview_steps)
+                t0 = drv.source_start(ts, shown)
+                n = sum(1 for t in ts if t0 is not None and t <= t0 + 1e-9)
+                txt += (" - the source as it is" if t0 is None else
+                        f" - starts at {t0:.2f}, {n} of {len(ts)} steps")
+            except Exception:
+                pass
+        self.repair_src_readout.set(txt)
+        if eng is not None and hasattr(eng, "source_path"):
+            eng.source_path, eng.source_denoise = path, (d if path else 1.0)
+
+    def _repair_src_changed(self, path=False):
+        key = self._repair_src_effective()
+        self._repair_src_push()
+        if key == getattr(self, "_repair_src_last", None):
+            return
+        self._repair_src_last = key
+        if path:
+            self._repair_mark_update_needed()          # a new file renders on Update, like the prompt
+        else:
+            self._schedule_preview()
+
+    def _repair_src_record(self):
+        """A take from the microphone (Gizmo's capture, its chosen device) for the Length setting."""
+        if getattr(self, "_repair_src_recording", False):
+            return
+        try:
+            import gizmo as _gz
+            from fizgig.families.clips import ffmpeg
+            ff = ffmpeg()
+            dev = (_gz.load_settings() or {}).get("microphone", "") or next(iter(_gz.list_capture_devices(ff)), "")
+            seconds = max(1, int(float(self.repair_res_var.get() or 30)))
+        except Exception as e:
+            self.repair_status_var.set(f"Could not start the microphone: {e}")
+            return
+        import tempfile
+        raw = os.path.join(tempfile.gettempdir(), "fizgig_take.raw")
+        cmd = _gz.build_capture_command(ff, dev, raw)
+        if not cmd:
+            self.repair_status_var.set("No microphone to record from (pick one in Gizmo's \u2699 settings).")
+            return
+        cmd = cmd[:-2] + ["-t", str(seconds)] + cmd[-2:]         # the take is the Length setting long
+        self._repair_src_recording = True
+        self._repair_src_rec_btn.configure(text="\u23fa Recording\u2026", state="disabled")
+        t_end = time.time() + seconds
+
+        def tick():
+            if getattr(self, "_repair_src_recording", False):
+                self.repair_status_var.set(f"Recording from {dev or 'the microphone'}: "
+                                           f"{max(0, t_end - time.time()):.0f} s left\u2026")
+                self.master.after(250, tick)
+
+        def work():
+            import subprocess
+            import wave
+            err = None
+            out = os.path.join(os.path.dirname(raw), f"fizgig_take_{int(time.time())}.wav")
+            try:
+                subprocess.run(cmd, capture_output=True, timeout=seconds + 15)
+                with open(raw, "rb") as f:
+                    data = f.read()
+                if not data:
+                    raise RuntimeError("the microphone gave no sound")
+                with wave.open(out, "wb") as w:
+                    w.setnchannels(_gz.CAPTURE_CHANNELS)
+                    w.setsampwidth(2)
+                    w.setframerate(_gz.CAPTURE_RATE)
+                    w.writeframes(data)
+            except Exception as e:
+                err = e
+            self.master.after(0, lambda: done(out, err))
+
+        def done(out, err):
+            self._repair_src_recording = False
+            self._repair_src_rec_btn.configure(text="\U0001f399 Record", state="normal")
+            if err is not None:
+                self.repair_status_var.set(f"Recording failed: {err}")
+                return
+            self.repair_src_path_var.set(out)
+            self.repair_status_var.set(f"Recorded {seconds} s - press Update to render from it.")
+
+        import threading
+        tick()
+        threading.Thread(target=work, daemon=True).start()
+
     def _repair_mark_update_needed(self):
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""
         if self.repair_engine is not None and self.repair_engine.primary_network is not None:
@@ -24233,6 +24410,7 @@ class LoRATrainerGUI:
             self.repair_engine.request_cancel()
         # Sync state from UI to repair_state (prompt/seed/res live in entries, not bound)
         self._repair_pb_push()
+        self._repair_src_push()
         prompt_text = self.repair_prompt_var.get().strip()
         if not prompt_text:
             # Distilled with empty conditioning → 4 steps of unguided denoising =
@@ -25145,7 +25323,8 @@ class LoRATrainerGUI:
         print(f"[repair] worker: songs, {snapshot.preview_width} s")
         songs = {"baseline": eng.generate_baseline(snapshot), "tweaked": eng.generate_preview(snapshot)}
         key = (eng.primary_path, snapshot.seed, snapshot.prompt, int(snapshot.preview_width),
-               eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None)
+               eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None,
+               eng._source_key() if hasattr(eng, "_source_key") else None)
         if getattr(self, "_repair_nolora_key", None) != key and not self._repair_preview_dirty:
             base = copy.deepcopy(snapshot)
             base.primary_scale, base.donor_scale = 0.0, 0.0
