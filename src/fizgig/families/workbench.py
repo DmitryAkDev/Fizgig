@@ -10,6 +10,11 @@ picks it, else with the family's default sampling. Memory follows the trainer's 
 when a prompt changes, and the DiT parks on CPU while it runs whenever both would not fit; on cards under 20 GB the
 DiT also parks for the VAE decode.
 
+Epoch blend: the saved epochs of the primary's run (find_epochs), each at its EMA weight (set_blend) and all under
+the primary's block sliders, so a run's history is mixed by ear after training - exact, since each epoch is its own
+adapter, and the bake rank-concatenates them into one file. Epochs load as a blend first needs them (at most
+MAX_EPOCHS_LOADED stay on the card).
+
 Turbo Preview (description.activation_cache, switched by the tab's tick through `turbo_preview`): a slider-only change
 replays the blocks before the earliest changed one from the last render (families/act_cache.py).
 
@@ -21,6 +26,7 @@ import gc
 import json
 import logging
 import os
+import re
 import threading
 from typing import Optional
 
@@ -32,6 +38,44 @@ from fizgig.families.lora import FamilyLoRA
 logger = logging.getLogger(__name__)
 
 PRIMARY, DONOR, SPEED = "primary", "donor", "speed_lora"
+EPOCH = "epoch_"                    # + the epoch number: one adapter per blended epoch (the primary keeps PRIMARY)
+
+_EPOCH_RE = re.compile(r"^(?P<stem>.+)-(?P<n>\d{6})\.safetensors$", re.I)
+
+
+def run_epochs(path):
+    """[(epoch, file)] of the run `path` belongs to, oldest first: the <name>-NNNNNN.safetensors files beside it. A
+    final file without a number (the run's last save) counts as the epoch after the highest numbered one."""
+    folder, base = os.path.split(path)
+    m = _EPOCH_RE.match(base)
+    stem = m.group("stem") if m else os.path.splitext(base)[0]
+    found = {}
+    for f in os.listdir(folder or "."):
+        mm = _EPOCH_RE.match(f)
+        if mm and mm.group("stem") == stem:
+            found[int(mm.group("n"))] = os.path.join(folder, f)
+    if not m:
+        found[(max(found) + 1) if found else 1] = path
+    return sorted(found.items())
+
+
+def ema_weights(epochs, up_to, history, floor=0.005):
+    """{epoch: weight} summing to 1: an EMA over the epochs up to `up_to`, as if it had run through training once per
+    epoch with decay `history` (0 = that epoch alone). The newest gets 1 - history, each older one `history` times
+    the next, and the oldest the remainder (the EMA's starting value)."""
+    eps = [e for e in sorted(epochs) if e <= up_to]
+    if not eps:
+        return {}
+    h = min(max(float(history), 0.0), 0.999)
+    w = {}
+    for k, e in enumerate(reversed(eps)):
+        w[e] = (1 - h) * h ** k
+    w[eps[0]] = h ** (len(eps) - 1)
+    # an epoch under `floor` is left out and the rest rescaled: a long history would otherwise load dozens of files
+    # for a few percent between them
+    kept = {e: v for e, v in w.items() if v >= floor}
+    total = sum(kept.values())
+    return {e: v / total for e, v in kept.items()}
 
 
 class RenderCancelled(Exception):
@@ -102,6 +146,7 @@ class WorkbenchEngine:
         self.primary_path = self.donor_path = None
         self.primary_block_ids, self.donor_block_ids = set(), set()
         self.primary_hash = None
+        self._clear_blend_state()
 
         self._prompt_cache = {}             # (prompt,) -> conditioning dict on CPU
         self._cancel_event = threading.Event()
@@ -201,6 +246,7 @@ class WorkbenchEngine:
             raise RuntimeError("Primary already loaded — call reset() to swap.")
         n = self._attach(path, PRIMARY)
         self.primary_network = self.net
+        self._clear_blend_state()
         self.primary_path = path
         self.primary_block_ids = self.net.adapter_blocks(PRIMARY)
         self.primary_hash = self._hash(path)
@@ -221,6 +267,7 @@ class WorkbenchEngine:
             return False
         if n == 0:
             return False
+        self.unload_epochs()
         self.net.move_adapter(PRIMARY, self.device)
         self.primary_path = path
         self.primary_block_ids = self.net.adapter_blocks(PRIMARY)
@@ -259,18 +306,84 @@ class WorkbenchEngine:
         except Exception:
             return None
 
+    # ---- epoch blend ------------------------------------------------------------------------------------
+    def _clear_blend_state(self):
+        self.epoch_files = {}               # epoch -> file of the primary's run (find_epochs)
+        self.epoch_adapters = {}            # epoch -> loaded adapter name (the primary's own epoch maps to PRIMARY)
+        self.primary_epoch = None
+        self.blend = None                   # {epoch: weight} while blending, else None
+
+    MAX_EPOCHS_LOADED = 12
+
+    def find_epochs(self):
+        """The primary's run: [epochs], oldest first (run_epochs). Nothing loads until a blend needs it."""
+        if self.primary_network is None:
+            raise RuntimeError("Load the primary LoRA first.")
+        files = dict(run_epochs(self.primary_path))
+        self.epoch_files = files
+        own = [e for e, f in files.items() if os.path.normcase(os.path.abspath(f)) ==
+               os.path.normcase(os.path.abspath(self.primary_path))]
+        self.primary_epoch = own[0] if own else None
+        self.epoch_adapters = {self.primary_epoch: PRIMARY} if self.primary_epoch is not None else {}
+        return sorted(files)
+
+    def _sync_epochs(self):
+        """Attach the epochs the blend weights and nothing else past MAX_EPOCHS_LOADED (renders call it; the engine is
+        theirs)."""
+        if not self.blend:
+            return
+        for e in sorted(self.blend):
+            if e not in self.epoch_adapters and e in self.epoch_files:
+                name = f"{EPOCH}{e}"
+                self._attach(self.epoch_files[e], name)
+                self.epoch_adapters[e] = name
+        spare = [e for e, n in self.epoch_adapters.items() if n != PRIMARY and e not in self.blend]
+        while len(self.epoch_adapters) > self.MAX_EPOCHS_LOADED and spare:
+            e = spare.pop(0)
+            self.net.remove(self.epoch_adapters.pop(e))
+
+    def unload_epochs(self):
+        for e, name in list(getattr(self, "epoch_adapters", {}).items()):
+            if name != PRIMARY and self.net is not None and self.net.has(name):
+                self.net.remove(name)
+        self._clear_blend_state()
+        self._invalidate_baseline_cache()
+        self._invalidate_activation_cache()
+
+    def set_blend(self, weights):
+        """{epoch: weight} (ema_weights) to mix the loaded epochs, or None for the primary alone. Takes effect at the
+        next render; the Baseline follows it too (the blended LoRA with its sliders at 1)."""
+        weights = {int(e): float(w) for e, w in (weights or {}).items() if int(e) in self.epoch_files} or None
+        if weights != self.blend:
+            self.blend = weights
+            self._invalidate_baseline_cache()
+            self._invalidate_activation_cache()
+
+    def _blend_sig(self):
+        return tuple(sorted((e, round(w, 5)) for e, w in self.blend.items())) if self.blend else None
+
+    def _primary_names(self):
+        """(adapter, weight) pairs the primary's sliders and load strength drive: the blended epochs, or PRIMARY."""
+        if not self.blend:
+            return [(PRIMARY, 1.0)] + [(n, 0.0) for n in self.epoch_adapters.values() if n != PRIMARY]
+        return [(name, self.blend.get(e, 0.0)) for e, name in self.epoch_adapters.items()] + \
+            ([] if PRIMARY in self.epoch_adapters.values() else [(PRIMARY, 0.0)])
+
     # ---- slider state -------------------------------------------------------------------------------
     def apply_state(self, state):
         """Per-block strength / on-off and each LoRA's load strength, live (no reload)."""
         if self.primary_network is None:
             return
-        for name, who in ((PRIMARY, "primary"), (DONOR, "donor")):
+        scale = float(getattr(state, "primary_scale", 1.0))
+        targets = [(n, "primary", scale * w) for n, w in self._primary_names()]
+        targets.append((DONOR, "donor", float(getattr(state, "donor_scale", 1.0))))
+        for name, who, strength in targets:
             if not self.net.has(name):
                 continue
             self.net.set_blocks(
                 name, mult={b: float(getattr(bs, f"{who}_strength")) for b, bs in state.blocks.items()},
                 enabled={b: bool(getattr(bs, f"{who}_enabled")) for b, bs in state.blocks.items()})
-            self.net.set_strength(name, float(getattr(state, f"{who}_scale", 1.0)))
+            self.net.set_strength(name, strength)
 
     def mark_blocks_changed(self, blocks):
         pass                                # the activation cache compares slider values itself
@@ -518,6 +631,7 @@ class WorkbenchEngine:
         ignored). The state's reference picture (ref_image_path, ref_megapixels) reaches the prompt the family's way;
         for an edit family with reference_strength it is scaled by state.ref_strength, and prev_latent (the previous
         travel frame's clean latent) joins as a second reference at prev_latent_strength."""
+        self._sync_epochs()
         self.apply_state(state)
         seed = state.seed if seed is None else seed
         width = int(width or state.preview_width)
@@ -546,7 +660,8 @@ class WorkbenchEngine:
             neg = None
         self._act_ctx = None
         if override_ctx is None and noise is None and prev_latent is None and not self._act_bypass:
-            self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self.donor_path, self._speed_path,
+            self._act_ctx = ((id(self.dit), self.primary_path, self.primary_hash, self._blend_sig(), self.donor_path,
+                              self._speed_path,
                               self._settings_key(), round(float(getattr(state, "primary_scale", 1.0)), 4),
                               round(float(getattr(state, "donor_scale", 1.0)), 4),
                               prompt if prompt is not None else state.prompt, ref, round(float(ref_mp), 4),
@@ -594,7 +709,7 @@ class WorkbenchEngine:
     def generate_baseline(self, state):
         """The primary with every slider at 1.0 (at its load strength), donor off. Cached until the prompt, seed,
         size or load strength changes."""
-        key = (self.primary_path, state.seed, state.prompt, state.preview_width, state.preview_height,
+        key = (self.primary_path, self._blend_sig(), state.seed, state.prompt, state.preview_width, state.preview_height,
                round(float(getattr(state, "primary_scale", 1.0)), 4), self._state_reference(state),
                round(float(getattr(state, "ref_strength", 1.0) or 0.0), 4),
                self._settings_key())
@@ -672,9 +787,10 @@ class WorkbenchEngine:
         if not blended:
             flat.primary_scale = flat.donor_scale = 1.0
         use_at = 1.0 if blended else float(getattr(state, "primary_scale", 1.0))
+        self._sync_epochs()
         self.apply_state(flat)
         try:
-            names = [PRIMARY] + ([DONOR] if use_donor else [])
+            names = [n for n, w in self._primary_names() if w] + ([DONOR] if use_donor else [])
             sd, ranks = self.net.bake(names)
         finally:
             self.apply_state(state)
@@ -690,6 +806,9 @@ class WorkbenchEngine:
             metadata["ss_network_alpha"] = str(float(max(ranks.values())))
         metadata["ss_repair_studio_config"] = json.dumps(state.to_json(), separators=(",", ":"))
         metadata["ss_repair_studio_use_at"] = f"{use_at:g}"
+        if self.blend:
+            metadata["ss_repair_studio_epoch_blend"] = json.dumps(
+                {str(e): round(w, 5) for e, w in sorted(self.blend.items())}, separators=(",", ":"))
         if use_donor:
             metadata["ss_repair_studio_donor_path"] = os.path.basename(self.donor_path)
             combined = {m: r for m, r in ranks.items() if self.driver.block_of(m) in blended}
@@ -732,6 +851,7 @@ class WorkbenchEngine:
         self.primary_path = self.donor_path = None
         self.primary_block_ids, self.donor_block_ids = set(), set()
         self.primary_hash = None
+        self._clear_blend_state()
         self._prompt_cache = {}
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
