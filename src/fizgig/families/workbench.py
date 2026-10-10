@@ -10,10 +10,11 @@ picks it, else with the family's default sampling. Memory follows the trainer's 
 when a prompt changes, and the DiT parks on CPU while it runs whenever both would not fit; on cards under 20 GB the
 DiT also parks for the VAE decode.
 
-Epoch blend: the saved epochs of the primary's run (find_epochs), each at its EMA weight (set_blend) and all under
-the primary's block sliders, so a run's history is mixed by ear after training - exact, since each epoch is its own
-adapter, and the bake rank-concatenates them into one file. Epochs load as a blend first needs them (at most
-MAX_EPOCHS_LOADED stay on the card).
+Epoch blend / LoRA mix: several files as one LoRA, each at its own weight and all under that LoRA's block sliders -
+exact, since each file is its own adapter, and the bake rank-concatenates them into one file. The files are a run's
+saved epochs at EMA weights (find_epochs + ema_weights) or any LoRAs of the family at amounts the user sets
+(set_sources, the primary's LoRA mix). They load as a mix first needs them (at most MAX_EPOCHS_LOADED per LoRA stay
+on the card).
 
 Turbo Preview (description.activation_cache, switched by the tab's tick through `turbo_preview`): a slider-only change
 replays the blocks before the earliest changed one from the last render (families/act_cache.py).
@@ -308,63 +309,91 @@ class WorkbenchEngine:
         except Exception:
             return None
 
-    # ---- epoch blend ------------------------------------------------------------------------------------
-    # Per LoRA (PRIMARY, DONOR): its own run's epochs (from its own folder), its own EMA weights, all under that LoRA's
-    # block sliders and load strength.
+    # ---- epoch blend / LoRA mix -------------------------------------------------------------------------
+    # Per LoRA (PRIMARY, DONOR): its sources (key -> file: a run's epochs, or the files of a LoRA mix), the weights
+    # in use, all under that LoRA's block sliders and load strength. Loaded files are kept by path, so switching
+    # between a run's epochs and a mix (or back) reuses what is already on the card.
     MAX_EPOCHS_LOADED = 12              # per LoRA
+
+    @staticmethod
+    def _np(path):
+        return os.path.normcase(os.path.abspath(path))
 
     def _clear_blend_state(self, role=None):
         if role is None or not hasattr(self, "_eb"):
             self._eb = {}
+            self._eb_seq = 0
         for r in ((PRIMARY, DONOR) if role is None else (role,)):
-            # files: epoch -> file of the run; adapters: epoch -> loaded adapter (its own epoch -> the role's
-            # adapter); own: the loaded file's epoch; blend: {epoch: weight} while blending, else None
-            self._eb[r] = {"files": {}, "adapters": {}, "own": None, "blend": None}
+            # files: key -> file (an epoch number, or a mix row); adapters: normalised path -> loaded adapter (the
+            # role's own file is the role's adapter and is not listed); own: the key of the role's own file;
+            # blend: {key: weight} in use, else None; kind: "epochs" / "mix"
+            self._eb[r] = {"files": {}, "adapters": {}, "own": None, "blend": None, "kind": "epochs"}
+
+    def _role_path(self, role):
+        return self.primary_path if role == PRIMARY else self.donor_path
 
     @property
     def primary_epoch(self):
         return self._eb[PRIMARY]["own"]
 
     def epoch_of(self, role=PRIMARY):
-        """The loaded file's own epoch in its run (None = unnumbered and alone)."""
+        """The key of the loaded file among its sources (its epoch in its run; None = unnumbered and alone)."""
         return self._eb[role]["own"]
 
-    def find_epochs(self, role=PRIMARY):
-        """The run of the primary's (or the donor's) file: [epochs], oldest first (run_epochs). Nothing loads until a
-        blend needs it."""
-        path = self.primary_path if role == PRIMARY else self.donor_path
+    def _set_files(self, role, files, kind):
+        path = self._role_path(role)
         if not path or not self.net or not self.net.has(role):
             raise RuntimeError(f"Load the {'primary' if role == PRIMARY else 'donor'} LoRA first.")
-        self._drop_epoch_adapters(role)
         eb = self._eb[role]
-        eb["files"] = dict(run_epochs(path))
-        own = [e for e, f in eb["files"].items()
-               if os.path.normcase(os.path.abspath(f)) == os.path.normcase(os.path.abspath(path))]
+        eb["files"], eb["kind"], eb["blend"] = dict(files), kind, None
+        own = [k for k, f in eb["files"].items() if self._np(f) == self._np(path)]
         eb["own"] = own[0] if own else None
-        eb["adapters"] = {eb["own"]: role} if eb["own"] is not None else {}
-        return sorted(eb["files"])
+        self._invalidate_baseline_cache()
+        self._invalidate_activation_cache()
+
+    def find_epochs(self, role=PRIMARY):
+        """The run of the primary's (or the donor's) file as its sources: [epochs], oldest first (run_epochs).
+        Nothing loads until a blend needs it."""
+        self._set_files(role, run_epochs(self._role_path(role) or ""), "epochs")
+        return sorted(self._eb[role]["files"])
+
+    def set_sources(self, files, role=PRIMARY):
+        """A LoRA mix: {key: file} (the role's own file among them). Weights come with set_blend."""
+        self._set_files(role, {int(k): f for k, f in files.items()}, "mix")
+
+    def _name_for(self, role, path):
+        if self._np(path) == self._np(self._role_path(role) or ""):
+            return role
+        return self._eb[role]["adapters"].get(self._np(path))
 
     def _sync_epochs(self):
-        """Attach the epochs each blend weights, and drop unused ones past MAX_EPOCHS_LOADED (renders call it; the
+        """Attach the files each mix weights, and drop unused ones past MAX_EPOCHS_LOADED (renders call it; the
         engine is theirs)."""
         for role, eb in self._eb.items():
             if not eb["blend"] or not self.net or not self.net.has(role):
                 continue
-            for e in sorted(eb["blend"]):
-                if e not in eb["adapters"] and e in eb["files"]:
-                    name = f"{EPOCH}{'d' if role == DONOR else 'p'}{e}"
-                    self._attach(eb["files"][e], name)
+            wanted = set()
+            for k in sorted(eb["blend"]):
+                f = eb["files"].get(k)
+                if f is None:
+                    continue
+                wanted.add(self._np(f))
+                if self._name_for(role, f) is None:
+                    self._eb_seq += 1
+                    name = f"{EPOCH}{'d' if role == DONOR else 'p'}{self._eb_seq}"
+                    self._attach(f, name)
                     if role == DONOR:
                         self.net.set_outside(name, False)     # as the donor itself: its blocks only
-                    eb["adapters"][e] = name
-            spare = [e for e, n in eb["adapters"].items() if n != role and e not in eb["blend"]]
+                    eb["adapters"][self._np(f)] = name
+            spare = [np_ for np_ in eb["adapters"] if np_ not in wanted]
             while len(eb["adapters"]) > self.MAX_EPOCHS_LOADED and spare:
                 self.net.remove(eb["adapters"].pop(spare.pop(0)))
 
     def _drop_epoch_adapters(self, role):
-        for e, name in list(self._eb[role]["adapters"].items()):
-            if name != role and self.net is not None and self.net.has(name):
+        for name in list(self._eb[role]["adapters"].values()):
+            if self.net is not None and self.net.has(name):
                 self.net.remove(name)
+        self._eb[role]["adapters"] = {}
 
     def unload_epochs(self, role=PRIMARY):
         self._drop_epoch_adapters(role)
@@ -373,26 +402,42 @@ class WorkbenchEngine:
         self._invalidate_activation_cache()
 
     def set_blend(self, weights, role=PRIMARY):
-        """{epoch: weight} (ema_weights) to mix that LoRA's run, or None for its file alone. Takes effect at the next
-        render; the Baseline follows it too (the blended LoRA with its sliders at 1)."""
+        """{key: weight} over the role's sources (ema_weights for a run, the user's amounts for a mix), or None for
+        its file alone. Takes effect at the next render; the Baseline follows it too (the mix, sliders at 1)."""
         eb = self._eb[role]
-        weights = {int(e): float(w) for e, w in (weights or {}).items() if int(e) in eb["files"]} or None
+        weights = {int(k): float(w) for k, w in (weights or {}).items() if int(k) in eb["files"]} or None
         if weights != eb["blend"]:
             eb["blend"] = weights
             self._invalidate_baseline_cache()
             self._invalidate_activation_cache()
 
     def _blend_sig(self):
-        return tuple((r, tuple(sorted((e, round(w, 5)) for e, w in eb["blend"].items())))
+        return tuple((r, eb["kind"], tuple(sorted((self._np(eb["files"][k]), round(w, 5))
+                                                  for k, w in eb["blend"].items())))
                      for r, eb in sorted(self._eb.items()) if eb["blend"]) or None
 
     def _role_names(self, role):
-        """(adapter, weight) pairs that LoRA's sliders and load strength drive: its blended epochs, or its file."""
+        """(adapter, weight) pairs that LoRA's sliders and load strength drive: its mix, or its file alone."""
+        eb = self._eb[role]
+        out = {role: 0.0}
+        out.update({n: 0.0 for n in eb["adapters"].values()})
+        if not eb["blend"]:
+            out[role] = 1.0
+        else:
+            for k, w in eb["blend"].items():
+                name = self._name_for(role, eb["files"][k])
+                if name is not None:
+                    out[name] = out.get(name, 0.0) + w
+        return list(out.items())
+
+    def blend_record(self, role=PRIMARY):
+        """What a saved file records of the mix: {epoch: weight} for a run, {file name: amount} for a LoRA mix."""
         eb = self._eb[role]
         if not eb["blend"]:
-            return [(role, 1.0)] + [(n, 0.0) for n in eb["adapters"].values() if n != role]
-        return [(name, eb["blend"].get(e, 0.0)) for e, name in eb["adapters"].items()] + \
-            ([] if role in eb["adapters"].values() else [(role, 0.0)])
+            return None
+        if eb["kind"] == "mix":
+            return {os.path.basename(eb["files"][k]): round(w, 5) for k, w in sorted(eb["blend"].items())}
+        return {str(k): round(w, 5) for k, w in sorted(eb["blend"].items())}
 
     # ---- slider state -------------------------------------------------------------------------------
     def apply_state(self, state):
@@ -833,10 +878,11 @@ class WorkbenchEngine:
             metadata["ss_network_alpha"] = str(float(max(ranks.values())))
         metadata["ss_repair_studio_config"] = json.dumps(state.to_json(), separators=(",", ":"))
         metadata["ss_repair_studio_use_at"] = f"{use_at:g}"
-        for role, key in ((PRIMARY, "ss_repair_studio_epoch_blend"), (DONOR, "ss_repair_studio_donor_epoch_blend")):
-            bl = self._eb[role]["blend"]
-            if bl and (role == PRIMARY or use_donor):
-                metadata[key] = json.dumps({str(e): round(w, 5) for e, w in sorted(bl.items())}, separators=(",", ":"))
+        for role, who in ((PRIMARY, ""), (DONOR, "donor_")):
+            rec = self.blend_record(role)
+            if rec and (role == PRIMARY or use_donor):
+                kind = "lora_mix" if self._eb[role]["kind"] == "mix" else "epoch_blend"
+                metadata[f"ss_repair_studio_{who}{kind}"] = json.dumps(rec, separators=(",", ":"))
         if use_donor:
             metadata["ss_repair_studio_donor_path"] = os.path.basename(self.donor_path)
             combined = {m: r for m, r in ranks.items() if self.driver.block_of(m) in blended}

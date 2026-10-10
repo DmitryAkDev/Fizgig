@@ -18646,8 +18646,7 @@ class LoRATrainerGUI:
             if video:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
-                for _w in self._repair_blend_widgets():
-                    _w.grid_remove()             # H3 has its own engine: no epoch blend
+                self._repair_blend_show(False)        # H3 has its own engine: no mix
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
                 self._repair_scale_controls(True)
@@ -18669,8 +18668,7 @@ class LoRATrainerGUI:
                                                      before=self._repair_sliders_host)
                 self._refresh_repair_h3_sound_state()
             else:
-                for _w in self._repair_blend_widgets():
-                    _w.grid()
+                self._repair_blend_show(True)
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(True)          # every family's load-strength boxes (16 Sep 2026)
@@ -24214,35 +24212,64 @@ class LoRATrainerGUI:
     # first time a blend needs it.
 
     def _build_repair_blend_row(self, parent, r, role):
-        """The Epoch blend row (+ its mix line) for role "primary" / "donor"; returns the next grid row."""
-        B = {"epochs": [], "last": None}
+        """The mix row for role "primary" / "donor"; returns the next grid row. The primary chooses Off / Epochs of
+        this run / LoRA mix; the donor ticks its epoch blend."""
+        B = {"epochs": [], "last": None, "mix": [], "mix_paths": None}
         self._repair_blend[role] = B
-        B["label"] = ttk.Label(parent, text="Epoch blend:" if role == "primary" else "Donor epoch blend:")
+        B["label"] = ttk.Label(parent, text="Mix:" if role == "primary" else "Donor epoch blend:")
         B["label"].grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        bf = ttk.Frame(parent)
-        bf.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=2)
-        B["frame"] = bf
-        B["var"] = tk.BooleanVar(value=False)
-        ttk.Checkbutton(bf, text=f"Blend the {role}'s epochs", variable=B["var"],
-                        command=lambda: self._repair_blend_toggled(role), style="Surface.TCheckbutton"
-                        ).pack(side=tk.LEFT)
-        ttk.Label(bf, text="Up to").pack(side=tk.LEFT, padx=(14, 4))
-        B["upto"] = ttk.Scale(bf, from_=0, to=1, orient=tk.HORIZONTAL, length=170,
+        head = ttk.Frame(parent)
+        head.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=2)
+        B["frame"] = head
+        B["var"] = tk.BooleanVar(value=False)              # the epoch blend is on
+        B["subs"] = []
+        if role == "primary":
+            B["mode"] = tk.StringVar(value="off")
+            for val, txt, tip in (
+                    ("off", "Off", "The primary file alone."),
+                    ("epochs", "Epochs of this run", "The saved epochs beside the primary, mixed as a moving "
+                                                     "average: Up to = the newest epoch in it, History = how much "
+                                                     "of the earlier ones comes with it."),
+                    ("mix", "LoRA mix", "The primary plus any LoRAs of this model, each at its own amount - "
+                                        "e.g. funk 1.0 + synthwave 0.5 - then shaped with the block sliders.")):
+                rb = ttk.Radiobutton(head, text=txt, value=val, variable=B["mode"], style="Surface.TRadiobutton",
+                                     command=self._repair_mix_mode_changed)
+                rb.pack(side=tk.LEFT, padx=(0, 14))
+                ToolTip(rb, tip + " Block sliders apply to the whole mix; Save bakes it into one LoRA.")
+            r += 1
+            dials = ttk.Frame(parent)
+            dials.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+            mixbox = ttk.Frame(parent)
+            mixbox.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+            B["dials"], B["mixbox"], B["subs"] = dials, mixbox, [dials, mixbox]
+            B["mix_list"] = ttk.Frame(mixbox)
+            B["mix_list"].pack(side=tk.TOP, anchor=tk.W)
+            ttk.Button(mixbox, text="+ Add LoRA\u2026", command=self._repair_mix_add).pack(side=tk.TOP, anchor=tk.W,
+                                                                                         pady=(2, 0))
+            dials.grid_remove()
+            mixbox.grid_remove()
+        else:
+            ttk.Checkbutton(head, text=f"Blend the {role}'s epochs", variable=B["var"],
+                            command=lambda: self._repair_blend_toggled(role), style="Surface.TCheckbutton"
+                            ).pack(side=tk.LEFT, padx=(0, 14))
+            dials = head
+        ttk.Label(dials, text="Up to").pack(side=tk.LEFT, padx=(0, 4))
+        B["upto"] = ttk.Scale(dials, from_=0, to=1, orient=tk.HORIZONTAL, length=170,
                               command=lambda v: self._repair_blend_moved(role))
         B["upto"].pack(side=tk.LEFT)
         B["upto_text"] = tk.StringVar(value="")
-        ttk.Label(bf, textvariable=B["upto_text"], width=9).pack(side=tk.LEFT, padx=(4, 10))
-        ttk.Label(bf, text="History").pack(side=tk.LEFT, padx=(0, 4))
-        B["hist"] = ttk.Scale(bf, from_=0.0, to=0.95, orient=tk.HORIZONTAL, length=150,
+        ttk.Label(dials, textvariable=B["upto_text"], width=9).pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Label(dials, text="History").pack(side=tk.LEFT, padx=(0, 4))
+        B["hist"] = ttk.Scale(dials, from_=0.0, to=0.95, orient=tk.HORIZONTAL, length=150,
                               command=lambda v: self._repair_blend_moved(role))
         B["hist"].set(0.5)
         B["hist"].pack(side=tk.LEFT)
         B["hist_text"] = tk.StringVar(value="")
-        ttk.Label(bf, textvariable=B["hist_text"], width=22).pack(side=tk.LEFT, padx=(4, 0))
-        ToolTip(bf, f"Mixes the saved epochs of the {role}'s run (the files beside it) as an exponential moving "
-                    "average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs "
-                    f"comes with it (0 = that epoch alone). The {role}'s block sliders apply to the whole mix, and "
-                    "Save bakes it into the LoRA.")
+        ttk.Label(dials, textvariable=B["hist_text"], width=22).pack(side=tk.LEFT, padx=(4, 0))
+        ToolTip(dials, f"Mixes the saved epochs of the {role}'s run (the files beside it) as an exponential moving "
+                       "average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs "
+                       f"comes with it (0 = that epoch alone). The {role}'s block sliders apply to the whole mix, and "
+                       "Save bakes it into the LoRA.")
         r += 1
         B["info_var"] = tk.StringVar(value="")
         B["info"] = ttk.Label(parent, textvariable=B["info_var"], foreground=COLORS["text_explain"])
@@ -24250,15 +24277,24 @@ class LoRATrainerGUI:
         self._repair_blend_controls(role, False)
         return r + 1
 
-    def _repair_blend_widgets(self):
-        return [w for B in self._repair_blend.values() for w in (B["label"], B["frame"], B["info"])]
+    def _repair_blend_show(self, on):
+        """The mix rows with the family (H3 has its own engine: none); the primary's sub-row follows its mode."""
+        for role, B in self._repair_blend.items():
+            for w in (B["label"], B["frame"], B["info"]):
+                w.grid() if on else w.grid_remove()
+            for w in B["subs"]:
+                w.grid_remove()
+            if on and role == "primary":
+                mode = B["mode"].get()
+                if mode in ("epochs", "mix"):
+                    (B["dials"] if mode == "epochs" else B["mixbox"]).grid()
 
     def _repair_blend_controls(self, role, on):
         for w in (self._repair_blend[role]["upto"], self._repair_blend[role]["hist"]):
             w.state(["!disabled"] if on else ["disabled"])
 
     def _repair_blend_reset_ui(self, note="", role=None):
-        """Untick and clear (a new primary or donor, a reset session, another family)."""
+        """Back to off and clear (a new primary or donor, a reset session, another family)."""
         for rl in ((role,) if role else tuple(self._repair_blend)):
             B = self._repair_blend[rl]
             B["var"].set(False)
@@ -24267,6 +24303,134 @@ class LoRATrainerGUI:
             B["upto_text"].set("")
             B["hist_text"].set("")
             B["info_var"].set(note)
+            if rl == "primary":
+                B["mode"].set("off")
+                for row in B["mix"]:
+                    row["frame"].destroy()
+                B["mix"], B["mix_paths"] = [], None
+                for w in B["subs"]:
+                    w.grid_remove()
+
+    # the primary's mode: Off / Epochs of this run / LoRA mix
+    def _repair_mix_mode_changed(self):
+        from fizgig.families.workbench import PRIMARY
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        mode = B["mode"].get()
+        if mode != "off" and (eng is None or getattr(eng, "primary_network", None) is None
+                              or not hasattr(eng, "set_blend")):
+            B["mode"].set("off")
+            self.repair_status_var.set("Load the primary LoRA first, then pick a mix.")
+            return
+        B["dials"].grid() if mode == "epochs" else B["dials"].grid_remove()
+        B["mixbox"].grid() if mode == "mix" else B["mixbox"].grid_remove()
+        B["last"] = None
+        if mode == "epochs":
+            B["var"].set(True)
+            self._repair_blend_toggled("primary")
+            if not B["var"].get():                        # no run to blend: back to off, the note kept
+                B["mode"].set("off")
+                B["dials"].grid_remove()
+            return
+        B["var"].set(False)
+        self._repair_blend_controls("primary", False)
+        if mode == "off":
+            eng.set_blend(None, role=PRIMARY)
+            B["info_var"].set("Off: the primary file alone.")
+            self._schedule_preview(force=True)
+            return
+        if not B["mix"] or B["mix"][0]["path"] != eng.primary_path:
+            for row in B["mix"]:
+                row["frame"].destroy()
+            B["mix"] = []
+            self._repair_mix_row(eng.primary_path, 1.0, primary=True)
+        B["mix_paths"] = None                              # the sources go to the engine again
+        self._repair_mix_push()
+
+    def _repair_mix_row(self, path, amount, primary=False):
+        B = self._repair_blend["primary"]
+        f = ttk.Frame(B["mix_list"])
+        f.pack(side=tk.TOP, anchor=tk.W, pady=1)
+        name = os.path.splitext(os.path.basename(path))[0]
+        ttk.Label(f, text=("\u2605 " if primary else "") + (name if len(name) <= 38 else name[:36] + "\u2026"),
+                  width=40).pack(side=tk.LEFT)
+        var = tk.DoubleVar(value=amount)
+        txt = tk.StringVar(value=f"{amount:.2f}")
+        row = {"path": path, "var": var, "frame": f, "primary": primary}
+
+        def moved(v, _row=row, _t=txt):
+            x = round(float(v) / 0.05) * 0.05
+            _t.set(f"{x:.2f}")
+            self._repair_mix_push()
+        ttk.Scale(f, from_=-1.0, to=2.0, orient=tk.HORIZONTAL, length=200, variable=var,
+                  command=moved).pack(side=tk.LEFT, padx=(6, 4))
+        ttk.Label(f, textvariable=txt, width=5).pack(side=tk.LEFT)
+        if not primary:
+            ttk.Button(f, text="\u2715", width=3, command=lambda: self._repair_mix_remove(row)).pack(side=tk.LEFT,
+                                                                                                 padx=(6, 0))
+        else:
+            ttk.Label(f, text="(the primary)", foreground=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(6, 0))
+        B["mix"].append(row)
+        return row
+
+    def _repair_mix_add(self):
+        from tkinter import filedialog
+        from fizgig.families.registry import family_of_lora
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        if eng is None or getattr(eng, "primary_network", None) is None:
+            self.repair_status_var.set("Load the primary LoRA first.")
+            return
+        paths = filedialog.askopenfilenames(
+            parent=self.master, title="Add LoRAs to the mix", filetypes=[("LoRA", "*.safetensors")],
+            initialdir=os.path.dirname(eng.primary_path or "") or None)
+        fam = self.repair_family_var.get()
+        have = {os.path.normcase(os.path.abspath(r["path"])) for r in B["mix"]}
+        added, refused = 0, []
+        for p in paths or ():
+            if os.path.normcase(os.path.abspath(p)) in have:
+                continue
+            d = family_of_lora(p)
+            if d is not None and d.key != fam:
+                refused.append(f"{os.path.basename(p)} ({d.display_name})")
+                continue
+            self._repair_mix_row(p, 0.5)
+            have.add(os.path.normcase(os.path.abspath(p)))
+            added += 1
+        if refused:
+            messagebox.showwarning("Not added", "These are LoRAs for another model:\n\n" + "\n".join(refused))
+        if added:
+            self._repair_mix_push()
+
+    def _repair_mix_remove(self, row):
+        B = self._repair_blend["primary"]
+        row["frame"].destroy()
+        B["mix"] = [r for r in B["mix"] if r is not row]
+        self._repair_mix_push()
+
+    def _repair_mix_push(self):
+        """The mix rows to the engine: the files (when the list changed) and each amount; one render."""
+        from fizgig.families.workbench import PRIMARY
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        if B["mode"].get() != "mix" or eng is None or not hasattr(eng, "set_sources") or not B["mix"]:
+            return
+        paths = tuple(r["path"] for r in B["mix"])
+        amounts = {i: round(float(r["var"].get()) / 0.05) * 0.05 for i, r in enumerate(B["mix"])}
+        shown = " \u00b7 ".join(f"{os.path.splitext(os.path.basename(r['path']))[0][:24]} {amounts[i]:.2f}"
+                                 for i, r in enumerate(B["mix"]))
+        B["info_var"].set(f"Mix: {shown}  (total {sum(amounts.values()):.2f})" if len(paths) > 1 else
+                          "Add LoRAs to mix with the primary; each gets its own amount.")
+        key = (paths, tuple(sorted(amounts.items())))
+        if key == B["last"]:
+            return
+        B["last"] = key
+        try:
+            if paths != B["mix_paths"]:
+                eng.set_sources(dict(enumerate(paths)), role=PRIMARY)
+                B["mix_paths"] = paths
+            eng.set_blend({i: w for i, w in amounts.items() if w}, role=PRIMARY)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not set the mix: {e}")
+            return
+        self._schedule_preview()
 
     def _repair_blend_toggled(self, role):
         from fizgig.families.workbench import DONOR, PRIMARY
