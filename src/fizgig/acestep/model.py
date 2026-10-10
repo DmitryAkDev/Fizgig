@@ -3,8 +3,8 @@ ACE-Step 1.5 repository (github.com/ace-step/ACE-Step-1.5, acestep/models/base/m
 Apache-2.0).
 
 Changes for Fizgig: plain modules instead of transformers' PreTrainedModel, PyTorch SDPA attention with the same
-sliding-window mask, no KV cache, no audio tokenizer / detokenizer (the 5 Hz LM's hint path - Fizgig trains and
-previews text-to-music, whose context is the silence latent), gradient checkpointing on the DiT layers. Module names
+sliding-window mask, no KV cache, gradient checkpointing on the DiT layers. The audio tokenizer / detokenizer (the
+cover path's 5 Hz hint) is a separate CoverGuide, read from the same file only when a cover render needs it. Module names
 are the original's; AceStep15 roots them at the decoder, so LoRA keys match ComfyUI's ("base_model.model.layers....").
 """
 import json
@@ -338,3 +338,122 @@ def context_latents(silence_latent, length, dtype=None):
         src = torch.cat([src, silence_latent[:, :length - src.shape[1]]], dim=1)
     src = src.to(dtype or silence_latent.dtype)
     return torch.cat([src, torch.ones_like(src)], dim=-1)
+
+
+# ---- the cover guide: the 5 Hz tokenizer and its detokenizer (the official "tokenizer" / "detokenizer") ----------
+FSQ_LEVELS = (8, 8, 8, 5, 5, 5)             # config.json fsq_input_levels, one quantizer
+POOL = 5                                    # pool_window_size: 5 latent frames (25 Hz) -> one 5 Hz code
+POOLER_LAYERS = 2                           # num_attention_pooler_hidden_layers
+
+
+class _PatchStack(nn.Module):
+    def __init__(self, c: AceConfig):
+        super().__init__()
+        q3 = c.qwen3()
+        self.embed_tokens = nn.Linear(c.hidden_size, c.hidden_size)
+        self.norm = Qwen3RMSNorm(c.hidden_size, eps=c.rms_norm_eps)
+        self.rotary_emb = Qwen3RotaryEmbedding(q3)
+        self.layers = nn.ModuleList([AceStepEncoderLayer(c, i, q3) for i in range(POOLER_LAYERS)])
+
+    def _run(self, x):
+        pe = self.rotary_emb(x, torch.arange(x.shape[1], device=x.device)[None])
+        for layer in self.layers:
+            x = layer(x, pe, None)          # bidirectional; the sliding window (128) is wider than a patch
+        return self.norm(x)
+
+
+class AttentionPooler(_PatchStack):
+    def __init__(self, c: AceConfig):
+        super().__init__(c)
+        self.special_token = nn.Parameter(torch.zeros(1, 1, c.hidden_size))
+
+    def forward(self, x):
+        """(B, T5, 5, D) -> (B, T5, D): a learned token leads each patch and carries its summary."""
+        b, t, p, d = x.shape
+        x = self.embed_tokens(x)
+        x = torch.cat([self.special_token.expand(b, t, 1, -1).to(x.dtype), x], dim=2).reshape(b * t, p + 1, d)
+        return self._run(x)[:, 0].reshape(b, t, d)
+
+
+class ResidualFSQ(nn.Module):
+    """vector-quantize-pytorch's ResidualFSQ as ACE-Step builds it (one quantizer, levels 8,8,8,5,5,5, its defaults:
+    symmetry-preserving bound with the hard clamp and the soft input clamp 1 + 1 / (L - 1)), inference only."""
+
+    def __init__(self, dim):
+        super().__init__()
+        self.project_in = nn.Linear(dim, len(FSQ_LEVELS))
+        self.project_out = nn.Linear(len(FSQ_LEVELS), dim)
+
+    def forward(self, x):
+        dt = x.dtype
+        lv = torch.tensor(FSQ_LEVELS, device=x.device, dtype=torch.float32)
+        z = F.linear(x.float(), self.project_in.weight.float(), self.project_in.bias.float())
+        c = 1 + 1 / (lv - 1)
+        z = (z / c).tanh() * c
+        q = 2.0 / (lv - 1) * torch.floor((lv - 1) * (z.clamp(-1.0, 1.0) + 1) / 2 + 0.5) - 1.0
+        return F.linear(q, self.project_out.weight.float(), self.project_out.bias.float()).to(dt)
+
+
+class AceStepAudioTokenizer(nn.Module):
+    def __init__(self, c: AceConfig):
+        super().__init__()
+        self.audio_acoustic_proj = nn.Linear(c.audio_acoustic_hidden_dim, c.hidden_size)
+        self.attention_pooler = AttentionPooler(c)
+        self.quantizer = ResidualFSQ(c.hidden_size)
+
+    def forward(self, x):
+        """(B, T, 64), T a multiple of 5 -> the quantized 5 Hz codes (B, T / 5, D)."""
+        h = self.audio_acoustic_proj(x)
+        return self.quantizer(self.attention_pooler(h.reshape(h.shape[0], -1, POOL, h.shape[-1])))
+
+
+class AudioTokenDetokenizer(_PatchStack):
+    def __init__(self, c: AceConfig):
+        super().__init__(c)
+        self.special_tokens = nn.Parameter(torch.zeros(1, POOL, c.hidden_size))
+        self.proj_out = nn.Linear(c.hidden_size, c.audio_acoustic_hidden_dim)
+
+    def forward(self, q):
+        """(B, T5, D) codes -> (B, T5 * 5, 64): each code back out to five 25 Hz frames."""
+        b, t, d = q.shape
+        x = self.embed_tokens(q)[:, :, None].expand(b, t, POOL, d) + self.special_tokens.to(q.dtype)[:, None]
+        x = self._run(x.reshape(b * t, POOL, d))
+        return self.proj_out(x).reshape(b, t * POOL, -1)
+
+
+class CoverGuide(nn.Module):
+    """The official cover path's hint: a song's latents squeezed to 5 Hz codes (what is played, not how it sounds)
+    and back out to 25 Hz - the context a cover render follows in place of the silence latent."""
+
+    def __init__(self, c: AceConfig = None):
+        super().__init__()
+        c = (c or AceConfig()).encoder_config()
+        self.tokenizer = AceStepAudioTokenizer(c)
+        self.detokenizer = AudioTokenDetokenizer(c)
+
+    @torch.no_grad()
+    def forward(self, src, silence_latent):
+        """src (B, T, 64) -> hints (B, T, 64); padded to whole patches with the silence latent, as the original."""
+        n = src.shape[1]
+        pad = (-n) % POOL
+        if pad:
+            src = torch.cat([src, silence_latent[:, :pad].to(src).expand(src.shape[0], -1, -1)], dim=1)
+        return self.detokenizer(self.tokenizer(src))[:, :n]
+
+    @classmethod
+    def from_checkpoint(cls, path, device, dtype=torch.bfloat16):
+        """Read only the tokenizer / detokenizer weights from the model file."""
+        from accelerate import init_empty_weights
+        from safetensors import safe_open
+        with init_empty_weights():
+            g = cls()
+        sd = {}
+        with safe_open(path, framework="pt") as f:
+            for k in f.keys():
+                name = k[len("model.diffusion_model."):] if k.startswith("model.diffusion_model.") else k
+                if name.startswith(("tokenizer.", "detokenizer.")):
+                    sd[name] = f.get_tensor(k).to(dtype)
+        missing, unexpected = g.load_state_dict(sd, strict=False, assign=True)
+        if missing or unexpected:
+            raise RuntimeError(f"no cover guide in this file: missing {missing[:4]}, unexpected {unexpected[:4]}")
+        return g.to(device).eval().requires_grad_(False)

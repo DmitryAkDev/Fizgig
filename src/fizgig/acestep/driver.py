@@ -38,6 +38,8 @@ MAX_SECONDS = 240                                  # the official trainer's max_
 REFER_FRAMES = 750                                 # the handler's timbre reference with no reference audio: 30 s
 TEXT_TOKENS, LYRIC_TOKENS = 256, 2048              # the handler's truncation
 INSTRUCTION = "Fill the audio semantic mask based on the given conditions:"   # text2music (constants.py)
+COVER_INSTRUCTION = "Generate audio semantic tokens based on the given conditions:"   # cover (constants.py)
+REFER_SEGMENT = 10                                 # the handler's reference: three 10 s pieces, front / middle / back
 TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 SFT_STEPS, SFT_SHIFT, SFT_GUIDANCE = 30, 1.0, 7.0          # acestep-v15-xl-sft generate_audio defaults
 TIMESTEP_MU, TIMESTEP_SIGMA, CFG_DROPOUT = -0.4, 1.0, 0.15  # config.json; Side-Step's corrected training
@@ -46,11 +48,12 @@ INSTRUMENTAL = "[Instrumental]"
 ATTN = ("q_proj", "k_proj", "v_proj", "o_proj")
 
 
-def caption_prompt(caption, seconds, bpm=None, timesignature=None, keyscale=None):
-    """The official SFT_GEN_PROMPT with the text-to-music instruction and _dict_to_meta_string's metadata."""
+def caption_prompt(caption, seconds, bpm=None, timesignature=None, keyscale=None, instruction=INSTRUCTION):
+    """The official SFT_GEN_PROMPT with the text-to-music instruction (or the cover one) and _dict_to_meta_string's
+    metadata."""
     metas = (f"- bpm: {bpm or 'N/A'}\n- timesignature: {timesignature or 'N/A'}\n- keyscale: {keyscale or 'N/A'}\n"
              f"- duration: {int(seconds)} seconds\n")
-    return f"# Instruction\n{INSTRUCTION}\n\n# Caption\n{caption}\n\n# Metas\n{metas}<|endoftext|>\n"
+    return f"# Instruction\n{instruction}\n\n# Caption\n{caption}\n\n# Metas\n{metas}<|endoftext|>\n"
 
 
 def lyrics_prompt(lyrics, language="en"):
@@ -152,12 +155,19 @@ class _TextEncoder:
         self.device = device
 
     @torch.no_grad()
-    def encode(self, caption_text, lyric_text):
+    def _text(self, caption_text):
         c = self.tok(caption_text, truncation=True, max_length=TEXT_TOKENS, return_tensors="pt").input_ids
+        return self.model(input_ids=c.to(self.device)).last_hidden_state[0].to(DTYPE).cpu()
+
+    @torch.no_grad()
+    def encode(self, caption_text, lyric_text, cover_text=None):
+        """-> {"text", "lyrics"} (+ "text_cover": the caption under the cover instruction, when given)."""
         ly = self.tok(lyric_text, truncation=True, max_length=LYRIC_TOKENS, return_tensors="pt").input_ids
-        text = self.model(input_ids=c.to(self.device)).last_hidden_state[0]
         lyrics = self.model.embed_tokens(ly.to(self.device))[0]
-        return {"text": text.to(DTYPE).cpu(), "lyrics": lyrics.to(DTYPE).cpu()}
+        out = {"text": self._text(caption_text), "lyrics": lyrics.to(DTYPE).cpu()}
+        if cover_text is not None:
+            out["text_cover"] = self._text(cover_text)
+        return out
 
     def unload(self):
         self.model.to("cpu")
@@ -185,7 +195,23 @@ class AceStepDriver(FamilyDriver):
         missing, unexpected = dit.load_checkpoint({k: v.to(DTYPE) for k, v in load_file(path).items()}, assign=True)
         if missing or unexpected:
             raise RuntimeError(f"not an ACE-Step 1.5 file: missing {missing[:5]}, unexpected {unexpected[:5]}")
+        self._dit_file = path
         return dit.to(device).eval().requires_grad_(False)
+
+    _guide = None                       # (model file, CoverGuide): read from the DiT's file on a cover's first use
+
+    def cover_guide(self, device):
+        from fizgig.acestep.model import CoverGuide
+        path = getattr(self, "_dit_file", None)
+        if path is None:
+            raise RuntimeError("load the DiT first: the cover guide is read from its file")
+        if AceStepDriver._guide is None or AceStepDriver._guide[0] != path:
+            AceStepDriver._guide = None
+            AceStepDriver._guide = (path, CoverGuide.from_checkpoint(path, device, DTYPE))
+        g = AceStepDriver._guide[1]
+        if next(g.parameters()).device != torch.device(device):
+            g.to(device)
+        return g
 
     def load_vae(self, path, device):
         from fizgig.acestep.vae import load_vae
@@ -272,19 +298,23 @@ class AceStepDriver(FamilyDriver):
     def encode_text(self, te, captions):
         """Sample prompts ("<caption> | <lyrics>"), at the preview length."""
         seconds = self._preview_seconds()
-        return [te.encode(caption_prompt(c, seconds), lyrics_prompt(ly)) for c, ly in map(parse_prompt, captions)]
+        return [te.encode(caption_prompt(c, seconds), lyrics_prompt(ly),
+                          caption_prompt(c, seconds, instruction=COVER_INSTRUCTION))
+                for c, ly in map(parse_prompt, captions)]
 
     def _preview_seconds(self):
         return int(float(self.options.get("preview_seconds", 30)))
 
     # ---- the model call -------------------------------------------------------------------------
-    def _condition(self, dit, cond, frames, device):
-        """The condition encoder's sequence for one item (no grad: the encoder is never trained)."""
-        text = cond["text"].to(device, DTYPE)
+    def _condition(self, dit, cond, frames, device, refer=None, text_key="text"):
+        """The condition encoder's sequence for one item (no grad: the encoder is never trained). refer: a reference
+        song's latents (1, 750, 64) for the timbre encoder, the silence latent without one; text_key "text_cover":
+        the caption under the cover instruction (a cover render's guided steps)."""
+        text = cond.get(text_key, cond["text"]).to(device, DTYPE)
         lyrics = cond["lyrics"].to(device, DTYPE)
         text = text if text.dim() == 3 else text[None]
         lyrics = lyrics if lyrics.dim() == 3 else lyrics[None]
-        refer = self.silence[:, :REFER_FRAMES].to(device, DTYPE)
+        refer = (self.silence[:, :REFER_FRAMES] if refer is None else refer).to(device, DTYPE)
         with torch.no_grad():
             enc, _ = dit.condition(text, torch.ones(text.shape[:2], device=device), lyrics,
                                    torch.ones(lyrics.shape[:2], device=device), refer)
@@ -350,7 +380,29 @@ class AceStepDriver(FamilyDriver):
         return torch.randn((1, frames or self._frames(), 64), generator=g, dtype=torch.float32)
 
     supports_prompt_blend = True        # generate(cond_b=, prompt_blend=): Repair Studio's Prompt B
-    supports_audio_source = True        # generate(source=, denoise=): Repair Studio's audio to audio
+    supports_audio_source = True        # generate(source=, denoise=, follow=, refer=): Repair Studio's audio to
+    #                                     audio (a song to start from / follow) and its reference (sound like)
+
+    @torch.no_grad()
+    def encode_reference(self, vae, path):
+        """A reference recording -> the timbre encoder's input (1, 750, 64): the handler's 30 s of it, a 10 s piece
+        from the front, middle and back thirds (shorter recordings repeat to 30 s). The official handler picks each
+        piece's start at random; here each piece is the middle of its third, so a reference always sounds the same."""
+        wav = read_audio(path, MAX_SECONDS)
+        seg = REFER_SEGMENT * 48000
+        if wav.shape[1] == 0 or not np.abs(wav).max() > 0:
+            raise ValueError("the reference is silent")
+        if wav.shape[1] < 3 * seg:
+            wav = np.tile(wav, (1, math.ceil(3 * seg / wav.shape[1])))
+        third = wav.shape[1] // 3
+        parts = []
+        for k in range(3):
+            lo, hi = k * third, (wav.shape[1] if k == 2 else (k + 1) * third)
+            start = lo + max(0, (hi - lo - seg) // 2)
+            parts.append(wav[:, start:start + seg])
+        x = torch.from_numpy(np.concatenate(parts, 1).copy()).to(vae.device, vae.dtype)[None]
+        lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
+        return lat[:, :REFER_FRAMES].cpu()
 
     @torch.no_grad()
     def encode_source(self, vae, path, seconds):
@@ -365,7 +417,7 @@ class AceStepDriver(FamilyDriver):
         lat = vae.encode(x).latent_dist.mean.transpose(1, 2).float()
         frames = self._frames()
         if lat.shape[1] < frames:
-            lat = torch.cat([lat, lat.new_zeros(1, frames - lat.shape[1], lat.shape[2])], 1)
+            lat = torch.cat([lat, self.silence[:, :frames - lat.shape[1]].to(lat)], 1)
         return lat[:, :frames].cpu()
 
     @staticmethod
@@ -389,11 +441,14 @@ class AceStepDriver(FamilyDriver):
     @torch.no_grad()
     def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
                  noise=None, on_step=None, refs=None, cond_b=None, prompt_blend=0.0, source=None, denoise=1.0,
-                 **_ignored):
+                 follow=0.0, refer=None, **_ignored):
         """cond_b + prompt_blend w: every step runs the model with both prompts and mixes the predictions,
         (1 - w) * A + w * B (guided SFT: each guided on its own, then mixed) - exact at w 0 (A) and 1 (B), any prompt
         lengths. source + denoise d (audio to audio): the render starts from the source latent noised to the first
-        timestep at or below d, and runs only the steps from there (d 1 = from pure noise, as without a source)."""
+        timestep at or below d, and runs only the steps from there (d 1 = from pure noise, as without a source).
+        follow f (the official cover, audio_cover_strength): the first int(steps * f) of the steps run follow the
+        source's melody guide (its 5 Hz codes, CoverGuide) under the cover instruction, the rest are text to music.
+        refer: a reference song's latents for the timbre encoder (sound like), every step."""
         device = next(dit.parameters()).device
         w = min(max(float(prompt_blend or 0.0), 0.0), 1.0) if cond_b is not None else 0.0
         if w >= 1.0:
@@ -409,17 +464,32 @@ class AceStepDriver(FamilyDriver):
             ts = [t for t in ts if t <= t0 + 1e-9]
             x = t0 * x + (1.0 - t0) * src           # the source, noised to where the render starts
         ts = ts + [0.0]
-        ctx = self._context(x.shape[1], device)
-        prompts = [self._condition(dit, cond, x.shape[1], device)]
-        if w > 0.0:
-            prompts.append(self._condition(dit, cond_b, x.shape[1], device))
+        f = min(max(float(follow or 0.0), 0.0), 1.0) if source is not None else 0.0
+        cover_steps = int((len(ts) - 1) * f)
+
+        def stage(cover):
+            if cover:
+                hint = self.cover_guide(device)(source.to(device, DTYPE), self.silence.to(device, DTYPE))
+                ctx = torch.cat([hint, torch.ones_like(hint)], dim=-1)
+            else:
+                ctx = self._context(x.shape[1], device)
+            key = "text_cover" if cover else "text"
+            ps = [self._condition(dit, cond, x.shape[1], device, refer, key)]
+            if w > 0.0:
+                ps.append(self._condition(dit, cond_b, x.shape[1], device, refer, key))
+            if guided:
+                ps = [torch.cat([e, dit.null_condition_emb.to(e).expand_as(e)]) for e in ps]
+                ctx = ctx.expand(2, -1, -1)
+            return ctx, ps
+
+        ctx, prompts = stage(cover_steps > 0)
         if guided:
-            prompts = [torch.cat([e, dit.null_condition_emb.to(e).expand_as(e)]) for e in prompts]
-            ctx = ctx.expand(2, -1, -1)
             momenta = [_Momentum() for _ in prompts]
         for i in range(len(ts) - 1):
             if on_step is not None:
                 on_step(i, len(ts) - 1)
+            if i == cover_steps and i > 0:
+                ctx, prompts = stage(False)         # the rest of the steps: text to music
             xin = torch.cat([x, x]) if guided else x
             t = torch.full((xin.shape[0],), ts[i], device=device, dtype=DTYPE)
             vs = []
