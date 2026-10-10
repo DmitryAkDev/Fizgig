@@ -305,6 +305,14 @@ class WorkbenchEngine:
             return False
         self.unload_epochs(PRIMARY)
         self.net.move_adapter(PRIMARY, self.device)
+        gain = model_eq_gain(path)                     # the swapped-in file may (or may not) be a Model EQ
+        eq = self.__dict__.setdefault("_eq", {})
+        eq.pop(PRIMARY, None)
+        if gain is not None:
+            eq[PRIMARY] = gain
+            self.net.set_outside(PRIMARY, False)
+        else:
+            self.net.set_outside(PRIMARY, True)
         self.primary_path = path
         self.primary_block_ids = self.net.adapter_blocks(PRIMARY)
         self.primary_hash = self._hash(path)
