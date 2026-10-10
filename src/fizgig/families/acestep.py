@@ -73,6 +73,11 @@ ACESTEP15 = FamilyDescription(
     # arrangement) and 28-31 the tidy-up of detail stay near 1 while Hold is ticked; 6-27 roll the full Min-Max range
     lucky_zones=((0, 5, 0.8, 1.2), (28, 31, 0.9, 1.1)),
     repair_size=30,                   # an audio family's Res is the song length in seconds
+    ema_default="Off",                # available, off until an A/B says otherwise (as Klein)
+    ema_short_run=True,               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
+    ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
+             "steps an epoch (10 clips at accumulation 4 is about 3), so 0.98 averages over most of a 20-epoch run "
+             "and lags it; Short run sizes the window to a quarter of the run.",
 
     lora=LoRAFormat(
         key_template="base_model.model.layers.{block}.{module}.{ab}.weight",
