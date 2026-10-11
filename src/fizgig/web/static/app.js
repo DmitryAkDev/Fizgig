@@ -53,6 +53,7 @@ async function boot() {
   wire();
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
+  setInterval(loadCheckpoints, 15000);
 }
 
 async function chooseFamily(key) {
@@ -85,6 +86,7 @@ function renderAll() {
   renderPrefs();
   checkModels();
   loadGallery();
+  loadCheckpoints();
 }
 
 // ---- the generated forms -----------------------------------------------------------------------------------
@@ -326,6 +328,25 @@ async function loadGallery() {
     "No previews yet. They appear here as the run makes them.";
 }
 
+async function loadCheckpoints() {
+  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
+  const host = $("checkpoints");
+  if (!out) { host.innerHTML = ""; return; }
+  const r = await api("/api/checkpoints?dir=" + encodeURIComponent(out)).catch(() => ({items: []}));
+  host.innerHTML = "";
+  const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
+  for (const it of r.items) {
+    const href = `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
+    host.append(el("div", {class: "checkpoint-row"},
+      el("span", {class: "checkpoint-name", text: it.name}),
+      el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
+        `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
+      el("a", {class: "btn btn-sm btn-primary", href, download: it.name, text: "Download"})));
+  }
+  $("checkpointsInfo").textContent = r.items.length ? `${r.items.length} saved in ${out}, newest first.` :
+    "Nothing saved yet. Checkpoints appear here as the run saves them.";
+}
+
 // ---- Captions tab ------------------------------------------------------------------------------------------
 async function loadCaptions() {
   const host = $("captionsGrid");
@@ -394,6 +415,7 @@ function showTab(name) {
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "captions") loadCaptions();
   if (name === "samples") loadGallery();
+  if (name === "training") loadCheckpoints();
   api("/api/state", {tab: name}).catch(() => {});
 }
 

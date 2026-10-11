@@ -181,6 +181,20 @@ def _safe(name):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:80] or "run"
 
 
+def _checkpoint_kind(path) -> str:
+    """'finetune' (a whole model, the source file with the trained tensors replaced) or 'lora', from the file's
+    metadata header - a few KB read, never the tensors."""
+    try:
+        with open(path, "rb") as f:
+            n = int.from_bytes(f.read(8), "little")
+            if not 0 < n < (64 << 20):
+                return "lora"
+            meta = json.loads(f.read(n)).get("__metadata__") or {}
+    except (OSError, ValueError):
+        return "lora"
+    return "finetune" if meta.get("fizgig_finetune") else "lora"
+
+
 def latest_state(out_dir, name) -> str:
     """The run's newest resumable state folder (<name>-NNNNNN-state), or ""."""
     try:
@@ -322,6 +336,27 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         self._send(200, data, ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
 
+    def _stream(self, path):
+        """A file as a download, sent in pieces (a fine-tune checkpoint is ~10 GB; it never sits in memory)."""
+        try:
+            size = os.path.getsize(path)
+            f = open(path, "rb")
+        except OSError:
+            return self.json({"error": "not found"}, 404)
+        name = os.path.basename(path).replace('"', "")
+        with f:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                while chunk := f.read(8 << 20):
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                pass
+
     # -- access
     def _host_ok(self):
         host = (self.headers.get("Host") or "").rsplit(":", 1)[0].lower()
@@ -403,6 +438,13 @@ class Handler(BaseHTTPRequestHandler):
             if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):
                 return self.json({"error": "not a picture, sound or clip"}, 404)
             return self._file(p)
+        if path == "/api/checkpoints":
+            return self._checkpoints((qs.get("dir") or [""])[0])
+        if path == "/api/download":
+            p = (qs.get("path") or [""])[0]
+            if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
+                return self.json({"error": "not a checkpoint"}, 404)
+            return self._stream(p)
         if path == "/api/captions":
             return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0])
         return self.json({"error": "not found"}, 404)
@@ -455,6 +497,19 @@ class Handler(BaseHTTPRequestHandler):
         items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
         return self.json({"items": [{"name": e.name, "path": e.path, "time": e.stat().st_mtime}
                                     for e in items[:300]]})
+
+    def _checkpoints(self, folder):
+        """The run's saved LoRAs / checkpoints in its output folder, newest first."""
+        try:
+            items = [e for e in os.scandir(folder) if e.is_file() and e.name.lower().endswith(".safetensors")]
+        except OSError:
+            return self.json({"items": []})
+        now = time.time()
+        items = [e for e in items if now - e.stat().st_mtime > 5]       # not one still being written
+        items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        return self.json({"items": [{"name": e.name, "path": e.path, "size": e.stat().st_size,
+                                     "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path)}
+                                    for e in items]})
 
     def _captions(self, folder, ext):
         out = []

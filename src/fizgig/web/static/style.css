@@ -1094,3 +1094,7 @@ input[type="range"] {
 .run-badge[data-state="failed"] { color: var(--danger); }
 .bottom-status-bar { padding: 4px 12px; color: var(--text-secondary); font-size: 9pt; }
 #loginError { color: var(--danger); }
+.checkpoint-list { display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow: auto; }
+.checkpoint-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
+  padding: 4px 8px; background: var(--bg-inset); border: 1px solid var(--border); }
+.checkpoint-name { word-break: break-all; }
