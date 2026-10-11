@@ -18901,6 +18901,20 @@ class LoRATrainerGUI:
         self._build_repair_slider_panel(_host)
         self._repair_sliders_container = sliders_card.master.master
 
+        # Card 4b: Presets - slider presets, under the sliders they set
+        presets_card = self._start_section_card(outer, "Presets", None)
+        presets_card.columnconfigure(1, weight=1)
+        ttk.Label(presets_card, text="Preset:", style="Surface.TLabel").grid(row=0, column=0, sticky=tk.W,
+                                                                           padx=(0, 8), pady=2)
+        self.repair_preset_var = tk.StringVar()
+        self.repair_preset_combo = ttk.Combobox(presets_card, textvariable=self.repair_preset_var,
+                                                values=self._repair_preset_list(), state="readonly")
+        self.repair_preset_combo.grid(row=0, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_preset_combo.bind("<<ComboboxSelected>>",
+                                      lambda e: self._load_repair_preset(self.repair_preset_var.get()))
+        ttk.Button(presets_card, text="Save Preset…", command=self._save_repair_preset).grid(
+            row=0, column=2, sticky=tk.W, padx=(8, 0), pady=2)
+
         # Card 5: Actions
         actions_card = self._start_section_card(outer, "Actions", None)
         action_row = tk.Frame(actions_card, bg=COLORS["bg_surface"])
@@ -19998,20 +20012,12 @@ class LoRATrainerGUI:
         self.repair_ref_strength_var.trace_add("write", lambda *_: self._on_repair_ref_changed())
         r += 1
 
-        # Preset row
-        ttk.Label(parent, text="Preset:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        self.repair_preset_var = tk.StringVar()
-        self.repair_preset_combo = ttk.Combobox(parent, textvariable=self.repair_preset_var,
-                                                values=self._repair_preset_list(), state="readonly")
-        self.repair_preset_combo.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
-        self.repair_preset_combo.bind("<<ComboboxSelected>>",
-                                      lambda e: self._load_repair_preset(self.repair_preset_var.get()))
+        # Save / Load Setup (the whole session); the slider presets have their own card under the sliders
         _pbtns = tk.Frame(parent, bg=COLORS["bg_surface"])
         _pbtns.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        ttk.Button(_pbtns, text="Save Preset…", command=self._save_repair_preset).pack(side=tk.LEFT)
         # the whole session in one file (Peter, 11 Oct): every control, every slider, the LoRAs, the prompt
         _sb = ttk.Button(_pbtns, text="Save Setup…", command=self._save_repair_setup)
-        _sb.pack(side=tk.LEFT, padx=(6, 0))
+        _sb.pack(side=tk.LEFT)
         ToolTip(_sb, "Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length "
                      "and source - to one file you can load back later or share.")
         _lb = ttk.Button(_pbtns, text="Load Setup…", command=self._load_repair_setup)
