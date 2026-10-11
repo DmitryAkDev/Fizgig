@@ -72,6 +72,31 @@ ACESTEP15 = FamilyDescription(
     # I'm feeling lucky's held bands, from Peter's by-ear block map (10 Oct 2026, fzgfunk): 0-5 structure (groove,
     # arrangement) and 28-31 the tidy-up of detail stay near 1 while Hold is ticked; 6-27 roll the full Min-Max range
     lucky_zones=((0, 5, 0.8, 1.2), (28, 31, 0.9, 1.1)),
+    # Peter's Repair Studio mixes (Oct 2026, by ear); every layer not listed stays at 1.0
+    repair_presets=(
+        ("✨Demo Slider Adjustment",
+         (("layer_6", -1.4516), ("layer_7", 0.1935), ("layer_8", 0.5806), ("layer_9", 0.6774),
+          ("layer_10", 0.7742), ("layer_11", 0.7742), ("layer_12", 0.2903), ("layer_13", 0), ("layer_14", 0),
+          ("layer_15", 0), ("layer_16", 0), ("layer_17", 0), ("layer_18", 0), ("layer_19", 0),
+          ("layer_20", 0), ("layer_21", 0), ("layer_22", 0), ("layer_23", 0), ("layer_24", 0),
+          ("layer_25", 0), ("layer_26", 0), ("layer_27", 0))),
+        ("✨Early Epoch Improver",
+         (("layer_0", 0.3871), ("layer_1", 0.5806), ("layer_2", 0.5806), ("layer_3", 0.6774),
+          ("layer_5", 0.7742), ("layer_6", -0.15), ("layer_8", -0.1), ("layer_9", 0.15),
+          ("layer_10", -0.9677), ("layer_11", -0.95), ("layer_12", 0.4), ("layer_13", -0.871),
+          ("layer_14", 0.85), ("layer_15", -0.6774), ("layer_16", 0.95), ("layer_17", -1.3),
+          ("layer_18", 0.6), ("layer_19", 0), ("layer_20", -1.6452), ("layer_21", 0.6), ("layer_22", 1.3),
+          ("layer_23", -0.55), ("layer_24", -1.5484), ("layer_25", 1.05), ("layer_26", 0.35),
+          ("layer_27", 0.95), ("layer_28", 1.05), ("layer_29", 1.05), ("layer_30", 0.95), ("layer_31", 0.9))),
+        ("✨Make it more full",
+         (("layer_0", 0.1935), ("layer_1", 0.2), ("layer_2", 0.1935), ("layer_3", 0.1935),
+          ("layer_4", 0.1935), ("layer_5", 0.1935), ("layer_6", 0.1935), ("layer_7", 0.1935),
+          ("layer_8", -1.3548), ("layer_9", -0.85), ("layer_10", -1.0645), ("layer_11", 1.35),
+          ("layer_12", 0.55), ("layer_13", -1.2581), ("layer_14", 0.871), ("layer_15", -0.871),
+          ("layer_16", 0.4), ("layer_18", -2.0323), ("layer_19", -1.4), ("layer_20", -2.7),
+          ("layer_21", -1.65), ("layer_22", -1.2), ("layer_23", -1.7419), ("layer_24", 0.5),
+          ("layer_25", -2.129), ("layer_26", -1.65), ("layer_27", -1.5))),
+    ),
     repair_size=30,                   # an audio family's Res is the song length in seconds
     ema_default="Off",                # available, off until an A/B says otherwise (as Klein)
     ema_short_run=True,               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
