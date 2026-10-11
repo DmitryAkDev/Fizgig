@@ -13,7 +13,7 @@ _REPO = "https://github.com/ace-step/ACE-Step-1.5"
 _TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 
 
-def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=40):
+def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="0.98 (recommended)", save_every=40):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": alpha, "NETWORK_TYPE": kind, "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": save_every, "SEED": 42, "ADAPTIVE_LR": False,
@@ -98,7 +98,7 @@ ACESTEP15 = FamilyDescription(
           ("layer_25", -2.129), ("layer_26", -1.65), ("layer_27", -1.5))),
     ),
     repair_size=30,                   # an audio family's Res is the song length in seconds
-    ema_default="Off",                # available, off until an A/B says otherwise (as Klein)
+    ema_default="0.98",               # Peter, 11 Oct 2026: the 800-epoch Official run with EMA 0.98 was far better
     ema_short_run=True,
     # Peter, 11 Oct 2026 (chiptune, Official preset): epoch 740 at strength 1.0 played one training song on every seed;
     # at 0.5 it kept the learned sound on new music, better than any earlier epoch at 1.0
