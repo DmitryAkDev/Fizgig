@@ -28,9 +28,9 @@ The dataset we tested it on, and the LoRA it made, are free to download: the [Fi
 
 What to expect:
 
-- **The first epochs sound worse, not better.** Ten songs give only a few training steps an epoch, so for the first 30 or so epochs the previews are quieter and hissier while the model moves away from its own sound. The new sound arrives after that.
+- **The previews get worse before they get better.** As the model moves from what it started with towards your style, the quality drops, sometimes badly. It can sound like overtraining, but it isn't: once it has moved over to the style it starts to improve again. With the starter dataset the best checkpoints came between epochs 740 and 800.
 - **The late epochs hold the detail.** The timbre, the playing style and the production keep sharpening for hundreds of epochs.
-- **Play the final LoRA at about half strength.** After hundreds of epochs a LoRA at strength 1 starts copying the training songs: the same song whatever the seed. At around 0.5 you keep the learned detail and get new music. In our test, epoch 740 at strength 0.5 beat every earlier epoch at strength 1.
+- **Strength 0.5 works really well.** Try anything between 0.5 and 1, but a long-run LoRA tends to work better towards 0.5: towards 1 it leans closer to the training songs, and around 0.5 you keep the learned detail and get new music.
 
 The Training tab shows this as a hint once Max Epochs is 400 or more.
 
