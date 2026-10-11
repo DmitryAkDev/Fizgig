@@ -6,7 +6,7 @@ Qwen Image 2.1 trains LoRAs and LoKRs in Fizgig, including edit LoRAs learned fr
 
 ## Getting set up
 
-1. On the **Preferences** tab, press **Download models for me** in the Qwen Image 2.1 section. It fetches the DiT, VAE, text encoder, the Fizgig training adapter and Viggle's turbo LoRA (about 34 GB), plus Krea 2's Qwen3-VL-4B captioner (about 5 GB) if you don't have it, and the tokenizer files so training works offline.
+1. On the **Preferences** tab, press **Download models for me** in the Qwen Image 2.1 section. It fetches the DiT, VAE, text encoder, the Fizgig training adapter, the Turbo LoRA and the Turbo DiT (about 41 GB), plus Krea 2's Qwen3-VL-4B captioner (about 5 GB) if you don't have it, and the tokenizer files so training works offline.
 2. On the **Training** tab, pick **Qwen Image 2.1** as the Base Model. The Fast preset loads on your first visit.
 
 ## The Fizgig training adapter
@@ -56,9 +56,11 @@ If a later epoch looks softer than you'd like, an earlier one is often the bette
 
 The text encoder only encodes, and loads in 8-bit below about 20 GB free (about 8 GB in all), which is what sets the 10 GB floor. On an RTX 5090 limited to 12 GB, the Fast preset trained on INT8 with a 9.9 GB peak, previews included; limited to 10 GB, on NF4 with a 7.3 GB peak.
 
-## Previews and the turbo LoRA
+## Previews and Turbo
 
-Training previews render on the plain model at **25 steps** by default, with the Samples tab's **Turbo strength** at 0. For faster previews, set Turbo strength to **1.0** and steps to **6**: that renders them with Viggle's turbo LoRA (set in Preferences). The training adapter is off for previews; a Context LoRA stays on.
+Training previews render with the **Turbo LoRA** at strength 1, **8 steps, CFG 1** (both set in Preferences; the download button fetches them). Ticking **Use the Turbo model for samples** on the Samples tab renders them on the Turbo DiT instead, with the model being trained parked beside it. Without the Turbo LoRA they render on the plain model at **25 steps, CFG 3**. The training adapter is off for previews; a Context LoRA stays on.
+
+Repair Studio, LoRA the Explorer and LoRA Royale preview on the Turbo DiT (8 steps, CFG 1) when it's set; without it they follow the Samples tab.
 
 ## Edit LoRAs
 
@@ -88,7 +90,7 @@ In our tests, 40 pairs of a colour grade at 0.59 MP with rank 16 learned the gra
 
 A slider LoRA is a dial between two looks: strength +1 moves a picture toward one look (happy, warm), -1 toward the opposite (sad, cool), and anything in between gives a bit of either. Sliders are trained at +1 and -1, but most will also go further, so try 1.5 or 2 (or -1.5, -2) for a stronger effect; how far a slider goes before the picture breaks down varies from one to the next.
 
-On the Training tab, pick **Kind of LoRA: Slider** under Training Parameters, or load **✨ Qwen 2.1 Slider (rank 4, 2e-4)**, which selects it (rank 4, learning rate 2e-4, 30 epochs). Then choose where the two ends come from.
+On the Training tab, pick **Kind of LoRA: Slider** under Training Parameters, or load **✨ Qwen 2.1 Slider (rank 8, 2e-4)**, which selects it (rank 8, learning rate 2e-4, 30 epochs). Then choose where the two ends come from.
 
 **From photo pairs:** two folders of the same shots, one for each end of the dial. 4 to 10 pairs is enough.
 
@@ -102,7 +104,7 @@ Frame each pair the same way. Handheld shots from the same spot are fine; what m
 
 1. **What the picture is:** the start of the prompt. Each end's words are added after it with a space, so end it with a comma if you want one.
 2. **The +1 end adds** and **The -1 end adds:** e.g. "happy" and "sad".
-3. **Push strength:** how hard the two ends are pushed apart. 2 is a good start; higher gives a stronger dial but can change more than the one thing you asked for.
+3. **Push strength:** how hard the two ends are pushed apart. 2 is a good start (values 2 to 9 tested); higher gives a stronger dial but can change more than the one thing you asked for.
 
 Describe one person in the first line ("a close-up photo of a young woman with short dark hair,") and the dial changes her expression and keeps her the same. Keep it general ("a close-up photo of a person who is") and each practice picture shows a different person, so the dial learns only the change and works on anyone. Words like "sad" can bring more than a face (grey light, rain); if the whole scene changes, try a narrower word such as "unsmiling".
 

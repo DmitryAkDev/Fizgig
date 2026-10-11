@@ -5,12 +5,15 @@ RESEARCH_qwen_image_2_1_*.md files). Sources are cited per value. Training entry
 the family is trained through its driver (qwen_image21/driver.py) by the generic cache + train entry points.
 """
 from fizgig.families.description import (
-    FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA,
+    GENERAL_NEGATIVE, FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA,
 )
 
 _CARD = "https://huggingface.co/Qwen/Qwen-Image-2.1"
 _COMFY = "Comfy-Org/Qwen-Image-2.1"
-_VIGGLE = "https://huggingface.co/Viggle/Qwen-Image-2.1-viggle-turbo"
+_TURBO = "Qwen/Qwen-Image-2.1-Turbo"
+# the Turbo checkpoint's own schedule (model_index.json sample_sigmas), used as given: its scheduler_config turns the
+# dynamic shift off (use_dynamic_shifting false, shift 1.0, shift_terminal null)
+_TURBO_SIGMAS = (1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568)
 _TEMPLATE = "Comfy-Org workflow_templates templates/image_qwen_image_2_1_t2i.json"
 _REDDIT = "r/StableDiffusion 'Qwen Image 2.1 4 Steps Turbo Lora is here by Viggle' (community, Sep 2026)"
 
@@ -30,6 +33,8 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, edit=False, slider=False):
         "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False,
+        "FAMILY_SLIDER_GUIDANCE": "2",   # a prompt slider's push strength (Krea 2's is 3)
+        "FAMILY_FAST_ID": False,
     }
 
 
@@ -37,10 +42,10 @@ QWEN_IMAGE_21 = FamilyDescription(
     key="qwen_image21",
     arch_id="qwenimage21",
     display_name="Qwen Image 2.1",
-    gui_label="Qwen Image 2.1 (experimental)",
+    gui_label="Qwen Image 2.1",
     lora_name_suffix="qwen21",
     aliases=("qwen-image-2.1", "qwen21"),
-    experimental=True,
+    experimental=False,
 
     model_files=(
         ModelFile("qwen21_dit", "Qwen Image 2.1 DiT", True, _COMFY,
@@ -59,10 +64,16 @@ QWEN_IMAGE_21 = FamilyDescription(
               "fizgig_qwen_image_2.1_training_adapter.safetensors", 0.08,
               "Frozen during training, off in previews and saved LoRAs. Without it Qwen 2.1 LoRAs collapse or "
               "wobble; with it likeness was 77 vs 56 in Fizgig's A/B.", role="training_adapter"),
-    ModelFile("qwen21_turbo_lora", "Viggle turbo LoRA (previews)", False,
-                  "Viggle/Qwen-Image-2.1-viggle-turbo",
-                  "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors", 0.68,
-                  "Optional: fast in-training previews. Applied unmerged.", role="speed_lora"),
+    ModelFile("qwen21_turbo_lora", "Turbo LoRA (previews)", False, _COMFY,
+                  "loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors", 0.91,
+                  "Fast in-training previews on the model being trained (8 steps, CFG 1). Applied unmerged.",
+                  role="speed_lora", fetch_optional=False),
+        ModelFile("qwen21_turbo_dit", "Qwen 2.1 Turbo DiT (int8, previews)", False, _COMFY,
+                  "diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors", 7.26,
+                  "Repair Studio, LoRA the Explorer and LoRA Royale preview on it (8 steps, CFG 1); training "
+                  "previews can use it too (a tick on the Samples tab).",
+                  role="preview_dit",
+                  fetch_optional=False),   # the workbench default: fetched with the family (Peter, 9 Oct 2026)
     ),
     text_encoder_label="Qwen3-VL-8B",
     vae_label="Qwen Image 2.1 VAE",
@@ -76,7 +87,38 @@ QWEN_IMAGE_21 = FamilyDescription(
     n_blocks=32,                      # transformer/config.json num_layers 32, identical single-stream blocks
     block_prefix="transformer_blocks",
     block_note="Modulation is shared across all blocks (one global Linear), so per-block sliders act "
-               "on attention and MLP only. No block map (style / identity) exists yet.",
+               "on attention and MLP only. Identity sits in blocks 10-14 (measured 2 Oct 2026 with the "
+               "Profiler on two character LoRAs: those five alone give 67-89% of the likeness, leaving them "
+               "out removes 82-84%, block 12 the strongest); the rest shape the picture.",
+
+    # Measured, not guessed (2 Oct 2026, Profiler group + single-block switch-offs, jadelyn / lara character LoRAs,
+    # ArcFace vs the subjects' photos): blocks 10-14 carry the identity (alone 67% / 89% of the likeness, left out
+    # -84% / -82%), 5-9 a little on one LoRA (11-15%), everything else shapes the picture. Bleed sits in 10-14 too.
+    # 15-19 alone gave lara 18% (left out: nothing) - the next place to look if 10-14 ever can't carry a face alone.
+    block_categories=tuple((f"block_{i}", "identity" if 10 <= i <= 14 else "look") for i in range(32)),
+    # Fast Identity Mode (2 Oct 2026, Sydney, 119 photos, 0.25 MP, 30 epochs, ArcFace vs her photos): blocks 10-14
+    # alone 2.90 it/s vs 1.84 for every block (+58%), likeness .507/.587/.620 at epochs 10/20/30 vs .490/.596/.556.
+    # One seed per run; Lara (0.5 MP, 15 epochs) matched at epoch 10 and trailed at 15.
+    # torch.compile (2 Oct 2026, 5090, 40 photos, 0.25 MP, rank 8, checkpoint outside the compiled blocks - no extra
+    # memory): INT8 2.00 -> 2.86 it/s (+43%, settled by epoch 2), bf16 2.04 -> 2.33 (+14%, still rising at epoch 3);
+    # epoch 1 ~0.7 it/s while the blocks compile. Payback ~200 / ~400 steps measured, rounded up.
+    compiles=True,
+    compile_boundary="outside",
+    compile_fullgraph=False,
+    compile_payback_steps={"int8": 300, "bf16": 800},
+    compile_hint=("Auto (recommended) turns torch.compile on only when this run is long enough to repay it. On Qwen "
+                  "Image 2.1 it is measured 1.43x per step on the INT8 base (2.00 -> 2.86 it/s) and about 1.15x on "
+                  "bf16 (2.04 -> 2.33), with no extra memory: the gradient checkpoint stays outside the compiled "
+                  "blocks. The first epoch runs slower while the blocks compile, so Auto waits for runs longer than "
+                  "about 300 steps on INT8 and 800 on bf16; NF4 is not compiled by Auto (On still compiles). Requires "
+                  "Triton and, on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used "
+                  "with Blocks Swap, since swapping moves weights and compiled graphs assume they stay put."),
+    identity_blocks=tuple(f"block_{i}" for i in range(10, 15)),
+    repair_presets=(
+        ("✨Identity only", tuple((f"block_{i}", 1.0 if 10 <= i <= 14 else 0.0) for i in range(32))),
+        ("✨Look only (no identity)", tuple((f"block_{i}", 0.0) for i in range(10, 15))),
+        ("✨Identity ×0.5", tuple((f"block_{i}", 0.5) for i in range(10, 15))),
+    ),
 
     lora=LoRAFormat(
         key_template="transformer.transformer_blocks.{block}.{module}.{ab}.weight",
@@ -114,6 +156,34 @@ QWEN_IMAGE_21 = FamilyDescription(
     network_types=("lora", "lokr"),
     edit_training=True,             # one checkpoint for text-to-image and edits (up to 10 references)
     slider_training=True,
+    workbench_follows_samples=True,   # Peter, 1 Oct 2026: the workbench previews as the Samples tab says
+    # the reference default is CFG 1 (none); community reports find a little CFG helps 2.1 (1.5-3), higher
+    # oversaturates (Comfy-Org/Qwen-Image-2.1 discussions, comfyui-wiki, Oct 2026)
+    preview_cfg_note="3 = Fizgig's default for Qwen 2.1 previews (25 steps). 1 = no CFG (the reference default, "
+                     "twice as fast, flatter); much higher tends to oversaturate. Above 1 the negative prompt applies.",
+    # Qwen's own accelerated checkpoint (9 Oct 2026): same architecture as the base, 8 steps, CFG 1, its fixed
+    # schedule. Base-trained LoRAs keep their likeness on it (Desktop "Fizgig Qwen 2.1 Turbo likeness")
+    train_preview_checkpoint=True,    # an option on the Samples tab, off by default (Peter, 9 Oct 2026)
+    preview_checkpoint_tick="Use the Turbo model for samples (8-step, CFG 1 - set it in Preferences)",
+    preview_checkpoint_on=False,
+    preview_checkpoint_steps_note="Plain-model samples - the Turbo samples use their own 8 steps",
+    # the Samples tab's wording (Klein's Distilled text would otherwise show)
+    samples_text=(("banner", "Preview prompts rendered periodically during training, on the Qwen Image 2.1 model being "
+                             "trained (or the Turbo model when ticked below). Samples land in <output_dir>/sample/ and "
+                             "the Gallery button below opens the viewer."),
+                  ("advanced", "Qwen Image 2.1's sampling settings: the negative prompt and CFG Scale."),
+                  ("flow", "Not used for Qwen Image 2.1 previews"),
+                  ("neg", "Used when CFG Scale is above 1 - the Turbo samples don't use it"),
+                  ("cfg", "3 = Fizgig's default for plain-model previews (25 steps); 1 = no CFG, twice as fast. The "
+                          "Turbo samples always use CFG 1.")),
+    preview_checkpoint_sampling=SamplingSettings(
+        "Turbo checkpoint", steps=8, cfg=1.0, sampler="euler", scheduler="simple", sigmas=_TURBO_SIGMAS,
+        options=(("shift_terminal", None), ("dynamic_shift", False)),
+        note="Qwen-Image-2.1-Turbo: 8 steps, CFG 1, its own sigmas with no shift.",
+        source=f"https://huggingface.co/{_TURBO} (model_index.json, scheduler_config.json)"),
+    int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
+    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
+    finetune=True,                  # the driver's ft_spec (families/ft.py)
     # measured 28 Sep 2026: 40-48 pairs learned a grade on held-out photos in 6-8 epochs at 0.5 MP
     edit_note=("About 40 pairs (20 at least; more if your photos vary a lot). Each photo 1 MP or larger, e.g. "
                "1200x800; bigger is fine, Fizgig resizes them. An original and its edited version must have the "
@@ -136,42 +206,28 @@ QWEN_IMAGE_21 = FamilyDescription(
     ),
     speed_loras=(
         SpeedLoRA(
-            name="Viggle turbo v0.2.1 (6-step)",
-            repo="Viggle/Qwen-Image-2.1-viggle-turbo",
-            file="Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors",
+            name="Turbo LoRA (8-step)",
+            repo=_COMFY,
+            file="loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
             pairs_with="Qwen Image 2.1 base transformer",
             strength=1.0,
-            settings=SamplingSettings("Viggle 6-step", steps=6, cfg=1.0, sampler="euler", scheduler="simple",
-                                      sigmas=(1.0, 0.9375, 0.875, 0.75, 0.5, 0.25),
-                                      note="shift_terminal must be null; 8 steps for small text. "
-                                           "Add or remove steps only at the high-noise end.",
-                                      options=(("shift_terminal", None),),
-                                      source=_VIGGLE),
+            settings=SamplingSettings("Turbo LoRA 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
+                                      sigmas=_TURBO_SIGMAS, options=(("shift_terminal", None), ("dynamic_shift", False)),
+                                      note="The Turbo checkpoint's own 8-step schedule, CFG 1.",
+                                      source=f"https://huggingface.co/{_COMFY}"),
             load_unmerged=True,
             pref_key="qwen21_turbo_lora",
-            community_settings=(
-                ("8-20 steps at strength 0.3-0.8 as a clean-up rather than a speed-up; CFG 1-2 works "
-                 "when the strength is lowered", _REDDIT),
-                ("strength ~0.3 removes the grid pattern almost completely", _REDDIT),
-            ),
-            caveats=("Grid pattern at 4 steps and full strength (community).",
-                     "Weaker for editing than for text-to-image (community).",
-                     "Merged loading keeps only part of it (LPIPS 0.093 merged vs 0.052 unmerged)."),
-            source=_VIGGLE,
+            source=f"https://huggingface.co/{_COMFY}",
         ),
     ),
-    # Previews on the live training DiT: with the Viggle turbo LoRA when its file is set, else the template's 25
-    # steps (Krea 2 pattern: live training model, family turbo LoRA, no model swap). The turbo runs at its own
-    # 1.0 / 6 steps (Peter, 28 Sep).
-    preview_speed_lora="Viggle turbo v0.2.1 (6-step)",
-    # Previews default to the plain model (25 steps, turbo strength 0 = not loaded); strength 1 at 6 steps is the
-    # fast option. v6.5.0 shipped 0.7 for 10 steps; the reset moves everyone off v6.5.1-6.5.2's 1.0 for 6 once.
-    preview_speed_steps=25,
-    preview_speed_strength=0.0,
-    retired_preview_defaults=((10, 0.7),),
-    preview_reset="turbo-off-25-steps",
+    # Previews on the live training DiT: with the Turbo LoRA when its file is set (strength 1, 8 steps, CFG 1 - the
+    # default, Peter 9 Oct 2026), else the plain model at 25 steps, CFG 3.
+    preview_speed_lora="Turbo LoRA (8-step)",
+    preview_speed_steps=8,
+    preview_speed_strength=1.0,
     preview_steps=25,
-    preview_cfg=1.0,
+    preview_cfg=3.0,                  # base Qwen 2.1 previews are 25 steps at CFG 3
+    preview_negative=GENERAL_NEGATIVE,
     preview_width=1024,
     preview_height=1024,
 
@@ -183,6 +239,10 @@ QWEN_IMAGE_21 = FamilyDescription(
         # the best-held skin detail at 0.5 MP. Automagic (lower likeness, softer late) and flat 1e-4 (too slow)
         # both lost to it.
         ("✨ Qwen 2.1 Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
+        # Fast Identity Mode: Fast's recipe on the identity blocks only, at the 0.25 MP it was measured at (Sydney,
+        # see identity_blocks above): about 1.5x faster, very close to full-model likeness.
+        ("✨ Qwen 2.1 Fast Identity Mode (rank 8) - very close to full-model likeness, ~1.5x faster",
+         {**_preset(8, adaptive=("2e-4", "4e-4")), "DATASET_MEGAPIXELS": "0.25", "FAMILY_FAST_ID": True}),
         # Standard: rank 16 for bigger or mixed datasets. Fast's range at rank 16 overcooked from ~epoch 15 (skin
         # detail 6.4 -> 4.7 by epoch 30), so the range is halved; Peter has run this at rank 16.
         ("✨ Qwen 2.1 Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
@@ -196,9 +256,9 @@ QWEN_IMAGE_21 = FamilyDescription(
         # Edit Strong: rank 16 for trickier edits, at Standard's halved range (rank 16 at Fast's overcooked).
         ("✨ Qwen 2.1 Edit Strong (rank 16, adaptive LR) - trickier edits",
          _preset(16, adaptive=("1e-4", "2e-4"), epochs=12, edit=True)),
-        # Slider (29 Sep): sliders run hot and short (Concept Sliders / AI-Toolkit: rank 4, 2e-4, a few hundred
+        # Slider (29 Sep): sliders run hot and short (rank 8 - Peter, 7 Oct - at 2e-4, a few hundred
         # steps). Measured on Qwen: a prompt smile slider was clear by 160 steps, a 40-pair warmth slider by 160.
-        ("✨ Qwen 2.1 Slider (rank 4, 2e-4)", _preset(4, lr=2e-4, epochs=30, slider=True)),
+        ("✨ Qwen 2.1 Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=30, slider=True)),
     ),
     workbench=("repair", "explorer", "profiler", "extract", "royale"),
 

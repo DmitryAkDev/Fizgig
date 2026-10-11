@@ -7,7 +7,7 @@ component remains under its upstream license. Permissive components (Apache-2.0,
 MIT) are compatible with Fizgig's Apache-2.0 license; where those files were
 modified, Fizgig's changes are released under Apache-2.0. Copyleft components
 (GPL-3.0) are marked separately and stay under GPL-3.0 — see the comfyui-rocm
-section below.
+and ComfyUI sections below.
 
 ---
 
@@ -27,6 +27,22 @@ The following Krea 2 modules are adapted (and modified) from musubi-tuner:
 - training hooks (gradient checkpointing, block-swap wiring) in
   `src/fizgig/krea2/model.py` and the flow-matching training recipe in
   `src/fizgig/krea2/trainer.py`
+
+Licensed under the Apache License, Version 2.0:
+http://www.apache.org/licenses/LICENSE-2.0
+
+---
+
+## sd-scripts — Apache License 2.0
+
+Upstream: https://github.com/kohya-ss/sd-scripts
+Copyright the sd-scripts authors (kohya-ss and contributors); the model code it
+carries is NVIDIA CORPORATION & AFFILIATES' (Apache-2.0).
+
+- `src/fizgig/anima/model.py` (Anima's DiT: Cosmos-Predict2 MiniTrainDIT and the
+  LLM adapter), adapted from `library/anima_models.py` and modified: PyTorch SDPA
+  attention, plain non-reentrant gradient checkpointing, no block swap / CPU
+  offload.
 
 Licensed under the Apache License, Version 2.0:
 http://www.apache.org/licenses/LICENSE-2.0
@@ -95,6 +111,18 @@ All rights reserved. Licensed under the Apache License, Version 2.0.
 
 ---
 
+## Z-Image (Tongyi-MAI / Alibaba) — Apache License 2.0
+
+Upstream: https://github.com/Tongyi-MAI/Z-Image
+
+`src/fizgig/zimage/model.py` (the S3-DiT transformer) and `src/fizgig/zimage/pipeline.py` (text encoding and
+sampling) are adapted from the Z-Image reference implementation (`src/zimage/transformer.py`,
+`src/zimage/pipeline.py`). Copyright 2025 Alibaba Z-Image Team. Licensed under the Apache License, Version 2.0.
+Fizgig's changes are described in each file's header. (Model weights are distributed separately under their own
+license — see "Note on model weights" below.)
+
+---
+
 ## comfyui-rocm — GNU General Public License v3.0
 
 Upstream: https://github.com/patientx/comfyui-rocm
@@ -125,6 +153,38 @@ https://www.gnu.org/licenses/gpl-3.0.html and in comfyui-rocm's `LICENSE` file.
 
 To receive source for `detect_gpu.py`, use this repository or the upstream
 comfyui-rocm repository linked above.
+
+---
+
+## ComfyUI — GNU General Public License v3.0
+
+Upstream: https://github.com/comfyanonymous/ComfyUI
+Copyright (C) comfyanonymous and the ComfyUI contributors.
+
+Fizgig's MiniMax H3 support includes code derived from ComfyUI's MiniMax H3
+implementation. These files are **GPL-3.0**; they are not relicensed under
+Apache-2.0, and each carries a header saying so:
+
+- `src/fizgig/minimax/model.py` — the H3 DiT, ported from
+  `comfy/ldm/minimax/model.py` (ComfyUI's plumbing replaced by plain PyTorch).
+- `src/fizgig/minimax/vae.py` — the H3 video VAE, ported from
+  `comfy/ldm/minimax/vae.py`.
+- `src/fizgig/minimax/audio_vae.py` — the H3 audio VAE, ported from
+  `comfy/ldm/minimax/audio_vae.py`.
+- `src/fizgig/minimax/reference.py` — the reference-to-video conditioning,
+  transcribed from `comfy_extras/nodes_minimax_h3.py`
+  (`MiniMaxH3ReferenceToVideo`).
+- `src/fizgig/minimax/sampling.py` — the `_res_multistep_coeffs` function only,
+  ported from `comfy/k_diffusion/sampling.py` (`res_multistep`). The rest of
+  that file is Fizgig's own and Apache-2.0.
+
+These files are free software: you may redistribute and/or modify them under
+the terms of the GNU General Public License v3.0. A copy of the GPL-3.0 text is
+available at https://www.gnu.org/licenses/gpl-3.0.html and in ComfyUI's
+`LICENSE` file. Their source is this repository.
+
+The MiniMax H3 model weights are not part of this code; MiniMax's own licence
+applies to them (see the note on model weights below).
 
 ---
 

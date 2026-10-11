@@ -40,7 +40,7 @@ class BlockState:
     primary_enabled: bool = True
     primary_strength: float = 1.0
     donor_enabled: bool = True
-    donor_strength: float = 0.0
+    donor_strength: float = 1.0
 
 
 @dataclass
@@ -73,14 +73,6 @@ class SliderState:
     @classmethod
     def default_klein9b(cls) -> "SliderState":
         return cls(blocks={bid: BlockState() for bid in all_block_ids()})
-
-    @classmethod
-    def default_krea2(cls) -> "SliderState":
-        """Krea 2 layout: 28 main blocks + 4 txtfusion (see repair_studio.krea2_blocks).
-        Same BlockState model; only the block-id set differs. Preview res 512 (keeps the
-        Turbo Preview activation cache VRAM-feasible alongside the resident Turbo)."""
-        from fizgig.repair_studio.krea2_blocks import all_block_ids_krea2
-        return cls(blocks={bid: BlockState() for bid in all_block_ids_krea2()})
 
     @classmethod
     def default_h3(cls) -> "SliderState":

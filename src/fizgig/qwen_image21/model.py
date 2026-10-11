@@ -163,8 +163,13 @@ def prefix_segments(image_ids: torch.Tensor, prefix_len: int) -> list:
 
 
 def _sdpa(q, k, v, mask=None):
-    """q/k/v in [B, S, H, D] (diffusers layout); SDPA wants [B, H, S, D]; bool mask True = attend."""
-    out = F.scaled_dot_product_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), attn_mask=mask)
+    """q/k/v in [B, S, H, D] (diffusers layout); SDPA wants [B, H, S, D]; bool mask True = attend. An opted-in
+    workbench render takes comfy-kitchen's INT8 kernel where no mask excludes a token (fizgig/modules/int8_attention)."""
+    from fizgig.modules import int8_attention as _i8a
+    qt, kt, vt = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+    out = _i8a.attend(qt, kt, vt, mask)
+    if out is None:
+        out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
     return out.transpose(1, 2)
 
 
@@ -341,6 +346,14 @@ class QwenImage21DiT(nn.Module):
         if self.blocks_to_swap:
             self.offloader.prepare_block_devices_before_forward(list(self.transformer_blocks))
 
+    def disable_block_swap(self):
+        """Tear block swap down (the offloader's backward hooks would otherwise fire on the next training backward):
+        a run without swap gets its model back after the Turbo previews parked it."""
+        if self.offloader is not None:
+            self.offloader.remove_hooks()
+        self.offloader = None
+        self.blocks_to_swap = 0
+
     def switch_block_swap_for_inference(self):
         if self.blocks_to_swap:
             self.offloader.set_forward_only(True)
@@ -417,7 +430,9 @@ class QwenImage21DiT(nn.Module):
         for index, block in enumerate(self.transformer_blocks):
             if self.blocks_to_swap:
                 self.offloader.wait_for_block(index)
-            if torch.is_grad_enabled() and self.gradient_checkpointing:
+            if getattr(block, "_handles_checkpointing", False):    # compiled: the wrapper checkpoints itself
+                joint = block(joint, modulation, rotary, mod_mask, segments, key_valid)
+            elif torch.is_grad_enabled() and self.gradient_checkpointing:
                 joint = checkpoint(block, joint, modulation, rotary, mod_mask, segments, key_valid,
                                    use_reentrant=False)
             else:
@@ -446,8 +461,42 @@ def convert_comfy_state_dict(sd: dict) -> dict:
     return out
 
 
-def load_qwen21_dit(path, device="cuda", dtype=torch.bfloat16, config=None) -> QwenImage21DiT:
-    """Load from the ComfyUI single file, a diffusers shard directory, or its index.json. Strict key match."""
+def is_convrot(path) -> bool:
+    """A ComfyUI int8 ConvRot file (its quantised Linears carry a `<module>.comfy_quant` marker)."""
+    import os
+    if not (isinstance(path, str) and os.path.isfile(path) and path.endswith(".safetensors")):
+        return False
+    from safetensors import safe_open
+    with safe_open(path, "pt") as f:
+        return any(k.endswith(".comfy_quant") for k in f.keys())
+
+
+def _take_convrot(sd: dict) -> dict:
+    """Pop the int8 ConvRot Linears out of a ComfyUI state dict -> {module name: (codes, scale, rotation)}. Comfy's
+    fused img_mlp.gate_up splits by rows into gate_layer + proj (the per-row scales split with them; the rotation is
+    along the input dim, so the halves stay valid)."""
+    from fizgig.minimax.convrot import parse_comfy_quant
+    out = {}
+    for k in [k for k in sd if k.endswith(".comfy_quant")]:
+        base = k[: -len(".comfy_quant")]
+        conf = parse_comfy_quant(sd.pop(k))
+        if conf.get("format") != "int8_tensorwise":
+            raise ValueError(f"{base}: unsupported comfy quant format {conf.get('format')!r}")
+        rot = int(conf.get("convrot_groupsize", 256)) if conf.get("convrot") else 1
+        q, sc = sd.pop(base + ".weight"), sd.pop(base + ".weight_scale").float().reshape(-1, 1)
+        name = base[len("diffusion_model."):] if base.startswith("diffusion_model.") else base
+        if name.endswith("img_mlp.gate_up"):
+            h, pre = q.shape[0] // 2, name[: -len("gate_up")]
+            out[pre + "gate_layer"], out[pre + "proj"] = (q[:h], sc[:h], rot), (q[h:], sc[h:], rot)
+        else:
+            out[name] = (q, sc, rot)
+    return out
+
+
+def load_qwen21_dit(path, device="cuda", dtype=torch.bfloat16, config=None, keep_convrot=True) -> QwenImage21DiT:
+    """Load from the ComfyUI single file, a diffusers shard directory, or its index.json. Strict key match.
+    A ComfyUI int8 ConvRot file (the Turbo's) keeps its int8 weights as ConvRotInt8Linear (the activation is rotated,
+    the weight never decoded - H3's layer), or with keep_convrot=False decodes them to `dtype`."""
     import glob
     import os
 
@@ -464,9 +513,29 @@ def load_qwen21_dit(path, device="cuda", dtype=torch.bfloat16, config=None) -> Q
     sd = {}
     for f in files:
         sd.update(load_file(f, device="cpu"))
+    # ComfyUI's attention-kernel hint ({"attention": "comfy_kitchen_int8"}, the 9 Oct 2026 Turbo int8 upload): no
+    # weights, and attention here runs in bf16 - dropped, so the earlier upload and this one both load
+    sd = {k: v for k, v in sd.items() if not k.endswith(".comfy_attention.config")}
+    rot = _take_convrot(sd)
     sd = convert_comfy_state_dict(sd)
     sd = {k: v.to(dtype) for k, v in sd.items()}
+    if rot and not keep_convrot:
+        from fizgig.minimax.convrot import dequantize_int8_convrot
+        for name, (q, sc, r) in rot.items():
+            sd[name + ".weight"] = dequantize_int8_convrot(q, sc, {"format": "int8_tensorwise", "convrot": r > 1,
+                                                                  "convrot_groupsize": r}, out_dtype=dtype)
+        rot = {}
     missing, unexpected = model.load_state_dict(sd, strict=False, assign=True)
+    if rot:
+        from fizgig.minimax.convrot import ConvRotInt8Linear
+        for name, (q, sc, r) in rot.items():
+            parent, attr = name.rsplit(".", 1)
+            old = model.get_submodule(name)
+            with torch.device("meta"):
+                lin = ConvRotInt8Linear(old.in_features, old.out_features, bias=False, rot=r, compute_dtype=dtype)
+            lin.qdata, lin.wscale = q.contiguous(), sc.contiguous()
+            setattr(model.get_submodule(parent), attr, lin)
+        missing = [k for k in missing if k[: -len(".weight")] not in rot]
     if missing or unexpected:
         raise ValueError(f"Qwen Image 2.1 DiT keys mismatch: missing {missing[:8]} ({len(missing)}), "
                          f"unexpected {unexpected[:8]} ({len(unexpected)})")
