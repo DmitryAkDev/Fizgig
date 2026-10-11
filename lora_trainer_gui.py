@@ -18919,12 +18919,19 @@ class LoRATrainerGUI:
 
     def _repair_cfg_for(self, desc):
         """The CFG Repair Studio renders this family at: the Samples tab's for a family whose workbench follows it,
-        else its default sampling's."""
+        else that of the preview the DiT radio picks - the fast one (Krea 2's CFG-free Turbo checkpoint or speed LoRA,
+        when set) or the default sampling."""
         if desc.workbench_follows_samples:
             try:
                 return float(self._samples_settings_for(desc).get("cfg") or 1.0)
             except (TypeError, ValueError):
                 return 1.0
+        if self.repair_dit_choice_var.get() != "base":
+            _dit, speed, ck = self._workbench_preview_model(desc, True)
+            if ck is not None:
+                return float(ck.cfg)
+            if speed:
+                return float(desc.preview_speed().settings.cfg)
         return float(desc.default_sampling().cfg)
 
     def _refresh_repair_negative_row(self):
@@ -19499,6 +19506,8 @@ class LoRATrainerGUI:
                         variable=self.repair_dit_choice_var, value="base",
                         style="Surface.TRadiobutton")
         self._repair_dit_radio_b.pack(side=tk.LEFT)
+        # the negative box follows the CFG of the preview picked here (Krea 2: none on Turbo, shown on Full)
+        self.repair_dit_choice_var.trace_add("write", lambda *_: self._refresh_repair_negative_row())
         r += 1
 
         # Primary LoRA
