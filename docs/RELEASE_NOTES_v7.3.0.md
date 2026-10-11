@@ -6,6 +6,8 @@ Fizgig now trains on music, thanks to the new driver engine. Teach ACE-Step 1.5 
 
 ## ACE-Step 1.5 XL
 
+> **Before your first run:** the preset trains for 800 epochs, which sounds like a lot but goes quickly: a song set is small, and the whole run took about 2 hours on an RTX 5090, previews included. Judge your epochs by the previews played at **strength 0.5**, the strength a long-run song LoRA is meant to be used at; at 1.0 the late epochs start copying the training songs.
+
 - **LoRA training on songs.** A folder of songs, each with a caption `.txt` (lyrics in an optional `.lyrics.txt`, bpm and key in an optional `.json`). Trains on the XL Turbo model, or the XL SFT model for 30-step guided previews. LoRAs load in ComfyUI as they are.
 - **A tested recipe.** The **✨ ACE-Step Official LoRA (rank 64, 800 epochs)** preset, measured on a 10-song album: a checkpoint and a preview every 40 epochs. The first 30 or so epochs sound rougher while the model moves towards your sound; the late epochs hold the detail.
 - **EMA on by default.** LoRAs trained on your songs now use EMA 0.98: the same 800-epoch run sounds far better with it.
