@@ -12037,7 +12037,7 @@ class LoRATrainerGUI:
                 <option value="30">30 sec</option>
                 <option value="0">Off</option>
             </select></label>
-            <button onclick="loadImages()">Refresh Now</button>
+            <button onclick="loadImages(true)">Refresh Now</button>
             <button onclick="openBaselinePicker()">🎯 Likeness scoring…</button>
             <button onclick="openRunViz()">🎞 Training Run Visualiser</button>
             <a id="final-lora-btn" class="final-lora-btn" href="#" download style="display:none">⬇ Download Final LoRA</a>
@@ -12207,21 +12207,23 @@ class LoRATrainerGUI:
         function galleryMediaPlaying() {
             return [...document.querySelectorAll('#gallery audio, #gallery video')].some(m => !m.paused && !m.ended);
         }
-        function renderIfChanged() {
+        function renderIfChanged(force) {
             const scores = (likeness && likeness.scores) || {};
             const sig = JSON.stringify(images.map(im => [im.filename, im.lora || '', im.sound || '', im.video || '',
                                                          im.clip ? im.clip.length : 0, scores[im.filename] ?? '']));
-            if (sig === lastGallerySig) return;
-            if (galleryMediaPlaying()) { galleryRenderWaiting = true; return; }
+            if (!force && sig === lastGallerySig) return;
+            // only a song or clip actually PLAYING holds the rebuild back; Refresh Now always rebuilds
+            if (!force && galleryMediaPlaying()) { galleryRenderWaiting = true; return; }
             galleryRenderWaiting = false;
             lastGallerySig = sig;
             renderGallery();
         }
+        // a pause (or the end of the song) lets the page catch up at once: a fresh look for new previews
         ['pause', 'ended'].forEach(ev => document.addEventListener(ev, () => {
-            if (galleryRenderWaiting) setTimeout(() => { if (!galleryMediaPlaying()) renderIfChanged(); }, 400);
+            setTimeout(() => { if (!galleryMediaPlaying()) loadImages(); }, 300);
         }, true));
 
-        async function loadImages() {
+        async function loadImages(force) {
             document.getElementById('status').textContent = 'Loading...';
 
             // Try fetch first (works with HTTP server), fallback to embedded
@@ -12261,7 +12263,7 @@ class LoRATrainerGUI:
                         if (vj.ok) { const vm = await vj.json(); images.forEach(im => { if (vm[im.filename]) im.video = vm[im.filename]; }); }
                     } catch (e) {}
                     await loadLikeness();
-                    renderIfChanged();
+                    renderIfChanged(force === true);
                     renderLikenessChart();
                     document.getElementById('stats').textContent = `${images.length} image${images.length !== 1 ? 's' : ''}`;
                     document.getElementById('status').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
