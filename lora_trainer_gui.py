@@ -18722,6 +18722,9 @@ class LoRATrainerGUI:
         _modes = bool(getattr(_cls, "supports_base_modes", False))
         _banks = bool(getattr(_cls, "supports_banks", False))
         try:
+            if not (desc is not None and getattr(desc, "audio_workbench", False))                     and not self._repair_cmp_btn.winfo_manager():
+                # a song family hides the compare button (below); every other family has it
+                self._repair_cmp_btn.pack(side=tk.RIGHT, padx=(0, 12), before=self._repair_status_label)
             if video:
                 self._repair_cmp_btn.configure(text="▶ Play clips + Metrics")
                 self._repair_preview_hint.configure(
@@ -18738,9 +18741,14 @@ class LoRATrainerGUI:
                 self._repair_history_row.grid_remove()
                 self._repair_kf_container.pack_forget()
                 self._repair_cmp_btn.configure(text="⧉ Compare + Metrics")
-                self._repair_preview_hint.configure(
-                    text="🔍 Click either image for the full-size side-by-side compare with "
-                         "likeness + quality metrics")
+                if desc is not None and getattr(desc, "audio_workbench", False):
+                    # songs: no picture compare or picture metrics; the Preview card's hint is the players'
+                    # (_repair_audio_ui)
+                    self._repair_cmp_btn.pack_forget()
+                else:
+                    self._repair_preview_hint.configure(
+                        text="🔍 Click either image for the full-size side-by-side compare with "
+                             "likeness + quality metrics")
                 self._repair_cache_row.grid_remove()
         except Exception:
             pass
