@@ -19608,7 +19608,7 @@ class LoRATrainerGUI:
                                        "in Preferences), so the donor sliders EQ the model under your primary LoRA - "
                                        "1.0 = the stock model. Click again to drop it.")
         self._repair_unload_donor_btn = ttk.Button(donor_btn_frame, text="Unload Donor",
-                                                   command=self._unload_repair_donor)
+                                                   command=self._repair_unload_donor_clicked)
         self._repair_unload_donor_btn.grid(row=0, column=2, sticky=tk.W, padx=(12, 0))
         self.repair_donor_scale_var = tk.StringVar(value="1.0")
         self._repair_lora_scale["donor"] = self._build_repair_scale_control(
@@ -24796,6 +24796,15 @@ class LoRATrainerGUI:
         if eng.donor_network is not None:
             self._unload_repair_donor()
         self._load_repair_donor(on_done=self._force_regenerate_preview)
+
+    def _repair_unload_donor_clicked(self):
+        """Unload Donor also clears the donor path, so Update / Start can't load it back by accident (a swap inside
+        _browse_and_load_donor still unloads with the new path in place)."""
+        if getattr(self, "_repair_eq_mode", {}).get("donor"):
+            self._repair_eq_saved.pop("donor", None)
+            self._repair_set_eq_mode("donor", False, restore=False)
+        self._unload_repair_donor()
+        self.repair_donor_var.set("")
 
     def _unload_repair_donor(self):
         if self.repair_engine is None or self.repair_engine.donor_network is None:
