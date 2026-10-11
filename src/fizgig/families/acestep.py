@@ -111,6 +111,14 @@ ACESTEP15 = FamilyDescription(
     ft_regularisation=False,          # no "broad class" photos for a song set
     # prompt sliders: a dial between two captions (calm <-> energetic), learned from the model's own songs - no
     # pairs (the same song recorded two ways is rare)
+    kind_notes=(
+        ("standard", "", "A normal LoRA: a sound, a genre or an artist's style, learned from your captioned songs."),
+        ("slider", "Slider (a dial between two music styles)",
+         "A dial: at strength +1 the LoRA moves a song toward one style, at -1 toward the other, and anything in "
+         "between. Previews play -1, 0 and +1 one after another."),
+        ("finetune", "", "The whole model learns your songs, not a LoRA on top of it. Each checkpoint is a full model "
+                         "file (about 10 GB), loaded in place of the base."),
+    ),
     slider_training=True,
     slider_sources=("prompts",),
     slider_prompt_notes=(

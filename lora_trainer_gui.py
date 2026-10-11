@@ -4263,9 +4263,7 @@ class LoRATrainerGUI:
         self._family_edit_cb = ttk.Frame(training_content)          # the Kind of training row
         ttk.Label(self._family_edit_cb, text="Kind of training:").pack(side=tk.LEFT, padx=(0, 10))
         self._family_kind_buttons = {}
-        for _k, _lab in (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
-                         ("slider", "Slider (a dial between two looks)"),
-                         ("finetune", "Fine-tune the whole model")):
+        for _k, _lab in self._KIND_LABELS.items():
             self._family_kind_buttons[_k] = ttk.Radiobutton(self._family_edit_cb, text=_lab, value=_k,
                                                             variable=self._family_kind_var,
                                                             command=self._family_kind_chosen)
@@ -6044,6 +6042,8 @@ class LoRATrainerGUI:
             self.entries["FAMILY_SLIDER_DIR"].delete(0, tk.END)
             self.entries["FAMILY_SLIDER_DIR"].insert(0, path)
 
+    _KIND_LABELS = {"standard": "Standard LoRA", "edit": "Edit (original + edited photo pairs)",
+                    "slider": "Slider (a dial between two looks)", "finetune": "Fine-tune the whole model"}
     _KIND_HINTS = {
         "finetune": "The whole model learns your photos, not a LoRA on top of it. The result is a full model file "
                     "(large), loaded in place of the base. Needs plenty of system memory (the Log says how much).",
@@ -6080,7 +6080,11 @@ class LoRATrainerGUI:
                 kind = "standard"
             if self._family_kind_var.get() != kind:
                 self._family_kind_var.set(kind)
-            self._family_edit_hint.configure(text=self._KIND_HINTS[kind])
+            # a family may word a kind its own way (description kind_notes: ACE-Step's songs, not photos)
+            _kn = {k: (lab, hint) for k, lab, hint in (getattr(desc, "kind_notes", ()) or ())}
+            for _k, _b in self._family_kind_buttons.items():
+                _b.configure(text=(_kn.get(_k, (None,))[0] or self._KIND_LABELS[_k]))
+            self._family_edit_hint.configure(text=(_kn.get(kind, (None, None))[1] or self._KIND_HINTS[kind]))
             slider_on = kind == "slider"
             _idb = tuple(desc.identity_blocks) if desc is not None else ()
             self._set_widget_visible(self._family_fastid, kind == "standard" and bool(_idb))
