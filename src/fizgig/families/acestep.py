@@ -99,7 +99,13 @@ ACESTEP15 = FamilyDescription(
     ),
     repair_size=30,                   # an audio family's Res is the song length in seconds
     ema_default="Off",                # available, off until an A/B says otherwise (as Klein)
-    ema_short_run=True,               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
+    ema_short_run=True,
+    # Peter, 11 Oct 2026 (chiptune, Official preset): epoch 740 at strength 1.0 played one training song on every seed;
+    # at 0.5 it kept the learned sound on new music, better than any earlier epoch at 1.0
+    long_run_hint=(400, "a long run",
+                   "After hundreds of epochs the LoRA has learned the fine detail of your songs, and at strength 1 it "
+                   "can start copying them: the same song on every seed. Try the final LoRA at a lower strength, "
+                   "around 0.5 - you keep the learned detail without the copying."),               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
     finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
     ft_learning_rate=1e-5,
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "

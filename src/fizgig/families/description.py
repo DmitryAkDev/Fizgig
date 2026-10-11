@@ -352,6 +352,9 @@ class FamilyDescription:
     # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
     # so the best point doesn't fall between two saved epochs. None turns the hint off for the family
     lr_hint: tuple = (2e-4, 125)
+    # the Training tab's long-run hint: (epochs, title, text) - a standard LoRA set to at least `epochs` epochs gets a
+    # tip card beside Max Epochs (a playback tip: no button). () = none
+    long_run_hint: tuple = ()
     # training previews may render on the preview checkpoint (the preview_dit file, sampled with
     # preview_checkpoint_sampling) instead of the training model - Klein's Distilled previews. The driver brings the
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)

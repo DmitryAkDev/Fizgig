@@ -3932,6 +3932,16 @@ class LoRATrainerGUI:
         self._lr_hint_btn = ttk.Button(_lh_body, text="", command=self._apply_lr_hint)
         self._lr_hint_btn.pack(anchor=tk.W, padx=12, pady=(6, 9))
         self._lr_hint_count_cache = (None, None, 0)       # (folder, folder mtime, image count)
+        # Long-run hint (Peter, 11 Oct): the family's long_run_hint, beside Max Epochs - a playback tip, no button
+        self._long_hint = tk.Frame(training_content, bg=COLORS["accent"])
+        _lg_body = tk.Frame(self._long_hint, bg=COLORS["accent_subtle"])
+        _lg_body.pack(fill=tk.BOTH, expand=True, padx=(3, 0))
+        self._long_hint_title = tk.Label(_lg_body, text="", font=(FONT_FAMILY, 10, "bold"),
+                                         fg=COLORS["text_primary"], bg=COLORS["accent_subtle"])
+        self._long_hint_title.pack(anchor=tk.W, padx=12, pady=(8, 2))
+        self._long_hint_text = tk.Label(_lg_body, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_explain"],
+                                        bg=COLORS["accent_subtle"], wraplength=480, justify=tk.LEFT)
+        self._long_hint_text.pack(anchor=tk.W, padx=12, pady=(0, 9))
         self.master.after(1500, self._lr_hint_tick)
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
@@ -7989,11 +7999,40 @@ class LoRATrainerGUI:
             e.insert(0, "1e-4")
         self._refresh_lr_hint()
 
+    def _refresh_long_hint(self):
+        """The family's long-run hint (description long_run_hint) beside Max Epochs: a standard LoRA set to at least
+        its epochs."""
+        card = getattr(self, "_long_hint", None)
+        if card is None:
+            return
+        desc = self._family_desc()
+        hint = getattr(desc, "long_run_hint", ()) if desc is not None else ()
+        show = None
+        if hint and getattr(self, "_family_kind_var", None) is not None and self._family_kind_var.get() == "standard":
+            try:
+                if int(float(self.entries["MAX_TRAIN_EPOCHS"].get())) >= hint[0]:
+                    show = hint
+            except (ValueError, KeyError, tk.TclError):
+                pass
+        if show == getattr(self, "_long_hint_shown", "unset"):
+            return
+        self._long_hint_shown = show
+        if show is None:
+            card.grid_remove()
+            return
+        self._long_hint_title.configure(text=f"💡  Hint: {show[1]}")
+        self._long_hint_text.configure(text=show[2])
+        card.grid(row=7, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+
     def _lr_hint_tick(self):
         """Presets, the Start folder, batch size and kind all change the hint, many of them programmatically (a
         Combobox.set fires no event), so it re-checks itself every second; the image count is cached."""
         try:
             self._refresh_lr_hint()
+        except Exception:
+            pass
+        try:
+            self._refresh_long_hint()
         except Exception:
             pass
         self.master.after(1000, self._lr_hint_tick)
