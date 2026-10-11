@@ -407,6 +407,7 @@ class FamilyDescription:
     sampling: tuple = ()              # SamplingSettings without any speed LoRA (first = default)
     speed_loras: tuple = ()           # SpeedLoRA entries
     preview_steps: int = 20
+    preview_every: int = 1           # Samples: a preview every N epochs (kept per family once edited)
     preview_cfg_note: str = ""         # the Samples tab's line under CFG Scale ("" = a plain default line)
     # the Samples tab's default negative prompt for the family (each family keeps the user's own edit); None = its
     # previews take no negative, so the box greys out
@@ -610,6 +611,7 @@ class FamilyDescription:
             "sample_steps_default": self.preview_steps if self.preview_steps else (s.steps if s else 20),
             "sample_width_default": self.preview_width,
             "sample_height_default": self.preview_height,
+            "sample_every_default": self.preview_every,
             "lora_name_suffix": self.lora_name_suffix,
         }
 

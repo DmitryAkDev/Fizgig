@@ -11286,7 +11286,7 @@ class LoRATrainerGUI:
                         if _a and not getattr(self, "_sample_settings_loading", False):
                             self.last_used.setdefault("sample_settings", {})[_a] = self._sample_box_values()
                     for _v in (self.sample_cfg_scale_var, self.sample_flow_shift_var, self.sample_steps_var,
-                               self.sample_width_var, self.sample_height_var):
+                               self.sample_width_var, self.sample_height_var, self.sample_every_n_epochs_var):
                         _v.trace_add("write", _keep_settings)
                     self._sample_settings_traced = True
                 self._sample_defaults_arch = arch
@@ -11658,7 +11658,7 @@ class LoRATrainerGUI:
         """The Samples tab's per-family boxes (CFG, flow shift, steps, size) as last_used["sample_settings"] keeps them."""
         return {"cfg": self.sample_cfg_scale_var.get(), "shift": self.sample_flow_shift_var.get(),
                 "steps": self.sample_steps_var.get(), "w": self.sample_width_var.get(),
-                "h": self.sample_height_var.get()}
+                "h": self.sample_height_var.get(), "every": self.sample_every_n_epochs_var.get()}
 
     def _apply_sample_defaults(self, arch, config, stash):
         """Fill the per-family boxes: the family's kept values (stash), else its defaults."""
@@ -11666,7 +11666,8 @@ class LoRATrainerGUI:
                                (self.sample_flow_shift_var, "shift", "sample_flow_shift_default"),
                                (self.sample_steps_var, "steps", "sample_steps_default"),
                                (self.sample_width_var, "w", "sample_width_default"),
-                               (self.sample_height_var, "h", "sample_height_default")):
+                               (self.sample_height_var, "h", "sample_height_default"),
+                               (self.sample_every_n_epochs_var, "every", "sample_every_default")):
             v = (stash or {}).get(key)
             if v in (None, "") and config.get(dkey) is not None:
                 v = str(config[dkey])

@@ -13,7 +13,7 @@ _REPO = "https://github.com/ace-step/ACE-Step-1.5"
 _TURBO_T = (1.0, 0.9545454545454546, 0.9, 0.8333333333333334, 0.75, 0.6428571428571429, 0.5, 0.3)
 
 
-def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=1):
+def _preset(rank, alpha, lr, epochs, kind="LoRA (standard)", ema="Off", save_every=40):
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": alpha, "NETWORK_TYPE": kind, "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": save_every, "SEED": 42, "ADAPTIVE_LR": False,
@@ -142,6 +142,7 @@ ACESTEP15 = FamilyDescription(
     ),
     samples_cfg_free=True,
     preview_steps=8,
+    preview_every=40,                 # a long run (800 epochs): a preview with every checkpoint
     preview_cfg=1.0,
     samples_text=(
         ("banner", "Each sample prompt is a song: \"caption | lyrics\", lyric lines separated by \" / \" (e.g. "
@@ -161,13 +162,13 @@ ACESTEP15 = FamilyDescription(
     ),
 
     presets=(
-        # Peter's best by ear so far (11 Oct 2026, fzgfunk + cinematic): alpha a QUARTER of rank (a 0.25 scale, an eighth of
-        # the official 2.0 - better than 64:32 and still quick), EMA sized to the run
+        # the official LoRA recipe (rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4, the tutorial's 800 epochs for
+        # 10-20 songs), measured in Fizgig 11 Oct 2026 (Peter, chiptune, 10 songs): the sound arrives after ~30 epochs,
+        # epoch 740 played at strength 0.5 beat every earlier epoch at 1.0; a checkpoint + preview every 40 epochs
+        ("✨ ACE-Step Official LoRA (rank 64, 800 epochs)", _preset(64, 128, 1e-4, 800)),
+        # Peter's quick option (fzgfunk + cinematic): alpha a QUARTER of rank (a 0.25 scale), EMA sized to the run
         ("✨ ACE-Step Gentle LoRA (rank 64, alpha 16, EMA)",
-         _preset(64, 16, 1e-4, 40, ema="Short run (window = ¼ of the run)")),
-        # the official LoRA defaults: rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4; the tutorial's epochs:
-        # 10-20 songs -> 800, ~100 songs -> 500 (LoRA_Training_Tutorial.md). Not yet measured in Fizgig.
-        ("✨ ACE-Step Official LoRA (rank 64, 1e-4)", _preset(64, 128, 1e-4, 800)),
+         _preset(64, 16, 1e-4, 40, ema="Short run (window = ¼ of the run)", save_every=1)),
         # the whole model: one window per epoch on a 32 GB card (all five parts), a checkpoint every rotation
         ("✨ ACE-Step Fine-tune (1e-5)", {**_preset(64, 16, 1e-5, 20), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "20",
                                           "FAMILY_FT_SAVE_EVERY": "1"}),
