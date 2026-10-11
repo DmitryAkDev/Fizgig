@@ -190,6 +190,13 @@ class FamilyDriver:
         import contextlib
         return contextlib.nullcontext()
 
+    def practice_latent(self, vae, latents, res):
+        """A prompt slider's practice item: generate()'s latents -> one training latent as the cache holds it,
+        (1, C, ...) on the CPU. Pictures go through the decoder and back (the cache's own encoding)."""
+        import numpy as np
+        img = self.decode(vae, latents, res, res)
+        return self.encode_images(vae, [np.array(img)])[0][None].cpu()
+
     def slider_preview(self, frames, multipliers):
         """One preview's decoded results at each strength -> what save_preview writes, or None for the shared
         side-by-side still strip (a clip family lays its clips side by side)."""

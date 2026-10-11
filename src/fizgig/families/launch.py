@@ -79,7 +79,9 @@ def slider_on(desc, inputs, source=None):
     """Slider mode for a family that offers it; source "pairs" / "prompts" narrows it to one kind."""
     on = bool(desc.slider_training and inputs.get("FAMILY_SLIDER"))
     if on and source:
-        on = (inputs.get("FAMILY_SLIDER_SOURCE") or "pairs") == source
+        offered = tuple(getattr(desc, "slider_sources", ("pairs", "prompts"))) or ("pairs", "prompts")
+        have = inputs.get("FAMILY_SLIDER_SOURCE") or "pairs"
+        on = (have if have in offered else offered[0]) == source      # a family with one source always uses it
     return on
 
 

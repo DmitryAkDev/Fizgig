@@ -4342,6 +4342,7 @@ class LoRATrainerGUI:
         self._family_slider_frame.grid(row=57, column=0, columnspan=2, sticky=tk.W, padx=(26, 5), pady=(2, 4))
         _f = self._family_slider_frame
         _r[0] = 0
+        _src_from = _r[0]
         _block("Where the two ends come from",
                "Photo pairs: two folders of the same shots, one folder for each end of the dial (e.g. the same "
                "person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about "
@@ -4357,6 +4358,8 @@ class LoRATrainerGUI:
         for _k, _lab in (("pairs", "Photo pairs"), ("prompts", "Prompts")):
             ttk.Radiobutton(_src, text=_lab, value=_k, variable=self.entries["FAMILY_SLIDER_SOURCE"],
                             command=self._family_edit_rows).pack(side=tk.LEFT, padx=(0, 14))
+        # the chooser and its explanation: hidden for a family offering one source (description slider_sources)
+        self._family_slider_source_widgets = [w for w in _f.grid_slaves() if int(w.grid_info()["row"]) >= _src_from]
         self._family_slider_pairs = ttk.Frame(_f)
         self._family_slider_pairs.grid(row=_r[0], column=0, sticky=tk.W)
         self._family_slider_prompts = ttk.Frame(_f)
@@ -4427,6 +4430,10 @@ class LoRATrainerGUI:
                  "How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
                  "thing you asked for (a frown can turn into a different, older man).", "2")):
             _lab = _block(_head, _text)
+            # (heading, help) widgets and the shared wording, so a family can say it its own way (slider_prompt_notes)
+            self._family_slider_prompt_rows = getattr(self, "_family_slider_prompt_rows", {})
+            self._family_slider_prompt_rows[_key] = (
+                _f.grid_slaves(row=int(_lab.grid_info()["row"]) - 1, column=0)[0], _lab, _head, _text)
             if _key == "FAMILY_SLIDER_GUIDANCE":
                 self._family_slider_push_hint, self._family_slider_push_text = _lab, _text
             _er = _row()
@@ -6089,6 +6096,17 @@ class LoRATrainerGUI:
                 self._family_slider_push_hint.configure(       # the open family's own start
                     text=f"{self._family_slider_push_text} Start on {desc.slider_guidance:g} "
                          "(values 2 to 9 tested).")
+            _offered = tuple(getattr(desc, "slider_sources", ("pairs", "prompts")) or ("pairs", "prompts"))
+            if self.entries["FAMILY_SLIDER_SOURCE"].get() not in _offered:
+                self.entries["FAMILY_SLIDER_SOURCE"].set(_offered[0])     # the family's only kind (its trace returns here)
+                return
+            for _w in getattr(self, "_family_slider_source_widgets", ()):
+                self._set_widget_visible(_w, len(_offered) > 1)
+            _notes = {k: (h, t) for k, h, t in (getattr(desc, "slider_prompt_notes", ()) or ())}
+            for _k, (_hw, _tw, _h0, _t0) in getattr(self, "_family_slider_prompt_rows", {}).items():
+                _h, _t = _notes.get(_k, (_h0, _t0))
+                _hw.configure(text=_h)
+                _tw.configure(text=_t)
             prompts = self.entries["FAMILY_SLIDER_SOURCE"].get() == "prompts"
             self._set_widget_visible(self._family_slider_pairs, slider_on and not prompts)
             _clips = "clip" in getattr(desc, "media", ())

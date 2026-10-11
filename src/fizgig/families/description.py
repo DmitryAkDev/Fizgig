@@ -401,6 +401,10 @@ class FamilyDescription:
     slider_training: bool = False     # Slider LoRAs (strength is a dial between two looks); the driver needs
     #                                   training_loss(diff_ref=, diff_weight=) and noise_latents / predict
     slider_guidance: float = 2.0      # a prompt slider's default push strength (the Training tab box when empty)
+    slider_sources: tuple = ("pairs", "prompts")   # where a slider's two ends come from (one = no chooser shown)
+    # the Slider card's prompt rows in the family's own words: ((key, heading, help), ...) for FAMILY_SLIDER_BASE /
+    # _POS / _NEG; () = the shared picture wording
+    slider_prompt_notes: tuple = ()
     slider_ultra_blocks: tuple = ()   # block ids (driver.block_map) an "Ultra mode" slider trains, () = no Ultra mode:
     #                                   the composition blocks only, so the slider holds up at far higher strengths
 

@@ -1040,8 +1040,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
                                           seed=seed + 1000 + i, cfg=sample_cfg_scale,
                                           **({"neg_cond": slider_neg} if slider_neg is not None else {}))
-                img = driver.decode(vae, lat, slider_bank_res, slider_bank_res)
-                bank.append(driver.encode_images(vae, [np.array(img)])[0][None].cpu())
+                bank.append(driver.practice_latent(vae, lat, slider_bank_res))
         if use_speed:
             net.set_enabled(SPEED, False)
             net.move_adapter(SPEED, "cpu")

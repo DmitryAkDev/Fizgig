@@ -596,6 +596,18 @@ class AceStepDriver(FamilyDriver):
     def decode_audio(self, vae, audio):
         return self.decode(vae, audio).wave
 
+    def practice_latent(self, vae, latents, res):
+        """A prompt slider's practice song stays a latent: (1, T, 64) from generate() -> the cache's (1, 64, T)."""
+        return latents.float().transpose(1, 2).contiguous().cpu()
+
+    def slider_preview(self, frames, multipliers):
+        """The dial as one song: -1, 0 and +1 one after another, a second of silence between them."""
+        gap = torch.zeros(frames[0].wave.shape[0], 48000, dtype=frames[0].wave.dtype)
+        parts = []
+        for k, f in enumerate(frames):
+            parts += ([gap] if k else []) + [f.wave]
+        return Song(torch.cat(parts, dim=-1))
+
     def save_preview(self, result, path):
         from fizgig.minimax.common import write_wav
         from fizgig.acestep.vae import SAMPLE_RATE

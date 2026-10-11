@@ -109,6 +109,20 @@ ACESTEP15 = FamilyDescription(
     finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
     ft_learning_rate=1e-5,
     ft_regularisation=False,          # no "broad class" photos for a song set
+    # prompt sliders: a dial between two captions (calm <-> energetic), learned from the model's own songs - no
+    # pairs (the same song recorded two ways is rare)
+    slider_training=True,
+    slider_sources=("prompts",),
+    slider_prompt_notes=(
+        ("FAMILY_SLIDER_BASE", "1. What the music is",
+         "The start of the caption, e.g. \"instrumental, synth pop,\" - each end's words are added after it with a "
+         "space, so end it with a comma. Keep it general and the dial works on any song of that kind."),
+        ("FAMILY_SLIDER_POS", "2. The +1 end adds",
+         "e.g. \"energetic, fast tempo, loud drums\"."),
+        ("FAMILY_SLIDER_NEG", "3. The -1 end adds",
+         "e.g. \"calm, slow tempo, soft\". Change one thing: words that also change the genre or the instruments "
+         "turn the dial into a genre switch."),
+    ),
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
              "steps an epoch (10 clips at accumulation 4 is about 3), so 0.98 averages over most of a 20-epoch run "
              "and lags it; Short run sizes the window to a quarter of the run.",
