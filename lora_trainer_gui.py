@@ -7987,6 +7987,7 @@ class LoRATrainerGUI:
                 "can fall between two saves. 1e-4 suits a dataset this size."))
             self._lr_hint_btn.configure(text="Use 1e-4")
         card.grid(row=2, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+        card.lift()
 
     def _apply_lr_hint(self):
         """The hint's one-click change: adaptive Min 1e-4 / Max 2e-4, or a learning rate of 1e-4."""
@@ -8023,6 +8024,7 @@ class LoRATrainerGUI:
         self._long_hint_title.configure(text=f"💡  Hint: {show[1]}")
         self._long_hint_text.configure(text=show[2])
         card.grid(row=7, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+        card.lift()                 # the Max Epochs / Seed boxes stretch across the column and were drawn over it
 
     def _lr_hint_tick(self):
         """Presets, the Start folder, batch size and kind all change the hint, many of them programmatically (a
