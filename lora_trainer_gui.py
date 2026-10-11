@@ -20770,6 +20770,7 @@ class LoRATrainerGUI:
                       "1.0 is that block at this strength, 0.5 is half of it. The saved file "
                       "keeps its original scale — use it at this strength, and it looks exactly "
                       "like the preview.")
+        box._fizgig_after = parent.winfo_children()[0]      # sits right after the row's Browse button
         self._repair_scale_widgets.append((box, spin))
         return spin
 
@@ -20806,7 +20807,7 @@ class LoRATrainerGUI:
         for box, _spin in getattr(self, "_repair_scale_widgets", ()):
             if show:
                 if not box.winfo_manager():
-                    box.pack(side=tk.LEFT, padx=(10, 4))
+                    box.pack(side=tk.LEFT, padx=(10, 4), after=box._fizgig_after)
             else:
                 box.pack_forget()
 
