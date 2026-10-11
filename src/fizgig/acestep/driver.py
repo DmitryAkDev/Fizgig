@@ -47,6 +47,7 @@ TIMESTEP_MU, TIMESTEP_SIGMA, CFG_DROPOUT = -0.4, 1.0, 0.15  # config.json; Side-
 LYRICS_SUFFIX = ".lyrics.txt"
 INSTRUMENTAL = "[Instrumental]"
 ATTN = ("q_proj", "k_proj", "v_proj", "o_proj")
+MLP = ("gate_proj", "up_proj", "down_proj")
 
 
 def caption_prompt(caption, seconds, bpm=None, timesignature=None, keyscale=None, instruction=INSTRUCTION):
@@ -613,6 +614,22 @@ class AceStepDriver(FamilyDriver):
                 mods = [m for m in mods if m in names]
             blocks.append(Block(f"layer_{i}", f"Layer {i}", mods))
         return [BlockGroup("DiT layers", blocks)]
+
+    def quant_target_names(self, dit):
+        """The 4-bit trunk a fine-tune trains against: both attentions and the MLP of every layer (the base is bf16
+        otherwise - nothing else quantises)."""
+        return [f"layers.{i}.{a}.{p}" for i in range(self.description.n_blocks)
+                for a, ps in (("self_attn", ATTN), ("cross_attn", ATTN), ("mlp", MLP)) for p in ps]
+
+    def ft_spec(self, dit):
+        """Fine-tuning: the 32 layers' self-attention, cross-attention and MLP Linears on the NF4 trunk, in five
+        windows of similar size per layer (each attention ~26M parameters, each MLP matrix ~25M). The condition
+        encoder, the AdaLN tables, norms and I/O stay frozen. The file names the layers "decoder.layers.N"; the
+        checkpoint is the source file with those tensors replaced, so ComfyUI loads it as it loads the base."""
+        from fizgig.families.ft import FTSpec
+        return FTSpec(blocks="layers", components=("self_attn", "cross_attn", "mlp.gate_proj", "mlp.up_proj",
+                                                   "mlp.down_proj"),
+                      file_prefix="decoder.")
 
     def alias_flat(self, flat):
         """ComfyUI's checkpoint naming (decoder_layers_N_...) -> the decoder-rooted name."""

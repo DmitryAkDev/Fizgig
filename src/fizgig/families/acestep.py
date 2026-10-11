@@ -75,6 +75,8 @@ ACESTEP15 = FamilyDescription(
     repair_size=30,                   # an audio family's Res is the song length in seconds
     ema_default="Off",                # available, off until an A/B says otherwise (as Klein)
     ema_short_run=True,               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
+    finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
+    ft_learning_rate=1e-5,
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
              "steps an epoch (10 clips at accumulation 4 is about 3), so 0.98 averages over most of a 20-epoch run "
              "and lags it; Short run sizes the window to a quarter of the run.",
@@ -135,6 +137,9 @@ ACESTEP15 = FamilyDescription(
         # the official LoRA defaults: rank 64 / alpha 128, 1e-4, batch 1 x accumulation 4; the tutorial's epochs:
         # 10-20 songs -> 800, ~100 songs -> 500 (LoRA_Training_Tutorial.md). Not yet measured in Fizgig.
         ("✨ ACE-Step Official LoRA (rank 64, 1e-4)", _preset(64, 128, 1e-4, 800)),
+        # the whole model: one window per epoch on a 32 GB card (all five parts), a checkpoint every rotation
+        ("✨ ACE-Step Fine-tune (1e-5)", {**_preset(64, 16, 1e-5, 20), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "20",
+                                          "FAMILY_FT_SAVE_EVERY": "1"}),
     ),
 
     notes=(
