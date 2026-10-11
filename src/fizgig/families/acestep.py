@@ -195,11 +195,13 @@ ACESTEP15 = FamilyDescription(
         # a prompt slider (11 Oct 2026, calm <-> energetic on synth pop - Peter: "brilliant"): rank 8, 2e-4, 20 epochs,
         # every practice song its own update (accumulation 1), a checkpoint and the dial's preview every 4 epochs
         ("✨ ACE-Step Slider (rank 8, 20 epochs)",
-         {**_preset(8, 8, 2e-4, 20, save_every=4), "GRADIENT_ACCUMULATION": 1, "FAMILY_SLIDER": True,
+         {**_preset(8, 8, 2e-4, 20, ema="Off", save_every=4), "GRADIENT_ACCUMULATION": 1, "FAMILY_SLIDER": True,
           "FAMILY_SLIDER_GUIDANCE": "2"}),
-        # the whole model: one window per epoch on a 32 GB card (all five parts), a checkpoint every rotation
-        ("✨ ACE-Step Fine-tune (1e-5)", {**_preset(64, 16, 1e-5, 20), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "20",
-                                          "FAMILY_FT_SAVE_EVERY": "1"}),
+        # the whole model: all five parts fit one window on a 32 GB card, so a rotation is an epoch there - 800 as the
+        # LoRA recipe, a checkpoint (about 10 GB) and a preview every 50 (Peter, 11 Oct 2026)
+        ("✨ ACE-Step Fine-tune (1e-5, 800 rotations)",
+         {**_preset(64, 16, 1e-5, 800, ema="Off"), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "800",
+          "FAMILY_FT_SAVE_EVERY": "50"}),
     ),
 
     notes=(

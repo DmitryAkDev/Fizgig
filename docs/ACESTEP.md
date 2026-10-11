@@ -58,4 +58,4 @@ No songs are needed: Fizgig teaches the dial from the model's own songs. Each ch
 
 ## Full fine-tuning
 
-The **✨ ACE-Step Fine-tune** preset trains the whole model (both attentions and the MLP of all 32 layers) a part at a time on a 4-bit base, at 1e-5. Each checkpoint is a complete model file of about 10 GB that ComfyUI loads like the original.
+The **✨ ACE-Step Fine-tune** preset trains the whole model (both attentions and the MLP of all 32 layers) a part at a time on a 4-bit base, at 1e-5, for 800 rotations with a checkpoint and a preview every 50. On a 32 GB card a rotation is one epoch; smaller cards split the model into more parts, so a rotation takes several. Each checkpoint is a complete model file of about 10 GB that ComfyUI loads like the original, so the full run needs about 160 GB of disk.
