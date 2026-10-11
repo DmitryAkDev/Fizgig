@@ -17467,6 +17467,9 @@ class LoRATrainerGUI:
         in_row = self._add_pref_row(in_card, in_row, "Training images:", "input_dataset_dir",
                                     "Default folder the Start tab's Browse opens in", is_dir=True)
 
+        if not _running_on_pod():
+            self._build_mic_card(outer)
+
         self._add_runpod_card(outer)
 
 
@@ -17491,6 +17494,81 @@ class LoRATrainerGUI:
     RUNPOD_DEPLOY_URL = ("https://console.runpod.io/deploy"
                          "?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um")
     RUNPOD_REFERRAL = "vkb387ep"
+
+    def _build_mic_card(self, outer):
+        """The microphone Repair Studio's 🎙 Record buttons use. It is Gizmo's setting (gizmo_settings.json), so
+        changing it here or in Gizmo's ⚙ settings changes both."""
+        card = self._start_section_card(
+            outer, "Microphone",
+            "The microphone Repair Studio's 🎙 Record buttons use (ACE-Step's source song and Sound like "
+            "reference). It is the same setting as Gizmo's ⚙ settings: change it in either and both follow.",
+        )
+        card.columnconfigure(1, weight=1)
+        ttk.Label(card, text="Microphone:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10), pady=4)
+        self._mic_var = tk.StringVar()
+        row = tk.Frame(card, bg=COLORS["bg_surface"])
+        row.grid(row=0, column=1, sticky=tk.W, pady=4)
+        combo = ttk.Combobox(row, textvariable=self._mic_var, width=48, state="readonly")
+        combo.pack(side=tk.LEFT)
+        scan_btn = ttk.Button(row, text="Scan")
+        scan_btn.pack(side=tk.LEFT, padx=(8, 0))
+        note = tk.Label(card, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"])
+        note.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
+        def _saved():
+            try:
+                import gizmo as _gz
+                return (_gz.load_settings() or {}).get("microphone", "")
+            except Exception:
+                return ""
+
+        def _show_saved(*_):
+            cur = _saved()
+            self._mic_var.set(cur)
+            if cur and cur not in combo.cget("values"):
+                combo.configure(values=[cur, *combo.cget("values")])
+            note.configure(text="" if cur else "None picked: recording uses the first microphone found. "
+                                               "Press Scan to choose one.")
+
+        def _pick(*_):
+            dev = self._mic_var.get().strip()
+            try:
+                import gizmo as _gz
+                st = _gz.load_settings()
+                st["microphone"] = dev
+                _gz.save_settings(st)
+            except Exception as e:
+                note.configure(text=f"Could not save: {e}")
+                return
+            note.configure(text="")
+
+        def _scan():
+            scan_btn.configure(state=tk.DISABLED, text="Scanning…")
+
+            def worker():
+                try:
+                    import gizmo as _gz
+                    from fizgig.families.clips import ffmpeg
+                    devices = _gz.list_capture_devices(ffmpeg())
+                except Exception:
+                    devices = []
+
+                def done():
+                    scan_btn.configure(state=tk.NORMAL, text="Scan")
+                    combo.configure(values=devices)
+                    if not devices:
+                        note.configure(text="No microphones found.")
+                        return
+                    _show_saved()
+                    if not self._mic_var.get():
+                        note.configure(text=f"{len(devices)} found: pick one.")
+                self.master.after(0, done)
+            threading.Thread(target=worker, daemon=True).start()
+
+        scan_btn.configure(command=_scan)
+        combo.bind("<<ComboboxSelected>>", _pick)
+        card.bind("<Map>", _show_saved)          # picks up a change made in Gizmo meanwhile
+        _show_saved()
 
     def _runpod_deploy_url(self) -> str:
         u = self.RUNPOD_DEPLOY_URL
@@ -19642,7 +19720,7 @@ class LoRATrainerGUI:
         ttk.Button(src_ctl, text="Browse", command=self._repair_src_browse).pack(side=tk.LEFT)
         self._repair_src_rec_btn = ttk.Button(src_ctl, text="\U0001f399 Record", command=self._repair_src_record)
         self._repair_src_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
-        ToolTip(self._repair_src_rec_btn, "Record from your microphone (the one picked in Gizmo's settings) for the "
+        ToolTip(self._repair_src_rec_btn, "Record from your microphone (the one picked in Preferences or Gizmo's settings) for the "
                                           "Length setting, then use the take as the source.")
         ttk.Label(src_ctl, text="Use:").pack(side=tk.LEFT)
         self.repair_src_mode_var = tk.StringVar(value=self._SRC_MODES[0][1])
@@ -24352,7 +24430,7 @@ class LoRATrainerGUI:
         raw = os.path.join(tempfile.gettempdir(), "fizgig_take.raw")
         cmd = _gz.build_capture_command(ff, dev, raw)
         if not cmd:
-            self.repair_status_var.set("No microphone to record from (pick one in Gizmo's \u2699 settings).")
+            self.repair_status_var.set("No microphone to record from (pick one in Preferences > Microphone).")
             return
         cmd = cmd[:-2] + ["-t", str(seconds)] + cmd[-2:]         # the take is the Length setting long
         self._repair_src_recording = True
