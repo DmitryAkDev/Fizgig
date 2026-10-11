@@ -1607,7 +1607,8 @@ class Gizmo:
         self.root.focus_set()
 
     def _build_source_card(self, body):
-        c = self._card(body, "1. Source video", "Any format, any frame rate, any size.")
+        c = self._card(body, "1. Source video", "Any format, any frame rate, any size. Opening "
+                       "another video keeps your queue, so one export can hold clips from many.")
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
         self._button(row, "Open video…", self.open_video, "accent",
@@ -1932,8 +1933,9 @@ class Gizmo:
     def _build_queue_card(self, body):
         c = self._card(body, "4. Mark it, then move on",
                        "Marking is fast and encoding is slow, so they are separate. Add every "
-                       "section you want from this video, then export the lot in one go — and "
-                       "keep scrubbing while it runs.")
+                       "section you want, then open the next video and keep adding: the queue "
+                       "keeps them all, and Export writes the lot in one go — keep scrubbing "
+                       "while it runs.")
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
         self.add_btn = self._button(
@@ -3147,9 +3149,9 @@ class Gizmo:
 
         # 4. queue + export
         c = self._card(body, "4. Mark it, then move on",
-                       "Add every segment you want from this recording, then export the lot — "
-                       "each wav lands with its caption .txt beside it, ready for the training "
-                       "folder.")
+                       "Add every section you want, then open the next file and keep adding: the "
+                       "queue keeps them all, and Export writes the lot in one go — each wav "
+                       "lands with its caption .txt beside it, ready for the training folder.")
         orow = tk.Frame(c, bg=COLORS["bg_surface"])
         orow.pack(fill=tk.X)
         tk.Label(orow, text="Save to:", font=(FONT_FAMILY, 10),
@@ -3209,11 +3211,11 @@ class Gizmo:
 
     _VOICE_SOURCE_DESC = ("A voice memo, a podcast, an interview — any wav, mp3, flac or m4a. Or "
                           "a VIDEO file, to use just its audio track: nothing is shown, you "
-                          "scrub the sound itself.")
+                          "scrub the sound itself. Opening another file keeps your queue.")
     _MUSIC_SOURCE_DESC = ("A song — any wav, mp3, flac, ogg or m4a. Cut it into sections for "
                           "ACE-Step training, or keep it whole: songs of any length mix fine "
                           "in one dataset, and longer sections (2 to 4 minutes) carry more of "
-                          "the song.")
+                          "the song. Opening another song keeps your queue.")
 
     def _build_music_caption_card(self, body):
         """Music mode's card 2: caption, lyrics, section length and the fades at the cuts.
