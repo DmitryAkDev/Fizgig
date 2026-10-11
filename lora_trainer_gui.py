@@ -32533,9 +32533,14 @@ class LoRATrainerGUI:
                         "network_dim": str(self.settings.get("NETWORK_DIM", "")),
                         "network_alpha": str(self.settings.get("NETWORK_ALPHA", "")),
                         "max_train_epochs": str(self.settings.get("MAX_TRAIN_EPOCHS", "")),
+                        # the run's whole setup as it launched (a queue item): Resume puts it back first, so a
+                        # restart that left other settings on screen never resumes with them (Peter, 11 Oct)
+                        "run": getattr(self, "_active_run_item", None),
                     }
+                    self._paused_run_item = sidecar["run"]
+                    self._paused_output = (sidecar["output_name"], out_dir)
                     with open(self._paused_sidecar_path(), "w") as f:
-                        _json.dump(sidecar, f, indent=2)
+                        _json.dump(sidecar, f, indent=2, default=str)
                 except Exception as e:
                     self.update_console(f"[pause] WARN: failed to write sidecar: {e}\n")
                 self.training_state = "paused"
@@ -32582,6 +32587,7 @@ class LoRATrainerGUI:
         if getattr(self, "training_state", "idle") != "paused":
             messagebox.showinfo("Not Paused", "No paused training to resume.")
             return
+        self._restore_paused_run_settings()
         state_path = getattr(self, "paused_state_path", None)
         if getattr(self, "paused_mode", "state") == "ft":
             if not state_path or not os.path.isfile(state_path):
@@ -32678,6 +32684,37 @@ class LoRATrainerGUI:
             self.update_console("[resume] start declined — the run is still PAUSED and can be "
                                 "resumed once the issue above is fixed.\n")
 
+    def _restore_paused_run_settings(self):
+        """Before a resume: put the paused run's own setup back - its model, dataset folder and every Training and
+        Samples setting - so whatever is on screen after a restart (another family's settings, a later preset)
+        never rides into it. From the pause record's snapshot; an older record without one uses Last Train when
+        that snapshot is this same run (its name and output folder)."""
+        item = getattr(self, "_paused_run_item", None)
+        if not isinstance(item, dict):
+            name, out_dir = getattr(self, "_paused_output", ("", ""))
+            snap = None
+            try:
+                with open(LAST_TRAIN_FILE, "r", encoding="utf-8") as f:
+                    snap = json.load(f)
+            except (OSError, ValueError):
+                pass
+            same = lambda a, b: os.path.normcase(os.path.abspath(str(a or "."))) ==                 os.path.normcase(os.path.abspath(str(b or ".")))
+            if (isinstance(snap, dict) and name and str(snap.get("LORA_NAME", "")).strip() == name
+                    and same(snap.get("LORA_OUTPUT_DIR", ""), out_dir)):
+                item = {"architecture": snap.pop("__architecture__", ""),
+                        "model_options": snap.pop("__model_options__", None), "preset": snap}
+        if not isinstance(item, dict):
+            self.update_console("[resume] no saved setup for this paused run - resuming with the settings on "
+                                "screen.\n")
+            return
+        try:
+            self._apply_queue_item(item)
+            self.update_console("[resume] restored the paused run's own settings (model, dataset folder, Training "
+                                "and Samples) before resuming.\n")
+        except Exception as e:
+            self.update_console(f"[resume] could not restore the paused run's settings ({e}) - resuming with the "
+                                "settings on screen.\n")
+
     def _check_for_paused_state_on_startup(self):
         """On GUI launch, detect a leftover paused state and restore the Resume button."""
         try:
@@ -32696,6 +32733,9 @@ class LoRATrainerGUI:
             if _ok:
                 self.paused_state_path = state_path
                 self.paused_mode = _mode
+                self._paused_run_item = meta.get("run") if isinstance(meta.get("run"), dict) else None
+                self._paused_output = (str(meta.get("output_name", "") or ""),
+                                       self.settings.get("LORA_OUTPUT_DIR", "") or ".")
                 # Restore the paused run's frozen dataset config (#98) so a cross-restart
                 # resume trains the dataset it started with — the resume launch keeps an
                 # existing snapshot instead of re-freezing whatever the Start tab shows.
