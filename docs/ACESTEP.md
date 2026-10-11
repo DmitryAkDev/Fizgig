@@ -19,6 +19,8 @@ Pick songs that share one sound: one artist, one album or one tight genre. The m
 
 **10 songs of 2 to 3.5 minutes each, one album, all instrumental, the same caption on every song.** Train with the **✨ ACE-Step Official LoRA (rank 64, 800 epochs)** preset: rank 64, alpha 128, learning rate 1e-4, a checkpoint and a preview every 40 epochs.
 
+The dataset we tested it on, and the LoRA it made, are free to download: the [Fizgig ACE-Step Chiptune Starter](https://huggingface.co/datasets/ShootTheSound/Fizgig-ACE-Step-Chiptune-Starter) (Eric Skiff's *Resistor Anthems*, CC BY 3.0). Train it for your first run, or load its LoRA at strength 0.5 to hear where you're heading.
+
 What to expect:
 
 - **The first epochs sound worse, not better.** Ten songs give only a few training steps an epoch, so for the first 30 or so epochs the previews are quieter and hissier while the model moves away from its own sound. The new sound arrives after that.
