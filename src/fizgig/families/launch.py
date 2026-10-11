@@ -666,6 +666,10 @@ def _preview_flags(desc, st, plan, cmd):
             pass
         if sm.get("at_first"):
             out.append("--sample_at_first")
+        strengths = [float(x) for x in (sm.get("strengths") or ()) if 0 < float(x) != 1.0]
+        if strengths and not ft_on(desc, st) and not slider_on(desc, st) and not edit_on(desc, st):
+            # each preview again at these LoRA strengths (a standard LoRA: a fine-tune has no strength to turn down)
+            out += ["--sample_strengths", ",".join(f"{x:g}" for x in strengths)]
         if not edit_on(desc, st) and not slider_on(desc, st) and _sample_image(desc, sm):
             # the Samples tab's picture: seen through the vision path, or edited by every preview prompt
             out += ["--sample_image" if desc.reference_kind == "vision" else "--sample_reference",

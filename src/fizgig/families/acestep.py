@@ -143,6 +143,8 @@ ACESTEP15 = FamilyDescription(
     samples_cfg_free=True,
     preview_steps=8,
     preview_every=40,                 # a long run (800 epochs): a preview with every checkpoint
+    # a long run is played at about half strength (Peter, 11 Oct 2026): each preview also renders at 0.5
+    preview_strengths=(0.5,),
     preview_cfg=1.0,
     samples_text=(
         ("banner", "Each sample prompt is a song: \"caption | lyrics\", lyric lines separated by \" / \" (e.g. "

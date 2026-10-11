@@ -408,6 +408,9 @@ class FamilyDescription:
     speed_loras: tuple = ()           # SpeedLoRA entries
     preview_steps: int = 20
     preview_every: int = 1           # Samples: a preview every N epochs (kept per family once edited)
+    # Samples: the LoRA strengths each training preview is also rendered at, beside 1.0 (a tick on the Samples tab,
+    # on by default; a standard LoRA only). () = none - the tick is not shown
+    preview_strengths: tuple = ()
     preview_cfg_note: str = ""         # the Samples tab's line under CFG Scale ("" = a plain default line)
     # the Samples tab's default negative prompt for the family (each family keeps the user's own edit); None = its
     # previews take no negative, so the box greys out

@@ -6228,6 +6228,8 @@ class LoRATrainerGUI:
                      "prompts": self.sample_prompt_text.get("1.0", tk.END).splitlines(),
                      "reference": (self.sample_ref_image_var.get().strip()
                                    if getattr(self, "sample_ref_image_var", None) else ""),
+                     "strengths": (list(desc.preview_strengths) if desc.preview_strengths and getattr(
+                         self, "sample_strengths_var", None) is not None and self.sample_strengths_var.get() else []),
                      **({"checkpoint": bool(self.use_distilled_samples_var.get()),
                          "checkpoint_cache": self.cache_sample_model_var.get(),
                          "int8": bool(self._get_inference_int8())} if desc.train_preview_checkpoint else {})},
@@ -10872,6 +10874,26 @@ class LoRATrainerGUI:
             freq_card, text="Sample at Start", variable=self.sample_at_first_var
         ).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
 
+        # the family's preview_strengths: each preview again at a lower LoRA strength (ACE-Step: 0.5, how a long run is
+        # played). Kept per family in last_used["sample_strengths"]; shown only for a family that declares it
+        self.sample_strengths_var = tk.BooleanVar(value=True)
+        self.sample_strengths_check = ttk.Checkbutton(freq_card, text="", variable=self.sample_strengths_var)
+        self.sample_strengths_check.grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
+        self.sample_strengths_note = ttk.Label(
+            freq_card, text="Each preview is rendered again at that strength (same prompt and seed), beside the "
+                            "full-strength one: how the LoRA sounds the way you'll use it.",
+            font=HINT_FONT, foreground=COLORS["text_explain"], wraplength=640, justify=tk.LEFT)
+        self.sample_strengths_note.grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        self.sample_strengths_check.grid_remove()
+        self.sample_strengths_note.grid_remove()
+
+        def _keep_strengths(*_):
+            _f = getattr(self, "_sample_strengths_family", None)
+            if _f:
+                self.last_used.setdefault("sample_strengths", {})[_f] = bool(self.sample_strengths_var.get())
+                self._save_last_used_paths()
+        self.sample_strengths_var.trace_add("write", _keep_strengths)
+
         self.use_distilled_samples_var = tk.BooleanVar(value=True)
         self.use_distilled_check = ttk.Checkbutton(
             freq_card, text="Use Distilled model for samples (4-step, matches ComfyUI)",
@@ -11340,6 +11362,10 @@ class LoRATrainerGUI:
             # A described family greys / relabels the sample controls itself (RefMod has no samples).
             if self._family_desc() is not None:
                 self._generic_samples_ui(self._family_desc())
+            elif hasattr(self, "sample_strengths_check"):
+                self._sample_strengths_family = None
+                self.sample_strengths_check.grid_remove()
+                self.sample_strengths_note.grid_remove()
             self._samples_family_option_rows(self._family_desc())
             # ...then let MiniMax override the wording that is still Klein's. Runs AFTER, so the
             # Klein path above is untouched.
@@ -11551,6 +11577,20 @@ class LoRATrainerGUI:
         """Standard layer: the Samples tab for a described family. Previews render on the live training model at
         the family's settings, so Klein's sample-model choices don't apply."""
         muted = COLORS["text_muted"]
+        if hasattr(self, "sample_strengths_check"):
+            if desc.preview_strengths:
+                self.sample_strengths_check.configure(
+                    text="Also preview at strength " + ", ".join(f"{s:g}" for s in desc.preview_strengths))
+                if getattr(self, "_sample_strengths_family", None) != desc.key:
+                    self._sample_strengths_family = None          # a load, not an edit: nothing to remember
+                    self.sample_strengths_var.set(bool(self.last_used.get("sample_strengths", {}).get(desc.key, True)))
+                    self._sample_strengths_family = desc.key
+                self.sample_strengths_check.grid()
+                self.sample_strengths_note.grid()
+            else:
+                self._sample_strengths_family = None
+                self.sample_strengths_check.grid_remove()
+                self.sample_strengths_note.grid_remove()
         if hasattr(self, "use_distilled_check"):
             if desc.train_preview_checkpoint:       # Klein's Distilled, Qwen's Turbo: the family's own tick
                 # live only when its file is set: without it (an update before the download) samples stay as they were
@@ -11861,6 +11901,7 @@ class LoRATrainerGUI:
         .badge { position: absolute; top: 10px; left: 10px; padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
         .epoch-badge { background-color: #27AE60; color: white; }
         .clip-badge { background-color: #8E44AD; color: white; right: 8px; left: auto; }
+        .strength-badge { background-color: #D68910; color: white; top: 52px; }
         /* below the clip badge with clear air — the two overlapped at 34px (Peter) */
         .sound-badge { background-color: #16A085; color: white; right: 8px; left: auto; top: 40px; }
         /* a sound-only sample (music): its player sits on the tile, so epochs compare by ear without opening each */
@@ -12102,21 +12143,48 @@ class LoRATrainerGUI:
             // Seed segment is OPTIONAL: samples generated with a random/unspecified seed are named
             // without a trailing _<seed> (the trainer omits it when seed is None). Requiring it made
             // those files fall back to epoch 0 / no timestamp — breaking order + epoch labels.
-            const match = filename.match(/^(.+)_e(\\d{6})_(\\d{2})_(\\d{14})(?:_(\\d+))?\\.png$/i);
+            // An optional _s<strength x100> after the seed: the same preview at a lower LoRA strength (_s050 = 0.5).
+            const match = filename.match(/^(.+)_e(\\d{6})_(\\d{2})_(\\d{14})(?:_(\\d+))?(?:_s(\\d{3}))?\\.png$/i);
             if (match) {
                 const ts = match[4];
+                const strength = match[6] ? parseInt(match[6]) / 100 : 1;
                 return {
                     filename,
                     loraName: match[1],
                     epoch: parseInt(match[2]),
                     idx: parseInt(match[3]),
+                    strength,
+                    slot: strength === 1 ? String(parseInt(match[3])) : `${parseInt(match[3])} × ${strength}`,
                     timestamp: ts,
                     seed: match[5] || '',
                     time: `${ts.slice(8,10)}:${ts.slice(10,12)}:${ts.slice(12,14)}`
                 };
             }
-            return { filename, loraName: 'Unknown', epoch: 0, idx: 0, timestamp: '', seed: '', time: '' };
+            return { filename, loraName: 'Unknown', epoch: 0, idx: 0, strength: 1, slot: '0', timestamp: '', seed: '', time: '' };
         }
+
+        // The auto-refresh rebuilt every card each tick, even with nothing new: a song or clip playing was cut off,
+        // and a click landing mid-rebuild hit a player that no longer existed (Peter, 11 Oct). Now the cards are
+        // rebuilt only when something on them changed, and never while anything plays - a pause or the end of the
+        // song lets a waiting rebuild through.
+        let lastGallerySig = '';
+        let galleryRenderWaiting = false;
+        function galleryMediaPlaying() {
+            return [...document.querySelectorAll('#gallery audio, #gallery video')].some(m => !m.paused && !m.ended);
+        }
+        function renderIfChanged() {
+            const scores = (likeness && likeness.scores) || {};
+            const sig = JSON.stringify(images.map(im => [im.filename, im.lora || '', im.sound || '', im.video || '',
+                                                         im.clip ? im.clip.length : 0, scores[im.filename] ?? '']));
+            if (sig === lastGallerySig) return;
+            if (galleryMediaPlaying()) { galleryRenderWaiting = true; return; }
+            galleryRenderWaiting = false;
+            lastGallerySig = sig;
+            renderGallery();
+        }
+        ['pause', 'ended'].forEach(ev => document.addEventListener(ev, () => {
+            if (galleryRenderWaiting) setTimeout(() => { if (!galleryMediaPlaying()) renderIfChanged(); }, 400);
+        }, true));
 
         async function loadImages() {
             document.getElementById('status').textContent = 'Loading...';
@@ -12158,7 +12226,7 @@ class LoRATrainerGUI:
                         if (vj.ok) { const vm = await vj.json(); images.forEach(im => { if (vm[im.filename]) im.video = vm[im.filename]; }); }
                     } catch (e) {}
                     await loadLikeness();
-                    renderGallery();
+                    renderIfChanged();
                     renderLikenessChart();
                     document.getElementById('stats').textContent = `${images.length} image${images.length !== 1 ? 's' : ''}`;
                     document.getElementById('status').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
@@ -12211,6 +12279,7 @@ class LoRATrainerGUI:
                     <div class="image-container">
                         <img src="${img.filename}" alt="${img.filename}" loading="lazy">
                         <span class="badge epoch-badge">Epoch ${img.epoch}</span>
+                        ${img.strength !== 1 ? `<span class="badge strength-badge">× ${img.strength}</span>` : ''}
                         ${likBadge(img)}
                         ${img.video ? `<span class="badge clip-badge">🎬 video</span>` : ''}
                         ${!img.video && img.clip ? `<span class="badge clip-badge">🎞 scrub</span>` : ''}
@@ -12403,7 +12472,7 @@ class LoRATrainerGUI:
         function openRunViz() {
             const runImgs = rvCurrentRunImages();
             if (!runImgs.length) { alert('No samples yet — start a run with previews enabled.'); return; }
-            const slots = [...new Set(runImgs.map(im => im.idx))].sort((a, b) => a - b);
+            const slots = [...new Set(runImgs.map(im => im.slot))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
             const sel = document.getElementById('rv-slot');
             const keep = sel.value;
             sel.innerHTML = slots.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -12414,10 +12483,10 @@ class LoRATrainerGUI:
         }
 
         function rvBuild() {
-            const slot = parseInt(document.getElementById('rv-slot').value || '0');
+            const slot = document.getElementById('rv-slot').value || '0';
             const byEpoch = {};
             rvCurrentRunImages().forEach(im => {
-                if (im.idx !== slot) return;
+                if (im.slot !== slot) return;
                 // Same epoch rendered twice (e.g. after a resume) -> keep the newest.
                 if (!byEpoch[im.epoch] || im.timestamp > byEpoch[im.epoch].timestamp) byEpoch[im.epoch] = im;
             });
