@@ -19619,8 +19619,17 @@ class LoRATrainerGUI:
         self.repair_preset_combo.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         self.repair_preset_combo.bind("<<ComboboxSelected>>",
                                       lambda e: self._load_repair_preset(self.repair_preset_var.get()))
-        ttk.Button(parent, text="Save Preset…",
-                   command=self._save_repair_preset).grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        _pbtns = tk.Frame(parent, bg=COLORS["bg_surface"])
+        _pbtns.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        ttk.Button(_pbtns, text="Save Preset…", command=self._save_repair_preset).pack(side=tk.LEFT)
+        # the whole session in one file (Peter, 11 Oct): every control, every slider, the LoRAs, the prompt
+        _sb = ttk.Button(_pbtns, text="Save Setup…", command=self._save_repair_setup)
+        _sb.pack(side=tk.LEFT, padx=(6, 0))
+        ToolTip(_sb, "Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length "
+                     "and source - to one file you can load back later or share.")
+        _lb = ttk.Button(_pbtns, text="Load Setup…", command=self._load_repair_setup)
+        _lb.pack(side=tk.LEFT, padx=(6, 0))
+        ToolTip(_lb, "Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.")
         r += 1
 
         # Status + Start button row
@@ -30515,6 +30524,108 @@ class LoRATrainerGUI:
         except Exception:
             import traceback
             messagebox.showerror("Error", f"Save failed:\n{traceback.format_exc()}")
+
+    # the values a saved setup leaves out: what the tab shows (status, times, the preset picker), not what it is set to
+    _REPAIR_SETUP_SKIP = {"repair_status_var", "repair_song_time_var", "repair_cache_status_var",
+                          "repair_preset_var", "repair_family_var"}
+
+    def _repair_setup_vars(self):
+        """Every Repair Studio control's variable, by attribute name: a control added later is saved with no change
+        here."""
+        out = {}
+        for name, v in vars(self).items():
+            if "repair" in name and isinstance(v, tk.Variable) and name not in self._REPAIR_SETUP_SKIP:
+                out[name] = v
+        return out
+
+    def _repair_setups_dir(self):
+        d = os.path.join(PRESETS_DIR, "repair_studio", "setups")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _save_repair_setup(self):
+        """The whole Repair Studio session in one file: the family, every control and every slider."""
+        import json as _json
+        from tkinter import filedialog
+        fam = self.repair_family_var.get()
+        path = filedialog.asksaveasfilename(
+            title="Save Repair Studio setup", initialdir=self._repair_setups_dir(), defaultextension=".json",
+            initialfile=f"{self._wb_legacy_name(fam)}_setup.json", filetypes=[("Fizgig setup", "*.json")])
+        if not path:
+            return
+        values = {}
+        for name, v in self._repair_setup_vars().items():
+            try:
+                values[name] = v.get()
+            except tk.TclError:
+                pass
+        blocks = {bid: {k: bv[k].get() for k in ("primary_enabled", "primary_strength", "donor_enabled",
+                                                  "donor_strength")}
+                  for bid, bv in (getattr(self, "repair_block_vars", None) or {}).items()}
+        data = {"fizgig_repair_setup": 1, "family": fam, "values": values, "blocks": blocks}
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump(data, f, indent=2)
+            os.replace(tmp, path)
+            self.repair_status_var.set(f"Setup saved: {os.path.basename(path)}")
+        except OSError as e:
+            messagebox.showerror("Save Setup", f"Could not save the setup:\n{e}")
+
+    def _load_repair_setup(self, path=None, _tries=0):
+        """Restore a saved setup: its family first (waiting for a family switch to land), then every control and
+        slider, then Start - which loads its LoRAs and renders."""
+        import json as _json
+        if path is None:
+            from tkinter import filedialog
+            path = filedialog.askopenfilename(title="Load Repair Studio setup", initialdir=self._repair_setups_dir(),
+                                              filetypes=[("Fizgig setup", "*.json")])
+            if not path:
+                return
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = _json.load(f)
+            except (OSError, ValueError) as e:
+                messagebox.showerror("Load Setup", f"Could not read the setup:\n{e}")
+                return
+            if not isinstance(data, dict) or not data.get("fizgig_repair_setup"):
+                messagebox.showerror("Load Setup", "That file isn't a Repair Studio setup (a slider preset loads "
+                                                   "from the Preset list).")
+                return
+            self._repair_setup_pending = data
+            fam = data.get("family", "")
+            if fam and fam != self.repair_family_var.get():
+                self.repair_family_var.set(fam)
+                self._on_repair_family_changed()
+        data = getattr(self, "_repair_setup_pending", None)
+        if data is None:
+            return
+        fam = data.get("family", "")
+        if fam and getattr(self, "_repair_family_current", fam) != fam:      # the switch is still landing
+            if _tries < 300:
+                self.master.after(250, lambda: self._load_repair_setup(path or "", _tries + 1))
+            else:
+                self._repair_setup_pending = None
+                self.repair_status_var.set("Load Setup gave up waiting for the model switch - try again.")
+            return
+        self._repair_setup_pending = None
+        live = self._repair_setup_vars()
+        for name, val in (data.get("values") or {}).items():
+            v = live.get(name)
+            if v is not None:
+                try:
+                    v.set(val)
+                except (tk.TclError, ValueError):
+                    pass
+        for bid, bs in (data.get("blocks") or {}).items():
+            bv = (getattr(self, "repair_block_vars", None) or {}).get(bid)
+            if bv is not None:
+                for k, val in bs.items():
+                    if k in bv:
+                        bv[k].set(val)
+        self.repair_status_var.set(f"Setup loaded: {os.path.basename(path or '')}")
+        if self.repair_primary_var.get().strip():
+            self._repair_start()
 
     def _load_repair_preset(self, name: str):
         if not name:
