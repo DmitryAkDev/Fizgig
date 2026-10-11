@@ -2039,8 +2039,7 @@ class LoRATrainerGUI:
     _WORKBENCH_REMEMBER = [
         ("repair_primary_var", "repair_primary"),
         ("repair_donor_var", "repair_donor"),
-        ("repair_primary_scale_var", "repair_primary_scale"),
-        ("repair_donor_scale_var", "repair_donor_scale"),
+        # (the primary / donor strengths are remembered per family: last_used["repair_strengths"])
         ("repair_prompt_var", "repair_prompt"),
         ("repair_seed_var", "repair_seed"),
         ("repair_res_var", "repair_res"),
@@ -20802,9 +20801,48 @@ class LoRATrainerGUI:
         if getattr(self, "_repair_strength_family", None) == key:
             return
         self._repair_strength_family = key
-        for role, var in (("primary", self.repair_primary_scale_var), ("donor", self.repair_donor_scale_var)):
-            if not getattr(self, "_repair_eq_mode", {}).get(role):
-                var.set(f"{d:g}")
+        saved = (self.last_used.get("repair_strengths", {}) or {}).get(key) or (d, d)
+        self._repair_strength_loading = True
+        try:
+            for i, (role, var) in enumerate((("primary", self.repair_primary_scale_var),
+                                             ("donor", self.repair_donor_scale_var))):
+                if not getattr(self, "_repair_eq_mode", {}).get(role):
+                    try:
+                        var.set(f"{float(saved[i]):g}")
+                    except (TypeError, ValueError, IndexError):
+                        var.set(f"{d:g}")
+        finally:
+            self._repair_strength_loading = False
+        if not getattr(self, "_repair_strength_traced", False):
+            self._repair_strength_traced = True
+            for i, var in enumerate((self.repair_primary_scale_var, self.repair_donor_scale_var)):
+                var.trace_add("write", lambda *_a, _i=i: self._repair_remember_strength(_i))
+
+    def _repair_remember_strength(self, i):
+        """A strength typed into the primary (0) or donor (1) box is remembered for this family (not while a family
+        switch fills them, nor the locked 1 of Model EQ Mode)."""
+        role = ("primary", "donor")[i]
+        if getattr(self, "_repair_strength_loading", False) or getattr(self, "_repair_eq_mode", {}).get(role):
+            return
+        fam = getattr(self, "_repair_strength_family", None)
+        if not fam:
+            return
+        var = (self.repair_primary_scale_var, self.repair_donor_scale_var)[i]
+        try:
+            v = float(var.get())
+        except (TypeError, ValueError):
+            return
+        d = float(getattr(self._repair_desc(fam), "repair_default_strength", 1.0) or 1.0)
+        pair = list((self.last_used.setdefault("repair_strengths", {}) or {}).get(fam) or (d, d))
+        pair[i] = v
+        self.last_used["repair_strengths"][fam] = pair
+        pending = getattr(self, "_repair_strength_save_after", None)
+        if pending is not None:
+            try:
+                self.master.after_cancel(pending)
+            except Exception:
+                pass
+        self._repair_strength_save_after = self.master.after(600, self._save_last_used_paths)
 
     def _schedule_repair_scale_change(self):
         """Debounced strength-box typing: apply 0.6 s after the last keystroke, skipping a half-typed value."""
