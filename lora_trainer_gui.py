@@ -20806,8 +20806,7 @@ class LoRATrainerGUI:
     def _repair_scale_controls(self, show):
         for box, _spin in getattr(self, "_repair_scale_widgets", ()):
             if show:
-                if not box.winfo_manager():
-                    box.pack(side=tk.LEFT, padx=(10, 4), after=box._fizgig_after)
+                box.pack(side=tk.LEFT, padx=(10, 4), after=box._fizgig_after)   # (re)placed after Browse every time
             else:
                 box.pack_forget()
 
