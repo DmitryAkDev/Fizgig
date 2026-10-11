@@ -12,7 +12,7 @@ import webbrowser
 import glob
 import time
 import socket
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from PIL import Image, ImageTk
 
 # CUDA allocator policy, set before ANYTHING imports torch — the backend is fixed at CUDA init,
@@ -11836,7 +11836,10 @@ class LoRATrainerGUI:
                 pass  # Suppress logging
 
         try:
-            self.gallery_server = HTTPServer(('127.0.0.1', self.gallery_server_port), SamplesHandler)
+            # one thread per request: a paused song leaves its download half-read, and a one-at-a-time server then
+            # waited on it - every other song, picture and refresh hung until the page was closed (Peter, 11 Oct)
+            self.gallery_server = ThreadingHTTPServer(('127.0.0.1', self.gallery_server_port), SamplesHandler)
+            self.gallery_server.daemon_threads = True
 
             # Run server in background thread
             def serve_forever():
