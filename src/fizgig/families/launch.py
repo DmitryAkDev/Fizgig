@@ -644,6 +644,13 @@ def _preview_flags(desc, st, plan, cmd):
             prompts = os.path.join(samples_dir, f"{desc.key}_prompts.txt")
             plan.files.append((prompts, "\n".join(lines) + "\n"))
     every = str(sm.get("every") or "").strip()
+    if every.isdigit() and int(every) > 0 and slider_on(desc, st):
+        # a slider's preview is the dial itself: one at least with every checkpoint (a family's long-run preview
+        # cadence - ACE-Step's 40 - would leave a 20-epoch slider with only its epoch-0 preview)
+        try:
+            every = str(min(int(every), max(1, int(float(st.get("SAVE_EVERY_N_EPOCHS"))))))
+        except (TypeError, ValueError):
+            pass
     if prompts and every.isdigit() and int(every) > 0:
         out += ["--sample_prompts", prompts, "--sample_every_n_epochs", every,
                 "--vae", _model(st, desc, "vae"),
