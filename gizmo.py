@@ -1539,7 +1539,7 @@ class Gizmo:
         tk.Label(head, text="Gizmo", font=(FONT_FAMILY, 22, "bold"),
                  bg=COLORS["bg_deep"], fg=COLORS["text_primary"]).pack(anchor="w")
         tk.Label(head, text="Cut training clips, voice segments and song sections Fizgig will "
-                            "accept — sized, captioned, with the sound sorted out.",
+                            "accept — sized, with the sound sorted out, and voice and music captioned.",
                  font=(FONT_FAMILY, 11), bg=COLORS["bg_deep"],
                  fg=COLORS["text_secondary"]).pack(anchor="w")
 
@@ -1935,7 +1935,8 @@ class Gizmo:
                        "Marking is fast and encoding is slow, so they are separate. Add every "
                        "section you want, then open the next video and keep adding: the queue "
                        "keeps them all, and Export writes the lot in one go — keep scrubbing "
-                       "while it runs.")
+                       "while it runs. Gizmo doesn't caption video clips: export them into "
+                       "your training folder, then caption them on Fizgig's Captions tab.")
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
         self.add_btn = self._button(
