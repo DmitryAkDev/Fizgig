@@ -90,7 +90,7 @@ def ft_on(desc, inputs):
 
 def ft_reg_dir(desc, inputs):
     """A fine-tune's regularisation folder, when fine-tune is on and one is set (else "")."""
-    return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) else ""
+    return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) and getattr(desc, "ft_regularisation", True)         else ""
 
 
 def _ft_reg_mult(inputs):
@@ -765,7 +765,7 @@ def start_problems(desc, inputs):
     from fizgig.families import checks
     v = inputs
     out = checks.learning_rate(v)
-    out += checks.network(v, lokr=str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
+    out += checks.network(v, lokr="lokr" in desc.network_types and str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
     out += checks.numbers(v)
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)

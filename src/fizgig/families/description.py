@@ -348,6 +348,7 @@ class FamilyDescription:
     # Training tab shows the fine-tune card and the launch sends --finetune. Optional - most families never need it
     finetune: bool = False
     ft_learning_rate: float = 1e-5    # the learning rate choosing Fine-tune sets (H3's tested rate is 3e-5)
+    ft_regularisation: bool = True    # the fine-tune card offers a regularisation set (photos of the broad class)
     # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or
     # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
     # so the best point doesn't fall between two saved epochs. None turns the hint off for the family

@@ -4052,8 +4052,10 @@ class LoRATrainerGUI:
         self._contextlora_desc_label.grid(row=14, column=0, columnspan=2, sticky=tk.W, padx=5)
 
         # Target Megapixels (training resolution) — moved here from Other Options
-        ttk.Label(training_content, text="Target Megapixels:").grid(row=16, column=0, sticky=tk.W, padx=5, pady=(8, 2))
+        self._mp_label = ttk.Label(training_content, text="Target Megapixels:")
+        self._mp_label.grid(row=16, column=0, sticky=tk.W, padx=5, pady=(8, 2))
         mp_frame = ttk.Frame(training_content)
+        self._mp_frame = mp_frame
         mp_frame.grid(row=16, column=1, sticky=tk.W, padx=5, pady=(8, 2))
         self._mp_combo = ttk.Combobox(
             mp_frame, textvariable=self.dataset_megapixels_var,
@@ -4075,6 +4077,7 @@ class LoRATrainerGUI:
         # in the dataset only; rows 18/19 are Network Type's).
         _mp_block = ttk.Frame(training_content)
         _mp_block.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
+        self._mp_block = _mp_block
         ttk.Label(_mp_block,
                   text="Images are resized to this area. Any aspect ratio, no additional prep needed "
                        "beyond the Image Prep tab. Higher = more detail, more VRAM per step; 4.2 MP "
@@ -4487,6 +4490,7 @@ class LoRATrainerGUI:
         self._family_options_frame_ft = ttk.Frame(_f)
         self._family_options_frame_ft.grid(row=_r[0], column=0, sticky=tk.W)
         _r[0] += 1
+        _reg_from = _r[0]
         _block("Regularisation images (optional)",
                "A folder of ordinary photos of the broader class (men, women, people) with normal detailed captions. "
                "They train at a reduced LR (the multiplier beside the folder) so they hold the model's sense of that "
@@ -4504,6 +4508,8 @@ class LoRATrainerGUI:
             _regr, values=["0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0"], state="normal", width=5)
         self.entries["FAMILY_FT_REG_MULT"].set(str(self.settings.get("FAMILY_FT_REG_MULT", "0.2") or "0.2"))
         self.entries["FAMILY_FT_REG_MULT"].pack(side=tk.LEFT)
+        # the rows above, hidden for a family that declares no regularisation set (description ft_regularisation)
+        self._ft_reg_widgets = [w for w in _f.grid_slaves() if _reg_from <= int(w.grid_info()["row"]) < _r[0]]
         self._family_ft_plan = ttk.Label(_f, text="", foreground=COLORS["text_secondary"], font=HINT_FONT,
                                          justify=tk.LEFT, wraplength=690)
         self._family_ft_plan.grid(row=_r[0], column=0, sticky=tk.W, pady=(6, 2))
@@ -7133,6 +7139,14 @@ class LoRATrainerGUI:
         has_adapter = bool(desc is not None and desc.training_adapter)
         for w in (self._family_adapter_cb, self._family_adapter_hint):
             self._set_widget_visible(w, has_adapter)
+        # Target Megapixels sizes pictures: a family that trains no photos or clips (ACE-Step's songs) has no row
+        pictures = desc is None or bool({"photo", "clip"} & set(desc.media))
+        for w in (getattr(self, "_mp_label", None), getattr(self, "_mp_frame", None), getattr(self, "_mp_block", None)):
+            if w is not None:
+                self._set_widget_visible(w, pictures)
+        # the fine-tune card's regularisation set, for a family that declares one
+        for w in getattr(self, "_ft_reg_widgets", ()):
+            self._set_widget_visible(w, desc is None or bool(getattr(desc, "ft_regularisation", True)))
         if has_adapter:
             self._family_adapter_hint.config(text=desc.training_adapter_note)
         has_ema = bool(desc is not None and desc.ema_default)

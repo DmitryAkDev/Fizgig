@@ -108,6 +108,7 @@ ACESTEP15 = FamilyDescription(
                    "around 0.5 - you keep the learned detail without the copying."),               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
     finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
     ft_learning_rate=1e-5,
+    ft_regularisation=False,          # no "broad class" photos for a song set
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
              "steps an epoch (10 clips at accumulation 4 is about 3), so 0.98 averages over most of a 20-epoch run "
              "and lags it; Short run sizes the window to a quarter of the run.",
@@ -129,7 +130,7 @@ ACESTEP15 = FamilyDescription(
     implementation=_REPO,
     precisions=("bf16",),
     optimizers=("adamw", "adamw8bit"),
-    network_types=("lora", "lokr"),
+    network_types=("lora",),          # LoRA only on the Training tab (Peter, 11 Oct 2026)
     adaptive_lr=False,
     loss_watch=False,
     helper_files=(("ACE-Step/Ace-Step1.5", ("Qwen3-Embedding-0.6B/*.json", "Qwen3-Embedding-0.6B/*.txt",
