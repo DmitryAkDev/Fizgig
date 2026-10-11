@@ -513,6 +513,9 @@ def load_qwen21_dit(path, device="cuda", dtype=torch.bfloat16, config=None, keep
     sd = {}
     for f in files:
         sd.update(load_file(f, device="cpu"))
+    # ComfyUI's attention-kernel hint ({"attention": "comfy_kitchen_int8"}, the 9 Oct 2026 Turbo int8 upload): no
+    # weights, and attention here runs in bf16 - dropped, so the earlier upload and this one both load
+    sd = {k: v for k, v in sd.items() if not k.endswith(".comfy_attention.config")}
     rot = _take_convrot(sd)
     sd = convert_comfy_state_dict(sd)
     sd = {k: v.to(dtype) for k, v in sd.items()}
