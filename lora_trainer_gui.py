@@ -18842,8 +18842,7 @@ class LoRATrainerGUI:
                 (self._repair_bulk_row, "Invert", lambda: self._repair_bulk_primary("invert"),
                  "Flip every block's primary enable: on becomes off, off becomes on."),
                 (self._repair_bulk_row, "\U0001f3b2 I'm feeling lucky", self._repair_feeling_lucky,
-                 "A random slider mix within the ranges the model's block map suits; Ctrl+Z goes back to the mix "
-                 "before."),
+                 "A random slider mix between Min and Max; Ctrl+Z goes back to the mix before."),
                 (self._repair_bulk_h3, "Alternate", lambda: self._repair_bulk_primary("alternate"),
                  "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
                  "refiners untouched. Invert for the other half."),
@@ -18872,8 +18871,8 @@ class LoRATrainerGUI:
                                                               style="Surface.TCheckbutton")
                 self._repair_lucky_hold_chk.pack(side=tk.LEFT, padx=(4, 0))
                 ToolTip(_lb, "A lucky roll gives every block a strength anywhere between Min and Max, evenly (a "
-                             "negative Min allows inverted blocks). Hold keeps the bands the model's block map marks "
-                             "as structure and tidy-up near 1; untick it to roll every block across Min-Max.")
+                             "negative Min allows inverted blocks). Hold (shown for a model whose block map marks them) keeps "
+                             "its structure and tidy-up bands near 1; untick it to roll every block across Min-Max.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
         # five blocks — ● built (hover for the thumb, click to restore that state and see
         # it), ○ still to build.
@@ -19097,6 +19096,7 @@ class LoRATrainerGUI:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
                 self._repair_blend_show(False)        # H3 has its own engine: no mix
+                self._repair_lucky_load_bounds()
                 self._repair_model_eq_buttons()
                 for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows + \
                         (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_sound_rows:
@@ -24670,6 +24670,16 @@ class LoRATrainerGUI:
                                                                          self._LUCKY_BOUNDS)
         self.repair_lucky_min_var.set(f"{float(lo):g}")
         self.repair_lucky_max_var.set(f"{float(hi):g}")
+        # Hold structure only for a family whose description marks the bands (lucky_zones); off and hidden otherwise
+        desc = self._repair_desc()
+        zoned = bool(desc is not None and getattr(desc, "lucky_zones", ()))
+        chk = getattr(self, "_repair_lucky_hold_chk", None)
+        if chk is not None:
+            self.repair_lucky_hold_var.set(zoned)
+            if zoned:
+                chk.pack(side=tk.LEFT, padx=(4, 0))
+            else:
+                chk.pack_forget()
 
     def _repair_feeling_lucky(self):
         """A random slider mix for the primary: every block evenly between Min and Max, the held bands
