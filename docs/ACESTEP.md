@@ -41,6 +41,16 @@ Leave out the lyrics for an instrumental. The Samples tab sets the preview lengt
 
 Repair Studio plays songs in place of pictures: a baseline, the tweaked version and the song with no LoRA, side by side, keeping your place when you switch. Its built-in mixes (**✨Demo Slider Adjustment**, **✨Early Epoch Improver**, **✨Make it more full**) are good starting points. Extract reduces a LoRA's rank as it does for every model.
 
+## Sliders
+
+A slider is a LoRA whose strength is a dial between two kinds of music: +1 one way, -1 the other, 0 the song as it was. Pick **Slider** as the kind of training (or the **✨ ACE-Step Slider (rank 8, 20 epochs)** preset) and fill in three lines:
+
+1. **What the music is**, e.g. `instrumental, synth pop,`
+2. **The +1 end adds**, e.g. `energetic, fast tempo, loud drums`
+3. **The -1 end adds**, e.g. `calm, slow tempo, soft`
+
+No songs are needed: Fizgig teaches the dial from the model's own songs. Each checkpoint's preview plays -1, 0 and +1 one after another. Change one thing per slider: words that also change the genre or the instruments turn the dial into a genre switch.
+
 ## Full fine-tuning
 
 The **✨ ACE-Step Fine-tune** preset trains the whole model (both attentions and the MLP of all 32 layers) a part at a time on a 4-bit base, at 1e-5. Each checkpoint is a complete model file of about 10 GB that ComfyUI loads like the original.
