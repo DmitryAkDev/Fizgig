@@ -336,24 +336,49 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         self._send(200, data, ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
 
-    def _stream(self, path):
-        """A file as a download, sent in pieces (a fine-tune checkpoint is ~10 GB; it never sits in memory)."""
+    def _stream(self, path, attachment=True):
+        """A file sent in pieces (a fine-tune checkpoint is ~10 GB; it never sits in memory), honouring a byte
+        range: a player dragged along a song or clip asks for "Range: bytes=N-" and gets just that (206), and a
+        dropped download can carry on where it stopped. attachment: a download (else played in the page)."""
         try:
             size = os.path.getsize(path)
             f = open(path, "rb")
         except OSError:
             return self.json({"error": "not found"}, 404)
+        start, end, code = 0, size - 1, 200
+        m = re.match(r"bytes=(\d*)-(\d*)$", (self.headers.get("Range") or "").strip())
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            else:                                         # "bytes=-N": the last N bytes
+                start = max(0, size - int(m.group(2)))
+            if start >= size or start > end:
+                f.close()
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return None
+            code = 206
         name = os.path.basename(path).replace('"', "")
         with f:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Length", str(size))
-            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            f.seek(start)
+            self.send_response(code)
+            self.send_header("Content-Type", "application/octet-stream" if attachment
+                             else mimetypes.guess_type(path)[0] or "application/octet-stream")
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Accept-Ranges", "bytes")
+            if code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            if attachment:
+                self.send_header("Content-Disposition", f'attachment; filename="{name}"')
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
+            left = end - start + 1
             try:
-                while chunk := f.read(8 << 20):
+                while left > 0 and (chunk := f.read(min(left, 8 << 20))):
                     self.wfile.write(chunk)
+                    left -= len(chunk)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                 pass
 
@@ -437,7 +462,7 @@ class Handler(BaseHTTPRequestHandler):
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):
                 return self.json({"error": "not a picture, sound or clip"}, 404)
-            return self._file(p)
+            return self._stream(p, attachment=False)       # in pieces, with byte ranges: songs and clips seek
         if path == "/api/checkpoints":
             return self._checkpoints((qs.get("dir") or [""])[0])
         if path == "/api/download":
