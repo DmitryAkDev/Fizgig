@@ -3192,10 +3192,13 @@ class LoRATrainerGUI:
             if pref_key and pref_key in self.prefs_vars:
                 self.entries[key] = ttk.Entry(parent, width=40, textvariable=self.prefs_vars[pref_key])
             else:
-                self.entries[key] = ttk.Entry(parent, width=40)
+                # a number box is short and keeps its width: stretched across the row, Learning Rate down to Seed
+                # sat under the hint cards beside them (Peter, 11 Oct)
+                self.entries[key] = ttk.Entry(parent, width=20 if input_type in ("int", "float") else 40)
                 self.entries[key].insert(0, str(self.settings.get(key, "")))
 
-        self.entries[key].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.entries[key].grid(row=row, column=1, sticky=tk.W if input_type in ("int", "float") else tk.EW,
+                               padx=5, pady=4)
 
         # Create browse button if needed
         browse_btn = None
