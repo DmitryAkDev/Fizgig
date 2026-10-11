@@ -81,6 +81,22 @@ def _option_row(opt):
                 [s.split(" · ")[0] for s in opt.suggestions], default, option=True, suffix=opt.suffix)
 
 
+def model_keys(desc):
+    """The Preferences files a run of this family reads, as the desktop's _family_launch_inputs collects them: its
+    model files, its speed LoRA, its training adapter and every file an option names (pref:KEY, ...->ALT)."""
+    import re
+    keys = [f.pref_key for f in desc.model_files]
+    sp = desc.preview_speed()
+    if sp and sp.pref_key:
+        keys.append(sp.pref_key)
+    if desc.training_adapter:
+        keys.append(desc.training_adapter)
+    for o in desc.options:
+        for tok in [t for c in o.choices for t in c[1].split()] + o.tokens.split():
+            keys += re.findall(r"pref:([A-Za-z0-9_]+)", tok) + re.findall(r"->([A-Za-z0-9_]+)", tok)
+    return list(dict.fromkeys(keys))
+
+
 def kind_sets(desc, kind):
     """What picking a kind of training also sets (the desktop's _family_kind_chosen): Fine-tune takes the family's
     fine-tune learning rate with Adaptive LR off."""
