@@ -50,7 +50,8 @@ Tip: change one thing per slider. Words that also change the genre or the instru
 
 ![Repair Studio with an ACE-Step song LoRA and a donor](https://raw.githubusercontent.com/shootthesound/Fizgig/v7.3.0/assets/ace_repair_studio.png)
 
-- **Songs in place of pictures.** Baseline, Tweaked and No LoRA players that keep your place in the song when you switch, a song bar you can click to jump or drag across to loop a section, and Save Tweaked WAV.
+- **Songs in place of pictures.** Baseline, Tweaked and No LoRA players that keep your place in the song when you switch, and a song bar you can click to jump or drag across to loop a section.
+- **Save the song.** Save Tweaked WAV writes the whole tweaked track as a 48 kHz stereo WAV, named after the LoRA and seed, ready to use.
 - **Audio to audio.** Start from any song or a microphone take (pick the microphone in Preferences): a cover that follows its melody, a reference for the sound, or **repaint and extend** - remake one section, or carry the song on past its end.
 - **Prompt B.** Blend a second prompt in with a slider.
 - **I'm feeling lucky, Hold structure.** Lucky rolls keep the blocks that carry a song's structure near 1.
