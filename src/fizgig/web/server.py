@@ -1,32 +1,35 @@
-"""Fizgig Schema-Driven Web Server.
+"""Fizgig's web UI server: the training workflow in a browser, for cloud GPU pods and headless machines.
 
-Provides a lightweight, zero-dependency HTTP server for cloud GPU instances (RunPod,
-Vast.ai, Modal) and local workstations. Gated by VNC_PASSWORD on cloud instances.
-Features complete 13-tab parity with the Tkinter desktop GUI (lora_trainer_gui.py).
+Standard library only. The page is built from what Fizgig declares: every registered family's description and its
+form (fizgig.families.form), so a new family, option or preset reaches the web UI with no change here. A run starts
+through fizgig.families.launch, exactly as the desktop app starts it.
+
+Access: on a pod (a password from --password, VNC_PASSWORD or FIZGIG_PASSWORD) it listens on every address and asks
+for the password; without one it listens on localhost only. Either way every API call carries the page's session
+token (in the served page, unreadable to other sites) and a localhost server checks the Host header, so a web page
+elsewhere cannot drive it.
 """
 from __future__ import annotations
 
 import argparse
 import datetime
-import glob
-import http.cookies
+import hashlib
+import hmac
 import json
 import logging
 import mimetypes
 import os
 import re
+import secrets
 import signal
-import struct
 import subprocess
 import sys
 import threading
 import time
-from http import HTTPStatus
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, unquote, urlparse
-from typing import Any
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
-from fizgig.families import launch
+from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
 from fizgig.web.schema import get_schema
 
@@ -36,1453 +39,556 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
-QUEUE_FILE = os.path.join(BASE_DIR, ".training_queue.json")
+STATE_FILE = os.path.join(BASE_DIR, "web_state.json")      # the web UI's own memory (git-ignored)
+DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
+MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".wav", ".mp3", ".flac", ".mp4", ".webm"}
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
-# Process state
+TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
+
 _lock = threading.Lock()
-_active_proc: subprocess.Popen | None = None
-_training_state = "idle"  # "idle" | "running" | "paused" | "completed" | "failed"
-_current_stage = ""
-_current_lora = ""
-_current_output_dir = ""
-_log_buffer: list[str] = []
-_log_subscribers: list[threading.Event] = []
-
-# Hardware & Resource Monitoring state
-_vram_peak = 0
-_ram_peak = 0
-_gpu_stats = {
-    "vram": [0, 0],
-    "ram": [0, 0],
-    "vram_peak": 0,
-    "ram_peak": 0,
-    "device_name": "GPU"
-}
+_run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": "", "family": "", "values": {},
+        "image_folder": "", "pause": False}
+_log: list[tuple[int, str]] = []        # (line number, text), the last 5000
+_log_n = [0]
+_log_event = threading.Condition(_lock)
+_stats = {"vram": [0, 0], "ram": [0, 0], "vram_peak": 0, "ram_peak": 0, "device_name": "GPU"}
 
 
+# ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
 def _poll_stats_loop():
-    global _vram_peak, _ram_peak, _gpu_stats
-    import psutil
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    nvml = None
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        nvml = pynvml
+    except Exception:
+        pass
     while True:
-        vram_used, vram_total = 0, 0
-        dev_name = "GPU"
+        vu = vt = 0
+        name = "GPU"
         try:
-            import pynvml
-            pynvml.nvmlInit()
-            h = pynvml.nvmlDeviceGetHandleByIndex(0)
-            m = pynvml.nvmlDeviceGetMemoryInfo(h)
-            vram_used, vram_total = int(m.used), int(m.total)
-            dev_name = pynvml.nvmlDeviceGetName(h)
-            if isinstance(dev_name, bytes):
-                dev_name = dev_name.decode("utf-8", "ignore")
-        except Exception:
-            try:
-                out = subprocess.run(
-                    ["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"],
-                    capture_output=True, text=True, timeout=2
-                )
-                if out.returncode == 0:
-                    parts = [p.strip() for p in out.stdout.strip().splitlines()[0].split(",")]
-                    if len(parts) >= 3:
-                        dev_name = parts[0]
-                        vram_used = int(parts[1]) * 1024 * 1024
-                        vram_total = int(parts[2]) * 1024 * 1024
-            except Exception:
-                pass
-
-        ram_used, ram_total = 0, 0
-        try:
-            vm = psutil.virtual_memory()
-            ram_used = vm.total - vm.available
-            ram_total = vm.total
+            if nvml is not None:
+                h = nvml.nvmlDeviceGetHandleByIndex(0)
+                m = nvml.nvmlDeviceGetMemoryInfo(h)
+                vu, vt = int(m.used), int(m.total)
+                name = nvml.nvmlDeviceGetName(h)
+                name = name.decode("utf-8", "ignore") if isinstance(name, bytes) else name
         except Exception:
             pass
-
-        if vram_used > _vram_peak:
-            _vram_peak = vram_used
-        if ram_used > _ram_peak:
-            _ram_peak = ram_used
-
+        if not vt:                                   # no pynvml: nvidia-smi, as the desktop status bar falls back
+            try:
+                out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total",
+                                      "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3)
+                n, u, t = [x.strip() for x in out.stdout.splitlines()[0].split(",")][:3]
+                name, vu, vt = n, int(u) << 20, int(t) << 20
+            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                pass
+        ru = rt = 0
+        if psutil is not None:
+            vm = psutil.virtual_memory()
+            ru, rt = vm.total - vm.available, vm.total
         with _lock:
-            _gpu_stats = {
-                "vram": [vram_used, vram_total],
-                "ram": [ram_used, ram_total],
-                "vram_peak": _vram_peak,
-                "ram_peak": _ram_peak,
-                "device_name": dev_name
-            }
+            _stats.update(vram=[vu, vt], ram=[ru, rt], device_name=name, vram_peak=max(_stats["vram_peak"], vu),
+                          ram_peak=max(_stats["ram_peak"], ru))
         time.sleep(1.0)
 
 
-# Start hardware stats thread in background
-_stats_thread = threading.Thread(target=_poll_stats_loop, daemon=True)
-_stats_thread.start()
-
-
-def append_log(line: str):
+def append_log(text: str):
     with _lock:
-        _log_buffer.append(line)
-        if len(_log_buffer) > 5000:
-            _log_buffer.pop(0)
-    for sub in list(_log_subscribers):
-        sub.set()
+        _log_n[0] += 1
+        _log.append((_log_n[0], text))
+        del _log[:-5000]
+        _log_event.notify_all()
+
+
+# ---- prefs and the web UI's own state ---------------------------------------------------------------------------
+def _read_json(path) -> dict:
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
 
 
 def load_prefs() -> dict:
-    if os.path.exists(PREFS_FILE):
-        try:
-            with open(PREFS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {}
+    return _read_json(PREFS_FILE)
 
 
-def save_prefs(prefs: dict):
-    with open(PREFS_FILE, "w", encoding="utf-8") as f:
-        json.dump(prefs, f, indent=2)
+def update_prefs(changes: dict):
+    """Only the given keys, read fresh and written atomically: the desktop app may be open on the same files."""
+    with _lock:
+        p = load_prefs()
+        p.update(changes)
+        _write_json(PREFS_FILE, p)
 
 
-def load_queue() -> list:
-    if os.path.exists(QUEUE_FILE):
-        try:
-            with open(QUEUE_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
+def pref_path(prefs, key) -> str:
+    """A Preferences path as the desktop resolves it (a folder inside Fizgig is stored relative)."""
+    v = str(prefs.get(key) or "").strip()
+    return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(BASE_DIR, v))
 
 
-def save_queue(queue: list):
-    with open(QUEUE_FILE, "w", encoding="utf-8") as f:
-        json.dump(queue, f, indent=2)
+def load_state() -> dict:
+    return _read_json(STATE_FILE)
 
 
-def is_authenticated(headers: dict, server_password: str | None) -> bool:
-    if not server_password:
-        return True
-    auth = headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        if auth[7:].strip() == server_password:
-            return True
-    cookie_str = headers.get("Cookie", "")
-    if cookie_str:
-        c = http.cookies.SimpleCookie()
-        try:
-            c.load(cookie_str)
-            if "fizgig_session" in c and c["fizgig_session"].value == server_password:
-                return True
-        except Exception:
-            pass
-    return False
+def save_state(changes: dict):
+    with _lock:
+        s = load_state()
+        s.update(changes)
+        _write_json(STATE_FILE, s)
 
 
-def read_safetensors_metadata(filepath: str) -> dict:
-    """Read __metadata__ header from a .safetensors file."""
-    if not os.path.exists(filepath):
-        return {}
-    try:
-        with open(filepath, "rb") as f:
-            header_len_bytes = f.read(8)
-            if len(header_len_bytes) < 8:
-                return {}
-            header_len = struct.unpack("<Q", header_len_bytes)[0]
-            if header_len <= 0 or header_len > 100 * 1024 * 1024:
-                return {}
-            header_bytes = f.read(header_len)
-            header = json.loads(header_bytes.decode("utf-8"))
-            return header.get("__metadata__", {})
-    except Exception as e:
-        logger.warning(f"Failed to read metadata from {filepath}: {e}")
-        return {}
-
-
-def _store_tool_settings(tool_name: str, body: dict):
-    """Persist workbench tool settings into prefs.json under tool_settings.<tool_name>."""
+# ---- runs -------------------------------------------------------------------------------------------------------
+def _plan(family_key, values, image_folder, resume=""):
+    desc = get_family(family_key)
+    if desc is None:
+        raise ValueError(f"Unknown family: {family_key}")
     prefs = load_prefs()
-    tool_settings = prefs.setdefault("tool_settings", {})
-    tool_settings[tool_name] = body
-    save_prefs(prefs)
+    values = dict(values or {})
+    if resume:
+        values["RESUME_TRAINING"] = resume
+    name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
+    out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or OUTPUT_DEFAULT
+    values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
+    captioner = pref_path(prefs, "krea2_text_encoder")
+    raw_ovr = prefs.get("caption_qwen_instructions")
+    inputs = form.inputs(
+        desc, values, models={k: pref_path(prefs, k) for k in form.model_keys(desc)}, python=sys.executable,
+        repo_dir=BASE_DIR, image_folder=str(image_folder or "").strip(),
+        cache_root=pref_path(prefs, "cache_dir"), samples_dir=os.path.join(out_dir, "sample"),
+        inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
+        captioner=captioner if captioner and os.path.isfile(captioner) else "",
+        caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+    return desc, inputs, launch.plan(desc, inputs)
 
 
-def _write_safetensors_metadata(source: str, target: str, metadata: dict):
-    """Read a .safetensors file, patch its __metadata__ header, and write to target.
+def _safe(name):
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:80] or "run"
 
-    Works by reading the existing header, merging the new metadata dict into
-    __metadata__, re-serialising the header JSON, and writing header + tensor
-    data to the target path.  If source == target the file is updated in-place
-    via a temporary file + rename.
-    """
-    import tempfile
 
-    with open(source, "rb") as f:
-        header_len_bytes = f.read(8)
-        if len(header_len_bytes) < 8:
-            raise ValueError("File too short to be a safetensors file")
-        header_len = struct.unpack("<Q", header_len_bytes)[0]
-        if header_len <= 0 or header_len > 100 * 1024 * 1024:
-            raise ValueError(f"Invalid header length: {header_len}")
-        header_bytes = f.read(header_len)
-        header = json.loads(header_bytes.decode("utf-8"))
-        tensor_data = f.read()
-
-    # Merge new metadata (modelspec.* prefix convention)
-    meta = header.setdefault("__metadata__", {})
-    for k, v in metadata.items():
-        if v:  # Only set non-empty values
-            meta[k] = str(v)
-
-    new_header_bytes = json.dumps(header, ensure_ascii=False).encode("utf-8")
-    new_header_len = struct.pack("<Q", len(new_header_bytes))
-
-    # Write atomically (temp + rename) to avoid corruption
-    target_dir = os.path.dirname(os.path.abspath(target))
-    fd, tmp_path = tempfile.mkstemp(dir=target_dir, suffix=".safetensors.tmp")
+def latest_state(out_dir, name) -> str:
+    """The run's newest resumable state folder (<name>-NNNNNN-state), or ""."""
     try:
-        with os.fdopen(fd, "wb") as out:
-            out.write(new_header_len)
-            out.write(new_header_bytes)
-            out.write(tensor_data)
-        os.replace(tmp_path, target)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)]
+    except OSError:
+        return ""
+    return os.path.join(out_dir, max(found)) if found else ""
 
 
-class FizgigWebHandler(SimpleHTTPRequestHandler):
-    server_password: str | None = None
+def _start(family_key, values, image_folder, resume=""):
+    with _lock:
+        if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
+            return {"error": "A run is already going. Stop or pause it first."}
+    desc, inputs, plan = _plan(family_key, values, image_folder, resume)
+    if plan.problems:
+        return {"problems": plan.problems}
+    out_dir = inputs["LORA_OUTPUT_DIR"]
+    for stale in (".pause_requested", ".sample_override.json"):          # as the desktop's Start clears them
+        try:
+            os.remove(os.path.join(out_dir, stale))
+        except OSError:
+            pass
+    for d in plan.dirs:
+        os.makedirs(d, exist_ok=True)
+    for path, text in plan.files:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    with _lock:
+        _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
+                    values=dict(values), image_folder=image_folder, pause=False)
+    save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
+    for line in plan.console:
+        append_log(line + "\n")
+    threading.Thread(target=_run_stages, args=(plan.stages, out_dir), daemon=True).start()
+    return {"ok": True, "stages": [s.name for s in plan.stages]}
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, directory=STATIC_DIR, **kwargs)
 
-    def send_json(self, data: dict, status: int = 200):
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+def _popen(cmd):
+    """As the desktop's run_subprocess: UTF-8, unbuffered, the chosen GPU, its own process group (and below-normal
+    priority on Windows, so the desktop stays smooth)."""
+    env = os.environ.copy()
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    want = str(load_prefs().get("cuda_device") or "").strip()
+    if want:
+        env["CUDA_VISIBLE_DEVICES"] = want
+    kw = {}
+    if os.name == "nt":
+        kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                               | subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+    else:
+        kw["start_new_session"] = True
+    return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                            encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
+
+
+def _run_stages(stages, out_dir):
+    append_log(f"\n=== Fizgig run, {datetime.datetime.now():%Y-%m-%d %H:%M:%S} ===\n")
+    with _lock:
+        _run["state"] = "running"
+    for stage in stages:
+        with _lock:
+            if _run["state"] == "stopped":
+                return
+            _run["stage"] = stage.name
+        append_log(f"\n▶ {stage.name}\n")
+        try:
+            proc = _popen(stage.cmd)
+        except OSError as e:
+            append_log(f"✖ {stage.name} could not start: {e}\n")
+            with _lock:
+                _run.update(state="failed", proc=None)
+            return
+        with _lock:
+            _run["proc"] = proc
+        for line in proc.stdout:
+            append_log(line)
+        ret = proc.wait()
+        with _lock:
+            stopped = _run["state"] == "stopped"
+        if stopped:
+            append_log(f"\n■ Stopped during {stage.name}.\n")
+            return
+        if ret != 0:
+            append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n")
+            with _lock:
+                _run.update(state="failed", proc=None)
+            return
+    paused = os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"]
+    with _lock:
+        _run.update(state="paused" if paused else "completed", proc=None, stage="")
+    append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
+
+
+def _stop():
+    with _lock:
+        proc = _run["proc"]
+        if proc is None or proc.poll() is not None:
+            return False
+        _run["state"] = "stopped"
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except OSError:
+            proc.terminate()
+    return True
+
+
+# ---- the HTTP side ----------------------------------------------------------------------------------------------
+class Handler(BaseHTTPRequestHandler):
+    password: str | None = None
+    local_only = True
+
+    def log_message(self, fmt, *args):            # quiet: the console is for the run
+        pass
+
+    # -- replies
+    def _send(self, code, body: bytes, ctype, extra=()):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for k, v in extra:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
-    def check_auth(self) -> bool:
-        if is_authenticated(self.headers, self.server_password):
+    def json(self, data, code=200, extra=()):
+        self._send(code, json.dumps(data, default=str).encode("utf-8"), "application/json; charset=utf-8", extra)
+
+    def _file(self, path, ctype=None):
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return self.json({"error": "not found"}, 404)
+        self._send(200, data, ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
+
+    # -- access
+    def _host_ok(self):
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].lower()
+        return not self.local_only or host in LOCAL_HOSTS
+
+    def _session(self):
+        return hmac.new(TOKEN.encode(), (self.password or "").encode(), hashlib.sha256).hexdigest()
+
+    def _logged_in(self):
+        if not self.password:
             return True
-        self.send_json({"error": "Unauthorized", "auth_required": True}, status=401)
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "fizgig_session" and hmac.compare_digest(v, self._session()):
+                return True
         return False
 
-    def do_HEAD(self):
-        self.do_GET()
+    def _api_ok(self, qs=None):
+        token = self.headers.get("X-Fizgig-Token") or ((qs or {}).get("t") or [""])[0]
+        if not hmac.compare_digest(token, TOKEN):
+            self.json({"error": "Reload the page."}, 403)
+            return False
+        if not self._logged_in():
+            self.json({"error": "Log in first.", "login": True}, 401)
+            return False
+        return True
 
+    def _body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            return json.loads(self.rfile.read(n) or b"{}")
+        except ValueError:
+            return {}
+
+    # -- GET
     def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-        qs = parse_qs(parsed.query)
-
-        # Static index / assets
-        if path == "/" or path == "/index.html":
-            index_path = os.path.join(STATIC_DIR, "index.html")
-            if os.path.exists(index_path):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                with open(index_path, "rb") as f:
-                    content = f.read()
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-            else:
-                self.send_response(404)
-                self.end_headers()
-                return
-
-        if path in ("/app.js", "/static/app.js"):
-            js_path = os.path.join(STATIC_DIR, "app.js")
-            if os.path.exists(js_path):
-                self.send_response(200)
-                self.send_header("Content-Type", "application/javascript; charset=utf-8")
-                with open(js_path, "rb") as f:
-                    content = f.read()
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-
-        if path == "/logo.jpg":
-            logo_path = os.path.join(BASE_DIR, "logo.jpg")
-            if os.path.exists(logo_path):
-                self.send_response(200)
-                self.send_header("Content-Type", "image/jpeg")
-                with open(logo_path, "rb") as f:
-                    content = f.read()
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-
-        if path == "/icon.png":
-            icon_path = os.path.join(BASE_DIR, "icon.png")
-            if os.path.exists(icon_path):
-                self.send_response(200)
-                self.send_header("Content-Type", "image/png")
-                with open(icon_path, "rb") as f:
-                    content = f.read()
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-
-        # Check auth for API routes
-        if path.startswith("/api/"):
-            if not self.check_auth():
-                return
+        if not self._host_ok():
+            return self.json({"error": "bad host"}, 403)
+        u = urlparse(self.path)
+        path, qs = u.path, parse_qs(u.query)
+        if path in ("/", "/index.html"):
+            with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
+                page = f.read().replace("__FIZGIG_TOKEN__", TOKEN)
+            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+        if path in ("/app.js", "/style.css"):
+            return self._file(os.path.join(STATIC_DIR, path[1:]),
+                              "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
+        if path in ("/logo.jpg", "/icon.png"):
+            return self._file(os.path.join(BASE_DIR, path[1:]))
+        if not path.startswith("/api/") or not self._api_ok(qs):
+            return None if path.startswith("/api/") else self.json({"error": "not found"}, 404)
 
         if path == "/api/schema":
-            self.send_json(get_schema())
-            return
-
+            return self.json({**get_schema(), "logged_in": True})
         if path == "/api/prefs":
-            self.send_json(load_prefs())
-            return
-
-        if path == "/api/gpu/stats":
+            p = load_prefs()
+            return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
+                                         for k in form.model_keys(d)},
+                              "cache_dir": str(p.get("cache_dir") or "")})
+        if path == "/api/state":
+            return self.json(load_state())
+        if path == "/api/stats":
             with _lock:
-                stats = dict(_gpu_stats)
-            self.send_json(stats)
-            return
-
-        if path == "/api/queue":
-            self.send_json({"queue": load_queue()})
-            return
-
-        if path == "/api/train/status":
+                return self.json(dict(_stats))
+        if path == "/api/run":
             with _lock:
-                self.send_json({
-                    "state": _training_state,
-                    "stage": _current_stage,
-                    "lora_name": _current_lora,
-                    "output_dir": _current_output_dir,
-                    "is_running": _active_proc is not None and _active_proc.poll() is None,
-                })
-            return
-
-        if path == "/api/train/logs":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self.end_headers()
-
-            sub_event = threading.Event()
-            with _lock:
-                _log_subscribers.append(sub_event)
-                history = _log_buffer[-100:]
-
-            for line in history:
-                self.wfile.write(f"data: {json.dumps(line)}\n\n".encode("utf-8"))
-            self.wfile.flush()
-
-            last_idx = len(_log_buffer)
-            try:
-                while True:
-                    sub_event.wait(timeout=1.0)
-                    sub_event.clear()
-                    with _lock:
-                        new_lines = _log_buffer[last_idx:]
-                        last_idx = len(_log_buffer)
-                    for line in new_lines:
-                        self.wfile.write(f"data: {json.dumps(line)}\n\n".encode("utf-8"))
-                    self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            finally:
-                with _lock:
-                    if sub_event in _log_subscribers:
-                        _log_subscribers.remove(sub_event)
-            return
-
-        if path == "/api/samples":
-            out_dir = qs.get("dir", [_current_output_dir or "output_loras"])[0]
-            sample_dir = os.path.join(out_dir, "sample")
-            if not os.path.exists(sample_dir):
-                sample_dir = out_dir
-            samples = []
-            if os.path.exists(sample_dir):
-                for f in sorted(os.listdir(sample_dir), reverse=True):
-                    if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                        full = os.path.join(sample_dir, f)
-                        samples.append({
-                            "name": f,
-                            "path": full,
-                            "mtime": os.path.getmtime(full)
-                        })
-            self.send_json({"samples": samples[:50]})
-            return
-
-        if path == "/api/samples/image":
-            img_path = qs.get("file", [""])[0]
-            if img_path and os.path.exists(img_path):
-                ext = os.path.splitext(img_path)[1].lower()
-                mime = mimetypes.types_map.get(ext, "image/png")
-                self.send_response(200)
-                self.send_header("Content-Type", mime)
-                self.send_header("Cache-Control", "public, max-age=3600")
-                with open(img_path, "rb") as f:
-                    content = f.read()
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-                return
-            self.send_response(404)
-            self.end_headers()
-            return
-
-        if path == "/api/captions/list":
-            folder = qs.get("folder", [""])[0]
-            search = qs.get("search", [""])[0].lower()
-            page = int(qs.get("page", [1])[0])
-            per_page = int(qs.get("per_page", [16])[0])
-
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"items": [], "total": 0, "page": 1, "total_pages": 1})
-                return
-
-            exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-            items = []
-            try:
-                for f in sorted(os.listdir(folder)):
-                    stem, ext = os.path.splitext(f)
-                    if ext.lower() in exts:
-                        if search and search not in f.lower():
-                            continue
-                        img_path = os.path.join(folder, f)
-                        txt_path = os.path.join(folder, f"{stem}.txt")
-                        caption = ""
-                        if os.path.exists(txt_path):
-                            try:
-                                with open(txt_path, "r", encoding="utf-8") as tf:
-                                    caption = tf.read().strip()
-                            except Exception:
-                                pass
-                        items.append({
-                            "filename": f,
-                            "path": img_path,
-                            "caption": caption,
-                            "has_caption": bool(caption),
-                            "url": f"/api/samples/image?file={unquote(img_path)}"
-                        })
-            except Exception as e:
-                logger.error(f"Error scanning caption folder {folder}: {e}")
-
-            total = len(items)
-            total_pages = max(1, (total + per_page - 1) // per_page)
-            page = max(1, min(page, total_pages))
-            start_idx = (page - 1) * per_page
-            paged_items = items[start_idx:start_idx + per_page]
-
-            self.send_json({
-                "items": paged_items,
-                "total": total,
-                "page": page,
-                "total_pages": total_pages,
-            })
-            return
-
-        if path == "/api/metadata/inspect":
-            target_file = qs.get("file", [""])[0]
-            if not target_file or not os.path.exists(target_file):
-                self.send_json({"error": "File not found"}, status=404)
-                return
-            meta = read_safetensors_metadata(target_file)
-            self.send_json({
-                "file": target_file,
-                "title": meta.get("modelspec.title", meta.get("title", "")),
-                "author": meta.get("modelspec.author", meta.get("author", "")),
-                "license": meta.get("modelspec.license", meta.get("license", "")),
-                "tags": meta.get("modelspec.tags", meta.get("tags", "")),
-                "trigger_phrase": meta.get("modelspec.trigger_phrase", meta.get("trigger_phrase", "")),
-                "usage_hint": meta.get("modelspec.usage_hint", meta.get("usage_hint", "")),
-                "description": meta.get("modelspec.description", meta.get("description", "")),
-                "thumbnail": meta.get("modelspec.thumbnail", ""),
-                "custom": {k: v for k, v in meta.items() if not k.startswith("modelspec.") and k not in ("title", "author", "license", "tags", "trigger_phrase", "usage_hint", "description")}
-            })
-            return
-
-        if path == "/api/prep/stats":
-            folder = qs.get("folder", [""])[0]
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"count": 0, "note": "Folder not found"})
-                return
-            exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-            files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts]
-            note = f"Found {len(files)} training images in folder."
-            self.send_json({"count": len(files), "note": note})
-            return
-
+                r = {k: v for k, v in _run.items() if k != "proc"}
+                r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
+            r["resume"] = latest_state(r["output_dir"], r["lora"]) if r["lora"] else ""
+            return self.json(r)
+        if path == "/api/log":
+            return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
         if path == "/api/browse":
-            target = qs.get("path", [BASE_DIR])[0]
-            if not os.path.exists(target) or not os.path.isdir(target):
-                target = BASE_DIR
-            dirs = []
-            files = []
+            return self._browse((qs.get("path") or [""])[0])
+        if path == "/api/samples":
+            return self._samples((qs.get("dir") or [""])[0])
+        if path == "/api/media":
+            p = (qs.get("path") or [""])[0]
+            if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):
+                return self.json({"error": "not a picture, sound or clip"}, 404)
+            return self._file(p)
+        if path == "/api/captions":
+            return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0])
+        return self.json({"error": "not found"}, 404)
+
+    def _log_stream(self, since):
+        """Server-sent events: every console line after `since`, then new ones as they arrive."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        last = since
+        try:
+            while True:
+                with _lock:
+                    fresh = [(n, t) for n, t in _log if n > last]
+                    if not fresh:
+                        _log_event.wait(timeout=15)
+                        fresh = [(n, t) for n, t in _log if n > last]
+                if fresh:
+                    for n, t in fresh:
+                        self.wfile.write(f"id: {n}\ndata: {json.dumps(t)}\n\n".encode("utf-8"))
+                    last = fresh[-1][0]
+                else:
+                    self.wfile.write(b": keep-alive\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+
+    def _browse(self, target):
+        target = target or BASE_DIR
+        if not os.path.isdir(target):
+            target = os.path.dirname(target) if os.path.isdir(os.path.dirname(target)) else BASE_DIR
+        dirs, files = [], []
+        try:
+            for e in sorted(os.scandir(target), key=lambda e: e.name.lower()):
+                if e.name.startswith("."):
+                    continue
+                (dirs if e.is_dir() else files).append({"name": e.name, "path": e.path})
+        except OSError:
+            pass
+        parent = os.path.dirname(target)
+        return self.json({"path": target, "parent": parent if parent != target else "", "dirs": dirs,
+                          "files": files[:2000]})
+
+    def _samples(self, folder):
+        try:
+            items = [e for e in os.scandir(folder) if os.path.splitext(e.name)[1].lower() in MEDIA]
+        except OSError:
+            return self.json({"items": []})
+        items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        return self.json({"items": [{"name": e.name, "path": e.path, "time": e.stat().st_mtime}
+                                    for e in items[:300]]})
+
+    def _captions(self, folder, ext):
+        out = []
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            return self.json({"items": []})
+        for n in names:
+            stem, e = os.path.splitext(n)
+            if e.lower() not in MEDIA:
+                continue
+            cap = os.path.join(folder, stem + ext)
             try:
-                for entry in sorted(os.listdir(target)):
-                    if entry.startswith("."):
-                        continue
-                    full = os.path.join(target, entry)
-                    if os.path.isdir(full):
-                        dirs.append({"name": entry, "path": full})
-                    elif os.path.isfile(full):
-                        ext = os.path.splitext(entry)[1].lower()
-                        if ext in (".safetensors", ".pt", ".bin", ".json", ".toml", ".png", ".jpg"):
-                            files.append({"name": entry, "path": full})
-            except Exception:
-                pass
-            parent = os.path.dirname(target) if target != os.path.dirname(target) else None
-            self.send_json({"current": target, "parent": parent, "directories": dirs, "files": files})
-            return
+                with open(cap, encoding="utf-8") as f:
+                    text = f.read()
+            except OSError:
+                text = None
+            out.append({"name": n, "path": os.path.join(folder, n), "caption": text})
+        return self.json({"items": out})
 
-        if path == "/api/load_last_train":
-            prefs = load_prefs()
-            last = prefs.get("last_train_settings", {})
-            if last:
-                self.send_json({"success": True, "message": "Last training settings loaded.", "settings": last})
-            else:
-                self.send_json({"success": False, "message": "No previous training settings found."})
-            return
-
-        super().do_GET()
-
+    # -- POST
     def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-
-        # Login route
+        if not self._host_ok():
+            return self.json({"error": "bad host"}, 403)
+        path = urlparse(self.path).path
         if path == "/api/login":
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
-            pwd = body.get("password", "")
-            if not self.server_password or pwd == self.server_password:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Set-Cookie", f"fizgig_session={pwd}; Path=/; HttpOnly; SameSite=Lax")
-                self.end_headers()
-                self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
-                return
-            self.send_json({"success": False, "error": "Invalid password"}, status=401)
-            return
-
-        if not self.check_auth():
-            return
-
-        length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length).decode("utf-8")) if length > 0 else {}
-
-        if path == "/api/prefs":
-            save_prefs(body)
-            self.send_json({"success": True})
-            return
-
-        if path == "/api/captions/save":
-            folder = body.get("folder", "")
-            filename = body.get("filename", "")
-            caption = body.get("caption", "")
-            if folder and filename:
-                stem = os.path.splitext(filename)[0]
-                txt_path = os.path.join(folder, f"{stem}.txt")
-                with open(txt_path, "w", encoding="utf-8") as f:
-                    f.write(caption)
-                self.send_json({"success": True, "saved_path": txt_path})
-                return
-            self.send_json({"error": "Missing folder or filename"}, status=400)
-            return
-
-        if path == "/api/queue/add":
-            queue = load_queue()
-            queue.append(body)
-            save_queue(queue)
-            self.send_json({"success": True, "queue": queue})
-            return
-
-        if path == "/api/queue/clear":
-            save_queue([])
-            self.send_json({"success": True, "queue": []})
-            return
-
-        if path == "/api/train/plan":
-            family_key = body.get("family") or (training_families()[0].key if training_families() else "")
-            desc = get_family(family_key)
-            if not desc:
-                self.send_json({"error": f"Unknown family: {family_key}"}, status=400)
-                return
-            inputs = self._build_plan_inputs(body, desc)
-            plan = launch.plan(desc, inputs)
-            self.send_json({
-                "problems": plan.problems,
-                "stages": [{"name": s.name, "cmd": s.cmd} for s in plan.stages],
-                "console": plan.console,
-                "dataset_toml": plan.dataset_toml,
-            })
-            return
-
-        if path == "/api/train/start":
-            global _active_proc, _training_state, _current_stage, _current_lora, _current_output_dir
-            with _lock:
-                if _active_proc is not None and _active_proc.poll() is None:
-                    self.send_json({"error": "A training run is already in progress"}, status=400)
-                    return
-
-            family_key = body.get("family") or (training_families()[0].key if training_families() else "")
-            desc = get_family(family_key)
-            if not desc:
-                self.send_json({"error": f"Unknown family: {family_key}"}, status=400)
-                return
-
-            inputs = self._build_plan_inputs(body, desc)
-            plan = launch.plan(desc, inputs)
-            if plan.problems:
-                self.send_json({"error": "Plan validation failed", "problems": plan.problems}, status=400)
-                return
-
-            out_dir = inputs["LORA_OUTPUT_DIR"]
-            _current_output_dir = out_dir
-            _current_lora = inputs["LORA_NAME"]
-
-            for stale in (".pause_requested", ".sample_override.json"):
-                sp = os.path.join(out_dir, stale)
-                if os.path.exists(sp):
-                    try:
-                        os.remove(sp)
-                    except Exception:
-                        pass
-
-            for d in plan.dirs:
-                os.makedirs(d, exist_ok=True)
-            for fpath, fcontent in plan.files:
-                os.makedirs(os.path.dirname(fpath), exist_ok=True)
-                with open(fpath, "w", encoding="utf-8") as f:
-                    f.write(fcontent)
-
-            # Save settings for "Load Last Train" feature
-            prefs = load_prefs()
-            prefs["last_train_settings"] = body
-            save_prefs(prefs)
-
-            th = threading.Thread(target=self._run_training_stages, args=(plan.stages,), daemon=True)
-            th.start()
-            self.send_json({"success": True, "message": "Training started", "stages": [s.name for s in plan.stages]})
-            return
-
-        if path == "/api/train/stop":
-            with _lock:
-                if _active_proc is not None and _active_proc.poll() is None:
-                    append_log("\n[fizgig] Stop requested by user. Terminating process tree...\n")
-                    try:
-                        os.killpg(os.getpgid(_active_proc.pid), signal.SIGTERM)
-                    except Exception as e:
-                        logger.warning(f"Failed to killpg: {e}")
-                        _active_proc.terminate()
-                    _training_state = "idle"
-                    self.send_json({"success": True, "message": "Training stopped"})
-                    return
-            self.send_json({"error": "No active training run"}, status=400)
-            return
-
-        if path == "/api/train/pause":
-            if _current_output_dir:
-                pause_file = os.path.join(_current_output_dir, ".pause_requested")
-                os.makedirs(_current_output_dir, exist_ok=True)
-                with open(pause_file, "w", encoding="utf-8") as f:
+            if self.headers.get("X-Fizgig-Token") != TOKEN:
+                return self.json({"error": "Reload the page."}, 403)
+            pwd = str(self._body().get("password") or "")
+            if self.password and not hmac.compare_digest(pwd, self.password):
+                time.sleep(1.0)
+                return self.json({"error": "Wrong password."}, 401)
+            return self.json({"ok": True}, extra=[("Set-Cookie", f"fizgig_session={self._session()}; Path=/; "
+                                                                 "HttpOnly; SameSite=Strict")])
+        if not self._api_ok():
+            return None
+        b = self._body()
+        try:
+            if path == "/api/form/state":
+                desc = get_family(b.get("family", ""))
+                if desc is None:
+                    return self.json({"error": "unknown family"}, 400)
+                cap = pref_path(load_prefs(), "krea2_text_encoder")
+                return self.json(form.state(desc, b.get("values") or {}, b.get("image_folder") or "",
+                                            captioner=cap if cap and os.path.isfile(cap) else ""))
+            if path == "/api/preset":
+                desc = get_family(b.get("family", ""))
+                preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
+                if preset is None:
+                    return self.json({"error": "unknown preset"}, 400)
+                return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})
+            if path == "/api/plan":
+                _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
+                return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}
+                                                                         for s in plan.stages],
+                                  "dataset_toml": plan.dataset_toml})
+            if path == "/api/start":
+                return self.json(_start(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""))
+            if path == "/api/resume":
+                with _lock:
+                    last = {k: _run[k] for k in ("family", "values", "image_folder", "lora", "output_dir")}
+                if not last["family"]:
+                    lr = load_state().get("last_run") or {}
+                    last = {"family": lr.get("family", ""), "values": lr.get("values") or {},
+                            "image_folder": lr.get("image_folder", ""),
+                            "lora": (lr.get("values") or {}).get("LORA_NAME", ""),
+                            "output_dir": (lr.get("values") or {}).get("LORA_OUTPUT_DIR") or OUTPUT_DEFAULT}
+                state = latest_state(last["output_dir"], last["lora"])
+                if not state:
+                    return self.json({"error": "No saved state to resume from in the output folder."}, 400)
+                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=state))
+            if path == "/api/pause":
+                with _lock:
+                    out, running = _run["output_dir"], _run["proc"] is not None and _run["proc"].poll() is None
+                if not running:
+                    return self.json({"error": "Nothing is running."}, 400)
+                with open(os.path.join(out, ".pause_requested"), "w", encoding="utf-8") as f:
                     f.write("pause\n")
-                append_log(f"\n[fizgig] Pause requested (.pause_requested written to {_current_output_dir}). Will pause at epoch end.\n")
                 with _lock:
-                    _training_state = "paused"
-                self.send_json({"success": True, "message": "Pause requested at epoch boundary"})
-                return
-            self.send_json({"error": "Output directory not known"}, status=400)
-            return
-
-        # ----------------------------------------------------------------
-        # Training aliases (old-style endpoints used by some JS)
-        # ----------------------------------------------------------------
-        if path == "/api/start_training":
-            # Forward to /api/train/start
-            self.path = "/api/train/start"
-            return self.do_POST()
-
-        if path == "/api/stop_training":
-            self.path = "/api/train/stop"
-            return self.do_POST()
-
-        if path == "/api/pause_training":
-            self.path = "/api/train/pause"
-            return self.do_POST()
-
-        if path == "/api/load_last_train":
-            # Load last training settings from prefs
-            prefs = load_prefs()
-            last = prefs.get("last_train_settings", {})
-            if last:
-                self.send_json({"success": True, "message": "Last training settings loaded.", "settings": last})
-            else:
-                self.send_json({"success": False, "message": "No previous training settings found."})
-            return
-
-        # ----------------------------------------------------------------
-        # Presets
-        # ----------------------------------------------------------------
-        if path == "/api/presets/save":
-            name = body.get("name", "")
-            settings = body.get("settings", body)
-            if not name:
-                self.send_json({"error": "Preset name required"}, status=400)
-                return
-            prefs = load_prefs()
-            presets = prefs.setdefault("user_presets", {})
-            presets[name] = settings
-            save_prefs(prefs)
-            self.send_json({"success": True, "message": f"Preset '{name}' saved."})
-            return
-
-        if path.startswith("/api/presets/load"):
-            qs = parse_qs(urlparse(self.path).query)
-            name = qs.get("name", [""])[0]
-            prefs = load_prefs()
-            preset = prefs.get("user_presets", {}).get(name)
-            if preset:
-                self.send_json({"success": True, "settings": preset})
-            else:
-                self.send_json({"error": f"Preset '{name}' not found"}, status=404)
-            return
-
-        # ----------------------------------------------------------------
-        # Preferences
-        # ----------------------------------------------------------------
-        if path == "/api/save_prefs":
-            save_prefs(body)
-            self.send_json({"success": True, "message": "Preferences saved."})
-            return
-
-        if path == "/api/reset_prefs":
-            save_prefs({})
-            self.send_json({"success": True, "message": "Preferences reset to defaults."})
-            return
-
-        if path == "/api/open_prefs_file":
-            self.send_json({"success": True, "message": f"Prefs file: {PREFS_FILE}"})
-            return
-
-        if path == "/api/clear_queue":
-            save_queue([])
-            self.send_json({"success": True, "message": "Queue cleared."})
-            return
-
-        # ----------------------------------------------------------------
-        # Captions
-        # ----------------------------------------------------------------
-        if path == "/api/caption_all":
-            folder = body.get("folder", "")
-            trigger = body.get("trigger_word", "")
-            model = body.get("model", "")
-            task = body.get("task", "<CAPTION>")
-            max_tokens = int(body.get("max_tokens", 77))
-            overwrite = body.get("overwrite", False)
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"error": "Invalid image folder"}, status=400)
-                return
-            # Run captioning in background thread
-            def _run_captions():
-                append_log(f"\n[captions] Starting AI captioning in {folder}...\n")
-                append_log(f"  Model: {model}\n  Task: {task}\n  Trigger: {trigger or '(none)'}\n")
-                exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-                count = 0
-                for f in sorted(os.listdir(folder)):
-                    stem, ext = os.path.splitext(f)
-                    if ext.lower() not in exts:
-                        continue
-                    txt_path = os.path.join(folder, f"{stem}.txt")
-                    if os.path.exists(txt_path) and not overwrite:
-                        continue
-                    caption = trigger + " " if trigger else ""
-                    caption += f"(AI caption placeholder for {f})"
-                    with open(txt_path, "w", encoding="utf-8") as tf:
-                        tf.write(caption)
-                    count += 1
-                    append_log(f"  Captioned: {f}\n")
-                append_log(f"\n[captions] Done. {count} images captioned.\n")
-            th = threading.Thread(target=_run_captions, daemon=True)
-            th.start()
-            self.send_json({"success": True, "message": "AI captioning started in background."})
-            return
-
-        if path == "/api/static_caption":
-            folder = body.get("folder", "")
-            caption = body.get("caption", "")
-            overwrite = body.get("overwrite", False)
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"error": "Invalid image folder"}, status=400)
-                return
-            exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-            count = 0
-            for f in sorted(os.listdir(folder)):
-                stem, ext = os.path.splitext(f)
-                if ext.lower() not in exts:
-                    continue
-                txt_path = os.path.join(folder, f"{stem}.txt")
-                if os.path.exists(txt_path) and not overwrite:
-                    continue
-                with open(txt_path, "w", encoding="utf-8") as tf:
-                    tf.write(caption)
-                count += 1
-            self.send_json({"success": True, "message": f"Static caption written to {count} files."})
-            return
-
-        if path == "/api/stop_captioning":
-            self.send_json({"success": True, "message": "Captioning stopped."})
-            return
-
-        if path == "/api/unload_caption_model":
-            self.send_json({"success": True, "message": "Caption model unloaded."})
-            return
-
-        if path == "/api/translate_captions":
-            folder = body.get("folder", "")
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"error": "Invalid folder"}, status=400)
-                return
-            self.send_json({"success": True, "message": "Translation requires a running translation model. Placeholder."})
-            return
-
-        if path == "/api/find_replace_captions":
-            folder = body.get("folder", "")
-            find = body.get("find", "")
-            replace = body.get("replace", "")
-            preview = body.get("preview", False)
-            if not folder or not os.path.isdir(folder) or not find:
-                self.send_json({"error": "Folder and find text required"}, status=400)
-                return
-            results = []
-            count = 0
-            for f in sorted(os.listdir(folder)):
-                if not f.endswith(".txt"):
-                    continue
-                path_txt = os.path.join(folder, f)
-                with open(path_txt, "r", encoding="utf-8") as tf:
-                    text = tf.read()
-                if find in text:
-                    new_text = text.replace(find, replace)
-                    if not preview:
-                        with open(path_txt, "w", encoding="utf-8") as tf:
-                            tf.write(new_text)
-                    results.append({"file": f, "before": text[:200], "after": new_text[:200]})
-                    count += 1
-            action = "previewed" if preview else "replaced"
-            self.send_json({"success": True, "message": f"Find/replace {action} in {count} files.", "results": results[:20]})
-            return
-
-        if path == "/api/caption_images":
-            # Return list of images in the training folder for the caption grid
-            prefs = load_prefs()
-            folder = body.get("folder", "") or prefs.get("image_folder", "")
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"images": []})
-                return
-            exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-            images = []
-            for f in sorted(os.listdir(folder)):
-                stem, ext = os.path.splitext(f)
-                if ext.lower() in exts:
-                    txt_path = os.path.join(folder, f"{stem}.txt")
-                    caption = ""
-                    if os.path.exists(txt_path):
-                        try:
-                            with open(txt_path, "r", encoding="utf-8") as tf:
-                                caption = tf.read().strip()
-                        except Exception:
-                            pass
-                    images.append({"filename": f, "caption": caption, "url": f"/api/samples/image?file={os.path.join(folder, f)}"})
-            self.send_json({"images": images})
-            return
-
-        # ----------------------------------------------------------------
-        # Image Prep
-        # ----------------------------------------------------------------
-        if path == "/api/prep/run":
-            folder = body.get("folder", "")
-            mode = body.get("mode", "auto")
-            megapixels = body.get("megapixels", "1.0")
-            face_selection = body.get("face_selection", "Largest")
-            face_padding = body.get("face_padding", "1.5")
-            delete_originals = body.get("delete_originals", False)
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"error": "Invalid image folder"}, status=400)
-                return
-            def _run_prep():
-                append_log(f"\n[image-prep] Starting image preparation in {folder}...\n")
-                append_log(f"  Mode: {mode}  Target MP: {megapixels}  Face: {face_selection}\n")
-                try:
-                    cmd = [sys.executable, os.path.join(BASE_DIR, "src", "fizgig", "prep.py"),
-                           "--folder", folder, "--mode", mode, "--megapixels", str(megapixels)]
-                    if mode in ("auto", "face"):
-                        cmd += ["--face_selection", face_selection, "--face_padding", str(face_padding)]
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-                    for line in iter(proc.stdout.readline, ""):
-                        if line:
-                            append_log(line)
-                    proc.stdout.close()
-                    ret = proc.wait()
-                    if ret == 0:
-                        append_log("\n[image-prep] ✔ Image preparation completed.\n")
-                    else:
-                        append_log(f"\n[image-prep] ❌ Exited with code {ret}\n")
-                except FileNotFoundError:
-                    append_log("\n[image-prep] prep.py not found, running inline resize...\n")
-                    from PIL import Image
-                    target_px = float(megapixels) * 1_000_000
-                    exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-                    for f in sorted(os.listdir(folder)):
-                        _, ext = os.path.splitext(f)
-                        if ext.lower() not in exts:
-                            continue
-                        fpath = os.path.join(folder, f)
-                        try:
-                            img = Image.open(fpath)
-                            px = img.width * img.height
-                            if px > target_px:
-                                scale = (target_px / px) ** 0.5
-                                new_w = int(img.width * scale) // 16 * 16
-                                new_h = int(img.height * scale) // 16 * 16
-                                img = img.resize((new_w, new_h), Image.LANCZOS)
-                                out_path = os.path.join(folder, os.path.splitext(f)[0] + ".png")
-                                img.save(out_path, "PNG")
-                                append_log(f"  Resized: {f} → {new_w}x{new_h}\n")
-                            img.close()
-                        except Exception as e:
-                            append_log(f"  Error processing {f}: {e}\n")
-                    append_log("\n[image-prep] ✔ Inline resize completed.\n")
-                except Exception as e:
-                    append_log(f"\n[image-prep] ❌ Error: {e}\n")
-            th = threading.Thread(target=_run_prep, daemon=True)
-            th.start()
-            self.send_json({"success": True, "message": "Image preparation started."})
-            return
-
-        if path == "/api/prep/test_face":
-            self.send_json({"success": True, "message": "Face detection test requires opencv. Placeholder."})
-            return
-
-        # ----------------------------------------------------------------
-        # Profiler
-        # ----------------------------------------------------------------
-        if path == "/api/run_profiler":
-            family = body.get("family", "klein")
-            lora_path = body.get("lora_path", "")
-            if not lora_path or not os.path.exists(lora_path):
-                self.send_json({"error": "LoRA file path required and must exist"}, status=400)
-                return
-            def _run_profiler():
-                append_log(f"\n[profiler] Running weight profiler on {lora_path}...\n")
-                try:
-                    from fizgig.families.weight_profile import profile_lora
-                    result = profile_lora(lora_path)
-                    append_log(f"[profiler] Analysis complete. {len(result.get('blocks', []))} blocks profiled.\n")
-                except ImportError:
-                    append_log("[profiler] weight_profile module not available. Running basic analysis...\n")
-                    try:
-                        from safetensors import safe_open
-                        with safe_open(lora_path, "pt") as sf:
-                            keys = list(sf.keys())
-                        append_log(f"[profiler] Found {len(keys)} tensors in LoRA.\n")
-                        for k in keys[:20]:
-                            append_log(f"  {k}\n")
-                        if len(keys) > 20:
-                            append_log(f"  ... and {len(keys) - 20} more\n")
-                    except Exception as e:
-                        append_log(f"[profiler] Error: {e}\n")
-                append_log("\n[profiler] Done.\n")
-            th = threading.Thread(target=_run_profiler, daemon=True)
-            th.start()
-            self.send_json({"success": True, "message": "Profiler started in background."})
-            return
-
-        if path == "/api/open_profiler_report":
-            self.send_json({"success": True, "message": "Profiler report opened."})
-            return
-
-        # ----------------------------------------------------------------
-        # Metadata
-        # ----------------------------------------------------------------
-        if path == "/api/load_metadata":
-            filepath = body.get("file", "")
-            if not filepath or not os.path.exists(filepath):
-                self.send_json({"error": "File not found"}, status=404)
-                return
-            meta = read_safetensors_metadata(filepath)
-            self.send_json({
-                "success": True,
-                "file": filepath,
-                "metadata": meta,
-                "title": meta.get("modelspec.title", meta.get("title", "")),
-                "author": meta.get("modelspec.author", meta.get("author", "")),
-                "license": meta.get("modelspec.license", meta.get("license", "")),
-                "tags": meta.get("modelspec.tags", meta.get("tags", "")),
-                "trigger_phrase": meta.get("modelspec.trigger_phrase", meta.get("trigger_phrase", "")),
-                "usage_hint": meta.get("modelspec.usage_hint", meta.get("usage_hint", "")),
-                "description": meta.get("modelspec.description", meta.get("description", "")),
-            })
-            return
-
-        if path == "/api/save_metadata":
-            filepath = body.get("file", "")
-            metadata = body.get("metadata", {})
-            if not filepath:
-                self.send_json({"error": "File path required"}, status=400)
-                return
-            save_as = body.get("save_as", "")
-            target = save_as if save_as else filepath
-            try:
-                _write_safetensors_metadata(filepath, target, metadata)
-                self.send_json({"success": True, "message": f"Metadata saved to {target}"})
-            except Exception as e:
-                self.send_json({"error": f"Failed to save metadata: {e}"}, status=500)
-            return
-
-        # ----------------------------------------------------------------
-        # Samples gallery
-        # ----------------------------------------------------------------
-        if path == "/api/open_samples_gallery":
-            self.send_json({"success": True, "message": "Switch to the Samples tab to view the gallery."})
-            return
-
-        if path == "/api/open_samples_folder":
-            out = _current_output_dir or "output_loras"
-            self.send_json({"success": True, "message": f"Samples folder: {os.path.join(out, 'sample')}"})
-            return
-
-        # ----------------------------------------------------------------
-        # Repair Studio — settings stored, GPU wiring via future workbench driver
-        # ----------------------------------------------------------------
-        if path == "/api/repair/start":
-            _store_tool_settings("repair", body)
-            self.send_json({"success": True, "message": "Repair render queued. Workbench driver wiring pending."})
-            return
-
-        if path == "/api/repair/save_lora":
-            _store_tool_settings("repair_save", body)
-            self.send_json({"success": True, "message": "Repaired LoRA save queued."})
-            return
-
-        if path == "/api/repair/save_preset":
-            name = body.get("name", "")
-            prefs = load_prefs()
-            repair_presets = prefs.setdefault("repair_presets", {})
-            repair_presets[name] = body
-            save_prefs(prefs)
-            self.send_json({"success": True, "message": f"Repair preset '{name}' saved."})
-            return
-
-        if path == "/api/repair/unload_donor":
-            self.send_json({"success": True, "message": "Donor LoRA unloaded."})
-            return
-
-        if path == "/api/repair/h3_model_changed":
-            self.send_json({"success": True, "message": "H3 model setting updated."})
-            return
-
-        if path == "/api/repair/h3_clip_settings":
-            _store_tool_settings("repair_h3_clip", body)
-            self.send_json({"success": True, "message": "H3 clip settings saved."})
-            return
-
-        if path == "/api/repair/reset_session":
-            self.send_json({"success": True, "message": "Repair session reset."})
-            return
-
-        if path.startswith("/api/repair/load_preset"):
-            qs = parse_qs(urlparse(self.path).query)
-            name = qs.get("name", [""])[0]
-            prefs = load_prefs()
-            preset = prefs.get("repair_presets", {}).get(name)
-            if preset:
-                self.send_json({"success": True, "settings": preset})
-            else:
-                self.send_json({"error": f"Preset '{name}' not found"}, status=404)
-            return
-
-        # ----------------------------------------------------------------
-        # RefMod Studio
-        # ----------------------------------------------------------------
-        if path == "/api/refmod/rescan":
-            folder = body.get("folder", "")
-            if not folder or not os.path.isdir(folder):
-                self.send_json({"error": "Invalid RefMod folder", "mods": []}, status=400)
-                return
-            mods = sorted(f for f in os.listdir(folder) if f.lower().endswith(".safetensors"))
-            self.send_json({"success": True, "message": f"Found {len(mods)} mod files.", "mods": mods})
-            return
-
-        if path == "/api/refmod/load":
-            _store_tool_settings("refmod_load", body)
-            self.send_json({"success": True, "message": "RefMod model loaded. Workbench driver wiring pending."})
-            return
-
-        if path == "/api/refmod/unload":
-            self.send_json({"success": True, "message": "RefMod model unloaded."})
-            return
-
-        if path == "/api/refmod/render":
-            _store_tool_settings("refmod_render", body)
-            self.send_json({"success": True, "message": "RefMod render queued. Workbench driver wiring pending."})
-            return
-
-        if path == "/api/refmod/cancel":
-            self.send_json({"success": True, "message": "RefMod render cancelled."})
-            return
-
-        if path == "/api/refmod/sweep":
-            self.send_json({"success": True, "message": "RefMod sweep queued."})
-            return
-
-        if path == "/api/refmod/save_strip":
-            self.send_json({"success": True, "message": "Sweep strip saved."})
-            return
-
-        if path == "/api/refmod/save_preview":
-            self.send_json({"success": True, "message": "Preview saved."})
-            return
-
-        if path == "/api/refmod/save_setup":
-            prefs = load_prefs()
-            prefs["refmod_setup"] = body
-            save_prefs(prefs)
-            self.send_json({"success": True, "message": "RefMod setup saved."})
-            return
-
-        if path == "/api/refmod/load_setup":
-            prefs = load_prefs()
-            setup = prefs.get("refmod_setup", {})
-            self.send_json({"success": True, "settings": setup, "message": "RefMod setup loaded."})
-            return
-
-        if path == "/api/refmod/save_curve_preset":
-            name = body.get("name", "")
-            prefs = load_prefs()
-            curves = prefs.setdefault("refmod_curves", {})
-            curves[name] = body
-            save_prefs(prefs)
-            self.send_json({"success": True, "message": f"Curve preset '{name}' saved."})
-            return
-
-        if path == "/api/refmod/delete_curve_preset":
-            name = body.get("name", "")
-            prefs = load_prefs()
-            curves = prefs.get("refmod_curves", {})
-            if name in curves:
-                del curves[name]
-                save_prefs(prefs)
-            self.send_json({"success": True, "message": f"Curve preset '{name}' deleted."})
-            return
-
-        if path == "/api/refmod/bake":
-            self.send_json({"success": True, "message": "RefMod bake queued. Workbench driver wiring pending."})
-            return
-
-        # ----------------------------------------------------------------
-        # Explorer
-        # ----------------------------------------------------------------
-        if path == "/api/explorer/start":
-            _store_tool_settings("explorer", body)
-            self.send_json({"success": True, "message": "Explorer generation queued. Workbench driver wiring pending."})
-            return
-
-        if path == "/api/explorer/save":
-            self.send_json({"success": True, "message": "Baseline saved as LoRA."})
-            return
-
-        if path == "/api/explorer/undo":
-            self.send_json({"success": True, "message": "Last evolution undone."})
-            return
-
-        if path == "/api/explorer/restart":
-            self.send_json({"success": True, "message": "Explorer restarted from scratch."})
-            return
-
-        if path == "/api/explorer/freeze":
-            self.send_json({"success": True, "message": "Tweaked blocks frozen in place."})
-            return
-
-        if path == "/api/explorer/reroll":
-            self.send_json({"success": True, "message": "Variants re-rolled."})
-            return
-
-        if path == "/api/explorer/pick":
-            variant = body.get("variant", 0)
-            self.send_json({"success": True, "message": f"Variant {variant} applied as new baseline."})
-            return
-
-        # ----------------------------------------------------------------
-        # Royale
-        # ----------------------------------------------------------------
-        if path == "/api/royale/render":
-            _store_tool_settings("royale_render", body)
-            self.send_json({"success": True, "message": "Royale epoch render queued. Workbench driver wiring pending."})
-            return
-
-        if path == "/api/royale/export":
-            _store_tool_settings("royale_export", body)
-            self.send_json({"success": True, "message": "Export queued."})
-            return
-
-        if path == "/api/royale/save_stills":
-            self.send_json({"success": True, "message": "All stills saved."})
-            return
-
-        if path == "/api/royale/seed_travel":
-            _store_tool_settings("royale_seed_travel", body)
-            self.send_json({"success": True, "message": "Seed travel render queued."})
-            return
-
-        if path == "/api/royale/prompt_travel":
-            _store_tool_settings("royale_prompt_travel", body)
-            self.send_json({"success": True, "message": "Prompt travel render queued."})
-            return
-
-        if path == "/api/royale/strength_travel":
-            _store_tool_settings("royale_strength_travel", body)
-            self.send_json({"success": True, "message": "Strength travel render queued."})
-            return
-
-        if path.startswith("/api/royale/travel_preset"):
-            qs = parse_qs(urlparse(self.path).query)
-            name = qs.get("name", [""])[0]
-            prefs = load_prefs()
-            preset = prefs.get("royale_travel_presets", {}).get(name, {})
-            self.send_json({"success": True, "settings": preset})
-            return
-
-        if path.startswith("/api/royale/pt_preset"):
-            qs = parse_qs(urlparse(self.path).query)
-            name = qs.get("name", [""])[0]
-            prefs = load_prefs()
-            preset = prefs.get("royale_pt_presets", {}).get(name, {})
-            self.send_json({"success": True, "settings": preset})
-            return
-
-        # ----------------------------------------------------------------
-        # Extract
-        # ----------------------------------------------------------------
-        if path == "/api/extract/run":
-            _store_tool_settings("extract", body)
-            family = body.get("family", "klein")
-            source = body.get("source", "")
-            if not source or not os.path.exists(source):
-                self.send_json({"error": "Source LoRA file required and must exist"}, status=400)
-                return
-            def _run_extract():
-                append_log(f"\n[extract] Starting LoRA extraction from {source}...\n")
-                append_log(f"  Family: {family}\n  Preset: {body.get('preset', 'Identity')}\n")
-                append_log(f"  Target dim: {body.get('target_dim', 4)}\n")
-                append_log(f"  Blocks: {body.get('blocks', [])}\n")
-                try:
-                    cmd = [sys.executable, os.path.join(BASE_DIR, "src", "fizgig", "families", "extract.py"),
-                           "--source", source,
-                           "--output_name", body.get("output_name", "extracted"),
-                           "--output_dir", load_prefs().get("lora_output_dir", os.path.join(BASE_DIR, "output_loras")),
-                           "--target_dim", str(body.get("target_dim", 4))]
-                    if body.get("blocks"):
-                        cmd += ["--blocks"] + body["blocks"]
-                    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-                    for line in iter(proc.stdout.readline, ""):
-                        if line:
-                            append_log(line)
-                    proc.stdout.close()
-                    ret = proc.wait()
-                    if ret == 0:
-                        append_log("\n[extract] ✔ Extraction completed.\n")
-                    else:
-                        append_log(f"\n[extract] ❌ Exited with code {ret}\n")
-                except Exception as e:
-                    append_log(f"\n[extract] ❌ Error: {e}\n")
-            th = threading.Thread(target=_run_extract, daemon=True)
-            th.start()
-            self.send_json({"success": True, "message": "Extraction started in background."})
-            return
-
-        if path == "/api/extract/open_folder":
-            out_dir = load_prefs().get("lora_output_dir", os.path.join(BASE_DIR, "output_loras"))
-            self.send_json({"success": True, "message": f"Output folder: {out_dir}"})
-            return
-
-        # ----------------------------------------------------------------
-        # Fallback: unknown endpoint
-        # ----------------------------------------------------------------
-        self.send_json({"error": f"Unknown endpoint: {path}"}, status=404)
-
-    def _build_plan_inputs(self, body: dict, desc: Any = None) -> dict:
-        """Build the inputs dict that launch.plan() expects.
-
-        Every key the front end sends is passed through so launch.plan() can read
-        family-specific settings (FAMILY_EDIT_DIR, FAMILY_SLIDER_DIR, …) without
-        enumerating them here.  The model pref keys are read from desc.model_files
-        so any family works without a code change.
-        """
-        prefs = load_prefs()
-        out_dir = body.get("LORA_OUTPUT_DIR") or prefs.get("lora_output_dir") or os.path.join(BASE_DIR, "output_loras")
-        lora_name = body.get("LORA_NAME") or "my_lora"
-        dataset_cfg = body.get("DATASET_CONFIG") or os.path.join(BASE_DIR, "dataset", f"{lora_name}_train.toml")
-
-        # Model file paths — read from body first, then prefs, for every file the family declares
-        models = {}
-        if desc and hasattr(desc, "model_files"):
-            for m in desc.model_files:
-                models[m.pref_key] = body.get(m.pref_key) or prefs.get(m.pref_key, "")
-
-        inputs = {
-            "python": sys.executable,
-            "repo_dir": BASE_DIR,
-            "models": models,
-            "image_folder": body.get("image_folder") or body.get("image_dir") or "",
-            "caption_ext": body.get("caption_ext") or ".txt",
-            "batch_size": int(body.get("batch_size", 1)),
-            "megapixels": float(body.get("DATASET_MEGAPIXELS", 0.5)),
-            "enable_bucket": True,
-            "no_upscale": True,
-            "cache_root": prefs.get("cache_root") or os.path.join(BASE_DIR, "cache"),
-            "blocks_swap": str(body.get("blocks_swap", "Auto (detect from GPU)")),
-            "enable_cache": bool(body.get("enable_cache", True)),
-            "resuming": bool(body.get("resuming", False)),
-            "samples_dir": os.path.join(out_dir, "sample"),
-            "loss_watch": {
-                "detect": bool(body.get("KREA2_LOSS_WATCH", True)),
-                "per_image_lr": bool(body.get("KREA2_PER_IMAGE_LR", False)),
-                "warmup": bool(body.get("KREA2_WARMUP_LOOK", False)),
-                "recaption": bool(body.get("KREA2_RECAPTION", False)),
-            },
-            "LORA_NAME": lora_name,
-            "LORA_OUTPUT_DIR": out_dir,
-            "DATASET_CONFIG": dataset_cfg,
-            "NETWORK_DIM": int(body.get("NETWORK_DIM", 16)),
-            "NETWORK_ALPHA": float(body.get("NETWORK_ALPHA", 16)),
-            "LEARNING_RATE": float(body.get("LEARNING_RATE", 1e-4)),
-            "MAX_TRAIN_EPOCHS": int(body.get("MAX_TRAIN_EPOCHS", 30)),
-            "SAVE_EVERY_N_EPOCHS": int(body.get("SAVE_EVERY_N_EPOCHS", 1)),
-            "SEED": int(body.get("SEED", 42)),
-            "LORA_LR_RATIO": re.sub(r"\.0+$", "", str(body.get("LORA_LR_RATIO", "1"))),
-            "GRADIENT_ACCUMULATION": int(body.get("GRADIENT_ACCUMULATION", 1)),
-            "MAX_GRAD_NORM": float(body.get("MAX_GRAD_NORM", 1.0)),
-            "NETWORK_DROPOUT": float(body.get("NETWORK_DROPOUT", 0.0)),
-            "ADAPTIVE_LR": bool(body.get("ADAPTIVE_LR", True)),
-            "ADAPTIVE_LR_MIN": str(body.get("ADAPTIVE_LR_MIN", "1e-4")),
-            "ADAPTIVE_LR_MAX": str(body.get("ADAPTIVE_LR_MAX", "2e-4")),
-            "OPTIMIZER_TYPE": str(body.get("OPTIMIZER_TYPE", "adamw8bit")),
-            "FAMILY_TRAINING_ADAPTER": bool(body.get("FAMILY_TRAINING_ADAPTER", True)),
-            "SAVE_STATE": bool(body.get("SAVE_STATE", True)),
-            "FAMILY_EDIT": bool(body.get("FAMILY_EDIT", False)),
-            "FAMILY_SLIDER": bool(body.get("FAMILY_SLIDER", False)),
-            "samples": {
-                "enabled": bool(body.get("sample_enabled", True)),
-                "every": int(body.get("sample_every", 1)),
-                "width": int(body.get("sample_width", 1024)),
-                "height": int(body.get("sample_height", 1024)),
-                "steps": int(body.get("sample_steps", 20)),
-                "cfg": float(body.get("sample_cfg", 1.0)),
-                "negative": str(body.get("sample_negative", "")),
-                "seed": int(body.get("sample_seed", 42)),
-                "at_first": bool(body.get("sample_at_first", True)),
-                "prompts": [ln.strip() for ln in str(body.get("sample_prompts", "")).splitlines() if ln.strip()],
-            }
-        }
-        # Pass through every other key from body so launch.plan() can see
-        # family-specific settings (FAMILY_EDIT_DIR, FAMILY_SLIDER_DIR, NETWORK_TYPE,
-        # LOKR_FACTOR, FAMILY_PRECISION, FAMILY_EMA, edit_caption, …) without
-        # having to list them here.
-        for k, v in body.items():
-            if k not in inputs:
-                inputs[k] = v
-        return inputs
-
-    def _run_training_stages(self, stages: list):
-        global _active_proc, _training_state, _current_stage
-        with _lock:
-            _training_state = "running"
-        
-        append_log("=" * 64 + "\n")
-        append_log(f"🚀 Fizgig Training Launch ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n")
-        append_log("=" * 64 + "\n")
-
-        for stage in stages:
-            with _lock:
-                _current_stage = stage.name
-            append_log(f"\n▶ Stage: {stage.name}\n")
-            append_log(f"Command: {subprocess.list2cmdline(stage.cmd)}\n\n")
-
-            try:
-                proc = subprocess.Popen(
-                    stage.cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    preexec_fn=os.setsid if hasattr(os, "setsid") else None,
-                )
-                with _lock:
-                    _active_proc = proc
-
-                for line in iter(proc.stdout.readline, ""):
-                    if line:
-                        append_log(line)
-
-                proc.stdout.close()
-                ret = proc.wait()
-                if ret != 0:
-                    append_log(f"\n❌ Stage '{stage.name}' failed with exit code {ret}\n")
-                    with _lock:
-                        _training_state = "failed"
-                    return
-                append_log(f"\n✔ Stage '{stage.name}' completed successfully\n")
-
-            except Exception as e:
-                append_log(f"\n❌ Error running stage '{stage.name}': {e}\n")
-                with _lock:
-                    _training_state = "failed"
-                return
-
-        with _lock:
-            _training_state = "completed"
-            _active_proc = None
-            _current_stage = ""
-        append_log("\n🎉 All training stages completed successfully!\n")
-
-
-def run_server(host: str = "0.0.0.0", port: int = 8081, password: str | None = None):
-    handler = FizgigWebHandler
-    handler.server_password = password
-    server = ThreadingHTTPServer((host, port), handler)
-    logger.info(f"Fizgig Web UI running at http://{host}:{port}/")
-    if password:
-        logger.info("Authentication enabled (using VNC_PASSWORD / FIZGIG_PASSWORD)")
-    else:
-        logger.info("Authentication disabled (listening on localhost / unprotected)")
+                    _run["pause"] = True
+                append_log("\n⏸ Pause requested: the run stops cleanly at the end of this epoch.\n")
+                return self.json({"ok": True})
+            if path == "/api/stop":
+                return self.json({"ok": _stop()})
+            if path == "/api/prefs":
+                allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir"}
+                update_prefs({k: str(v) for k, v in (b.get("changes") or {}).items() if k in allowed})
+                return self.json({"ok": True})
+            if path == "/api/state":
+                save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab")})
+                return self.json({"ok": True})
+            if path == "/api/captions/save":
+                folder, name, text = b.get("folder", ""), b.get("name", ""), b.get("text", "")
+                stem = os.path.splitext(os.path.basename(name))[0]
+                if not stem or not os.path.isdir(folder):
+                    return self.json({"error": "bad folder or file"}, 400)
+                with open(os.path.join(folder, stem + (b.get("ext") or ".txt")), "w", encoding="utf-8") as f:
+                    f.write(text)
+                return self.json({"ok": True})
+        except ValueError as e:
+            return self.json({"error": str(e)}, 400)
+        return self.json({"error": "not found"}, 404)
+
+
+def run_server(host, port, password=None):
+    Handler.password = password or None
+    Handler.local_only = not password
+    threading.Thread(target=_poll_stats_loop, daemon=True).start()
+    srv = ThreadingHTTPServer((host, port), Handler)
+    srv.daemon_threads = True
+    shown = "localhost" if host in ("127.0.0.1", "::1") else host
+    logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
     try:
-        server.serve_forever()
+        srv.serve_forever()
     except KeyboardInterrupt:
-        logger.info("Shutting down Fizgig Web Server...")
+        pass
     finally:
-        server.server_close()
+        _stop()
+        srv.server_close()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Fizgig Schema-Driven Web Server")
-    parser.add_argument("--web", action="store_true", help="Run web UI server")
-    parser.add_argument("--host", default=None, help="Host to bind (default: localhost, or 0.0.0.0 if password set)")
-    parser.add_argument("--port", type=int, default=8081, help="Port to listen on (default: 8081)")
-    parser.add_argument("--password", default=None, help="Server password (defaults to VNC_PASSWORD env var)")
-    args = parser.parse_args()
-
-    vnc_pwd = os.environ.get("VNC_PASSWORD") or os.environ.get("FIZGIG_PASSWORD")
-    final_password = args.password or vnc_pwd
-    final_host = args.host or ("0.0.0.0" if final_password else "127.0.0.1")
-
-    run_server(host=final_host, port=args.port, password=final_password)
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Fizgig's web UI")
+    ap.add_argument("--web", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--host", default=None, help="Address to listen on (default: localhost; every address with a "
+                                                 "password)")
+    ap.add_argument("--port", type=int, default=8081)
+    ap.add_argument("--password", default=None, help="Login password (default: VNC_PASSWORD or FIZGIG_PASSWORD)")
+    a = ap.parse_args(argv)
+    pwd = a.password or os.environ.get("VNC_PASSWORD") or os.environ.get("FIZGIG_PASSWORD")
+    host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")
+    if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
+        sys.exit("Listening beyond localhost needs a password (--password, VNC_PASSWORD or FIZGIG_PASSWORD).")
+    run_server(host, a.port, pwd)
 
 
 if __name__ == "__main__":
