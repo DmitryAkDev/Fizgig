@@ -20021,19 +20021,6 @@ class LoRATrainerGUI:
         self.repair_ref_strength_var.trace_add("write", lambda *_: self._on_repair_ref_changed())
         r += 1
 
-        # Save / Load Setup (the whole session); the slider presets have their own card under the sliders
-        _pbtns = tk.Frame(parent, bg=COLORS["bg_surface"])
-        _pbtns.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        # the whole session in one file (Peter, 11 Oct): every control, every slider, the LoRAs, the prompt
-        _sb = ttk.Button(_pbtns, text="Save Setup…", command=self._save_repair_setup)
-        _sb.pack(side=tk.LEFT)
-        ToolTip(_sb, "Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length "
-                     "and source - to one file you can load back later or share.")
-        _lb = ttk.Button(_pbtns, text="Load Setup…", command=self._load_repair_setup)
-        _lb.pack(side=tk.LEFT, padx=(6, 0))
-        ToolTip(_lb, "Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.")
-        r += 1
-
         # Status + Start button row
         status_row = tk.Frame(parent, bg=COLORS["bg_surface"])
         status_row.grid(row=r, column=0, columnspan=4, sticky=tk.EW, pady=(6, 0))
@@ -20050,10 +20037,15 @@ class LoRATrainerGUI:
             relief="flat", bd=0, padx=24, pady=6, cursor="hand2",
             command=self._repair_start)
         self._repair_start_btn.pack(side=tk.RIGHT)
-        # Reset All up here too — the Actions card has one, but it sits below the full slider
-        # panel, which on a 50-block family is a long scroll away from where you tweak.
-        ttk.Button(status_row, text="Reset All Sliders",
-                   command=self._reset_repair_sliders).pack(side=tk.RIGHT, padx=(0, 12))
+        # Save / Load Setup beside Start: the whole session in one file (Peter, 11 Oct) - every control, every
+        # slider, the LoRAs, the prompt. (Reset All Sliders is in the Actions card.)
+        _lb = ttk.Button(status_row, text="Load Setup…", command=self._load_repair_setup)
+        _lb.pack(side=tk.RIGHT, padx=(0, 16))
+        ToolTip(_lb, "Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.")
+        _sb = ttk.Button(status_row, text="Save Setup…", command=self._save_repair_setup)
+        _sb.pack(side=tk.RIGHT, padx=(0, 6))
+        ToolTip(_sb, "Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length "
+                     "and source - to one file you can load back later or share.")
         # The pop-out also opens by clicking either preview image, but nothing on screen SAYS
         # that — a named, coloured button plus the caption under the previews is how anyone
         # finds the compare view and its metrics (Peter, 22 Aug: plain ttk wasn't enough).
