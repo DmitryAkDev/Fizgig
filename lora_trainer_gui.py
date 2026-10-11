@@ -18925,11 +18925,13 @@ class LoRATrainerGUI:
                    command=self._reset_repair_sliders).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Button(action_row, text="Reset Session (unload models)",
                    command=self._reset_repair_session).pack(side=tk.LEFT)
-        tk.Button(action_row, text="Explore this in LoRA the Explorer \u2192",
+        # only for a family LoRA the Explorer offers (description workbench) - not ACE-Step
+        self._repair_explore_btn = tk.Button(action_row, text="Explore this in LoRA the Explorer \u2192",
                   font=(FONT_FAMILY, 10, "bold"),
                   fg="#FFFFFF", bg="#2E8B57", activeforeground="#FFFFFF", activebackground="#256F46",
                   relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                  command=self._repair_explore_in_explorer).pack(side=tk.RIGHT)
+                  command=self._repair_explore_in_explorer)
+        self._repair_explore_btn.pack(side=tk.RIGHT)
 
         self._add_youtube_help_button(outer, "repair_studio")
         # Sync DiT-radio labels + Master Controls visibility for the restored family.
@@ -18978,6 +18980,13 @@ class LoRATrainerGUI:
         desc = self._repair_desc(fam)
         self._refresh_repair_negative_row()
         self._repair_strength_defaults(desc)
+        _xb = getattr(self, "_repair_explore_btn", None)
+        if _xb is not None:
+            if desc is None or "explorer" in desc.workbench:
+                if not _xb.winfo_manager():
+                    _xb.pack(side=tk.RIGHT)
+            else:
+                _xb.pack_forget()
         if getattr(self, "_repair_setup_card", None) is not None:      # rows a family builds later
             self.master.after_idle(lambda: self._surface_children(self._repair_setup_card))
         video = self._wb_video(fam)

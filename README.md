@@ -71,7 +71,7 @@ Memory plans itself: precision, block swap and previews size to your free VRAM, 
 | **Anima** (2B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
 | **ACE-Step 1.5 XL** (4B), experimental | songs | ✅ | — | ✅ slider | ✅ experimental | 16 GB | [ACE-Step](docs/ACESTEP.md) |
 
-Every model gets all five workbench tools. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
+Every image and video model gets all five workbench tools; ACE-Step has Repair Studio and Extract. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
 
 ## The workbench
 
