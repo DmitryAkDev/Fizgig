@@ -18932,6 +18932,9 @@ class LoRATrainerGUI:
                   relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
                   command=self._repair_explore_in_explorer)
         self._repair_explore_btn.pack(side=tk.RIGHT)
+        ToolTip(self._repair_explore_btn, "Sends this LoRA and your sliders to LoRA the Explorer. Using a Mix (epochs "
+                                          "or LoRA mix) or the donor's epoch blend? Save Repaired LoRA first to bake "
+                                          "it into one file, then load that file in the Explorer.")
 
         self._add_youtube_help_button(outer, "repair_studio")
         # Sync DiT-radio labels + Master Controls visibility for the restored family.
@@ -30481,6 +30484,16 @@ class LoRATrainerGUI:
         """Send current Repair Studio slider state to the Explorer for evolutionary discovery."""
         if self.repair_engine is None or self.repair_engine.primary_network is None:
             messagebox.showerror("Error", "Load a primary LoRA first.")
+            return
+        # A mix (the primary's epochs or LoRA mix, or the donor's epoch blend) is no file the Explorer can open:
+        # the user bakes it with Save Repaired LoRA and explores that file
+        _B = getattr(self, "_repair_blend", {})
+        _mixed = (_B.get("primary", {}).get("mode") is not None and _B["primary"]["mode"].get() != "off") or \
+            (_B.get("donor", {}).get("var") is not None and _B["donor"]["var"].get())
+        if _mixed:
+            self.repair_status_var.set(
+                "A mix can't go to the Explorer as it is: Save Repaired LoRA bakes it into one file - load that "
+                "in LoRA the Explorer.")
             return
         # Mirror of the Explorer-side guard: _reset_repair_session below refuses to tear down
         # mid-preview, but it returns into THIS method which would then build the Explorer
