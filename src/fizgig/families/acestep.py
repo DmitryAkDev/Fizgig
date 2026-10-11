@@ -166,9 +166,6 @@ ACESTEP15 = FamilyDescription(
         # 10-20 songs), measured in Fizgig 11 Oct 2026 (Peter, chiptune, 10 songs): the sound arrives after ~30 epochs,
         # epoch 740 played at strength 0.5 beat every earlier epoch at 1.0; a checkpoint + preview every 40 epochs
         ("✨ ACE-Step Official LoRA (rank 64, 800 epochs)", _preset(64, 128, 1e-4, 800)),
-        # Peter's quick option (fzgfunk + cinematic): alpha a QUARTER of rank (a 0.25 scale), EMA sized to the run
-        ("✨ ACE-Step Gentle LoRA (rank 64, alpha 16, EMA)",
-         _preset(64, 16, 1e-4, 40, ema="Short run (window = ¼ of the run)", save_every=1)),
         # the whole model: one window per epoch on a 32 GB card (all five parts), a checkpoint every rotation
         ("✨ ACE-Step Fine-tune (1e-5)", {**_preset(64, 16, 1e-5, 20), "FAMILY_FT": True, "FAMILY_FT_ROTATIONS": "20",
                                           "FAMILY_FT_SAVE_EVERY": "1"}),

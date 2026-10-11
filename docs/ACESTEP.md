@@ -27,8 +27,6 @@ What to expect:
 
 The Training tab shows this as a hint once Max Epochs is 400 or more.
 
-For a quick look at a new set, the **✨ ACE-Step Gentle LoRA** preset trains for 40 epochs at a lower alpha.
-
 ## Previews and the workbench
 
 Sample prompts are songs: `caption | lyrics`, with lyric lines separated by ` / `, e.g.
