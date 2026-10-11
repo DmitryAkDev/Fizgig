@@ -2119,7 +2119,8 @@ class LoRATrainerGUI:
         # vs Qwen3-VL), losing it silently would be a real annoyance.
         for _attr, _key in (("caption_model_var", "caption_model"),
                             ("caption_task_var", "caption_task"),
-                            ("caption_max_tokens_var", "caption_max_tokens")):
+                            ("caption_max_tokens_var", "caption_max_tokens"),
+                            ("song_caption_words_var", "song_caption_words")):
             _v = getattr(self, _attr, None)
             if _v is not None:
                 try:
@@ -6466,6 +6467,10 @@ class LoRATrainerGUI:
 
     def update_ui_for_architecture(self):
         """Update UI elements based on selected architecture"""
+        try:
+            self._refresh_song_caption_card()
+        except Exception:
+            pass
         arch = self.architecture_var.get()
         config = ARCHITECTURES.get(arch, ARCHITECTURES["Flux 2 Klein Base 9B"])
 
@@ -8609,8 +8614,42 @@ class LoRATrainerGUI:
                  bg=COLORS["bg_surface"], wraplength=680, justify=tk.LEFT).grid(
             row=7, column=0, columnspan=3, sticky=tk.W, pady=(0, 2))
 
+        # Song captions (description song_captions): one shared caption for every song, no AI
+        song_card = self._start_section_card(
+            outer, "Caption Every Song",
+            "Every song gets the same caption: the trigger word above, then the words that describe "
+            "the whole set - genre, instruments, mood, vocals. Use the same words in your sample prompts. "
+            "The Overwrite tick above decides whether songs that already have a caption are rewritten.")
+        self._song_caption_outer = song_card.master.master
+        _srow = tk.Frame(song_card, bg=COLORS["bg_surface"])
+        _srow.pack(fill=tk.X)
+        tk.Label(_srow, text="Common words:", font=(FONT_FAMILY, 10), fg=COLORS["text_primary"],
+                 bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(0, 10))
+        self.song_caption_words_var = tk.StringVar(value=self.last_used.get("song_caption_words", ""))
+        self.song_caption_words_var.trace_add("write", lambda *_: self._save_last_used_paths())
+        _words = ttk.Entry(_srow, textvariable=self.song_caption_words_var, width=60)
+        _words.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # the greyed example while the box is empty (never saved)
+        self._song_caption_example = tk.Label(_words, text="", font=(FONT_FAMILY, 10),
+                                              fg=COLORS["text_muted"], bg=COLORS["bg_surface"], cursor="xterm")
+        self._song_caption_example.bind("<Button-1>", lambda _e: _words.focus_set())
+
+        def _example(*_):
+            if self.song_caption_words_var.get() or self.master.focus_get() is _words:
+                self._song_caption_example.place_forget()
+            else:
+                self._song_caption_example.place(x=4, rely=0.5, anchor="w")
+        self._song_caption_example_refresh = _example
+        _words.bind("<FocusIn>", _example, add="+")
+        _words.bind("<FocusOut>", _example, add="+")
+        self.song_caption_words_var.trace_add("write", _example)
+        ttk.Button(_srow, text="Caption every song", command=self._caption_every_song).pack(
+            side=tk.LEFT, padx=(10, 0))
+        self.master.after(0, self._refresh_song_caption_card)
+
         # Card 2: Generate Captions
         actions_card = self._start_section_card(outer, "Generate Captions", None)
+        self._caption_actions_outer = actions_card.master.master
         action_row = tk.Frame(actions_card, bg=COLORS["bg_surface"])
         action_row.pack(anchor=tk.W)
         # Kept on self so a running job can grey them out — clicking Caption All twice used to
@@ -8975,7 +9014,14 @@ class LoRATrainerGUI:
         # Audio never enters the grid; count it so the tab explains itself rather than showing
         # fewer items than the folder holds. Wordings per Peter: all-audio vs mixed.
         _n_audio = self._count_training_audio_files()
-        if _n_audio and not total_images:
+        _d = self._family_desc()
+        if _n_audio and getattr(_d, "song_captions", ""):
+            self._caption_audio_banner.config(
+                text=f"🎵 {_n_audio} song(s) in this training set — caption them all at once with Caption "
+                     f"Every Song above, or cut and caption sections in Gizmo's Music tab.")
+            self._caption_audio_banner.pack(anchor=tk.W, pady=(0, 8),
+                                            before=self.caption_grid_frame)
+        elif _n_audio and not total_images:
             self._caption_audio_banner.config(
                 text="🎙 Audio-only training set — captions are written in Gizmo's audio tab.")
             self._caption_audio_banner.pack(anchor=tk.W, pady=(0, 8),
@@ -10506,6 +10552,60 @@ class LoRATrainerGUI:
         folder = filedialog.askdirectory()
         if folder:
             self.image_folder_var.set(folder)
+
+    def _refresh_song_caption_card(self):
+        """Show the Caption Every Song card when the family declares song_captions (its example words)."""
+        outer = getattr(self, "_song_caption_outer", None)
+        if outer is None:
+            return
+        d = self._family_desc()
+        example = getattr(d, "song_captions", "") if d is not None else ""
+        if example:
+            self._song_caption_example.configure(text=example)
+            if not outer.winfo_manager():
+                outer.pack(fill=tk.X, padx=36, pady=(0, 16), before=self._caption_actions_outer)
+            self.master.after(50, self._song_caption_example_refresh)
+        else:
+            outer.pack_forget()
+
+    def _caption_every_song(self):
+        """Write "<trigger>, <common words>" beside every song in the training folder - only songs without a
+        caption unless Overwrite is ticked."""
+        folder = self.image_folder_var.get()
+        if not folder or not os.path.isdir(folder):
+            messagebox.showerror("Caption Every Song", "Pick the song folder on the Start tab first.")
+            return
+        trigger = self.caption_trigger_var.get().strip().rstrip(",")
+        words = " ".join(self.song_caption_words_var.get().split()).strip(", ")
+        caption = ", ".join(p for p in (trigger, words) if p)
+        if not caption:
+            messagebox.showerror("Caption Every Song", "Enter a trigger word or the common words first.")
+            return
+        overwrite = self.overwrite_captions_var.get()
+        songs = sorted(f for f in os.listdir(folder)
+                       if os.path.splitext(f)[1].lower() in self.TRAINING_AUDIO_EXTENSIONS
+                       and os.path.isfile(os.path.join(folder, f)))
+        if not songs:
+            messagebox.showinfo("Caption Every Song", "No songs (wav, mp3, flac, m4a) in the training folder.")
+            return
+        self.caption_log.configure(state="normal")
+        self.caption_log.delete(1.0, tk.END)
+        written = skipped = 0
+        for name in songs:
+            path = os.path.join(folder, os.path.splitext(name)[0] + ".txt")
+            if os.path.exists(path) and not overwrite:
+                self.caption_log.insert(tk.END, f"⊘ Skipped (has a caption): {name}\n")
+                skipped += 1
+                continue
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(caption)
+                self.caption_log.insert(tk.END, f"✓ {os.path.basename(path)}: {caption}\n")
+                written += 1
+            except OSError as e:
+                self.caption_log.insert(tk.END, f"✗ {name}: {e}\n")
+        self.caption_log.insert(tk.END, f"\n{written} written, {skipped} skipped\n")
+        self.caption_log.see(tk.END)
 
     def generate_captions(self):
         """Generate caption files for all images in the selected folder"""

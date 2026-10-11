@@ -8,12 +8,17 @@ Put the songs in one folder, each with a caption file beside it:
 
 | File | What it holds |
 |---|---|
-| `song.wav` (or .mp3, .flac, .ogg) | The audio. Songs over 4 minutes are cut to the first 4. |
+| `song.wav` (or .mp3, .flac, .m4a) | The audio. Songs over 4 minutes are cut to the first 4. |
 | `song.txt` | The caption: a trigger word, then the style, e.g. `fzgchip, chiptune, 8-bit, instrumental, square wave lead, arpeggios` |
 | `song.lyrics.txt` (optional) | The lyrics. Leave it out for an instrumental. |
 | `song.json` (optional) | `bpm`, `timesignature`, `keyscale`, `language`. |
 
 Pick songs that share one sound: one artist, one album or one tight genre. The model learns what the songs have in common.
+
+Two tools help:
+
+- **Caption Every Song** on the Captions tab writes the same caption beside every song: your trigger word, then the common words you type (genre, instruments, mood, vocals). Songs that already have a caption are left alone unless Overwrite is ticked.
+- **Gizmo's Music tab** cuts songs into sections, or keeps them whole. Drag the section's ends on the waveform (10 seconds to 4 minutes) and listen to it. Each section exports as a 48 kHz stereo wav with its caption, its lyrics and the song's `.json`. The cuts get a short fade-in and fade-out. Lengths can be mixed in one dataset; longer sections carry more of each song.
 
 ## A tested recipe
 

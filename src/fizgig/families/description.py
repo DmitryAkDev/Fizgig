@@ -356,6 +356,9 @@ class FamilyDescription:
     # the Training tab's long-run hint: (epochs, title, text) - a standard LoRA set to at least `epochs` epochs gets a
     # tip card beside Max Epochs (a playback tip: no button). () = none
     long_run_hint: tuple = ()
+    # the Captions tab's "Caption Every Song" card: every audio file gets "<trigger>, <common words>", no AI. The
+    # string is the greyed example shown in the empty Common words box. "" = no card
+    song_captions: str = ""
     # training previews may render on the preview checkpoint (the preview_dit file, sampled with
     # preview_checkpoint_sampling) instead of the training model - Klein's Distilled previews. The driver brings the
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)
