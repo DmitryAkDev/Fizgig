@@ -156,7 +156,8 @@ OPTIONS = (
         ("Still (1 frame)", "preview_frames=1"),
         ("22 frames with sound (~1s)", "preview_frames=22 preview_audio=1"),
         ("56 frames with sound (~2.3s)", "preview_frames=56 preview_audio=1"),
-        ("124 frames with sound (~5s)", "preview_frames=124 preview_audio=1")), setting="SAMPLE_FRAMES"),
+        ("124 frames with sound (~5s)", "preview_frames=124 preview_audio=1")), setting="SAMPLE_FRAMES",
+        default="56 frames with sound (~2.3s)"),
     FamilyOption("H3_FT_SCOPE", "Train on", choices=(("All media", ""), ("Photos only", "ft_scope=photo")),
                  hint="A dataset FILTER, not a mode. All media fine-tunes on everything in the folder - photos, clips, "
                       "voice. Photos only skips the clips and voice of a mixed folder (with Training mode on Default "
