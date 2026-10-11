@@ -2579,6 +2579,8 @@ class LoRATrainerGUI:
 
         # Surface style for cards/panels
         style.configure("Surface.TFrame", background=COLORS["bg_surface"])
+        style.configure("Surface.TLabel", background=COLORS["bg_surface"], foreground=COLORS["text_primary"],
+                        font=(FONT_FAMILY, 10))
 
         # Green render-progress bar (Repair Studio) — matches the Start button's green.
         style.configure("Green.Horizontal.TProgressbar",
@@ -18777,6 +18779,8 @@ class LoRATrainerGUI:
         )
         setup_card.columnconfigure(1, weight=1)
         self._build_repair_top_controls(setup_card)
+        self._repair_setup_card = setup_card
+        self._surface_children(setup_card)
 
         # Profile-match info panel (populated when a matching Profiler sidecar
         # exists for the primary's content hash). Packs directly into outer so
@@ -18960,6 +18964,8 @@ class LoRATrainerGUI:
         desc = self._repair_desc(fam)
         self._refresh_repair_negative_row()
         self._repair_strength_defaults(desc)
+        if getattr(self, "_repair_setup_card", None) is not None:      # rows a family builds later
+            self.master.after_idle(lambda: self._surface_children(self._repair_setup_card))
         video = self._wb_video(fam)
         self._repair_audio_ui(desc)
         krea2 = desc is not None and not desc.category_masters
@@ -19480,6 +19486,20 @@ class LoRATrainerGUI:
         photo = ImageTk.PhotoImage(img)
         self.repair_thumbnails[which] = photo  # keep ref so Tk doesn't GC it
         label.configure(image=photo, text="")
+
+    def _surface_children(self, root):
+        """Give every plain ttk Frame / Label inside a card the card's surface colour: the default styles paint
+        bg_deep, which showed as dark patches round radio rows, button rows and empty spacer rows."""
+        for w in root.winfo_children():
+            try:
+                cls = w.winfo_class()
+                if cls == "TFrame" and not str(w.cget("style")):
+                    w.configure(style="Surface.TFrame")
+                elif cls == "TLabel" and not str(w.cget("style")):
+                    w.configure(style="Surface.TLabel")
+            except tk.TclError:
+                pass
+            self._surface_children(w)
 
     def _build_repair_top_controls(self, parent):
         r = 0
