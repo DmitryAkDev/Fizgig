@@ -8,7 +8,7 @@ Put the songs in one folder, each with a caption file beside it:
 
 | File | What it holds |
 |---|---|
-| `song.wav` (or .mp3, .flac, .m4a) | The audio. Songs over 4 minutes are cut to the first 4. |
+| `song.wav` (or .mp3, .flac, .m4a) | The audio: a whole song of up to 4 minutes, no cutting needed. A longer song trains on its first 4 minutes. |
 | `song.txt` | The caption: a trigger word, then the style, e.g. `fzgchip, chiptune, 8-bit, instrumental, square wave lead, arpeggios` |
 | `song.lyrics.txt` (optional) | The lyrics. Leave it out for an instrumental. |
 | `song.json` (optional) | `bpm`, `timesignature`, `keyscale`, `language`. |
