@@ -19538,9 +19538,12 @@ class LoRATrainerGUI:
         self._repair_lora_entry["primary"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         primary_btn_frame = ttk.Frame(parent)
         primary_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        # both rows' buttons sit on one 4-column grid - Browse | at strength | Unload Donor | Model EQ Mode - with
+        # matching column widths (_repair_align_lora_rows), so the strength boxes and Model EQ buttons line up
+        self._repair_lora_btn_frame = {"primary": primary_btn_frame}
         self._repair_lora_browse = {"primary": ttk.Button(primary_btn_frame, text="Browse",
                                                           command=self._browse_and_load_primary)}
-        self._repair_lora_browse["primary"].pack(side=tk.LEFT)
+        self._repair_lora_browse["primary"].grid(row=0, column=0, sticky=tk.W)
         # Model EQ Mode: a toggle, not a third way to browse - on, the row holds the Model EQ LoRA (Preferences) at
         # strength 1 and its path, Browse and strength lock; off, the row is the user's own LoRA again
         self._repair_eq_mode = {"primary": False, "donor": False}
@@ -19569,19 +19572,22 @@ class LoRATrainerGUI:
         self._repair_lora_entry["donor"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         donor_btn_frame = ttk.Frame(parent)
         donor_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
+        self._repair_lora_btn_frame["donor"] = donor_btn_frame
         self._repair_lora_browse["donor"] = ttk.Button(donor_btn_frame, text="Browse",
                                                        command=self._browse_and_load_donor)
-        self._repair_lora_browse["donor"].pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_lora_browse["donor"].grid(row=0, column=0, sticky=tk.W)
         self._repair_eq_btn_d = ttk.Button(donor_btn_frame, text="Model EQ Mode",
                                            command=lambda: self._repair_toggle_eq_mode("donor"))
         ToolTip(self._repair_eq_btn_d, "Model EQ Mode: the donor becomes the model's own weights (the Model EQ LoRA set "
                                        "in Preferences), so the donor sliders EQ the model under your primary LoRA - "
                                        "1.0 = the stock model. Click again to drop it.")
-        ttk.Button(donor_btn_frame, text="Unload Donor",
-                   command=self._unload_repair_donor).pack(side=tk.LEFT)
+        self._repair_unload_donor_btn = ttk.Button(donor_btn_frame, text="Unload Donor",
+                                                   command=self._unload_repair_donor)
+        self._repair_unload_donor_btn.grid(row=0, column=2, sticky=tk.W, padx=(12, 0))
         self.repair_donor_scale_var = tk.StringVar(value="1.0")
         self._repair_lora_scale["donor"] = self._build_repair_scale_control(
             donor_btn_frame, self.repair_donor_scale_var, "the donor")
+        self._repair_align_lora_rows()
         # a path set from anywhere else (Browse is locked, but Load Setup, Royale, typing) leaves Model EQ Mode
         for _role, _v in (("primary", self.repair_primary_var), ("donor", self.repair_donor_var)):
             _v.trace_add("write", lambda *_a, _r=_role: self._repair_eq_mode_path_changed(_r))
@@ -20752,13 +20758,14 @@ class LoRATrainerGUI:
         slider stays relative to it."""
         # the label and box sit in one frame: a family whose LoRAs default below strength 1 (description
         # repair_default_strength, ACE-Step's 0.5) gets a thin orange ring round it (_repair_strength_defaults)
-        box = tk.Frame(parent, bg=COLORS["bg_surface"], highlightthickness=0, highlightbackground=COLORS["orange"],
-                       highlightcolor=COLORS["orange"])
-        lbl = ttk.Label(box, text="at strength")
+        box = tk.Frame(parent, bg=COLORS["bg_surface"])            # its 1 px edge is the ring
+        inner = tk.Frame(box, bg=COLORS["bg_surface"])
+        inner.pack(padx=1, pady=1)
+        lbl = ttk.Label(inner, text="at strength", style="Surface.TLabel")
         lbl.pack(side=tk.LEFT, padx=(6, 4), pady=2)
         # a plain themed Entry, like the Steps / Turbo boxes — ttk.Spinbox has no dark style
         # in this app (white on white, Peter 4 Sep)
-        spin = ttk.Entry(box, textvariable=var, width=5)
+        spin = ttk.Entry(inner, textvariable=var, width=5)
         spin.pack(side=tk.LEFT, padx=(0, 6), pady=2)
         spin.bind("<Return>", lambda e: self._on_repair_scale_changed())
         spin.bind("<FocusOut>", lambda e: self._on_repair_scale_changed())
@@ -20770,7 +20777,6 @@ class LoRATrainerGUI:
                       "1.0 is that block at this strength, 0.5 is half of it. The saved file "
                       "keeps its original scale — use it at this strength, and it looks exactly "
                       "like the preview.")
-        box._fizgig_after = parent.winfo_children()[0]      # sits right after the row's Browse button
         self._repair_scale_widgets.append((box, spin))
         return spin
 
@@ -20806,9 +20812,9 @@ class LoRATrainerGUI:
     def _repair_scale_controls(self, show):
         for box, _spin in getattr(self, "_repair_scale_widgets", ()):
             if show:
-                box.pack(side=tk.LEFT, padx=(10, 4), after=box._fizgig_after)   # (re)placed after Browse every time
+                box.grid(row=0, column=1, sticky=tk.W, padx=(12, 0))
             else:
-                box.pack_forget()
+                box.grid_remove()
 
     def _repair_strength_defaults(self, desc):
         """On a family switch: the primary and donor strengths start at the family's default (description
@@ -20816,7 +20822,7 @@ class LoRATrainerGUI:
         d = float(getattr(desc, "repair_default_strength", 1.0) if desc is not None else 1.0)
         ring = 1 if abs(d - 1.0) > 1e-9 else 0
         for box, _spin in getattr(self, "_repair_scale_widgets", ()):
-            box.configure(highlightthickness=ring)
+            box.configure(bg=COLORS["orange"] if ring else COLORS["bg_surface"])
         key = desc.key if desc is not None else ""
         if getattr(self, "_repair_strength_family", None) == key:
             return
@@ -24630,14 +24636,32 @@ class LoRATrainerGUI:
                     self._repair_set_eq_mode(role, False, restore=False)
         # a gap before the button and a little space after the donor's: the path boxes give up about a Browse
         # button's width, the buttons move left into it, and Model EQ Mode sits apart from them
-        for b, pad in ((getattr(self, "_repair_eq_btn_p", None), (40, 0)),
-                       (getattr(self, "_repair_eq_btn_d", None), (40, 70))):
+        for b in (getattr(self, "_repair_eq_btn_p", None), getattr(self, "_repair_eq_btn_d", None)):
             if b is None:
                 continue
-            if on and not b.winfo_manager():
-                b.pack(side=tk.LEFT, padx=pad)
-            elif not on and b.winfo_manager():
-                b.pack_forget()
+            if on:
+                b.grid(row=0, column=3, sticky=tk.W, padx=(12, 0))
+            else:
+                b.grid_remove()
+
+    def _repair_align_lora_rows(self):
+        """The primary and donor button rows share column widths, so their strength boxes and Model EQ Mode buttons
+        line up (the primary's Unload column stays empty)."""
+        frames = getattr(self, "_repair_lora_btn_frame", {})
+        if len(frames) < 2:
+            return
+        cols = {}
+        for f in frames.values():
+            for w in f.grid_slaves():
+                c = int(w.grid_info().get("column", 0))
+                cols[c] = max(cols.get(c, 0), w.winfo_reqwidth() + (12 if c else 0))
+        for c, wpx in ((1, self._repair_lora_scale["donor"].master.master.winfo_reqwidth() + 12),
+                       (2, self._repair_unload_donor_btn.winfo_reqwidth() + 12),
+                       (3, self._repair_eq_btn_d.winfo_reqwidth() + 12)):
+            cols[c] = max(cols.get(c, 0), wpx)
+        for f in frames.values():
+            for c, wpx in cols.items():
+                f.columnconfigure(c, minsize=wpx)
 
     def _repair_toggle_eq_mode(self, role):
         self._repair_set_eq_mode(role, not self._repair_eq_mode.get(role, False))
