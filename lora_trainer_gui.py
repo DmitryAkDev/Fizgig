@@ -11832,6 +11832,52 @@ class LoRATrainerGUI:
                 handler_self.end_headers()
                 handler_self.wfile.write(body)
 
+            # Byte ranges (Peter, 11 Oct: songs could not be dragged along): a browser seeks a song or clip by asking
+            # for "Range: bytes=N-", and the stock handler always sent the whole file from the start, so the player
+            # could only play from the top. A range is answered with 206 and just those bytes.
+            def send_head(handler_self):
+                handler_self._range = None
+                rng = handler_self.headers.get("Range", "")
+                path = handler_self.translate_path(handler_self.path)
+                m = re.match(r"bytes=(\d*)-(\d*)$", rng.strip()) if rng else None
+                if not m or not os.path.isfile(path) or not (m.group(1) or m.group(2)):
+                    return super().send_head()
+                size = os.path.getsize(path)
+                if m.group(1):
+                    start = int(m.group(1))
+                    end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                else:                                   # "bytes=-N": the last N bytes
+                    start, end = max(0, size - int(m.group(2))), size - 1
+                if start >= size or start > end:
+                    handler_self.send_response(416)
+                    handler_self.send_header("Content-Range", f"bytes */{size}")
+                    handler_self.end_headers()
+                    return None
+                f = open(path, "rb")
+                f.seek(start)
+                handler_self._range = end - start + 1
+                handler_self.send_response(206)
+                handler_self.send_header("Content-Type", handler_self.guess_type(path))
+                handler_self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                handler_self.send_header("Content-Length", str(end - start + 1))
+                handler_self.end_headers()
+                return f
+
+            def copyfile(handler_self, source, outputfile):
+                left = getattr(handler_self, "_range", None)
+                if left is None:
+                    return super().copyfile(source, outputfile)
+                while left > 0:
+                    chunk = source.read(min(left, 1 << 16))
+                    if not chunk:
+                        break
+                    outputfile.write(chunk)
+                    left -= len(chunk)
+
+            def end_headers(handler_self):
+                handler_self.send_header("Accept-Ranges", "bytes")    # tells the player it may seek
+                super().end_headers()
+
             def log_message(handler_self, format, *args):
                 pass  # Suppress logging
 
