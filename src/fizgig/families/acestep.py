@@ -98,6 +98,7 @@ ACESTEP15 = FamilyDescription(
           ("layer_25", -2.129), ("layer_26", -1.65), ("layer_27", -1.5))),
     ),
     repair_size=30,                   # an audio family's Res is the song length in seconds
+    repair_default_strength=0.5,      # long-run LoRAs are played at about half strength (the long-run hint)
     ema_default="0.98",               # Peter, 11 Oct 2026: the 800-epoch Official run with EMA 0.98 was far better
     ema_short_run=True,
     # Peter, 11 Oct 2026 (chiptune, Official preset): epoch 740 at strength 1.0 played one training song on every seed;

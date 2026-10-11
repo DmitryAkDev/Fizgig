@@ -98,6 +98,7 @@ COLORS = {
 
     "success": "#10B981",        # Success states
     "warning": "#F59E0B",        # Warnings
+    "orange": "#F97316",         # Repair Studio's ring round a strength box whose default is not 1
     "error": "#EF4444",          # Errors
 }
 
@@ -18959,6 +18960,7 @@ class LoRATrainerGUI:
         fam = self.repair_family_var.get()
         desc = self._repair_desc(fam)
         self._refresh_repair_negative_row()
+        self._repair_strength_defaults(desc)
         video = self._wb_video(fam)
         self._repair_audio_ui(desc)
         krea2 = desc is not None and not desc.category_masters
@@ -19513,20 +19515,27 @@ class LoRATrainerGUI:
         # Primary LoRA
         ttk.Label(parent, text="Primary LoRA:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_primary_var = tk.StringVar()
-        ttk.Entry(parent, textvariable=self.repair_primary_var).grid(
-            row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self._repair_lora_entry = {"primary": ttk.Entry(parent, textvariable=self.repair_primary_var)}
+        self._repair_lora_entry["primary"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         primary_btn_frame = ttk.Frame(parent)
         primary_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        ttk.Button(primary_btn_frame, text="Browse",
-                   command=self._browse_and_load_primary).pack(side=tk.LEFT)
-        self._repair_eq_btn_p = ttk.Button(primary_btn_frame, text="Model EQ",
-                                           command=lambda: self._repair_use_model_eq("primary"))
-        ToolTip(self._repair_eq_btn_p, "The model's own weights as the primary (Preferences: Model EQ LoRA): the block "
-                                       "sliders EQ the stock model, 1.0 = unchanged.")
+        self._repair_lora_browse = {"primary": ttk.Button(primary_btn_frame, text="Browse",
+                                                          command=self._browse_and_load_primary)}
+        self._repair_lora_browse["primary"].pack(side=tk.LEFT)
+        # Model EQ Mode: a toggle, not a third way to browse - on, the row holds the Model EQ LoRA (Preferences) at
+        # strength 1 and its path, Browse and strength lock; off, the row is the user's own LoRA again
+        self._repair_eq_mode = {"primary": False, "donor": False}
+        self._repair_eq_saved = {}
+        self._repair_eq_setting = False
+        self._repair_eq_btn_p = ttk.Button(primary_btn_frame, text="Model EQ Mode",
+                                           command=lambda: self._repair_toggle_eq_mode("primary"))
+        ToolTip(self._repair_eq_btn_p, "Model EQ Mode: the primary becomes the model's own weights (the Model EQ LoRA "
+                                       "set in Preferences), so the block sliders EQ the stock model - 1.0 = unchanged. "
+                                       "Click again to go back to your own LoRA.")
         self.repair_primary_scale_var = tk.StringVar(value="1.0")
         self._repair_scale_widgets = []
-        self._build_repair_scale_control(primary_btn_frame, self.repair_primary_scale_var,
-                                         "the primary")
+        self._repair_lora_scale = {"primary": self._build_repair_scale_control(
+            primary_btn_frame, self.repair_primary_scale_var, "the primary")}
         r += 1
 
         # Epoch blend (standard-layer families): the primary's whole run mixed as an EMA, chosen by ear
@@ -19537,21 +19546,26 @@ class LoRATrainerGUI:
         ttk.Label(parent, text="Donor LoRA (optional):").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_donor_var = tk.StringVar()
         self.repair_donor_var.trace_add("write", self._on_repair_donor_path_edited)
-        ttk.Entry(parent, textvariable=self.repair_donor_var).grid(
-            row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self._repair_lora_entry["donor"] = ttk.Entry(parent, textvariable=self.repair_donor_var)
+        self._repair_lora_entry["donor"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         donor_btn_frame = ttk.Frame(parent)
         donor_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        ttk.Button(donor_btn_frame, text="Browse",
-                   command=self._browse_and_load_donor).pack(side=tk.LEFT, padx=(0, 4))
-        self._repair_eq_btn_d = ttk.Button(donor_btn_frame, text="Model EQ",
-                                           command=lambda: self._repair_use_model_eq("donor"))
-        ToolTip(self._repair_eq_btn_d, "The model's own weights as the donor: EQ the model under your primary LoRA "
-                                       "(donor sliders at 1.0 = the stock model).")
+        self._repair_lora_browse["donor"] = ttk.Button(donor_btn_frame, text="Browse",
+                                                       command=self._browse_and_load_donor)
+        self._repair_lora_browse["donor"].pack(side=tk.LEFT, padx=(0, 4))
+        self._repair_eq_btn_d = ttk.Button(donor_btn_frame, text="Model EQ Mode",
+                                           command=lambda: self._repair_toggle_eq_mode("donor"))
+        ToolTip(self._repair_eq_btn_d, "Model EQ Mode: the donor becomes the model's own weights (the Model EQ LoRA set "
+                                       "in Preferences), so the donor sliders EQ the model under your primary LoRA - "
+                                       "1.0 = the stock model. Click again to drop it.")
         ttk.Button(donor_btn_frame, text="Unload Donor",
                    command=self._unload_repair_donor).pack(side=tk.LEFT)
         self.repair_donor_scale_var = tk.StringVar(value="1.0")
-        self._build_repair_scale_control(donor_btn_frame, self.repair_donor_scale_var,
-                                         "the donor")
+        self._repair_lora_scale["donor"] = self._build_repair_scale_control(
+            donor_btn_frame, self.repair_donor_scale_var, "the donor")
+        # a path set from anywhere else (Browse is locked, but Load Setup, Royale, typing) leaves Model EQ Mode
+        for _role, _v in (("primary", self.repair_primary_var), ("donor", self.repair_donor_var)):
+            _v.trace_add("write", lambda *_a, _r=_role: self._repair_eq_mode_path_changed(_r))
         r += 1
         r = self._build_repair_blend_row(parent, r, "donor")     # the donor's own run, from its own folder
 
@@ -20717,10 +20731,16 @@ class LoRATrainerGUI:
         """'at strength' box after a LoRA's Browse (MiniMax H3 and Krea 2 — shown / hidden by
         _apply_repair_family_ui). The strength the LoRA is meant to be used at; every block
         slider stays relative to it."""
-        lbl = ttk.Label(parent, text="at strength")
+        # the label and box sit in one frame: a family whose LoRAs default below strength 1 (description
+        # repair_default_strength, ACE-Step's 0.5) gets a thin orange ring round it (_repair_strength_defaults)
+        box = tk.Frame(parent, bg=COLORS["bg_surface"], highlightthickness=0, highlightbackground=COLORS["orange"],
+                       highlightcolor=COLORS["orange"])
+        lbl = ttk.Label(box, text="at strength")
+        lbl.pack(side=tk.LEFT, padx=(6, 4), pady=2)
         # a plain themed Entry, like the Steps / Turbo boxes — ttk.Spinbox has no dark style
         # in this app (white on white, Peter 4 Sep)
-        spin = ttk.Entry(parent, textvariable=var, width=5)
+        spin = ttk.Entry(box, textvariable=var, width=5)
+        spin.pack(side=tk.LEFT, padx=(0, 6), pady=2)
         spin.bind("<Return>", lambda e: self._on_repair_scale_changed())
         spin.bind("<FocusOut>", lambda e: self._on_repair_scale_changed())
         # Typing applies too, after a short pause: Enter / focus-out alone meant a new strength did nothing until
@@ -20731,7 +20751,8 @@ class LoRATrainerGUI:
                       "1.0 is that block at this strength, 0.5 is half of it. The saved file "
                       "keeps its original scale — use it at this strength, and it looks exactly "
                       "like the preview.")
-        self._repair_scale_widgets.append((lbl, spin))
+        self._repair_scale_widgets.append((box, spin))
+        return spin
 
     def _repair_state_for_explorer(self):
         """The Repair state handed to the Explorer: the block sliders plus the primary's load
@@ -20763,14 +20784,27 @@ class LoRATrainerGUI:
             pass
 
     def _repair_scale_controls(self, show):
-        for lbl, spin in getattr(self, "_repair_scale_widgets", ()):
+        for box, _spin in getattr(self, "_repair_scale_widgets", ()):
             if show:
-                if not lbl.winfo_manager():
-                    lbl.pack(side=tk.LEFT, padx=(10, 4))
-                    spin.pack(side=tk.LEFT)
+                if not box.winfo_manager():
+                    box.pack(side=tk.LEFT, padx=(10, 4))
             else:
-                lbl.pack_forget()
-                spin.pack_forget()
+                box.pack_forget()
+
+    def _repair_strength_defaults(self, desc):
+        """On a family switch: the primary and donor strengths start at the family's default (description
+        repair_default_strength - ACE-Step 0.5), and a default other than 1 rings both boxes in thin orange."""
+        d = float(getattr(desc, "repair_default_strength", 1.0) if desc is not None else 1.0)
+        ring = 1 if abs(d - 1.0) > 1e-9 else 0
+        for box, _spin in getattr(self, "_repair_scale_widgets", ()):
+            box.configure(highlightthickness=ring)
+        key = desc.key if desc is not None else ""
+        if getattr(self, "_repair_strength_family", None) == key:
+            return
+        self._repair_strength_family = key
+        for role, var in (("primary", self.repair_primary_scale_var), ("donor", self.repair_donor_scale_var)):
+            if not getattr(self, "_repair_eq_mode", {}).get(role):
+                var.set(f"{d:g}")
 
     def _schedule_repair_scale_change(self):
         """Debounced strength-box typing: apply 0.6 s after the last keystroke, skipping a half-typed value."""
@@ -24532,13 +24566,80 @@ class LoRATrainerGUI:
     def _repair_model_eq_buttons(self):
         """The Model EQ buttons beside Browse, for a family whose Model EQ LoRA is set in Preferences."""
         on = bool(self._repair_model_eq_path()) and not self._repair_is_video()
-        for b, pad in ((getattr(self, "_repair_eq_btn_p", None), (4, 0)), (getattr(self, "_repair_eq_btn_d", None), (0, 4))):
+        if not on:
+            for role in ("primary", "donor"):
+                if getattr(self, "_repair_eq_mode", {}).get(role):
+                    self._repair_set_eq_mode(role, False, restore=False)
+        # a gap before the button and a little space after the donor's: the path boxes give up about a Browse
+        # button's width, the buttons move left into it, and Model EQ Mode sits apart from them
+        for b, pad in ((getattr(self, "_repair_eq_btn_p", None), (40, 0)),
+                       (getattr(self, "_repair_eq_btn_d", None), (40, 70))):
             if b is None:
                 continue
             if on and not b.winfo_manager():
                 b.pack(side=tk.LEFT, padx=pad)
             elif not on and b.winfo_manager():
                 b.pack_forget()
+
+    def _repair_toggle_eq_mode(self, role):
+        self._repair_set_eq_mode(role, not self._repair_eq_mode.get(role, False))
+
+    def _repair_set_eq_mode(self, role, on, restore=True):
+        """Model EQ Mode on: the row loads the Model EQ LoRA at strength 1 and locks its path, Browse and strength
+        (the button highlighted). Off: unlocked, and (restore) the LoRA and strength the row had before come back -
+        the donor row simply drops the Model EQ."""
+        var = self.repair_primary_var if role == "primary" else self.repair_donor_var
+        svar = self.repair_primary_scale_var if role == "primary" else self.repair_donor_scale_var
+        btn = self._repair_eq_btn_p if role == "primary" else self._repair_eq_btn_d
+        if on:
+            if not self._repair_model_eq_path():
+                self.repair_status_var.set("Set the Model EQ LoRA in Preferences first.")
+                return
+            self._repair_eq_saved[role] = (var.get(), svar.get())
+            self._repair_eq_mode[role] = True
+            self._repair_eq_setting = True
+            try:
+                svar.set("1")
+                self._repair_use_model_eq(role)
+            finally:
+                self._repair_eq_setting = False
+        else:
+            self._repair_eq_mode[role] = False
+        for w in (self._repair_lora_entry[role], self._repair_lora_browse[role], self._repair_lora_scale[role]):
+            w.state(["disabled"] if on else ["!disabled"])
+        btn.configure(style="Primary.TButton" if on else "TButton")
+        if on or not restore:
+            return
+        _d = f"{float(getattr(self._repair_desc(), 'repair_default_strength', 1.0)):g}"
+        prev, prev_scale = self._repair_eq_saved.pop(role, ("", _d))
+        self._repair_eq_setting = True
+        try:
+            svar.set(prev_scale or _d)
+            if role == "primary":
+                if prev and os.path.exists(prev):
+                    self._browse_and_load_primary(path=prev)
+                else:
+                    var.set("")
+                self.repair_status_var.set("Model EQ Mode off: the primary is your own LoRA again.")
+            else:
+                self._unload_repair_donor()
+                var.set("")
+                if prev and os.path.exists(prev):
+                    self._browse_and_load_donor(path=prev)
+        finally:
+            self._repair_eq_setting = False
+
+    def _repair_eq_mode_path_changed(self, role):
+        """A row in Model EQ Mode whose path is set to anything but the Model EQ LoRA (Load Setup, Royale) leaves the
+        mode: unlocked, the new path kept."""
+        if self._repair_eq_setting or not getattr(self, "_repair_eq_mode", {}).get(role):
+            return
+        var = self.repair_primary_var if role == "primary" else self.repair_donor_var
+        eq = self._repair_model_eq_path()
+        if eq and os.path.normcase(os.path.abspath(var.get().strip() or ".")) == os.path.normcase(os.path.abspath(eq)):
+            return
+        self._repair_eq_saved.pop(role, None)
+        self._repair_set_eq_mode(role, False, restore=False)
 
     def _repair_use_model_eq(self, role):
         path = self._repair_model_eq_path()
