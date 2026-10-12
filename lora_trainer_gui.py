@@ -15488,8 +15488,8 @@ class LoRATrainerGUI:
                                      command=lambda: self._explorer_cycle_seed())
                 seed_btn.place(relx=1.0, x=-4, y=4, anchor="ne")
                 self._explorer_gallery_labels.append(lbl)
-        self._explorer_gallery_frame.columnconfigure(0, weight=1)
-        self._explorer_gallery_frame.columnconfigure(1, weight=1)
+        self._explorer_gallery_frame.columnconfigure(0, weight=1, uniform="explorer_variant")
+        self._explorer_gallery_frame.columnconfigure(1, weight=1, uniform="explorer_variant")
 
         # Apply the persisted family's layout (its reference row, the Samples-tab note).
         self._apply_explorer_family_ui()
@@ -15893,10 +15893,10 @@ class LoRATrainerGUI:
         """Display a PIL image in gallery slot idx (0-3)."""
         from PIL import ImageTk
         lbl = self._explorer_gallery_labels[idx]
-        parent = lbl.master
-        w = parent.winfo_width()
-        if w < 10:
-            w = 256
+        # every variant the same size: half the gallery's width (less the cell padding and border), not the width of
+        # its own cell - an image in a cell widens it, so each variant measured a different cell and drew bigger
+        fw = self._explorer_gallery_frame.winfo_width()
+        w = (fw - 2 * 12) // 2 - 4 if fw > 50 else 256
         resized = pil_img.copy()
         resized.thumbnail((w, w))
         tk_img = ImageTk.PhotoImage(resized)
