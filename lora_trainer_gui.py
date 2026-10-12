@@ -17481,7 +17481,7 @@ class LoRATrainerGUI:
         _port_entry = ttk.Entry(web_card, textvariable=_port_var, width=8)
         _port_entry.grid(row=0, column=1, sticky=tk.W, pady=4)
         _port_hint = tk.Label(web_card, text="Used the next time the web UI starts. A pod always uses 8081.",
-                              font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"])
+                              font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"])
         _port_hint.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
         def _commit_port(_e=None):
@@ -17489,7 +17489,7 @@ class LoRATrainerGUI:
             if v.isdigit() and 1024 <= int(v) <= 65535:
                 self.prefs_vars["web_port"].set(str(int(v)))
                 _port_hint.configure(text="Used the next time the web UI starts. A pod always uses 8081.",
-                                     fg=COLORS["text_muted"])
+                                     fg=COLORS["text_explain"])
             else:
                 _port_var.set(self.prefs_vars["web_port"].get())
                 _port_hint.configure(text="A port is a number from 1024 to 65535.", fg=COLORS["warning"])
@@ -17508,7 +17508,7 @@ class LoRATrainerGUI:
         tk.Label(web_card, text="Empty: the web UI opens on this machine only. Set: other devices can open it too, "
                                 "after logging in with this password. Saved in prefs.json as plain text; used the "
                                 "next time the web UI starts.",
-                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,
+                 font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"], wraplength=640,
                  justify=tk.LEFT).grid(row=4, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
         # where to open it: this machine, other devices on the network (those need a password), or the pod's proxy
@@ -17537,7 +17537,7 @@ class LoRATrainerGUI:
                 lk.grid(row=i, column=1, sticky=tk.W, pady=2)
                 lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
                 if note:
-                    tk.Label(_links, text=note, font=(FONT_FAMILY, 9), fg=COLORS["text_muted"],
+                    tk.Label(_links, text=note, font=(FONT_FAMILY, 10), fg=COLORS["text_explain"],
                              bg=COLORS["bg_surface"]).grid(row=i, column=2, sticky=tk.W, padx=(10, 0), pady=2)
         _paint_links()
 
@@ -17566,7 +17566,7 @@ class LoRATrainerGUI:
                                 "That copy keeps running until you close its terminal.\n\n"
                                 "Training: this app can't see a run started in the web UI, and the web UI can't see "
                                 "one started here. Start only one training run at a time, or both will share the GPU.",
-                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,
+                 font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"], wraplength=640,
                  justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
         try:
             # a web UI already serving on the port (left running, or started by hand) is Fizgig's, not a clash
