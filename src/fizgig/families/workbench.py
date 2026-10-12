@@ -557,7 +557,7 @@ class WorkbenchEngine:
         while the encoder runs when both would not fit."""
         kind = self.reference_kind if ref else ""
         tag = ((ref, round(float(ref_mp), 4)) if kind == "vision" else
-               (ref, int(size[0]), int(size[1])) if kind == "edit" else ())
+               (ref, int(size[0]), int(size[1])) if kind == "edit" else ()) + tuple(self.driver.text_cache_key())
         need = [p for p in prompts if (p,) + tag not in self._prompt_cache]
         if need:
             te_gb = os.path.getsize(self.te_path) / 1024 ** 3 if os.path.exists(self.te_path) else 0.0

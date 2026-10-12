@@ -43,6 +43,9 @@ class ModelFile:
     alt_label: str = ""
     alt_note: str = ""
     gated: bool = False               # the repo needs an accepted licence + a Hugging Face token to download
+    # earlier versions of this file (names in models/): a pref still pointing at one is moved to this file by the
+    # downloads (fetch_models) and the updater, where any other file there is the user's own choice and kept
+    replaces: tuple = ()
     # the download button fetches it only with the section's optional tick (description.fetch_optional_label);
     # None = not required -> optional
     fetch_optional: Optional[bool] = None

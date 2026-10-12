@@ -90,7 +90,7 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | DiT (bf16) | [qwen_image_2.1_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_bf16.safetensors) | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks |
 | VAE | [Qwen-Image-2.1 → vae/diffusion_pytorch_model.safetensors](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/vae/diffusion_pytorch_model.safetensors) | `--vae` (cache step: `--model`) — Qwen 2.1's own VAE, not the Krea 2 / Qwen-Image one |
 | Text encoder `qwen3vl_8b_bf16.safetensors` | [Qwen-Image-2.1 → text_encoders](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/text_encoders/qwen3vl_8b_bf16.safetensors) | `--text_encoder` (cache step: `--model`); loaded 8-bit automatically on cards under ~20 GB free |
-| Fizgig training adapter *(recommended)* | [fizgig_qwen_image_2.1_training_adapter.safetensors](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) | `--training_adapter` |
+| Fizgig training adapter *(recommended)* | [fizgig_qwen_image_2.1_training_adapter_v2.safetensors](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) | `--training_adapter` |
 | Turbo LoRA | [qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors) | fast previews on the model being trained (`--speed_lora`) |
 | Turbo DiT (int8) | [qwen_image_2.1_turbo_int8_convrot.safetensors](https://huggingface.co/Comfy-Org/Qwen-Image-2.1/blob/main/diffusion_models/qwen_image_2.1_turbo_int8_convrot.safetensors) | the workbench tabs' previews; training previews with `--preview_checkpoint` |
 
@@ -444,7 +444,7 @@ python src/fizgig/families/train.py \
   --optimizer_type adamw8bit \
   --precision auto --blocks_to_swap -1 \
   --ema_decay 0.98 \
-  --training_adapter /models/fizgig_qwen_image_2.1_training_adapter.safetensors \
+  --training_adapter /models/fizgig_qwen_image_2.1_training_adapter_v2.safetensors \
   --log_per_image_loss \
   --save_state --save_state_on_train_end --keep_last_n_states 2 \
   --vae /models/qwen_image_2.1_vae_diffusers.safetensors \

@@ -308,6 +308,9 @@ class AceStepDriver(FamilyDriver):
                           caption_prompt(c, seconds, instruction=REPAINT_INSTRUCTION))
                 for c, ly in map(parse_prompt, captions)]
 
+    def text_cache_key(self):
+        return (self._preview_seconds(),)            # the caption says the length: 30 s and 60 s encode apart
+
     def _preview_seconds(self):
         return int(float(self.options.get("preview_seconds", 30)))
 
