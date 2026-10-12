@@ -48,10 +48,13 @@ def remove(path):
         pass
 
 
-def _pid_alive(pid) -> bool:
+def _pid_alive(pid, started=None) -> bool:
+    """That process is running - and, given its start time, is the same process (Windows reuses PIDs)."""
     try:
         import psutil
-        return bool(pid) and psutil.pid_exists(int(pid))
+        if not pid or not psutil.pid_exists(int(pid)):
+            return False
+        return started is None or abs(psutil.Process(int(pid)).create_time() - float(started)) < 1.0
     except Exception:
         return False
 
@@ -69,7 +72,7 @@ def desktop_state():
         return None
     if time.time() - float(d.get("heartbeat", 0) or 0) < FRESH_S:
         return d
-    if _pid_alive(d.get("trainer_pid")):
+    if _pid_alive(d.get("trainer_pid"), d.get("trainer_started")):
         return dict(d, unresponsive=True)
     return None
 

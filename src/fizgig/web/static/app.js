@@ -412,10 +412,9 @@ async function check() {
 }
 
 async function start(path) {
-  if (S.mode === "desktop") {                     // the desktop app's run: its own buttons do the work
-    const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
-    if (!cmd) return;
-    S.cmdSentAt = Date.now() / 1000;
+  const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
+  if (S.mode === "desktop" && cmd) {              // the desktop app's run: its own buttons do the work
+    S.ackBefore = (S.run.desktop && S.run.desktop.ack && S.run.desktop.ack.at) || 0;   // the PC's clock, not ours
     try { await api("/api/desktop", {cmd}); $("runStatus").textContent = "Sent to the desktop app…"; }
     catch (e) { $("runStatus").textContent = e.message; }
     return setTimeout(pollRun, 1200);
@@ -438,7 +437,7 @@ async function pollRun() {
   // the desktop app's run shows here whenever this page has none of its own going
   const deskBusy = d && (d.running || ["running", "pausing", "paused"].includes(d.state));
   // ...and a run it just finished stays on show (Finished / Failed / Stopped) until either side starts another
-  const deskDone = d && !deskBusy && d.last_result && !r.lora;
+  const deskDone = d && !deskBusy && d.last_result && d.last_result.at > (r.ended_at || 0);
   const mode = !live && (deskBusy || deskDone) ? "desktop" : "web";
   if (mode !== S.mode) switchConsole(mode);
   if (mode === "desktop") {
@@ -449,7 +448,7 @@ async function pollRun() {
     const when = deskDone ? " · " + new Date(d.last_result.at * 1000).toLocaleTimeString() : "";
     $("runStatus").textContent = `${label}: ${(deskDone ? d.last_result.lora : d.lora) || "(unnamed)"}` +
       (deskDone ? when : d.stage ? " · " + d.stage : "");
-    const ack = d.ack && S.cmdSentAt && d.ack.at >= S.cmdSentAt - 1 ? " " + d.ack.note : "";
+    const ack = d.ack && S.ackBefore !== undefined && d.ack.at > S.ackBefore ? " " + d.ack.note : "";
     $("runSource").textContent = (deskDone ?
       `The last run started in the desktop app (${d.family}) ended. Its previews and checkpoints are below; ` +
       "Start begins a new run here." :
@@ -686,6 +685,9 @@ function sortUpload(files) {
   }
   return {keep, video, other};
 }
+// what a file can't be called on every system, replaced the same way the server does for a zip (Act 1: Intro.wav ->
+// Act 1_ Intro.wav), so a song and its caption files still pair up
+const tidyName = (n) => n.replace(/[<>:"|?*\x00-\x1f]/g, "_").trim().replace(/[. ]+$/, "");
 // a dropped folder names the new one, unless a name is typed already
 function nameFromFolder(name) {
   const box = $("uploadName");
@@ -725,17 +727,18 @@ async function uploadFiles(picked) {
   if (!files.length) return say(["Nothing to upload: no pictures, .mp4 clips, songs, captions or zips in there."]
     .concat(notes).join(" "), true);
   let folder = "", saved = 0;
-  const skipped = [], failed = [], replaced = [];
+  const skipped = [], failed = [], replaced = [], badname = [];
   for (const [i, f] of [...files].entries()) {
     const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
     say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
     try {
-      const r = await sendFile(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(f.name)}`,
+      const r = await sendFile(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(tidyName(f.name))}`,
         f, (sent) => say(`Uploading ${i + 1} of ${files.length}: ${f.name}, ${mb(sent)} of ${mb(f.size)} MB` +
           (sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? " (unpacking…)" : "")));
       const d = r.data;
       if (!r.ok) { failed.push(d.error || f.name); continue; }
       folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped); replaced.push(...(d.replaced || []));
+      badname.push(...(d.badname || []));
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
   let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}. That is now the training folder.` : "Nothing was saved.";
@@ -743,6 +746,8 @@ async function uploadFiles(picked) {
   if (replaced.length) msg += ` Replaced files that were already there with the same name: ` +
     `${replaced.slice(0, 5).join(", ")}${replaced.length > 5 ? ", …" : ""}.`;
   if (notes.length) msg += " " + notes.join(" ");
+  if (badname.length) msg += ` Left out of the zip, as their names can't be stored here: ${badname.slice(0, 5).join(", ")}` +
+    `${badname.length > 5 ? ", …" : ""}. Rename them (no leading dot, no slashes) and upload them again.`;
   if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
   say(msg, !saved || failed.length);
   if (saved) {

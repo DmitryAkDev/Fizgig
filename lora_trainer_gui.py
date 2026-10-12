@@ -1342,6 +1342,7 @@ class LoRATrainerGUI:
         self.prefs = load_prefs()
         # Before ANY CUDA work: _auto_detect_blocks_to_swap and the workbench tools both build a
         # CUDA context, and the visible set is frozen the moment one exists.
+        self._cuda_env_from_user = os.environ.get("CUDA_VISIBLE_DEVICES", "")    # before the pref is applied
         self._cuda_device_env_locked = bool(
             os.environ.get("CUDA_VISIBLE_DEVICES")) and not str(
             self.prefs.get("cuda_device", "")).strip()
@@ -33545,6 +33546,19 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+    def _live_proc_started(self, proc):
+        """When the trainer process started (so the web UI can tell it from a later process given the same PID)."""
+        cache = getattr(self, "_live_started_cache", (None, None))
+        if cache[0] == proc.pid:
+            return cache[1]
+        try:
+            import psutil
+            t = psutil.Process(proc.pid).create_time()
+        except Exception:
+            t = None
+        self._live_started_cache = (proc.pid, t)
+        return t
+
     def _live_tick(self):
         """Every second: this app's run for the web UI (state, LoRA, output folder, progress), and any Pause / Stop /
         Resume the web UI sent, carried out by the same methods as this app's own buttons."""
@@ -33574,6 +33588,7 @@ class LoRATrainerGUI:
             self._live_was_busy = busy_now
             _live.write(_live.LIVE_DESKTOP, {
                 "running": running, "state": state, "trainer_pid": proc.pid if running else None,
+                "trainer_started": self._live_proc_started(proc) if running else None,
                 "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),
                 "lora": str(self.settings.get("LORA_NAME", "") or ""),
                 "output_dir": str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
@@ -33655,6 +33670,10 @@ class LoRATrainerGUI:
             pass
         import subprocess
         env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+        if not getattr(self, "_cuda_env_from_user", ""):
+            # CUDA_VISIBLE_DEVICES here came from this app's GPU setting, not from a person: the web UI reads that
+            # setting itself (and follows a change to it), so it must not see it as one set where Fizgig started
+            env.pop("CUDA_VISIBLE_DEVICES", None)
         kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
               if os.name == "nt" else {"start_new_session": True})
         try:

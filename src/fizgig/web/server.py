@@ -277,10 +277,11 @@ def _popen(cmd):
     priority on Windows, so the desktop stays smooth)."""
     env = os.environ.copy()
     env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-    env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")     # a GPU number means the same card as in nvidia-smi
     want = str(load_prefs().get("cuda_device") or "").strip()
     if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):  # one set where Fizgig was started wins, as the desktop
         env["CUDA_VISIBLE_DEVICES"] = want
+        if want.isdigit():
+            env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # a typed number means the card nvidia-smi numbers so
     kw = {}
     if os.name == "nt":
         kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -306,7 +307,7 @@ def _run_stages(stages, out_dir):
         except OSError as e:
             append_log(f"✖ {stage.name} could not start: {e}\n")
             with _lock:
-                _run.update(state="failed", proc=None)
+                _run.update(state="failed", proc=None, ended_at=time.time())
             return
         with _lock:
             _run["proc"] = proc
@@ -321,11 +322,11 @@ def _run_stages(stages, out_dir):
         if ret != 0:
             append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n")
             with _lock:
-                _run.update(state="failed", proc=None)
+                _run.update(state="failed", proc=None, ended_at=time.time())
             return
     paused = os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"]
     with _lock:
-        _run.update(state="paused" if paused else "completed", proc=None, stage="")
+        _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
     append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
 
 
@@ -335,6 +336,7 @@ def _stop():
         if proc is None or proc.poll() is not None:
             return False
         _run["state"] = "stopped"
+        _run["ended_at"] = time.time()
     if os.name == "nt":
         subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, **_NO_WINDOW)
     else:
@@ -356,6 +358,13 @@ def uploads_root() -> str:
     """Where uploaded folders go: the desktop's Preferences > Input Directories folder (a pod sets it to
     /workspace/datasets), else training_data/ inside Fizgig."""
     return pref_path(load_prefs(), "input_dataset_dir") or UPLOAD_DEFAULT
+
+
+def _tidy_upload_name(name) -> str:
+    """The name with what a file can't be called on every system replaced (Act 1: Intro.wav -> Act 1_ Intro.wav),
+    the same way for a song and its caption / lyrics / .json files, so they still pair up."""
+    name = re.sub(r'[<>:"|?*\x00-\x1f]', "_", str(name or "")).strip()
+    return name.rstrip(". ")
 
 
 def _upload_name(name, what) -> str:
@@ -400,7 +409,7 @@ def _save_upload(folder, name, rfile, length) -> dict:
         except OSError:
             pass
         raise ValueError(f"{name}: the upload was cut off. Upload it again.")
-    saved, skipped, replaced = [], [], []
+    saved, skipped, replaced, badname = [], [], [], []
     if ext == ".zip":
         import zipfile
         try:
@@ -413,9 +422,9 @@ def _save_upload(folder, name, rfile, length) -> dict:
                         skipped.append(base)
                         continue
                     try:
-                        base = _upload_name(base, "File name")
+                        base = _upload_name(_tidy_upload_name(base), "File name")
                     except ValueError:
-                        skipped.append(base)
+                        badname.append(base)
                         continue
                     if base in saved or os.path.exists(os.path.join(dest, base)):
                         replaced.append(base)
@@ -432,7 +441,8 @@ def _save_upload(folder, name, rfile, length) -> dict:
             replaced.append(name)
         os.replace(tmp, os.path.join(dest, name))
         saved.append(name)
-    return {"folder": dest, "saved": sorted(set(saved)), "skipped": skipped, "replaced": replaced}
+    return {"folder": dest, "saved": sorted(set(saved)), "skipped": skipped, "replaced": replaced,
+            "badname": badname}
 
 
 # ---- model downloads: the desktop's "Download models for me" (fizgig.scripts.fetch_models) ----------------------
@@ -787,7 +797,11 @@ class Handler(BaseHTTPRequestHandler):
                 # wrong guesses lock out only the device making them, for longer each time (1 s, 2 s, ... 60 s),
                 # forgotten after 15 minutes; nothing waits while holding the lock, so the owner's own login on
                 # another device is never held up. Bytes, so a non-ASCII password compares.
-                ip, now = self.client_address[0], time.time()
+                # on a pod everyone arrives through RunPod's proxy (one address), so the visitor is the address the
+                # proxy adds - the LAST in X-Forwarded-For (earlier ones are whatever the visitor sent). Off a pod the
+                # header could be forged outright, so the connection's own address counts.
+                fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip() if on_pod() else ""
+                ip, now = fwd or self.client_address[0], time.time()
                 with _login_lock:
                     n, until, last = _login_fails.get(ip, (0, 0.0, 0.0))
                     if now - last > 900:
