@@ -42,6 +42,17 @@ def is_fizgig(port) -> bool:
         return False
 
 
+def lan_ip() -> str:
+    """This machine's address on the local network, or "" (a UDP connect sends nothing; it only picks the route)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ip = s.getsockname()[0]
+        return "" if ip.startswith("127.") else ip
+    except OSError:
+        return ""
+
+
 def free_from(start):
     """The first port from `start` up that nothing answers on, or None."""
     for port in range(start, min(65536, start + PORT_WALK)):

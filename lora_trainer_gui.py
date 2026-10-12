@@ -17490,7 +17490,40 @@ class LoRATrainerGUI:
                 _port_hint.configure(text="A port is a number from 1024 to 65535.", fg=COLORS["warning"])
         _port_entry.bind("<FocusOut>", _commit_port)
         _port_entry.bind("<Return>", _commit_port)
-        self.prefs_vars["web_port"].trace_add("write", lambda *a: _port_var.set(self.prefs_vars["web_port"].get()))
+
+        # where to open it: this machine, other devices on the network (those need a password), or the pod's proxy
+        _links = tk.Frame(web_card, bg=COLORS["bg_surface"])
+        _links.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
+        try:
+            from fizgig.web.port import lan_ip as _lan_ip
+            _lan = _lan_ip()
+        except Exception:
+            _lan = ""
+
+        def _paint_links(*_a):
+            for w in _links.winfo_children():
+                w.destroy()
+            p = self.prefs_vars["web_port"].get().strip() or "8081"
+            _pod = os.environ.get("RUNPOD_POD_ID", "").strip()
+            rows = ([("Open the web UI:", f"https://{_pod}-8081.proxy.runpod.net/", "")] if _pod else
+                    [("Open the web UI:", f"http://localhost:{p}/", "on this machine, while the web UI runs")]
+                    + ([("Other devices:", f"http://{_lan}:{p}/",
+                         "start the web UI with a password (--password) to reach it from them")] if _lan else []))
+            for i, (label, url, note) in enumerate(rows):
+                ttk.Label(_links, text=label).grid(row=i, column=0, sticky=tk.W, padx=(0, 10), pady=2)
+                lk = tk.Label(_links, text=url, font=(FONT_FAMILY, 10, "underline"), fg=COLORS["accent"],
+                              bg=COLORS["bg_surface"], cursor="hand2")
+                lk.grid(row=i, column=1, sticky=tk.W, pady=2)
+                lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+                if note:
+                    tk.Label(_links, text=note, font=(FONT_FAMILY, 9), fg=COLORS["text_muted"],
+                             bg=COLORS["bg_surface"]).grid(row=i, column=2, sticky=tk.W, padx=(10, 0), pady=2)
+        _paint_links()
+
+        def _on_port_pref(*_a):
+            _port_var.set(self.prefs_vars["web_port"].get())
+            _paint_links()
+        self.prefs_vars["web_port"].trace_add("write", _on_port_pref)
 
         # Card 3: Output Directories
         out_card = self._start_section_card(
