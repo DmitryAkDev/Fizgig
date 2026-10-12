@@ -219,6 +219,21 @@ def user_presets(desc) -> list:
         return []
 
 
+def _code_stamp():
+    """The newest change to the web UI's server code (and the shared modules it runs): a page served after an update
+    while this server still runs the old code is told to restart it."""
+    newest = 0.0
+    for d in (os.path.dirname(__file__), os.path.join(os.path.dirname(__file__), "..", "families")):
+        try:
+            newest = max([newest] + [os.path.getmtime(os.path.join(d, f)) for f in os.listdir(d) if f.endswith(".py")])
+        except OSError:
+            pass
+    return newest
+
+
+_STARTED_CODE = _code_stamp()
+
+
 def default_output_dir() -> str:
     """The LoRA output folder in Preferences (the desktop's Preferences > Output Directories > LoRA output, the same
     prefs.json key), else output_loras inside Fizgig: where a model's LoRAs go until a folder is picked for it."""
@@ -1377,7 +1392,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/schema":
             return self.json({**get_schema(ref_dit_set=bool(pref_path(load_prefs(), "minimax_ref_dit"))),
-                              "logged_in": True})
+                              "logged_in": True, "outdated": _code_stamp() > _STARTED_CODE + 1})
         if path == "/api/prefs":
             p = load_prefs()
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()

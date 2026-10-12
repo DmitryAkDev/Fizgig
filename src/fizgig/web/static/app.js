@@ -40,6 +40,8 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 // ---- start-up ----------------------------------------------------------------------------------------------
 async function boot() {
   try { S.schema = await api("/api/schema"); } catch (e) { return; }
+  // Fizgig was updated while this web UI kept running the old server: some new parts won't work until it restarts
+  $("outdatedBanner").style.display = S.schema.outdated ? "" : "none";
   const st = await api("/api/state");
   S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: where Choose… starts
   const pr = await api("/api/prefs");
