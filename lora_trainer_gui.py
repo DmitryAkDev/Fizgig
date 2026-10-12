@@ -26052,14 +26052,36 @@ class LoRATrainerGUI:
         w = max(1, self._repair_song_bar.winfo_width())
         return int(w * min(self._repair_song_now(), dur) / dur) if dur else 0
 
+    def _repair_song_edge_at(self, event):
+        """0 / 1 when the press is on the section's start / end tab (the middle of the bar's height), else None."""
+        r, dur = self._repair_song_region, self._repair_song_duration()
+        h = max(1, self._repair_song_bar.winfo_height())
+        if not r or not dur or not (h * .25 <= event.y <= h * .75):
+            return None
+        w = max(1, self._repair_song_bar.winfo_width())
+        xs = [int(w * r[0] / dur), int(w * min(r[1], dur) / dur)]
+        best = min((0, 1), key=lambda i: abs(event.x - xs[i]))
+        return best if abs(event.x - xs[best]) <= self._SONG_GRAB else None
+
+    def _repair_song_on_head(self, event):
+        return bool(self._repair_song_duration()) and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB
+
     def _repair_song_hover(self, event):
-        near = self._repair_song_duration() and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB
+        near = self._repair_song_edge_at(event) is not None or self._repair_song_on_head(event)
         want = "sb_h_double_arrow" if near else "hand2"
         if self._repair_song_bar.cget("cursor") != want:
             self._repair_song_bar.configure(cursor=want)
 
     def _repair_song_press(self, event):
-        if self._repair_song_duration() and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB:
+        edge = self._repair_song_edge_at(event)
+        if edge is not None:
+            # a section tab: drag it to refine the section; out to both ends of the song = the whole song again
+            self._repair_song_edge = edge
+            self._repair_song_drag = None
+            self._repair_song_scrubbing = False
+            return
+        self._repair_song_edge = None
+        if self._repair_song_on_head(event):
             # the playhead's handle: scrub. A playing song pauses while dragged and carries on from where it is let go
             self._repair_song_scrub = self._repair_song_t0 is not None
             if self._repair_song_scrub:
@@ -26071,6 +26093,12 @@ class LoRATrainerGUI:
         self._repair_song_drag = [event.x, event.x]
 
     def _repair_song_drag_to(self, event):
+        if getattr(self, "_repair_song_edge", None) is not None and self._repair_song_region:
+            r = list(self._repair_song_region)
+            r[self._repair_song_edge] = self._repair_song_x_to_t(event.x)
+            self._repair_song_edge_live = (min(r), max(r))
+            self._repair_song_draw()
+            return
         if getattr(self, "_repair_song_scrubbing", False):
             self._repair_song_pos = self._repair_song_x_to_t(event.x)
             self._repair_song_draw()
@@ -26080,6 +26108,20 @@ class LoRATrainerGUI:
             self._repair_song_draw()
 
     def _repair_song_release(self, event):
+        if getattr(self, "_repair_song_edge", None) is not None:
+            live, self._repair_song_edge, self._repair_song_edge_live = \
+                getattr(self, "_repair_song_edge_live", None), None, None
+            if live is None:
+                self._repair_song_draw()
+                return
+            dur = self._repair_song_duration()
+            if live[0] <= 0.15 and live[1] >= dur - 0.15:
+                self._repair_song_set_region(None)          # dragged out to both ends: the whole song
+            elif live[1] - live[0] >= 0.25:
+                self._repair_song_set_region(live)
+            else:
+                self._repair_song_draw()
+            return
         if getattr(self, "_repair_song_scrubbing", False):
             self._repair_song_scrubbing = False
             self._repair_song_pos = self._repair_song_x_to_t(event.x)
@@ -26224,10 +26266,13 @@ class LoRATrainerGUI:
                 x0, x1 = sorted(drag)
                 bar.create_rectangle(x0, 1, x1, h - 1, outline=COLORS["queue_blue"], width=2)
             elif r:
+                r = getattr(self, "_repair_song_edge_live", None) or r      # a tab being dragged
                 x0, x1 = int(w * r[0] / dur), int(w * min(r[1], dur) / dur)
                 live = self.repair_song_loop_var.get()
-                bar.create_rectangle(x0, 1, x1, h - 1, outline=COLORS["queue_blue"] if live else COLORS["text_muted"],
-                                     width=2, dash=() if live else (3, 2))
+                col = COLORS["queue_blue"] if live else COLORS["text_muted"]
+                bar.create_rectangle(x0, 1, x1, h - 1, outline=col, width=2, dash=() if live else (3, 2))
+                for xe in (x0, x1):                     # the tabs: drag to refine the section
+                    bar.create_rectangle(xe - 5, h / 2 - 12, xe + 5, h / 2 + 12, fill=col, outline="")
 
         def fmt(t):
             return f"{int(t) // 60}:{int(t) % 60:02d}"
