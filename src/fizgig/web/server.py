@@ -1651,7 +1651,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/captions/status":
             return self.json(captions.status())
         if path == "/api/runs":
-            return self.json({"runs": history.runs()[:200]})
+            runs = history.runs()[:200]
+            from fizgig.web import image_loss
+            owners = image_loss.owner_runs(runs)
+            for r in runs:                       # per-image loss charts: a family with the loss watch, and its log
+                d = get_family(r.get("family") or "")
+                r["image_loss"] = bool(owners.get(r.get("id")) and d is not None and getattr(d, "loss_watch", False))
+            return self.json({"runs": runs})
+        if path == "/api/runs/image_loss":           # one run's per-image residuals by epoch (the loss watch's)
+            from fizgig.web import image_loss
+            run = history.get((qs.get("id") or [""])[0])
+            d = get_family((run or {}).get("family") or "")
+            res = image_loss.residuals(run.get("output_dir")) if run and d is not None and d.loss_watch else None
+            if res is None:
+                return self.json({"error": "This run has no per-image loss log."}, 404)
+            pics = image_loss.image_paths(run.get("image_folder"), [im["key"] for im in res["images"]])
+            return self.json({**res, "images": [{**im, "path": pics.get(im["key"], "")} for im in res["images"]]})
         if path == "/api/about":
             return self.json(about_info())
         if path == "/api/datasets":

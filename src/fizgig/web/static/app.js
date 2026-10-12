@@ -1092,6 +1092,16 @@ async function loadRuns() {
       } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
     }});
     const alertRow = el("div", {class: "field-hint"});
+    // per-image loss (a family with the loss watch, when the run kept its log)
+    const ilBox = el("div", {class: "il-box", style: "display:none"});
+    const ilBtn = run.image_loss ? el("button", {class: "btn btn-sm", text: "Per-image loss",
+      title: "Each training image's loss by epoch, against the rest of the dataset - which images are hard, which are being learned, and what the loss watch decided about each.",
+      onclick: async () => {
+        if (ilBox.style.display !== "none") { ilBox.style.display = "none"; return; }
+        ilBox.style.display = ""; ilBox.textContent = "Loading…";
+        try { imageLossPanel(ilBox, await api("/api/runs/image_loss?id=" + encodeURIComponent(run.id))); }
+        catch (e) { ilBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}) : null;
     host.append(el("div", {class: "run-row"},
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
@@ -1101,10 +1111,99 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, showFiles, again, del), delBox, alertRow, files));
+      el("div", {class: "field-row"}, showFiles, ilBtn, again, del), delBox, alertRow, files, ilBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
     "the desktop app, is listed here with its results."}));
+}
+
+// ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
+// loss watch's own measure) with the watch's verdict - the desktop's Problem Images colours and words
+const IL_VERDICTS = {
+  excluded: ["#7F8C8D", "Excluded from training - two AI captions couldn't fix it. Edit the caption to re-admit it, or remove it from the dataset."],
+  stuck: ["#E74C3C", "Stuck - persistently hard, not improving. Review this image and its caption."],
+  suspect: ["#D35400", "Suspect - extremely hard from the start; slowed while the trend confirms. Worth a caption check now."],
+  watch: ["#E67E22", "Watching - looked stuck this epoch; needs more epochs to confirm."],
+  warmup: ["#8E7CC3", "Look-filter outlier easing in on an LR ramp; releases early once it starts improving."],
+  exhausted: ["#16A085", "Fully mined - improved a lot, then plateaued. Caption is fine; LR eased to prevent overbake."],
+  learning: ["#5B9BD5", "Learning - hard but improving. Leave it alone."],
+  mid: ["#95A5A6", "Normal."],
+  easy: ["#70AD47", "Learned - consistently easy. Gets a gentle x1.1 boost."]};
+const IL_ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted", "learning", "mid", "easy"];
+const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
+const IL_PAGE = 48;
+
+function imageLossPanel(box, d) {
+  const imgs = d.images || [], rep = d.report || {};
+  // one scale for every tile, so tiles compare: room for every image's recent level with a margin (a one-epoch
+  // spike past it is clipped; a consistently hard image keeps its shape)
+  const ymax = Math.max(1e-6, 1.25 * Math.max(...imgs.map((im) => Math.abs(im.recent)), 0));
+  const counts = {};
+  for (const im of imgs) counts[im.verdict || "mid"] = (counts[im.verdict || "mid"] || 0) + 1;
+  const tally = IL_ORDER.filter((v) => counts[v]).map((v) => `${counts[v]} ${v}`).join(" · ");
+  const head = [`${imgs.length} images · ${d.epochs.length} epochs`, rep.epoch ? `the watch's verdicts as of epoch ${rep.epoch}` : "",
+    tally].filter(Boolean).join(" · ");
+  const sort = el("select", {class: "w-combo"}, ...[["hard", "Hardest now first"], ["easy", "Easiest now first"],
+    ["verdict", "By verdict"], ["name", "By name"]].map(([v, t]) => el("option", {value: v, text: t})));
+  const show = el("select", {class: "w-combo"}, el("option", {value: "all", text: "All images"}),
+    el("option", {value: "problems", text: "Problems only (excluded, stuck, suspect, watch)"}));
+  const grid = el("div", {class: "il-grid"}), pager = el("div", {class: "field-row"});
+  let page = 0;
+  const draw = () => {
+    let list = show.value === "problems" ? imgs.filter((im) => IL_PROBLEMS.has(im.verdict)) : [...imgs];
+    const o = (v) => { const i = IL_ORDER.indexOf(v || "mid"); return i < 0 ? 2 : i; };
+    list.sort(sort.value === "name" ? (a, b) => a.key.localeCompare(b.key) :
+      sort.value === "easy" ? (a, b) => a.recent - b.recent :
+      sort.value === "verdict" ? (a, b) => o(a.verdict) - o(b.verdict) || b.recent - a.recent : (a, b) => b.recent - a.recent);
+    const pages = Math.max(1, Math.ceil(list.length / IL_PAGE));
+    page = Math.min(page, pages - 1);
+    grid.replaceChildren(...list.slice(page * IL_PAGE, (page + 1) * IL_PAGE).map((im) => imageLossTile(im, ymax)));
+    if (!list.length) grid.append(el("div", {class: "field-hint", text: "No image has a problem verdict."}));
+    pager.replaceChildren(...(pages > 1 ? [
+      el("button", {class: "btn btn-sm", text: "‹ Prev", disabled: page === 0, onclick: () => { page--; draw(); }}),
+      el("span", {class: "field-hint", text: `page ${page + 1} of ${pages}`}),
+      el("button", {class: "btn btn-sm", text: "Next ›", disabled: page >= pages - 1, onclick: () => { page++; draw(); }})] : []));
+  };
+  sort.addEventListener("change", () => { page = 0; draw(); });
+  show.addEventListener("change", () => { page = 0; draw(); });
+  box.replaceChildren(
+    el("div", {class: "field-hint", text: head}),
+    rep.plateaued && rep.best_epoch_estimate ? el("div", {class: "il-plateau",
+      text: `The run plateaued: the best checkpoint is likely around epoch ${rep.best_epoch_estimate} - compare a few epochs either side.`}) : null,
+    el("div", {class: "field-hint", text: "Each line is one image's loss minus the dataset's average at the same noise level, " +
+      "epoch by epoch. Above the dotted line it is harder than the rest; a line falling is the image being learned. " +
+      "All tiles share one scale."}),
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Sort:"}), sort, show), grid, pager);
+  draw();
+}
+
+function imageLossTile(im, ymax) {
+  const [col, say] = IL_VERDICTS[im.verdict] || IL_VERDICTS.mid;
+  const W = 200, H = 56, pad = 3, pts = im.series;
+  const e0 = pts[0][0], e1 = pts[pts.length - 1][0];
+  const X = (e) => pad + (W - 2 * pad) * (e1 === e0 ? 0.5 : (e - e0) / (e1 - e0));
+  const Y = (v) => H / 2 - (H / 2 - pad) * Math.max(-1, Math.min(1, v / ymax));
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("class", "il-chart");
+  const zero = document.createElementNS(ns, "line");
+  zero.setAttribute("x1", 0); zero.setAttribute("x2", W); zero.setAttribute("y1", H / 2); zero.setAttribute("y2", H / 2);
+  zero.setAttribute("class", "il-zero");
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "));
+  line.setAttribute("stroke", col);
+  const t = document.createElementNS(ns, "title");
+  t.textContent = pts.map((p) => `epoch ${p[0]}: ${p[1] >= 0 ? "+" : ""}${p[1].toFixed(4)}`).join("\n");
+  svg.append(zero, line, t);
+  const sign = (v) => (v >= 0 ? "+" : "") + v.toFixed(4);
+  return el("figure", {class: "gallery-item il-tile"},
+    im.path ? el("img", {loading: "lazy", alt: im.key, src: `/api/thumb?path=${encodeURIComponent(im.path)}&t=${encodeURIComponent(TOKEN)}`}) :
+      el("div", {class: "il-nopic", text: "(not in the training folder now)"}),
+    el("figcaption", {},
+      el("div", {class: "il-name", title: im.key, text: im.key}),
+      el("span", {class: "il-verdict", style: `background:${col}`, title: say,
+        text: (im.verdict || "mid") + (im.multiplier != null && im.multiplier !== 1 ? ` ×${im.multiplier}` : "")}),
+      el("span", {class: "field-hint", text: ` now ${sign(im.recent)}`, title: "Mean over the last 5 epochs (the watch's window)"})),
+    svg);
 }
 
 // a run's loss, epoch by epoch, as a small chart (the history keeps each epoch's last average loss)
