@@ -33621,12 +33621,13 @@ class LoRATrainerGUI:
                 self._live_result = {
                     "result": "stopped" if getattr(self, "_live_stopped", False) else
                               "finished" if code == 0 else "failed",
-                    "lora": str(self.settings.get("LORA_NAME", "") or ""), "at": _time.time()}
+                    "lora": str(self.settings.get("LORA_NAME", "") or ""), "at": _time.time(),
+                    "progress": getattr(self, "_live_progress", None)}       # where it got to
             self._live_was_busy = busy_now
             _live.write(_live.LIVE_DESKTOP, {
                 "running": running, "state": state, "trainer_pid": proc.pid if running else None,
                 "captioning": bool(getattr(self, "_captioning_running", False)),
-                "progress": getattr(self, "_live_progress", None) if busy_now else None,
+                "progress": getattr(self, "_live_progress", None) if (busy_now or state == "paused") else None,
                 "caption_loaded": bool(self._caption_worker_alive()),
                 "trainer_started": self._live_proc_started(proc) if running else None,
                 "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),

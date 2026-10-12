@@ -135,8 +135,8 @@ ACESTEP15 = FamilyDescription(
          "turn the dial into a genre switch."),
     ),
     ema_hint="Saves and previews the running average of the LoRA instead of its latest step. A song set gives few "
-             "steps an epoch (10 clips at accumulation 4 is about 3), so 0.98 averages over most of a 20-epoch run "
-             "and lags it; Short run sizes the window to a quarter of the run.",
+             "steps an epoch (10 songs at accumulation 4 is about 3), so on a short run 0.98 averages over most of "
+             "it and lags behind; Short run sizes the window to a quarter of the run. Long runs suit 0.98.",
 
     lora=LoRAFormat(
         key_template="base_model.model.layers.{block}.{module}.{ab}.weight",

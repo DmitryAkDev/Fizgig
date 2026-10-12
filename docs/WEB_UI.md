@@ -154,7 +154,7 @@ with Fizgig started as `lora_trainer_gui.py --web --host 127.0.0.1 --port 8090` 
 
 ## Logging out
 
-With a password set, Preferences → Web UI has **Log out** (this device) and **Log out everywhere** (every device's login ends, this one too: a phone left logged in, or after you've shared the password). Each device then asks for the password again. Restarting the web UI also logs everyone out.
+With a password set, Preferences → Web UI has **Log out** (this device) and **Log out everywhere** (every device's login ends, this one too: a phone left logged in, say). Each device then asks for the password again. If someone else knows the password, change it too, or they can simply log in again. Restarting the web UI also logs everyone out.
 
 ## prefs.json
 

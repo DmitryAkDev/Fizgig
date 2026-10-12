@@ -444,7 +444,8 @@ function logoutRow() {
       el("button", {class: "btn btn-warning", text: "Log out everywhere", onclick: () =>
         api("/api/logout_all", {}).then(done)})),
     el("div", {class: "field-hint", text: "Log out everywhere ends every device's login, this one too: a phone left " +
-      "logged in, or after you've shared the password. Each one asks for the password again; nothing else changes."}));
+      "logged in, say. Each one asks for the password again. If someone else knows the password, change it too " +
+      "(the desktop app's Preferences > Web UI), or they can just log in again."}));
 }
 
 function checkModels() {
@@ -523,7 +524,7 @@ async function pollRun() {
     $("runBadge").dataset.state = state;
     $("runCardBadge").textContent = label;
     $("runCardBadge").dataset.state = state;
-    showProgress(deskDone ? null : d.progress, state, deskDone ? d.last_result.lora : d.lora,
+    showProgress(deskDone ? d.last_result.progress : d.progress, state, deskDone ? d.last_result.lora : d.lora,
       deskDone ? "" : d.stage);
     $("btnStart").disabled = !deskDone;
     $("btnPause").disabled = !(d.running && d.state === "running");
@@ -843,6 +844,13 @@ async function loadCaptionOptions() {
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
   $("capSongCard").style.display = o.song_words ? "" : "none";
+  // a model that trains on no pictures or clips (ACE-Step): the AI card has nothing to caption, the song card does
+  const media = (S.fam && S.fam.media) || ["photo"];
+  const pictures = media.includes("photo") || media.includes("clip");
+  document.querySelector("#capAll").closest(".section-card").style.display = pictures ? "" : "none";
+  for (const id of ["capModel", "capTask", "capTokens"]) $(id).closest(".field-row").style.display = pictures ? "" : "none";
+  $("capModelHint").style.display = pictures ? "" : "none";
+  if (!pictures) $("capInstrBox").style.display = "none";
   if (o.song_words) $("capSongWords").value = saved.songWords || o.song_words;
 }
 
@@ -1120,6 +1128,7 @@ function nameFromFolder(name) {
 // is skipped), retries a piece after a drop, and reports the bytes sent. Returns {ok, data, skipped}
 const PIECE = 8 * 2 ** 20;
 async function uploadResumable(params, file, onProgress) {
+  params = {...params, mtime: (file.lastModified || 0) / 1000};       // same name, size AND time = already there
   const q = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
   let st;
   try { st = await api(`/api/upload/status?${q({...params, size: file.size})}`); }

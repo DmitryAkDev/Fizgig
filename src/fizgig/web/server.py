@@ -357,11 +357,11 @@ def samples_zip(folder, name) -> str:
     zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
     os.makedirs(zdir, exist_ok=True)
     for old in os.scandir(zdir):                  # one left by a download that never finished, a day on
-        if time.time() - old.stat().st_mtime > 86400:
-            try:
+        try:
+            if time.time() - old.stat().st_mtime > 86400:
                 os.remove(old.path)
-            except OSError:
-                pass
+        except OSError:
+            pass
     fd, out = tempfile.mkstemp(prefix="previews_", suffix=".zip", dir=zdir)   # each download its own file
     os.close(fd)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
@@ -439,8 +439,8 @@ def _popen(cmd):
     want = str(load_prefs().get("cuda_device") or "").strip()
     if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):  # one set where Fizgig was started wins, as the desktop
         env["CUDA_VISIBLE_DEVICES"] = want
-        if want.isdigit():
-            env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # a typed number means the card nvidia-smi numbers so
+    if env.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip().isdigit():
+        env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")      # a card number means the card nvidia-smi numbers so
     kw = {}
     if os.name == "nt":
         kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -654,10 +654,25 @@ def about_info() -> dict:
         if branch and branch != "HEAD":
             v = f"{branch} @ {v}"
     rocm = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
-    how = ("On RunPod, Fizgig updates itself every time you restart the pod - just stop and start it to get the "
-           "latest." if on_pod() else
-           f"To update: close Fizgig and run {'update_fizgig_rocm.bat' if rocm else 'update_fizgig.bat'}.")
+    if on_pod():
+        how = "On RunPod, Fizgig updates itself every time you restart the pod - just stop and start it to get the latest."
+    elif os.name == "nt":
+        how = f"To update: close Fizgig and run {'update_fizgig_rocm.bat' if rocm else 'update_fizgig.bat'}."
+    else:
+        how = ("To update: stop Fizgig (and its service, if it runs as one), then in the Fizgig folder run "
+               "venv/bin/python update_fizgig.py" + (" --rocm" if rocm else "") + ", and start it again.")
     return {"version": v or "unknown", "update": how}
+
+
+def _sweep_parts(folder, entries):
+    """An upload abandoned a day ago leaves a hidden .name.part (it can be GBs): cleared when the folder is listed."""
+    for e in entries:
+        if e.name.startswith(".") and e.name.endswith(".part"):
+            try:
+                if time.time() - e.stat().st_mtime > 86400:
+                    os.remove(e.path)
+            except OSError:
+                pass
 
 
 def list_datasets() -> dict:
@@ -677,11 +692,17 @@ def list_datasets() -> dict:
         except OSError:
             continue
         names = {e.name for e in entries}
+        song_stems = {os.path.splitext(n)[0] for n in names if os.path.splitext(n)[1].lower() in _SONG}
+        waves = []
         for e in entries:
             if not e.is_file():
                 continue
             stem, ext = os.path.splitext(e.name)
             ext = ext.lower()
+            if ext in _PIC and stem in song_stems:     # a song's waveform: its tile picture, not a training picture
+                if len(waves) < 4:
+                    waves.append(e.path)
+                continue
             kind = "pic" if ext in _PIC else "clip" if ext == ".mp4" else "song" if ext in _SONG else ""
             if not kind:
                 continue
@@ -695,9 +716,10 @@ def list_datasets() -> dict:
                 pass
             if kind == "pic" and len(thumbs) < 4:
                 thumbs.append(e.path)
+        _sweep_parts(d.path, entries)
         if pics + clips + songs:
             out.append({"name": d.name, "path": d.path, "pictures": pics, "clips": clips, "songs": songs,
-                        "captioned": captioned, "time": newest, "thumbs": thumbs})
+                        "captioned": captioned, "time": newest, "thumbs": thumbs or waves})
     out.sort(key=lambda x: -x["time"])
     return {"root": root, "datasets": out[:300], "total": len(out)}
 
@@ -719,18 +741,20 @@ def _upload_target(folder, name, single):
     return name, ext, dest, os.path.join(dest, f".{name}.part")
 
 
-def upload_status(folder, name, single, size):
-    """For a resumed upload: how much of the file is already here (its .part), or done (the file itself, the same
-    size), so the page sends only the rest - or nothing."""
+def upload_status(folder, name, single, size, mtime=None):
+    """For a resumed upload: how much of the file is already here (its .part), or done (the file itself: the same
+    size and the same modified time - an edited caption of the same length is sent again), so the page sends only
+    the rest - or nothing."""
     name, ext, dest, tmp = _upload_target(folder, name, single)
     final = os.path.join(dest, name)
-    if ext != ".zip" and os.path.isfile(final) and os.path.getsize(final) == size:
+    same_time = mtime is not None and os.path.isfile(final) and abs(os.path.getmtime(final) - mtime) < 2
+    if ext != ".zip" and os.path.isfile(final) and os.path.getsize(final) == size and same_time:
         return {"have": size, "done": True, "path": final, "folder": dest}
     have = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
     return {"have": have if have <= size else 0, "done": False}
 
 
-def save_chunk(folder, name, rfile, length, offset, total, single=False):
+def save_chunk(folder, name, rfile, length, offset, total, single=False, mtime=None):
     """One piece of a file at `offset` (a big upload goes up in pieces, so a dropped connection costs one piece, not
     the file); the last piece finishes it exactly as a whole-file upload. A piece that doesn't follow on from what
     is here is refused with what is here, so the page carries on from there."""
@@ -753,7 +777,13 @@ def save_chunk(folder, name, rfile, length, offset, total, single=False):
         return {"resync": os.path.getsize(tmp)}       # cut off mid-piece: what arrived stays, the page resends the rest
     if offset + length < total:
         return {"have": offset + length}
-    return _finish_upload(name, ext, dest, tmp, single)
+    done = _finish_upload(name, ext, dest, tmp, single)
+    if mtime is not None and ext != ".zip":            # it keeps its own modified time, as a copied file does
+        try:
+            os.utime(os.path.join(dest, name), (mtime, mtime))
+        except OSError:
+            pass
+    return done
 
 
 def _save_upload(folder, name, rfile, length, single=False) -> dict:
@@ -1076,8 +1106,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(list_datasets())
         if path == "/api/upload/status":
             try:
+                mt = (qs.get("mtime") or [""])[0]
                 return self.json(upload_status((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0],
-                                               bool((qs.get("single") or [""])[0]), int((qs.get("size") or ["0"])[0])))
+                                               bool((qs.get("single") or [""])[0]), int((qs.get("size") or ["0"])[0]),
+                                               float(mt) if mt else None))
             except ValueError as e:
                 return self.json({"error": str(e)}, 400)
         if path == "/api/upload/root":
@@ -1289,7 +1321,8 @@ class Handler(BaseHTTPRequestHandler):
             g = lambda k: (qs.get(k) or [""])[0]
             try:
                 d = save_chunk(g("folder"), g("name"), self.rfile, int(self.headers.get("Content-Length") or 0),
-                               int(g("offset") or 0), int(g("total") or 0), single=bool(g("single")))
+                               int(g("offset") or 0), int(g("total") or 0), single=bool(g("single")),
+                               mtime=float(g("mtime")) if g("mtime") else None)
                 if d.get("saved") and g("single"):
                     d["path"] = os.path.join(d["folder"], d["saved"][0])
                 return self.json(d)

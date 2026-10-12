@@ -1502,3 +1502,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .about-btn { order: 2; width: auto; margin: 0; padding: 7px 9px; border-radius: 999px; flex: 0 0 auto; }
   .about-btn span { display: none; }
 }
+
+@media (max-width: 760px) {
+  /* the run's progress stays in view on a phone: under its name in the top bar */
+  .side-run .side-run-text { display: block; font-size: 11px; }
+}

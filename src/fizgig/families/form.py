@@ -200,7 +200,9 @@ def form(desc):
                         "stronger, a bigger file, and ~5 GB more VRAM with adamw (use adamw8bit) · above 8: just use LoRA")]
     if desc.loss_watch:
         params += [
-            _row("KREA2_LOSS_WATCH", "Detect problem images (per-image loss tracking)", "check"),
+            _row("KREA2_LOSS_WATCH", "Detect problem images (per-image loss tracking)", "check",
+                 "Its Problem Images window (thumbnails and verdicts) is in the desktop app; here the run's log reports "
+                 "what it finds."),
             _row("KREA2_PER_IMAGE_LR", "Per-image adaptive LR (throttle stuck images, boost healthy learned ones)",
                  "check"),
             _row("KREA2_WARMUP_LOOK", "Warm up look outliers (unusual angles ease in at low LR - needs a Look "
