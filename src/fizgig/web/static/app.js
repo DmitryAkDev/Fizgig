@@ -2146,6 +2146,141 @@ function wireStudioMetrics() {
   $("stMetRefClear").addEventListener("click", () => setRef(""));
 }
 
+// ---- Save / Load Setup: the whole session in one file, in the desktop's format (its variable names), so either
+// app loads the other's. What only the web has (H3's photos and crops, the mix, the section) rides along in "web".
+const ST_SRC_MODES = [["song", "Whole song"], ["repaint", "Repaint the loop section"], ["extend", "Extend to the Length"]];
+const ST_SETUP_MAP = [
+  ["stPrimary", "repair_primary_var"], ["stDonor", "repair_donor_var"], ["stPScale", "repair_primary_scale_var"],
+  ["stDScale", "repair_donor_scale_var"], ["stPrompt", "repair_prompt_var"], ["stSeed", "repair_seed_var"],
+  ["stRes", "repair_res_var"], ["stNeg", "repair_negative_var"], ["stTurbo", "repair_turbo_var", "check"],
+  ["stRef", "repair_ref_path_var"], ["stRefMp", "repair_ref_mp_var"], ["stRefStr", "repair_ref_strength_var"],
+  ["stLuckyLo", "repair_lucky_min_var"], ["stLuckyHi", "repair_lucky_max_var"],
+  ["stH3Model", "repair_h3_model_var"], ["stH3Base", "repair_h3_base_var"], ["stH3Len", "repair_h3_frames_var"],
+  ["stH3W", "repair_h3_width_var"], ["stH3H", "repair_h3_height_var"], ["stH3Scale", "repair_h3_dial_scale_var"],
+  ["stH3Steps", "repair_h3_steps_var"], ["stH3Turbo", "repair_h3_turbo_var"], ["stH3Sound", "repair_h3_sound_var", "check"],
+  ["stH3NoLora", "repair_h3_nolora_var", "check"],
+  ["stPbOn", "repair_pb_on_var", "check"], ["stPromptB", "repair_prompt_b_var"], ["stPbBlend", "repair_pb_blend_var", "num"],
+  ["stPbKeep", "repair_pb_keep_lyrics_var", "check"], ["stSrcOn", "repair_src_on_var", "check"],
+  ["stSrcPath", "repair_src_path_var"], ["stSrcMode", "repair_src_mode_var", "srcmode"],
+  ["stSrcFollow", "repair_src_follow_var", "num"], ["stSrcDenoise", "repair_src_denoise_var", "num"],
+  ["stSrcStrength", "repair_src_strength_var", "num"], ["stSndOn", "repair_sound_on_var", "check"],
+  ["stSndPath", "repair_sound_path_var"]];
+
+function studioSetupData() {
+  const values = {};
+  for (const [id, name, kind] of ST_SETUP_MAP) {
+    const e = $(id);
+    values[name] = kind === "check" ? e.checked : kind === "num" ? Number(e.value) :
+      kind === "srcmode" ? (ST_SRC_MODES.find((m) => m[0] === e.value) || ST_SRC_MODES[0])[1] : e.value;
+  }
+  values.repair_dit_choice_var = (document.querySelector('input[name="stDit"]:checked') || {}).value === "full" ? "base" : "distilled";
+  values.repair_metrics_ref_var = stSaved().metricsRef || "";
+  const blocks = {};
+  for (const [id, b] of Object.entries(S.st.blocks || {}))
+    blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
+  return {fizgig_repair_setup: 1, family: $("stFamily").value, values, blocks,
+    web: {kf: S.st.kf || {}, kfRect: S.st.kfRect || {}, region: S.st.region || null,
+      mix: S.st.mix ? {mode: S.st.mix.mode, rows: S.st.mix.rows, upto: $("stMixUpto").value, hist: $("stMixHist").value} : null,
+      dmix: S.st.dmix ? {on: S.st.dmix.on, upto: $("stDmixUpto").value, hist: $("stDmixHist").value} : null}};
+}
+
+async function studioSetupList(select) {
+  try {
+    const r = await api("/api/studio/setups");
+    const sel = $("stSetupList");
+    sel.replaceChildren(el("option", {value: "", text: "Load a setup…"}),
+      ...r.setups.map((x) => el("option", {value: x.name, text: x.family ? `${x.name}  (${x.family})` : x.name})));
+    if (select) sel.value = select;
+  } catch (e) { /* the list stays as it was */ }
+}
+
+async function studioSetupSave(overwrite) {
+  const name = $("stSetupName").value.trim() || `${$("stFamily").value}_setup`;
+  try {
+    const r = await api("/api/studio/setup_save", {name, data: studioSetupData(), overwrite: !!overwrite});
+    if (r.exists) {
+      $("stSetupMsg").replaceChildren(el("span", {text: `"${r.name}" is there already. `}),
+        el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => studioSetupSave(true)}));
+      return;
+    }
+    $("stSetupMsg").textContent = `Setup saved: ${r.name}`;
+    $("stSetupName").value = r.name;
+    studioSetupList();
+  } catch (e) { $("stSetupMsg").textContent = e.message; }
+}
+
+async function studioSetupLoad(name) {
+  // its model first (waiting for the switch to land), then every control and slider, then Start - which loads its
+  // LoRAs and renders (the desktop's _load_repair_setup)
+  let d;
+  try { d = await api(`/api/studio/setup?name=${encodeURIComponent(name)}`); }
+  catch (e) { $("stSetupMsg").textContent = e.message; return; }
+  const fam = d.family && [...$("stFamily").options].some((o) => o.value === d.family) ? d.family : $("stFamily").value;
+  if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); stRemember(); }
+  const v = d.values || {};
+  for (const [id, key, kind] of ST_SETUP_MAP) {
+    if (!(key in v)) continue;
+    const e = $(id), val = v[key];
+    if (kind === "check") e.checked = !!val;
+    else if (kind === "srcmode") e.value = (ST_SRC_MODES.find((m) => m[1] === val || m[0] === val) || ST_SRC_MODES[0])[0];
+    else if (e.tagName === "SELECT" && ![...e.options].some((o) => o.value === String(val))) continue;
+    else e.value = String(val);
+  }
+  if ("repair_dit_choice_var" in v) {
+    const want = v.repair_dit_choice_var === "base" ? "full" : "fast";
+    const r = document.querySelector(`input[name="stDit"][value="${want}"]`); if (r) r.checked = true;
+  }
+  try { const s = stSaved(); s.metricsRef = v.repair_metrics_ref_var || ""; localStorage.setItem(ST_KEY, JSON.stringify(s)); } catch (e) { /* private */ }
+  for (const [id, b] of Object.entries(d.blocks || {})) {
+    if (!S.st.blocks[id]) continue;
+    S.st.blocks[id] = {pe: !!b.primary_enabled, ps: Number(b.primary_strength), de: !!b.donor_enabled, ds: Number(b.donor_strength)};
+  }
+  const w = d.web || {};
+  if (w.kf) { S.st.kf = w.kf; S.st.kfRect = w.kfRect || {}; }
+  if (S.st.layout && S.st.layout.kind === "video") studioSlots();
+  S.st.region = w.region || null;
+  studioEq("primary", false, false); studioEq("donor", false, false);
+  studioAceLayout(); studioAceRemember(); studioH3Remember(); stRemember(); studioMetricsShow(); studioNegRow();
+  studioSync(); studioCommit();
+  studioMixReset();
+  S.st.pendingMix = w.mix || w.dmix ? w : null;          // the mix follows once its LoRAs are loaded
+  $("stSetupMsg").textContent = `Setup loaded: ${name}`;
+  $("stSetupName").value = name;
+  if ($("stPrimary").value.trim()) {
+    await studioStart();                                // a new LoRA / model loads; the same one just renders
+    if (S.st.ready && S.st.pendingMix) studioSetupMix();
+  }
+}
+
+async function studioSetupMix() {
+  // after a setup's load: its mix back (the run's epochs need the LoRA there)
+  const w = S.st.pendingMix;
+  S.st.pendingMix = null;
+  if (!w) return;
+  if (w.mix && w.mix.mode === "mix" && (w.mix.rows || []).length) {
+    S.st.mix.rows = w.mix.rows; document.querySelector('input[name="stMixMode"][value="mix"]').checked = true;
+    await studioMixMode("mix");
+  } else if (w.mix && w.mix.mode === "epochs") {
+    $("stMixHist").value = w.mix.hist;
+    document.querySelector('input[name="stMixMode"][value="epochs"]').checked = true;
+    await studioMixMode("epochs");
+    $("stMixUpto").value = w.mix.upto; studioMixLayout();
+  }
+  if (w.dmix && w.dmix.on && S.st.donor) {
+    $("stDmixOn").checked = true; S.st.dmix.on = true;
+    if (await studioMixEpochs("donor")) { $("stDmixUpto").value = w.dmix.upto; $("stDmixHist").value = w.dmix.hist; }
+    else { S.st.dmix.on = false; $("stDmixOn").checked = false; }
+    studioMixLayout();
+  }
+  studioSchedule();
+}
+
+function wireStudioSetups() {
+  $("stSetupSave").addEventListener("click", () => studioSetupSave(false));
+  $("stSetupList").addEventListener("change", () => { const n = $("stSetupList").value; $("stSetupList").value = ""; if (n) studioSetupLoad(n); });
+  studioSetupList();
+}
+
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
@@ -2432,6 +2567,7 @@ async function studioPoll() {
     studioActivity();
     if (!$("stOut").value) { const pth = st.primary; $("stOut").value = pth.replace(/\.safetensors$/i, "") + "_repaired.safetensors"; }
     if (S.st.pendingFirst) { S.st.pendingFirst = false; studioCommit(); studioRender(); }
+    if (S.st.pendingMix) studioSetupMix();
   }
   if (st.shown && st.shown !== S.st.shown) {
     S.st.shown = st.shown;
@@ -2534,6 +2670,7 @@ function wireStudio() {
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
   wireStudioMix();
   wireStudioMetrics();
+  wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));

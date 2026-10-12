@@ -549,6 +549,12 @@
                 <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine
                   (the first time takes a minute).</span></div>
               <div class="run-bar"><span id="stBar" style="width:0"></span></div>
+              <div class="field-row st-setups"><span class="field-label">Setup:</span>
+                <select id="stSetupList" class="w-combo" title="Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering. The desktop's setups are here too.">
+                  <option value="">Load a setup…</option></select>
+                <input type="text" id="stSetupName" class="w-num st-setup-name" placeholder="name">
+                <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later (here or on the desktop) or share.">Save setup</button>
+                <span class="field-hint" id="stSetupMsg"></span></div>
             </div>
           </div>
           <div class="section-card" id="stFrames" style="display:none">

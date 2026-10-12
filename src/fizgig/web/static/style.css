@@ -1686,3 +1686,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 4px; }
 .st-chip { font-size: 9pt; color: var(--text-secondary); white-space: nowrap; }
 .st-chip.good { color: #2ECC71; } .st-chip.bad { color: #E74C3C; } .st-chip.warm { color: #F39C12; }
+
+/* Studio: Save / Load Setup */
+.st-setups { margin-top: 8px; }
+.st-setup-name { width: 180px !important; }

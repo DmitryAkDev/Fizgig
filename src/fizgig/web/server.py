@@ -295,8 +295,49 @@ def _gpu_training():
     return web or live.busy(live.desktop_state())
 
 
+STUDIO_SETUPS = os.path.join(STUDIO_PRESETS, "setups")      # the desktop's Save / Load Setup folder
+
+
+def _setup_path(name):
+    name = re.sub(r'[\\/:*?"<>|]+', "_", str(name or "").strip()).strip(". ")
+    if not name:
+        raise ValueError("Give the setup a name.")
+    return os.path.join(STUDIO_SETUPS, name if name.lower().endswith(".json") else name + ".json")
+
+
+def _setups():
+    """The saved setups (either app's): [{name, family}], newest first."""
+    out = []
+    if os.path.isdir(STUDIO_SETUPS):
+        for f in os.listdir(STUDIO_SETUPS):
+            p = os.path.join(STUDIO_SETUPS, f)
+            if not f.lower().endswith(".json"):
+                continue
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    d = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if isinstance(d, dict) and d.get("fizgig_repair_setup"):
+                out.append((os.path.getmtime(p), {"name": f[:-5], "family": d.get("family", "")}))
+    return [x for _t, x in sorted(out, key=lambda t: -t[0])]
+
+
 def _studio_post(what, b):
     """Repair Studio's actions (fizgig/web/studio.py runs them in its worker)."""
+    if what == "setup_save":                 # the whole session in one file, the desktop's format (Save Setup)
+        data = b.get("data") or {}
+        if not isinstance(data, dict) or not data.get("fizgig_repair_setup"):
+            raise ValueError("Not a setup.")
+        p = _setup_path(b.get("name"))
+        if os.path.exists(p) and not b.get("overwrite"):
+            return {"exists": True, "name": os.path.basename(p)[:-5]}
+        os.makedirs(STUDIO_SETUPS, exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, p)
+        return {"ok": True, "name": os.path.basename(p)[:-5]}
     if what == "load":
         if _gpu_training():
             raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
@@ -1459,6 +1500,17 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
             return self._stream(p, attachment=False)
+        if path == "/api/studio/setups":
+            return self.json({"setups": _setups()})
+        if path == "/api/studio/setup":
+            try:
+                with open(_setup_path((qs.get("name") or [""])[0]), encoding="utf-8") as f:
+                    d = json.load(f)
+            except (OSError, ValueError) as e:
+                return self.json({"error": f"Could not read the setup: {e}"}, 404)
+            if not isinstance(d, dict) or not d.get("fizgig_repair_setup"):
+                return self.json({"error": "That file isn't a Studio setup."}, 404)
+            return self.json(d)
         if path == "/api/studio/metrics":            # the pair on screen, measured (and likeness to a reference)
             return self.json(studio.metrics((qs.get("ref") or [""])[0]))
         if path == "/api/studio/epochs":             # the run a LoRA belongs to (the mix's Up to dial)
