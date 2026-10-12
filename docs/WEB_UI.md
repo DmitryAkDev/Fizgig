@@ -47,3 +47,9 @@ On a RunPod pod the web UI always uses 8081, the port the pod's proxy forwards, 
 Preferences lists each model's files. **⬇ Download models for me** at the foot of a model's section downloads every file it needs, plus the Captions tab's Qwen3-VL captioner and the small helper models, and fills in the paths when they land. A progress bar shows each file; Cancel stops it, and downloading again resumes where it left off. Files go into the `models` folder in Fizgig (on a pod, `/workspace/models` on the volume).
 
 Some models are gated: their makers require each user to accept the licence on Hugging Face. Their section shows the licence pages and a token box: accept each licence, create a read token, and paste it in. The token is used for that download only and never saved. On a machine or pod with `HF_TOKEN` set, leave the token box empty.
+
+## Uploading training data
+
+The training folder on the Start tab is a folder on the machine running Fizgig. When your training data (pictures, clips or songs, with their caption `.txt` files) is on the computer you're browsing from, use **Upload a training folder** on the Start tab: type a name for the new folder, then drop the files in or choose them. A `.zip` is unpacked as it arrives. When the upload finishes, the new folder becomes the training folder.
+
+Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. Only pictures, clips, songs, captions and zips are accepted; anything else is left out and listed.

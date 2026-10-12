@@ -312,6 +312,70 @@ def _stop():
     return True
 
 
+# ---- uploads: a training folder sent from the browser's computer ------------------------------------------------
+UPLOAD_EXTS = (MEDIA - {".gif"}) | {".txt", ".zip"}
+UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
+
+
+def uploads_root() -> str:
+    """Where uploaded folders go: the desktop's Preferences > Input Directories folder (a pod sets it to
+    /workspace/datasets), else training_data/ inside Fizgig."""
+    return pref_path(load_prefs(), "input_dataset_dir") or UPLOAD_DEFAULT
+
+
+def _upload_name(name, what) -> str:
+    """One plain name (no folders, no '..'): every upload stays inside uploads_root()."""
+    name = str(name or "").strip()
+    if not name or "/" in name or "\\" in name or name.startswith(".") or not re.fullmatch(r"[\w .()\-]+", name):
+        raise ValueError(f"{what} {name!r}: use letters, numbers, spaces, dots, dashes and underscores.")
+    return name
+
+
+def _save_upload(folder, name, rfile, length) -> dict:
+    folder, name = _upload_name(folder, "Folder name"), _upload_name(name, "File name")
+    ext = os.path.splitext(name)[1].lower()
+    if ext not in UPLOAD_EXTS:
+        raise ValueError(f"{name}: not a picture, clip, song, caption or zip.")
+    dest = os.path.join(uploads_root(), folder)
+    os.makedirs(dest, exist_ok=True)
+    tmp = os.path.join(dest, f".{name}.part")
+    left = length
+    with open(tmp, "wb") as f:
+        while left > 0:
+            chunk = rfile.read(min(left, 1 << 20))
+            if not chunk:
+                break
+            f.write(chunk)
+            left -= len(chunk)
+    if left:
+        os.remove(tmp)
+        raise ValueError(f"{name}: the upload was cut off.")
+    saved, skipped = [], []
+    if ext == ".zip":
+        import zipfile
+        try:
+            with zipfile.ZipFile(tmp) as z:
+                for info in z.infolist():
+                    base = os.path.basename(info.filename)
+                    if info.is_dir() or not base or "__MACOSX" in info.filename or base.startswith("."):
+                        continue
+                    if os.path.splitext(base)[1].lower() not in UPLOAD_EXTS - {".zip"}:
+                        skipped.append(base)
+                        continue
+                    with z.open(info) as src, open(os.path.join(dest, base), "wb") as out:
+                        while chunk := src.read(1 << 20):
+                            out.write(chunk)
+                    saved.append(base)
+        except zipfile.BadZipFile:
+            raise ValueError(f"{name}: not a readable zip.")
+        finally:
+            os.remove(tmp)
+    else:
+        os.replace(tmp, os.path.join(dest, name))
+        saved.append(name)
+    return {"folder": dest, "saved": saved, "skipped": skipped}
+
+
 # ---- model downloads: the desktop's "Download models for me" (fizgig.scripts.fetch_models) ----------------------
 _fetch = {"proc": None, "state": "idle", "family": "", "file": "", "done": 0, "total": 0, "lines": []}
 
@@ -528,6 +592,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(load_state())
         if path == "/api/fetch":
             return self.json(_fetch_status())
+        if path == "/api/upload/root":
+            return self.json({"root": uploads_root()})
         if path == "/api/stats":
             with _lock:
                 return self.json(dict(_stats))
@@ -656,6 +722,13 @@ class Handler(BaseHTTPRequestHandler):
                                                                  "HttpOnly; SameSite=Strict")])
         if not self._api_ok():
             return None
+        if path == "/api/upload":                    # a raw file body, not JSON
+            qs = parse_qs(urlparse(self.path).query)
+            try:
+                return self.json(_save_upload((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0],
+                                              self.rfile, int(self.headers.get("Content-Length") or 0)))
+            except (ValueError, OSError) as e:
+                return self.json({"error": str(e)}, 400)
         b = self._body()
         try:
             if path == "/api/form/state":

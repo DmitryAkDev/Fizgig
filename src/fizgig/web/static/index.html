@@ -56,6 +56,20 @@
               <div class="field-hint" id="folderSummary"></div>
             </div>
           </div>
+          <div class="section-card">
+            <div class="card-title">Upload a training folder</div>
+            <div class="card-desc">The folder above is on the machine running Fizgig. If your training data (pictures, clips or
+              songs) is on the computer you're using now, upload it here, with the caption .txt files (a .zip works too).</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">New folder name:</span>
+                <input type="text" id="uploadName" class="w-combo-lg" placeholder="my_subject"></div>
+              <div class="upload-drop" id="uploadDrop">Drop files here, or
+                <label class="btn">Choose files…<input type="file" id="uploadFiles" multiple hidden
+                  accept="image/*,video/*,audio/*,.txt,.zip"></label></div>
+              <div class="field-hint" id="uploadWhere"></div>
+              <div class="field-hint" id="uploadStatus"></div>
+            </div>
+          </div>
           <div class="section-card warning-card" id="modelWarning" style="display:none">
             <div class="card-title">Model files needed</div>
             <div class="card-desc" id="modelWarningText"></div>

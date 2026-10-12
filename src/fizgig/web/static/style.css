@@ -1110,3 +1110,9 @@ input[type="range"] {
 .fetch-bar { height: 8px; border-radius: 4px; background: var(--bg-deep); overflow: hidden; margin: 6px 0; max-width: 520px; }
 .fetch-bar > div { height: 100%; background: var(--accent); transition: width .5s; }
 .fetch-log { font-size: 11px; max-height: 180px; overflow: auto; white-space: pre-wrap; }
+
+/* Start: upload a training folder */
+.upload-drop { border: 2px dashed var(--border); border-radius: 8px; padding: 18px; margin: 8px 0; text-align: center;
+  color: var(--text-explain); }
+.upload-drop.over { border-color: var(--accent); background: var(--accent-subtle); }
+#uploadStatus.bad { color: var(--warning); }

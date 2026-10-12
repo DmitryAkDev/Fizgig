@@ -533,6 +533,34 @@ function showTab(name) {
   api("/api/state", {tab: name}).catch(() => {});
 }
 
+// ---- upload a training folder from this computer ------------------------------------------------------------
+async function uploadFiles(files) {
+  const name = $("uploadName").value.trim();
+  const say = (t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); };
+  if (!name) return say("Type a name for the new folder first.", true);
+  if (!files.length) return;
+  let folder = "", saved = 0;
+  const skipped = [], failed = [];
+  for (const [i, f] of [...files].entries()) {
+    say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
+    try {
+      const r = await fetch(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(f.name)}`,
+        {method: "POST", headers: {"X-Fizgig-Token": TOKEN}, body: f});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { failed.push(d.error || f.name); continue; }
+      folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped);
+    } catch (e) { failed.push(`${f.name}: ${e.message}`); }
+  }
+  let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}. That is now the training folder.` : "Nothing was saved.";
+  if (skipped.length) msg += ` Left out (not pictures, clips, songs or captions): ${skipped.join(", ")}.`;
+  if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
+  say(msg, !saved || failed.length);
+  if (saved) {
+    $("imageFolder").value = folder;
+    $("imageFolder").dispatchEvent(new Event("change"));
+  }
+}
+
 let wired = false;
 function wire() {
   if (wired) return;
@@ -545,6 +573,15 @@ function wire() {
   const folder = $("imageFolder");
   const setFolder = () => { S.imageFolder = folder.value.trim(); refreshStateSoon(); saveStateSoon(); };
   folder.addEventListener("change", setFolder);
+  $("uploadFiles").addEventListener("change", (e) => { uploadFiles(e.target.files); e.target.value = ""; });
+  const drop = $("uploadDrop");
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
+  api("/api/upload/root").then((d) => {
+    $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
+      "Uploading again with the same name adds to that folder.";
+  }).catch(() => {});
   document.querySelector('[data-pick="imageFolder"]').addEventListener("click", () =>
     pick(folder.value, true, (p) => { folder.value = p; setFolder(); }));
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
