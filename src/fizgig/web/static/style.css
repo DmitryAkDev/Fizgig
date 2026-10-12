@@ -1559,3 +1559,20 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .lightbox-figure img { width: calc(100vw - 96px); }
   .lightbox-step { width: 40px; }
 }
+
+/* the sidebar buttons in the desktop Start tab's colours: violet Deploy on RunPod, blue About (coffee stays yellow) */
+.about-btn { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+.about-btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #FFFFFF; }
+.runpod-btn { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; padding: 9px 12px;
+  border-radius: var(--radius); background: #7C3AED; color: #FFFFFF; font-weight: 700; font-size: 13px;
+  text-decoration: none; transition: transform .12s, box-shadow .12s, background .12s; }
+.runpod-btn:hover { background: #6D28D9; color: #FFFFFF; transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, .3); }
+.runpod-btn:visited { color: #FFFFFF; }
+.runpod-btn i { width: 17px; height: 17px; flex: 0 0 17px; background: currentColor;
+  -webkit-mask: var(--bolt) center / contain no-repeat; mask: var(--bolt) center / contain no-repeat;
+  --bolt: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M13 2 4 14h7l-1 8 9-12h-7z'/%3E%3C/svg%3E"); }
+@media (max-width: 760px) {
+  .runpod-btn { order: 2; margin: 0; padding: 7px 9px; border-radius: 999px; flex: 0 0 auto; }
+  .runpod-btn span { display: none; }
+}
