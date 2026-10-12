@@ -919,11 +919,113 @@ async function loadGallery() {
   host.classList.toggle("gallery-as-grid", view === "grid");
   if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || []));
   else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || []));
+  likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
   $("galleryInfo").textContent = g.items.length ?
     `${g.items.length} preview${g.items.length === 1 ? "" : "s"} of ${run} in ${dir}` +
     (others ? ` · ${others} other run${others === 1 ? "" : "s"} have previews here too (pick one above)` : "") :
     "No previews yet. They appear here as the run makes them.";
+}
+
+// ---- likeness to the subject (fizgig/web/gallery_likeness.py; the desktop gallery's likeness.json) ------------
+S.lik = {dir: "", picked: []};
+const LIK_PICS = /\.(png|jpe?g|webp)$/i;
+async function likenessShow(dir, items, run, view) {
+  S.lik.dir = dir;
+  const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
+  let d;
+  try { d = await api(`/api/likeness?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  catch (e) { return; }
+  if (ask !== S.lik.ask) return;
+  S.lik.data = d;
+  $("likBtn").style.display = d.available ? "" : "none";
+  const on = d.baselines.length === 3;
+  $("likStatus").textContent = on ? "🎯 " + (d.status || "") : "";
+  const pics = items.filter((it) => LIK_PICS.test(it.name));
+  // the trend: the shown run's epochs, each the mean of its previews' scores
+  const by = {};
+  if (on) for (const it of pics) { const s = d.scores[it.name]; if (typeof s === "number" && it.epoch != null) (by[it.epoch] = by[it.epoch] || []).push(s); }
+  const epochs = Object.keys(by).map(Number).sort((a, b) => a - b);
+  const avgs = epochs.map((e) => by[e].reduce((a, b) => a + b, 0) / by[e].length);
+  let best = 0;
+  avgs.forEach((v, i) => { if (v > avgs[best]) best = i; });
+  const bestEpoch = epochs.length ? epochs[best] : null;
+  // a badge on every scored picture (the best epoch's outlined)
+  for (const fig of document.querySelectorAll("#gallery .gallery-item")) {
+    fig.querySelector(".lik-badge")?.remove();
+    const it = pics.find((p) => p.name === fig.title);
+    if (!on || !it) continue;
+    const s = d.scores[it.name];
+    const cls = s === undefined || s === null ? "na" : s >= 0.45 ? "good" : s >= 0.30 ? "mid" : "bad";
+    fig.append(el("span", {class: `lik-badge ${cls}${it.epoch === bestEpoch && bestEpoch != null ? " best" : ""}`,
+      text: s === undefined ? "…" : s === null ? "no face" : `${Math.round(s * 100)}%`}));
+  }
+  $("likPanel").style.display = epochs.length ? "" : "none";
+  if (!epochs.length) return;
+  $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% average likeness)`;
+  const cv = $("likChart");
+  const w = cv.clientWidth || 900;
+  if (cv.width !== w) cv.width = w;
+  const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
+  g.clearRect(0, 0, W, H);
+  const ymax = Math.max(0.7, Math.max(...avgs) + 0.05);
+  const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
+  const y = (v) => T + (H - T - B) * (1 - v / ymax);
+  g.font = "11px sans-serif"; g.lineWidth = 1;
+  for (const band of [0.30, 0.45]) {         // the badge colour bands, for orientation
+    g.strokeStyle = "#34495E"; g.fillStyle = "#7F8C8D";
+    g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
+    g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
+  }
+  g.strokeStyle = "#3498DB"; g.lineWidth = 2; g.beginPath();
+  avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
+  g.stroke();
+  const every = Math.max(1, Math.ceil(epochs.length / 40));
+  avgs.forEach((v, i) => {
+    g.fillStyle = i === best ? "#27AE60" : "#3498DB";
+    g.beginPath(); g.arc(x(i), y(v), i === best ? 5 : 3.5, 0, Math.PI * 2); g.fill();
+    if (i % every === 0 || i === best) { g.fillStyle = "#95A5A6"; g.fillText(epochs[i], x(i) - 6, H - 6); }
+  });
+}
+async function likenessPicker() {
+  const folder = S.imageFolder || "";
+  $("likFolder").textContent = folder || "no training image folder set on the Start tab";
+  S.lik.picked = [...((S.lik.data && S.lik.data.baselines) || [])];
+  const grid = $("likGrid");
+  grid.innerHTML = "";
+  $("likModal").classList.add("active");
+  if (!folder) return;
+  const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}`).catch(() => ({items: []}));
+  for (const it of r.items.filter((x) => LIK_PICS.test(x.name))) {
+    const fig = el("figure", {title: it.name, onclick: () => {
+      const i = S.lik.picked.indexOf(it.name);
+      if (i >= 0) S.lik.picked.splice(i, 1);
+      else { if (S.lik.picked.length >= 3) S.lik.picked.shift(); S.lik.picked.push(it.name); }
+      likenessMarks();
+    }}, el("img", {loading: "lazy", alt: "", src: `/api/thumb?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`}));
+    fig.dataset.name = it.name;
+    grid.append(fig);
+  }
+  if (!grid.children.length) grid.append(el("div", {class: "field-hint", text: "No pictures in the training image folder."}));
+  likenessMarks();
+}
+function likenessMarks() {
+  for (const f of $("likGrid").querySelectorAll("figure")) {
+    const i = S.lik.picked.indexOf(f.dataset.name);
+    f.classList.toggle("on", i >= 0);
+    f.querySelector(".lik-num")?.remove();
+    if (i >= 0) f.append(el("span", {class: "lik-num", text: String(i + 1)}));
+  }
+  $("likStart").disabled = S.lik.picked.length !== 3;
+  $("likPickStatus").textContent = `${S.lik.picked.length}/3 selected`;
+}
+async function likenessSet(names) {
+  $("likPickStatus").textContent = "Starting…";
+  try {
+    await api("/api/likeness", {dir: S.lik.dir, dataset: S.imageFolder || "", baselines: names});
+    $("likModal").classList.remove("active");
+    loadGallery();
+  } catch (e) { $("likPickStatus").textContent = e.message; }
 }
 
 async function loadCheckpoints() {
@@ -4688,6 +4790,9 @@ function wire() {
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
+  $("likBtn").addEventListener("click", likenessPicker);
+  $("likStart").addEventListener("click", () => likenessSet(S.lik.picked));
+  $("likClear").addEventListener("click", () => likenessSet([]));
   document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {
     S.galleryView = b.dataset.view; loadGallery(); }));
   $("btnViewPreviews").addEventListener("click", async () => {   // the Samples tab, at its previews

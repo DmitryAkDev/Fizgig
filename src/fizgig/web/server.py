@@ -1900,6 +1900,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._browse((qs.get("path") or [""])[0])
         if path == "/api/samples":
             return self._samples((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
+        if path == "/api/likeness":                 # the gallery's likeness scores (resumes the scorer)
+            from fizgig.web import gallery_likeness
+            return self.json(gallery_likeness.state((qs.get("dir") or [""])[0], (qs.get("dataset") or [""])[0]))
         if path == "/api/thumb":
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in _PIC or not os.path.isfile(p):
@@ -2321,6 +2324,13 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/likeness":            # three dataset photos to score the samples against; [] clears
+                from fizgig.web import gallery_likeness
+                try:
+                    return self.json({"ok": True, "msg": gallery_likeness.start(
+                        str(b.get("dir") or ""), str(b.get("dataset") or ""), b.get("baselines") or [])})
+                except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path in ("/api/prep/run", "/api/look/scan", "/api/look/move"):
                 folder = str(b.get("folder") or "")
