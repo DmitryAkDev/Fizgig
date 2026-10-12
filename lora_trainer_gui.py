@@ -33684,9 +33684,17 @@ class LoRATrainerGUI:
                 "caption_loaded": bool(self._caption_worker_alive()),
                 "trainer_started": self._live_proc_started(proc) if running else None,
                 "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),
-                "lora": str(self.settings.get("LORA_NAME", "") or ""),
-                "output_dir": str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
-                "family": self.architecture_var.get() if hasattr(self, "architecture_var") else "",
+                # a paused run is named by its own sidecar (it can be another model's, from a shared output folder)
+                **({"lora": (getattr(self, "_paused_output", None) or ("", ""))[0] or
+                            str(self.settings.get("LORA_NAME", "") or ""),
+                    "output_dir": (getattr(self, "_paused_output", None) or ("", ""))[1] or
+                                  str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
+                    "family": ((getattr(self, "_paused_run_item", None) or {}).get("architecture") or
+                               (self.architecture_var.get() if hasattr(self, "architecture_var") else ""))}
+                   if state == "paused" and not running else
+                   {"lora": str(self.settings.get("LORA_NAME", "") or ""),
+                    "output_dir": str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
+                    "family": self.architecture_var.get() if hasattr(self, "architecture_var") else ""}),
                 "stage": self.training_progress_text_var.get() if hasattr(self, "training_progress_text_var") else "",
                 "percent": float(self.training_progress_var.get()) if hasattr(self, "training_progress_var") else 0.0,
             })

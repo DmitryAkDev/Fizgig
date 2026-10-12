@@ -503,10 +503,12 @@ async function pollRun() {
   const r = S.run, live = r.running || r.state === "starting";
   const d = r.desktop;
   // the desktop app's run shows here whenever this page has none of its own going
-  const deskBusy = d && (d.running || ["running", "pausing", "paused"].includes(d.state));
+  const deskBusy = d && (d.running || ["running", "pausing"].includes(d.state));
+  // a run paused there is on show too, but the GPU is free: Start still begins a run here
+  const deskPaused = d && !deskBusy && d.state === "paused";
   // ...and a run it just finished stays on show (Finished / Failed / Stopped) until either side starts another
-  const deskDone = d && !deskBusy && d.last_result && d.last_result.at > (r.ended_at || 0);
-  const mode = !live && (deskBusy || deskDone) ? "desktop" : "web";
+  const deskDone = d && !deskBusy && !deskPaused && d.last_result && d.last_result.at > (r.ended_at || 0);
+  const mode = !live && (deskBusy || deskPaused || deskDone) ? "desktop" : "web";
   if (mode !== S.mode) switchConsole(mode);
   if (mode === "desktop") {
     const res = deskDone ? {finished: "completed", failed: "failed", stopped: "stopped"}[d.last_result.result] : null;
@@ -517,7 +519,10 @@ async function pollRun() {
     $("runStatus").textContent = `${label}: ${(deskDone ? d.last_result.lora : d.lora) || "(unnamed)"}` +
       (deskDone ? when : d.stage ? " · " + d.stage : "");
     const ack = d.ack && S.ackBefore !== undefined && d.ack.at > S.ackBefore ? " " + d.ack.note : "";
-    $("runSource").textContent = (deskDone ?
+    $("runSource").textContent = (deskPaused ?
+      `This is a run paused in the desktop app (${d.family}), not your settings above: ${d.lora} in ` +
+      `${d.output_dir}. Resume carries it on; Start Training begins your run here instead - nothing is ` +
+      "using the GPU while it's paused." : deskDone ?
       `The last run started in the desktop app (${d.family}) ended. Its previews and checkpoints are below; ` +
       "Start begins a new run here." :
       `This run was started in the desktop app (${d.family}). Pause, Stop and Resume here work on it. Start is ` +
@@ -530,7 +535,7 @@ async function pollRun() {
     $("runCardBadge").dataset.state = state;
     showProgress(deskDone ? d.last_result.progress : d.progress, state, deskDone ? d.last_result.lora : d.lora,
       deskDone ? "" : d.stage);
-    $("btnStart").disabled = !deskDone;
+    $("btnStart").disabled = !(deskDone || deskPaused);
     $("btnPause").disabled = !(d.running && d.state === "running");
     $("btnStop").disabled = !d.running;
     $("btnResume").style.display = !d.running && d.state === "paused" ? "" : "none";
