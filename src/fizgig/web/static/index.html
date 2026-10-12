@@ -61,7 +61,10 @@
             <div class="card-title">Upload a training folder</div>
             <div class="card-desc">The folder above is on the machine running Fizgig. If your training data (pictures, clips or
               songs) is on the computer you're using now, upload it here, with the caption .txt files (a .zip works too).</div>
-            <div class="card-content">
+            <div class="card-desc" id="uploadLocalNote" style="display:none">You have this page open on the
+              machine running Fizgig, so there's nothing to upload: Choose… above picks your folder directly. Open the
+              web UI from a phone or another computer to upload from there.</div>
+            <div class="card-content" id="uploadBody">
               <div class="field-row"><span class="field-label">New folder name:</span>
                 <input type="text" id="uploadName" class="w-combo-lg" placeholder="my_subject"></div>
               <div class="upload-drop" id="uploadDrop">Drop a folder or files here, or
