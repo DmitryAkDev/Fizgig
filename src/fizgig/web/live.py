@@ -1,0 +1,115 @@
+"""The desktop app and the web UI showing each other's runs.
+
+Each side writes a small heartbeat file while it is open: the desktop app its run (state, LoRA, output folder,
+progress, and a copy of its training console), the web UI whether it is training. The web UI reads the desktop's to
+show and control a desktop run and its queue; each side reads the other's to refuse a second run on the same GPU.
+The web UI's Pause / Stop / Resume for a desktop run go back through a command file the desktop app picks up, so the
+desktop's own state machine (queue, pause sidecar, buttons) does the work exactly as its own buttons would.
+"""
+import json
+import os
+import time
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+LIVE_DESKTOP = os.path.join(BASE_DIR, ".fizgig_live_desktop.json")
+LIVE_WEB = os.path.join(BASE_DIR, ".fizgig_live_web.json")
+DESKTOP_CMD = os.path.join(BASE_DIR, ".fizgig_desktop_cmd.json")
+DESKTOP_LOG = os.path.join(BASE_DIR, ".fizgig_desktop_console.log")
+QUEUE_FILE = os.path.join(BASE_DIR, "presets", "training_queue.json")
+FRESH_S = 8.0               # a heartbeat older than this = that side is closed (or hung)
+DESKTOP_CMDS = ("pause", "stop", "resume")
+
+
+def write(path, data):
+    data = dict(data, heartbeat=time.time(), pid=os.getpid())
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def read_fresh(path):
+    """The other side's heartbeat file, or None when it is missing, stale or unreadable."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) and time.time() - float(d.get("heartbeat", 0)) < FRESH_S else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def busy(d) -> bool:
+    """That side has a run going (training, caching, or pausing at the end of its epoch)."""
+    return bool(d and (d.get("running") or d.get("state") in ("running", "pausing", "starting")))
+
+
+def send_desktop(cmd):
+    if cmd not in DESKTOP_CMDS:
+        raise ValueError(f"unknown command {cmd!r}")
+    tmp = DESKTOP_CMD + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"cmd": cmd, "at": time.time()}, f)
+    os.replace(tmp, DESKTOP_CMD)
+
+
+def take_desktop_cmd():
+    """For the desktop app: the waiting command (claimed, so it runs once), or None. Commands older than a minute
+    are dropped - a Stop sent while the app was closed must not fire when it next opens."""
+    claim = DESKTOP_CMD + ".claimed"
+    try:
+        os.replace(DESKTOP_CMD, claim)
+    except OSError:
+        return None
+    try:
+        with open(claim, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    remove(claim)
+    if not isinstance(d, dict) or time.time() - float(d.get("at", 0) or 0) > 60:
+        return None
+    return d.get("cmd") if d.get("cmd") in DESKTOP_CMDS else None
+
+
+def queue_summary():
+    """The desktop's training queue as short rows for the web UI (it lives in presets/training_queue.json)."""
+    try:
+        with open(QUEUE_FILE, encoding="utf-8") as f:
+            items = json.load(f)
+    except (OSError, ValueError):
+        return []
+    out = []
+    for it in items if isinstance(items, list) else ():
+        if not isinstance(it, dict):
+            continue
+        p = it.get("preset") if isinstance(it.get("preset"), dict) else {}
+        folder = str(it.get("image_folder") or "")
+        out.append({"name": str(p.get("LORA_NAME") or os.path.basename(folder) or "(unnamed)"),
+                    "family": str(it.get("architecture") or ""), "folder": folder,
+                    "queued_at": str(it.get("queued_at") or "")})
+    return out
+
+
+def read_log(offset, limit=256 * 1024):
+    """New text in the desktop's console copy since byte `offset`: (text, next offset). A shorter file than the
+    offset = a new run started it again, so reading starts from the top."""
+    try:
+        size = os.path.getsize(DESKTOP_LOG)
+        if offset > size:
+            offset = 0
+        with open(DESKTOP_LOG, "rb") as f:
+            f.seek(offset)
+            data = f.read(limit)
+        return data.decode("utf-8", "replace"), offset + len(data)
+    except OSError:
+        return "", 0

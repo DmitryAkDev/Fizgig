@@ -128,9 +128,16 @@
                 <button class="btn btn-danger" id="btnStop">Stop</button>
                 <span class="field-hint" id="runStatus"></span>
               </div>
+              <div class="field-hint" id="runSource"></div>
               <div id="problems" class="problems"></div>
               <pre class="console-terminal" id="console"></pre>
             </div>
+          </div>
+          <div class="section-card" id="queueCard" style="display:none">
+            <div class="card-title">Queue (desktop app)</div>
+            <div class="card-desc">Runs waiting in the desktop app's queue, in order. Each starts there when the one
+              before it finishes. Add, reorder or remove them in the desktop app.</div>
+            <div class="card-content"><div id="queueList" class="checkpoint-list"></div></div>
           </div>
           <div class="section-card">
             <div class="card-title">Checkpoints</div>

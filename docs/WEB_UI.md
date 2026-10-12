@@ -15,7 +15,11 @@ venv/bin/python lora_trainer_gui.py --web          (Linux)
 
 That copy keeps running until you close its terminal.
 
-The desktop app can't see a training run started in the web UI, and the web UI can't see one started in the desktop app. Start only one training run at a time, or both will share the GPU.
+## Runs started in the desktop app
+
+While the desktop app is open, a run started there shows on the web UI's Training tab: its progress, its log, its previews and checkpoints, and the desktop app's queue below it. Pause, Stop and Resume on that page work on it, exactly as the desktop app's own buttons would, so you can start a run at your desk and check on it from your phone. Change the queue itself in the desktop app.
+
+A run started in the web UI shows only in the web UI. One run trains at a time: the web UI won't start a run while the desktop app is training, and the desktop app won't start one while the web UI is. If the desktop app started the web UI, closing the desktop app asks before it stops a run started in the web UI.
 
 The console prints the address, for example `Fizgig web UI on http://localhost:8081/`. The desktop app's Preferences → Web UI card has links to it: one for this machine, and one with this machine's network address for other devices.
 

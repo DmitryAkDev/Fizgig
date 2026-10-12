@@ -3979,6 +3979,7 @@ class LoRATrainerGUI:
                                         bg=COLORS["accent_subtle"], wraplength=480, justify=tk.LEFT)
         self._long_hint_text.pack(anchor=tk.W, padx=12, pady=(0, 9))
         self.master.after(1500, self._lr_hint_tick)
+        self.master.after(2000, self._live_tick)          # the web UI shows and controls this app's runs
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
         # LoRA LR Ratio — hidden, always 1 (LoRA+ default). Widget exists for preset/save compat.
@@ -17564,8 +17565,10 @@ class LoRATrainerGUI:
                                 "    Windows:  venv\\Scripts\\python lora_trainer_gui.py --web\n"
                                 "    Linux:  venv/bin/python lora_trainer_gui.py --web\n"
                                 "That copy keeps running until you close its terminal.\n\n"
-                                "Training: this app can't see a run started in the web UI, and the web UI can't see "
-                                "one started here. Start only one training run at a time, or both will share the GPU.",
+                                "Training: a run started here shows in the web UI, with its progress, log, previews "
+                                "and this app's queue, and the web UI can pause, stop and resume it. A run started in "
+                                "the web UI shows only there. One run trains at a time: neither starts a run while "
+                                "the other is training.",
                  font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"], wraplength=640,
                  justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
         try:
@@ -31920,6 +31923,7 @@ class LoRATrainerGUI:
         """Update training console — only auto-scroll if user was already at the bottom.
         Uses the widget's own yview() position as the authoritative signal; the older
         self.user_scrolled flag sometimes got out of sync with actual widget state."""
+        self._live_log_write(line)
         self._consume_training_progress(line)
         if "Starting cache preparation" in line:
             self._set_training_progress_phase("Preparing latent cache…", percent=0)
@@ -32282,9 +32286,22 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+        # One run on the GPU at a time: a run started in the web UI holds it
+        try:
+            from fizgig.web import live as _live
+            if _live.busy(_live.read_fresh(_live.LIVE_WEB)):
+                messagebox.showwarning(
+                    "The web UI is training",
+                    "A run started in the web UI is using the GPU. Stop or pause it there (its Training tab), "
+                    "then start this one.")
+                return
+        except Exception:
+            pass
+
         # Validate inputs before starting
         if not self.validate_inputs():
             return
+        self._live_log_reset()
 
         # Resuming a state that's already at the final epoch trains nothing — the trainer's epoch
         # loop is empty and it just rewrites the final LoRA. A warning rather than a block,
@@ -33452,6 +33469,68 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+    # ---- the web UI's view of this app's runs (fizgig/web/live.py) ----------------------------------------------
+    def _live_log_write(self, line):
+        if _persist_disabled():
+            return
+        f = getattr(self, "_live_log_f", None)
+        try:
+            if f is None:
+                from fizgig.web import live as _live
+                f = self._live_log_f = open(_live.DESKTOP_LOG, "a", encoding="utf-8", newline="")
+            f.write(line)
+            f.flush()
+        except Exception:
+            self._live_log_f = False if f is None else f      # unwritable: stop trying (False is falsy but not None)
+
+    def _live_log_reset(self):
+        """A new run starts the web UI's copy of the console again."""
+        try:
+            if _persist_disabled():
+                return
+            from fizgig.web import live as _live
+            f = getattr(self, "_live_log_f", None)
+            if f:
+                f.close()
+            self._live_log_f = open(_live.DESKTOP_LOG, "w", encoding="utf-8", newline="")
+        except Exception:
+            pass
+
+    def _live_tick(self):
+        """Every second: this app's run for the web UI (state, LoRA, output folder, progress), and any Pause / Stop /
+        Resume the web UI sent, carried out by the same methods as this app's own buttons."""
+        try:
+            if _persist_disabled():
+                raise RuntimeError("headless test")
+            from fizgig.web import live as _live
+            proc = getattr(self, "current_process", None)
+            running = proc is not None and proc.poll() is None
+            state = getattr(self, "training_state", "idle")
+            _live.write(_live.LIVE_DESKTOP, {
+                "running": running, "state": state,
+                "lora": str(self.settings.get("LORA_NAME", "") or ""),
+                "output_dir": str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
+                "family": self.architecture_var.get() if hasattr(self, "architecture_var") else "",
+                "stage": self.training_progress_text_var.get() if hasattr(self, "training_progress_text_var") else "",
+                "percent": float(self.training_progress_var.get()) if hasattr(self, "training_progress_var") else 0.0,
+            })
+            cmd = _live.take_desktop_cmd()
+            if cmd == "pause" and running and state == "running":
+                self.update_console("[web UI] Pause requested from the web UI\n")
+                self._pause_training()
+            elif cmd == "stop" and running:
+                self.update_console("[web UI] Stop requested from the web UI\n")
+                self.stop_training()
+            elif cmd == "resume" and not running and state == "paused":
+                self.update_console("[web UI] Resume requested from the web UI\n")
+                self._resume_training()
+        except Exception:
+            pass
+        try:
+            self.master.after(1000, self._live_tick)
+        except tk.TclError:
+            pass
+
     # ---- the web UI, started from Preferences > Web UI ----------------------------------------------------------
     def _web_ui_running(self):
         p = getattr(self, "_web_ui_proc", None)
@@ -33568,6 +33647,19 @@ class LoRATrainerGUI:
                 self.stop_training()
             except Exception:
                 pass
+        try:
+            # the web UI this app started goes with it, and with it any run started there
+            from fizgig.web import live as _live
+            if self._web_ui_running() and _live.busy(_live.read_fresh(_live.LIVE_WEB)):
+                if not messagebox.askyesno(
+                        "The web UI is training",
+                        "A run started in the web UI is training. This app started the web UI, so closing Fizgig "
+                        "stops the web UI and that run.\n\nClose Fizgig and STOP that run?\n\n(To keep it, click No "
+                        "and pause it from the web UI first; it saves and can be resumed.)"):
+                    return
+            _live.remove(_live.LIVE_DESKTOP)     # the web UI stops showing this app's run
+        except Exception:
+            pass
         try:
             self._web_ui_stop()            # the web UI it started goes with it
         except Exception:

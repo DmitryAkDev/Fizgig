@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
+from fizgig.web import live
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -103,6 +104,9 @@ def _poll_stats_loop():
         with _lock:
             _stats.update(vram=[vu, vt], ram=[ru, rt], device_name=name, vram_peak=max(_stats["vram_peak"], vu),
                           ram_peak=max(_stats["ram_peak"], ru))
+            mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
+                    "lora": _run["lora"], "output_dir": _run["output_dir"]}
+        live.write(live.LIVE_WEB, mine)          # the desktop app reads this before starting a run
         time.sleep(1.0)
 
 
@@ -215,6 +219,8 @@ def _start(family_key, values, image_folder, resume=""):
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
+    if live.busy(live.read_fresh(live.LIVE_DESKTOP)):
+        return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
     desc, inputs, plan = _plan(family_key, values, image_folder, resume)
     if plan.problems:
         return {"problems": plan.problems}
@@ -602,7 +608,14 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
             r["resume"] = latest_state(r["output_dir"], r["lora"]) if r["lora"] else ""
+            d = live.read_fresh(live.LIVE_DESKTOP)
+            r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
+                                                   "percent")} if d else None)
+            r["queue"] = live.queue_summary() if d else []
             return self.json(r)
+        if path == "/api/desktop/log":
+            text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0))
+            return self.json({"text": text, "offset": nxt})
         if path == "/api/log":
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
         if path == "/api/browse":
@@ -782,6 +795,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
+            if path == "/api/desktop":
+                if not live.read_fresh(live.LIVE_DESKTOP):
+                    return self.json({"error": "The desktop app isn't open."}, 400)
+                live.send_desktop(str(b.get("cmd") or ""))
+                return self.json({"ok": True})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir"}
                 ch = b.get("changes") or {}
@@ -855,6 +873,7 @@ def run_server(host, port=None, password=None):
         pass
     finally:
         _stop()
+        live.remove(live.LIVE_WEB)
         srv.server_close()
 
 

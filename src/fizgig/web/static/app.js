@@ -373,6 +373,13 @@ async function check() {
 }
 
 async function start(path) {
+  if (S.mode === "desktop") {                     // the desktop app's run: its own buttons do the work
+    const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
+    if (!cmd) return;
+    try { await api("/api/desktop", {cmd}); $("runStatus").textContent = "Sent to the desktop app…"; }
+    catch (e) { $("runStatus").textContent = e.message; }
+    return setTimeout(pollRun, 1200);
+  }
   try {
     const r = await api(path, path === "/api/start" ? runBody() : {});
     showProblems(r.problems);
@@ -381,24 +388,88 @@ async function start(path) {
   } catch (e) { $("runStatus").textContent = e.message; }
 }
 
+const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
+                    completed: "Finished", failed: "Failed", stopped: "Stopped"};
+
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
   const r = S.run, live = r.running || r.state === "starting";
-  const label = {idle: "Idle", starting: "Starting", running: "Running", paused: "Paused", completed: "Finished",
-                 failed: "Failed", stopped: "Stopped"}[r.state] || r.state;
-  $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
-  $("runBadge").textContent = label;
-  $("runBadge").dataset.state = r.state;
-  $("btnStart").disabled = live;
-  $("btnPause").disabled = !r.running;
-  $("btnStop").disabled = !live;
-  $("btnResume").style.display = !live && r.resume ? "" : "none";
+  const d = r.desktop;
+  // the desktop app's run shows here whenever this page has none of its own going
+  const mode = !live && d && (d.running || ["running", "pausing", "paused"].includes(d.state)) ? "desktop" : "web";
+  if (mode !== S.mode) switchConsole(mode);
+  if (mode === "desktop") {
+    const label = RUN_LABELS[d.state] || d.state;
+    S.run.output_dir = d.output_dir;          // previews and checkpoints follow the desktop's run
+    $("runStatus").textContent = `${label}: ${d.lora || "(unnamed)"}${d.stage ? " · " + d.stage : ""}`;
+    $("runSource").textContent = `This run was started in the desktop app (${d.family}). Pause, Stop and Resume ` +
+      "here work on it. Start is off until it finishes, so the two don't share the GPU.";
+    $("runBadge").textContent = label;
+    $("runBadge").dataset.state = d.state;
+    $("btnStart").disabled = true;
+    $("btnPause").disabled = !(d.running && d.state === "running");
+    $("btnStop").disabled = !d.running;
+    $("btnResume").style.display = !d.running && d.state === "paused" ? "" : "none";
+  } else {
+    const label = RUN_LABELS[r.state] || r.state;
+    $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
+    $("runSource").textContent = d ? "The desktop app is open too. A run started there shows here." : "";
+    $("runBadge").textContent = label;
+    $("runBadge").dataset.state = r.state;
+    $("btnStart").disabled = live;
+    $("btnPause").disabled = !r.running;
+    $("btnStop").disabled = !live;
+    $("btnResume").style.display = !live && r.resume ? "" : "none";
+  }
+  renderQueue(r.queue || []);
+}
+
+function renderQueue(items) {
+  $("queueCard").style.display = items.length ? "" : "none";
+  const host = $("queueList");
+  host.innerHTML = "";
+  items.forEach((q, i) => host.append(el("div", {class: "checkpoint-row"},
+    el("span", {class: "checkpoint-name", text: `${i + 1}. ${q.name}`}),
+    el("span", {class: "field-hint", text: `${q.family} · ${q.folder}${q.queued_at ? " · queued " + q.queued_at : ""}`}))));
+}
+
+// the console shows this page's run (streamed) or the desktop app's (its console copy, polled)
+function switchConsole(mode) {
+  S.mode = mode;
+  $("console").textContent = "";
+  clearTimeout(S.deskLogTimer);
+  if (mode === "desktop") {
+    S.deskOffset = 0;
+    pollDesktopLog();
+  } else if (S.logSrc) {
+    S.logSrc.close();
+    S.logSince = 0;
+    followLog();
+  }
+  loadGallery(); loadCheckpoints();
+}
+
+async function pollDesktopLog() {
+  if (S.mode !== "desktop") return;
+  try {
+    const r = await api("/api/desktop/log?offset=" + (S.deskOffset || 0));
+    const out = $("console");
+    if (r.offset < (S.deskOffset || 0)) out.textContent = "";        // a new run started the copy again
+    if (r.text) {
+      const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+      out.textContent = (out.textContent + r.text).slice(-200000);
+      if (atEnd) out.scrollTop = out.scrollHeight;
+    }
+    S.deskOffset = r.offset;
+  } catch (e) { /* the server restarts */ }
+  S.deskLogTimer = setTimeout(pollDesktopLog, 1500);
 }
 
 function followLog() {
-  const src = new EventSource(`/api/log?since=${S.logSince}&t=${encodeURIComponent(TOKEN)}`);
+  const src = S.logSrc = new EventSource(`/api/log?since=${S.logSince}&t=${encodeURIComponent(TOKEN)}`);
   const out = $("console");
   src.onmessage = (e) => {
+    if (S.mode === "desktop") return;
     S.logSince = Number(e.lastEventId) || S.logSince;
     const line = JSON.parse(e.data);
     const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
@@ -411,7 +482,7 @@ function followLog() {
     }
     if (atEnd) out.scrollTop = out.scrollHeight;
   };
-  src.onerror = () => { src.close(); setTimeout(followLog, 3000); };
+  src.onerror = () => { src.close(); if (S.logSrc === src) setTimeout(followLog, 3000); };
 }
 
 async function pollStats() {
