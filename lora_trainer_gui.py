@@ -17558,7 +17558,12 @@ class LoRATrainerGUI:
                         variable=self.prefs_vars["web_autostart"], onvalue="1", offvalue="0"
                         ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(2, 2))
         tk.Label(web_card, text="The web UI stays up while this app is open, however you started it here. Closing "
-                                "Fizgig closes the web UI too.\n"
+                                "Fizgig closes the web UI too.\n\n"
+                                "To run the web UI on its own, without this app, open a terminal in the Fizgig folder "
+                                "and run:\n"
+                                "    Windows:  venv\\Scripts\\python lora_trainer_gui.py --web\n"
+                                "    Linux:  venv/bin/python lora_trainer_gui.py --web\n"
+                                "That copy keeps running until you close its terminal.\n\n"
                                 "Training: this app can't see a run started in the web UI, and the web UI can't see "
                                 "one started here. Start only one training run at a time, or both will share the GPU.",
                  font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,

@@ -6,11 +6,14 @@ Fizgig can run as a web page as well as a desktop app: on a pod, on a machine wi
 
 In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too.
 
-Without the desktop app (a server, or a pod with no desktop session):
+To run it on its own, without the desktop app, open a terminal in the Fizgig folder and run:
 
 ```
-python lora_trainer_gui.py --web
+venv\Scripts\python lora_trainer_gui.py --web      (Windows)
+venv/bin/python lora_trainer_gui.py --web          (Linux)
 ```
+
+That copy keeps running until you close its terminal.
 
 The desktop app can't see a training run started in the web UI, and the web UI can't see one started in the desktop app. Start only one training run at a time, or both will share the GPU.
 
