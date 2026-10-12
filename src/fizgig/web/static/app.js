@@ -143,12 +143,19 @@ function renderRow(r) {
       if (listId) wrap.append(el("datalist", {id: listId}, r.choices.map((c) => el("option", {value: c}))));
     }
     const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}), input);
+    let upStatus = null;
     if (r.kind === "path" || r.kind === "folder") {
       row.append(el("button", {class: "btn", text: "Browse…", onclick: () =>
         pick(input.value || S.imageFolder, r.kind === "folder", (p) => { input.value = p; set(p); })}));
+      if (r.upload) {
+        const up = uploadButton(r, input, set);
+        row.append(up.btn);
+        upStatus = up.status;
+      }
     }
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
     wrap.append(row);
+    if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
@@ -743,7 +750,8 @@ function sendFile(url, file, onProgress) {
 }
 
 // ---- upload a training folder from this computer ------------------------------------------------------------
-async function uploadFiles(picked) {
+// opts: name (the new folder's), say(text, bad), done(folder) - by default the Start tab's boxes and training folder
+async function uploadFiles(picked, opts = {}) {
   const {keep: files, video, other} = sortUpload(picked);
   const notes = [];
   if (video.length) notes.push(`Left out ${video.length} video file${video.length === 1 ? "" : "s"} Fizgig can't ` +
@@ -755,8 +763,8 @@ async function uploadFiles(picked) {
   const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
   if (dupes.length) notes.push(`More than one file is named ${dupes.slice(0, 3).join(", ")}` +
     `${dupes.length > 3 ? ", …" : ""} (from different subfolders); they all go into one folder, so the last one is kept.`);
-  const name = $("uploadName").value.trim();
-  const say = (t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); };
+  const name = opts.name !== undefined ? opts.name : $("uploadName").value.trim();
+  const say = opts.say || ((t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); });
   if (!name) return say("Type a name for the new folder first.", true);
   if (!files.length) return say(["Nothing to upload: no pictures, .mp4 clips, songs, captions or zips in there."]
     .concat(notes).join(" "), true);
@@ -775,7 +783,8 @@ async function uploadFiles(picked) {
       badname.push(...(d.badname || []));
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
-  let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}. That is now the training folder.` : "Nothing was saved.";
+  let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}.` + (opts.done ? " It is filled in above." :
+    " That is now the training folder.") : "Nothing was saved.";
   if (skipped.length) msg += ` Left out (not pictures, clips, songs or captions): ${skipped.join(", ")}.`;
   if (replaced.length) msg += ` Replaced files that were already there with the same name: ` +
     `${replaced.slice(0, 5).join(", ")}${replaced.length > 5 ? ", …" : ""}.`;
@@ -784,10 +793,42 @@ async function uploadFiles(picked) {
     `${badname.length > 5 ? ", …" : ""}. Rename them (no leading dot, no slashes) and upload them again.`;
   if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
   say(msg, !saved || failed.length);
-  if (saved) {
+  if (saved && opts.done) opts.done(folder);
+  else if (saved) {
     $("imageFolder").value = folder;
     $("imageFolder").dispatchEvent(new Event("change"));
   }
+}
+
+// an Upload button beside a form box whose file or folder may be on this computer, not the one training
+function uploadButton(r, input, set) {
+  const status = el("div", {class: "field-hint upload-status"});
+  const say = (t, bad) => { status.textContent = t; status.classList.toggle("bad", !!bad); };
+  const picker = r.kind === "folder" ? el("input", {type: "file", webkitdirectory: true, hidden: true}) :
+    el("input", {type: "file", hidden: true, accept: ".safetensors,image/*,.mp4,audio/*,.m4a"});
+  picker.addEventListener("change", async () => {
+    const files = [...picker.files];
+    picker.value = "";
+    if (!files.length) return;
+    if (r.kind === "folder") {
+      const top = (files[0].webkitRelativePath || "").split("/")[0];
+      const name = tidyName(top).replace(/^[.\s]+/, "") || r.key.toLowerCase();
+      return uploadFiles(files, {name, say, done: (folder) => { input.value = folder; set(folder); }});
+    }
+    const f = files[0];
+    const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
+    try {
+      const res = await sendFile(`/api/upload?single=1&name=${encodeURIComponent(tidyName(f.name))}`, f,
+        (sent) => say(`Uploading ${f.name}: ${mb(sent)} of ${mb(f.size)} MB`));
+      if (!res.ok) return say(res.data.error || "Upload failed.", true);
+      input.value = res.data.path;
+      set(res.data.path);
+      say(`Uploaded to ${res.data.path}` + ((res.data.replaced || []).length ? " (replacing the one there)." : "."));
+    } catch (e) { say(`${f.name}: ${e.message}`, true); }
+  });
+  const btn = el("label", {class: "btn", title: "From the computer you're using now"},
+    r.kind === "folder" ? "Upload a folder…" : "Upload…", picker);
+  return {btn, status};
 }
 
 let wired = false;

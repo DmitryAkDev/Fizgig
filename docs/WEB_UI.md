@@ -66,6 +66,10 @@ It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), captio
 
 Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. For a big dataset, uploading the files themselves is gentler than one huge zip: each file is its own upload, so a dropped connection only costs that file.
 
+### Other files and folders
+
+Boxes in the training settings that take a file or folder from your own data have an **Upload** button beside **Browse…**: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the computer you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you.
+
 ## Choosing the GPU
 
 On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is the same setting as the desktop app's GPU choice (`cuda_device` in `prefs.json`). A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.

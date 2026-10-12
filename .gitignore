@@ -111,3 +111,5 @@ training_data/
 .fizgig_live_*.json
 .fizgig_desktop_cmd.json*
 .fizgig_desktop_console.log
+# single files uploaded through the web UI (a context LoRA, a test photo)
+uploads/

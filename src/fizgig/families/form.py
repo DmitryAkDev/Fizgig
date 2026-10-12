@@ -4,7 +4,9 @@ this (the web UI today) with no change to that front end.
 
 form(desc) -> {"sections": [{"id", "title", "tab", "rows": [row, ...]}, ...], "presets": [...]}. A row is a plain
 dict: key, label, kind ("entry" | "choice" | "combo" (editable) | "check" | "text" (several lines) | "path" | "folder"
-| "radio" | "note"), default, hint, choices (labels) and, for a family option, option=True. Only rows the family can
+| "radio" | "note"), default, hint, choices (labels) and, for a family option, option=True. upload=True marks a file or a
+folder of training data that may be on another computer than the one training (a browser front end offers to upload
+it); output and resume folders never are. Only rows the family can
 ever show are in it (its abilities decide: Adaptive LR, loss watch, EMA, precisions, kinds of training, ...).
 
 state(desc, values, image_folder) -> {"hidden": [keys], "disabled": [keys], "notes": {key: text}}: what depends on
@@ -158,7 +160,8 @@ def form(desc):
         _row("SAVE_EVERY_N_EPOCHS", "Save Every N Epochs"),
         _row("SEED", "Seed"),
         _row("CONTEXT_LORA_PATH", "Context LoRA", "path",
-             "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference."),
+             "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
+             upload=True),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
         _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area. Any aspect ratio; 4.2 MP wants 24-32 GB.", MEGAPIXELS),
@@ -197,16 +200,16 @@ def form(desc):
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
             _row("FAMILY_EDIT_DIR", "Edited photos folder", "folder",
-                 "The edited version of each photo in the training folder, under the same file name."),
+                 "The edited version of each photo in the training folder, under the same file name.", upload=True),
             _row("FAMILY_EDIT_CAPTION", "Edit instruction", hint="What the edit does, written into each caption."),
-            _row("FAMILY_EDIT_REF", "Test photo", "path", "A photo the previews edit."),
+            _row("FAMILY_EDIT_REF", "Test photo", "path", "A photo the previews edit.", upload=True),
         ])
     if desc.slider_training:
         add("slider", "Slider", "training", [
             _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=["Photo pairs", "Prompts"],
                  default="Photo pairs"),
             _row("FAMILY_SLIDER_DIR", "Second-look folder", "folder",
-                 "The other end of the dial: one photo per training photo, same file names."),
+                 "The other end of the dial: one photo per training photo, same file names.", upload=True),
             _row("FAMILY_SLIDER_CAPTION", "Second-look caption"),
             _row("FAMILY_SLIDER_BASE", "Base prompt"),
             _row("FAMILY_SLIDER_POS", "Positive prompt"),
@@ -223,7 +226,7 @@ def form(desc):
                  default=launch.FT_WINDOW_SIZES[0]),
             _row("FAMILY_FT_FUSED", "Free each gradient as soon as it's used (less memory - recommended)", "check"),
             *by_section("training", mode="finetune"),
-            _row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder"),
+            _row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", upload=True),
             _row("FAMILY_FT_REG_MULT", "Regularisation LR ×", "combo", choices=FT_REG_MULT),
         ])
     precisions = ["auto"] + [p for p in ("bf16", "int8", "nf4", "hqq") if p in desc.precisions]

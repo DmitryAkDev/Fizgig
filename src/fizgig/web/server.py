@@ -352,6 +352,8 @@ def _stop():
 # details and zips. Not .gif / .webm: nothing trains on them.
 UPLOAD_EXTS = (MEDIA - {".gif", ".webm"}) | {".txt", ".caption", ".json", ".zip"}
 UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
+UPLOAD_FILES = os.path.join(BASE_DIR, "uploads")              # single files: a context LoRA, a test photo
+UPLOAD_FILE_EXTS = (UPLOAD_EXTS - {".zip"}) | {".safetensors"}
 
 
 def uploads_root() -> str:
@@ -383,13 +385,20 @@ def _upload_name(name, what) -> str:
 _WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
-def _save_upload(folder, name, rfile, length) -> dict:
-    folder, name = _upload_name(folder, "Folder name"), _upload_name(name, "File name")
+def _save_upload(folder, name, rfile, length, single=False) -> dict:
+    """Into a folder under uploads_root() (training data), or `single`: one file into <Fizgig>/uploads."""
+    name = _upload_name(name, "File name")
     ext = os.path.splitext(name)[1].lower()
-    if ext not in UPLOAD_EXTS:
-        raise ValueError(f"{name}: Fizgig doesn't train on {ext or 'this'} files. It takes pictures, .mp4 clips, "
-                         f"songs (.wav .mp3 .flac .m4a), caption .txt files, .json song details and .zip files.")
-    dest = os.path.join(uploads_root(), folder)
+    if single:
+        if ext not in UPLOAD_FILE_EXTS:
+            raise ValueError(f"{name}: not a LoRA (.safetensors), picture, clip or song.")
+        dest = UPLOAD_FILES
+    else:
+        folder = _upload_name(folder, "Folder name")
+        if ext not in UPLOAD_EXTS:
+            raise ValueError(f"{name}: Fizgig doesn't train on {ext or 'this'} files. It takes pictures, .mp4 clips, "
+                             f"songs (.wav .mp3 .flac .m4a), caption .txt files, .json song details and .zip files.")
+        dest = os.path.join(uploads_root(), folder)
     os.makedirs(dest, exist_ok=True)
     tmp = os.path.join(dest, f".{name}.part")
     left = length
@@ -410,7 +419,7 @@ def _save_upload(folder, name, rfile, length) -> dict:
             pass
         raise ValueError(f"{name}: the upload was cut off. Upload it again.")
     saved, skipped, replaced, badname = [], [], [], []
-    if ext == ".zip":
+    if ext == ".zip" and not single:
         import zipfile
         try:
             with zipfile.ZipFile(tmp) as z:
@@ -824,8 +833,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/upload":                    # a raw file body, not JSON
             qs = parse_qs(urlparse(self.path).query)
             try:
-                return self.json(_save_upload((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0],
-                                              self.rfile, int(self.headers.get("Content-Length") or 0)))
+                d = _save_upload((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0], self.rfile,
+                                 int(self.headers.get("Content-Length") or 0), single=bool(qs.get("single")))
+                if qs.get("single"):
+                    d["path"] = os.path.join(d["folder"], d["saved"][0])
+                return self.json(d)
             except (ValueError, OSError) as e:
                 return self.json({"error": str(e)}, 400)
         b = self._body()
