@@ -83,6 +83,10 @@ The Captions tab has the desktop app's captioning tools, run on the machine runn
 
 With a run training, captioning only starts if the card has room for it beside the run.
 
+## Download your outputs
+
+This tab lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model in the web UI and the desktop app, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
+
 ## Choosing the GPU
 
 On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is the same setting as the desktop app's GPU choice (`cuda_device` in `prefs.json`). A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.
