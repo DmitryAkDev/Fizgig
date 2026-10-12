@@ -33615,6 +33615,21 @@ class LoRATrainerGUI:
                 self._live_result = None
                 self._live_stopped = False
                 self._live_progress = None
+                try:                                   # the web UI's Runs & outputs list (fizgig/web/history.py)
+                    from fizgig.web import history as _hist
+                    _d = self._family_desc()
+                    self._live_hist = _hist.start(
+                        "desktop", _d.key if _d is not None else self.architecture_var.get(),
+                        str(self.settings.get("LORA_NAME", "") or ""), str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
+                        self.image_folder_var.get().strip(), self._collect_preset_values())
+                except Exception:
+                    self._live_hist = None
+            elif was_busy and not busy_now and state == "paused":
+                try:
+                    from fizgig.web import history as _hist
+                    _hist.end(getattr(self, "_live_hist", None), "paused", getattr(self, "_live_progress", None))
+                except Exception:
+                    pass
             elif was_busy and not busy_now and state != "paused":
                 lp = getattr(self, "_live_last_proc", None)
                 code = lp.poll() if lp is not None else None
@@ -33623,6 +33638,12 @@ class LoRATrainerGUI:
                               "finished" if code == 0 else "failed",
                     "lora": str(self.settings.get("LORA_NAME", "") or ""), "at": _time.time(),
                     "progress": getattr(self, "_live_progress", None)}       # where it got to
+                try:
+                    from fizgig.web import history as _hist
+                    _hist.end(getattr(self, "_live_hist", None), self._live_result["result"],
+                              self._live_result["progress"])
+                except Exception:
+                    pass
             self._live_was_busy = busy_now
             _live.write(_live.LIVE_DESKTOP, {
                 "running": running, "state": state, "trainer_pid": proc.pid if running else None,

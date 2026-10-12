@@ -83,9 +83,11 @@ The Captions tab has the desktop app's captioning tools, run on the machine runn
 
 With a run training, captioning only starts if the card has room for it beside the run.
 
-## Download your outputs
+## Runs & outputs
 
-This tab lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model in the web UI and the desktop app, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
+**Runs** lists every training run started in the web UI or the desktop app, newest first: how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). The history lives in `.fizgig_runs.json` in the Fizgig folder.
+
+Below that, **Saved files** lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model in the web UI and the desktop app, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
 
 ## Choosing the GPU
 

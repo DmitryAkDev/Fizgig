@@ -115,3 +115,4 @@ training_data/
 uploads/
 .fizgig_web_caption/
 .fizgig_web_zips/
+.fizgig_runs.json*

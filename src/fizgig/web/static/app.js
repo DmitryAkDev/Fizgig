@@ -729,6 +729,85 @@ function renderDatasets() {
     "No folder matches that." : "No training data here yet. Upload a folder below, or pick one with Choose… above."}));
 }
 
+// ---- Runs & outputs: the run history (fizgig/web/history.py) -----------------------------------------------
+const RESULT_STATE = {running: "running", finished: "completed", failed: "failed", stopped: "stopped",
+                      paused: "paused", unknown: "idle"};
+const RESULT_LABEL = {running: "Running", finished: "Finished", failed: "Failed", stopped: "Stopped", paused: "Paused",
+                      unknown: "Ended"};
+
+async function loadRuns() {
+  let r;
+  try { r = await api("/api/runs"); } catch (e) { return; }
+  const host = $("runsList");
+  host.innerHTML = "";
+  const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
+  const dur = (a, b) => { const m = Math.round(((b || Date.now() / 1000) - a) / 60);
+    return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
+  for (const run of r.runs) {
+    const p = run.progress;
+    const figs = p ? [p.epoch && `epoch ${p.epoch}/${p.total_epochs}`, p.loss && `loss ${p.loss}`].filter(Boolean).join(" · ") : "";
+    const files = el("div", {class: "run-files", style: "display:none"});
+    const showFiles = el("button", {class: "btn btn-sm", text: "Previews & checkpoints", onclick: async () => {
+      if (files.style.display === "none") {
+        files.style.display = "";
+        files.textContent = "Loading…";
+        files.replaceChildren(...await runFiles(run));
+      } else files.style.display = "none";
+    }});
+    const again = el("button", {class: "btn btn-sm btn-primary", text: "Start again with these settings",
+      title: "Loads this run's model, training folder and settings into the form (nothing starts until you press Start)",
+      onclick: async () => {
+        try {
+          const s = await api("/api/runs/settings", {id: run.id});
+          if (s.family !== S.family) await chooseFamily(s.family);
+          S.values = {...S.values, ...s.values};
+          S.all[S.family] = S.values;
+          if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; }
+          renderSections("samples", $("samplesForm"));
+          renderSections("training", $("trainingForm"));
+          await refreshState();
+          saveState();
+          showTab("training");
+          $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
+        } catch (e) { alertRow.textContent = e.message; }
+      }});
+    const alertRow = el("div", {class: "field-hint"});
+    host.append(el("div", {class: "run-row"},
+      el("div", {class: "run-row-head"},
+        el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
+        el("b", {text: run.lora || "(unnamed)"}),
+        el("span", {class: "field-hint", text: `${famName(run.family)} · ${run.source === "desktop" ? "desktop app" : "web UI"}`})),
+      el("div", {class: "field-hint", text: [run.image_folder && `Trained on ${run.image_folder}`,
+        `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
+        .filter(Boolean).join("  ·  ")}),
+      el("div", {class: "field-row"}, showFiles, again), alertRow, files));
+  }
+  if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
+    "the desktop app, is listed here with its results."}));
+}
+
+// a run's previews and checkpoints, from its output folder
+async function runFiles(run) {
+  const out = [];
+  const sep = (run.output_dir || "").includes("\\") ? "\\" : "/";
+  const [g, c] = await Promise.all([
+    api("/api/samples?dir=" + encodeURIComponent(run.output_dir + sep + "sample")).catch(() => ({items: []})),
+    api("/api/checkpoints?dir=" + encodeURIComponent(run.output_dir)).catch(() => ({items: []}))]);
+  const mine = (n) => n.startsWith(run.lora + "_") || n.startsWith(run.lora + "-") || n.startsWith(run.lora + ".");
+  const shots = g.items.filter((it) => mine(it.name)).slice(0, 12);
+  if (shots.length) out.push(el("div", {class: "gallery run-gallery"},
+    shots.map((it) => el("figure", {class: "gallery-item"}, mediaFor(it), el("figcaption", {text: mediaLabel(it)})))));
+  const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
+  const ckpts = c.items.filter((it) => mine(it.name));
+  if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
+    el("span", {class: "checkpoint-name", text: it.name}),
+    el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
+    el("a", {class: "btn btn-sm btn-primary", download: it.name, text: "Download",
+      href: `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`})))));
+  if (!out.length) out.push(el("div", {class: "field-hint", text: "Nothing saved by this run in " + run.output_dir + "."}));
+  return out;
+}
+
 // ---- Download your outputs tab ------------------------------------------------------------------------------
 async function loadOutputs() {
   const all = !$("outFizgigOnly").checked;
@@ -1083,7 +1162,7 @@ function showTab(name) {
   if (name === "captions") loadCaptions();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
-  if (name === "outputs") loadOutputs();
+  if (name === "outputs") { loadRuns(); loadOutputs(); }
   api("/api/state", {tab: name}).catch(() => {});
 }
 
@@ -1312,6 +1391,7 @@ function wire() {
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
   wireCaptions();
   $("outReload").addEventListener("click", loadOutputs);
+  $("runsReload").addEventListener("click", loadRuns);
   $("datasetsReload").addEventListener("click", loadDatasets);
   $("aboutBtn").addEventListener("click", async () => {
     $("aboutModal").classList.add("active");

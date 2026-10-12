@@ -1507,3 +1507,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   /* the run's progress stays in view on a phone: under its name in the top bar */
   .side-run .side-run-text { display: block; font-size: 11px; }
 }
+
+/* Runs & outputs: the run history */
+.runs-list { display: flex; flex-direction: column; gap: 10px; }
+.run-row { background: var(--bg-raised); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 11px 13px; display: flex; flex-direction: column; gap: 5px; }
+.run-row-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.run-row-head b { font-size: 14px; color: var(--text-primary); overflow-wrap: anywhere; }
+.run-row .field-row { margin: 4px 0 0; }
+.run-files { margin-top: 6px; display: flex; flex-direction: column; gap: 10px; }
+.run-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }

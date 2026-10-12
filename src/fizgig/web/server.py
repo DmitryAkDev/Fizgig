@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
-from fizgig.web import captions, live
+from fizgig.web import captions, history, live
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -425,6 +425,9 @@ def _start(family_key, values, image_folder, resume=""):
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False)
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
+    hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values))
+    with _lock:
+        _run["history_id"] = hid
     for line in plan.console:
         append_log(line + "\n")
     threading.Thread(target=_run_stages, args=(plan.stages, out_dir), daemon=True).start()
@@ -471,6 +474,7 @@ def _run_stages(stages, out_dir):
     for stage in stages:
         with _lock:
             if _run["state"] == "stopped":
+                history.end(_run.get("history_id"), "stopped", _run.get("progress"))
                 return
             _run["stage"] = stage.name
         append_log(f"\n▶ {stage.name}\n")
@@ -480,6 +484,7 @@ def _run_stages(stages, out_dir):
             append_log(f"✖ {stage.name} could not start: {e}\n")
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
+            history.end(_run.get("history_id"), "failed", _run.get("progress"))
             return
         with _lock:
             _run["proc"] = proc
@@ -502,15 +507,18 @@ def _run_stages(stages, out_dir):
             stopped = _run["state"] == "stopped"
         if stopped:
             append_log(f"\n■ Stopped during {stage.name}.\n")
+            history.end(_run.get("history_id"), "stopped", _run.get("progress"))
             return
         if ret != 0:
             append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n")
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
+            history.end(_run.get("history_id"), "failed", _run.get("progress"))
             return
     paused = os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"]
     with _lock:
         _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
+    history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
     append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
 
 
@@ -1100,6 +1108,8 @@ class Handler(BaseHTTPRequestHandler):
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/captions/status":
             return self.json(captions.status())
+        if path == "/api/runs":
+            return self.json({"runs": history.runs()[:200]})
         if path == "/api/about":
             return self.json(about_info())
         if path == "/api/datasets":
@@ -1343,6 +1353,15 @@ class Handler(BaseHTTPRequestHandler):
                 if preset is None:
                     return self.json({"error": "unknown preset"}, 400)
                 return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})
+            if path == "/api/runs/settings":            # Start again with these settings
+                rec = history.get(str(b.get("id") or ""))
+                desc = get_family(rec.get("family", "")) if rec else None
+                if desc is None:
+                    return self.json({"error": "That run's model isn't available here."}, 400)
+                vals = rec.get("values") or {}
+                if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them
+                    vals = form.apply_preset(desc, {}, vals)
+                return self.json({"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""})
             if path == "/api/plan":
                 _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
                 return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}

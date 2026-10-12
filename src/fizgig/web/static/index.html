@@ -28,7 +28,7 @@
           <button class="tab-item" data-tab="samples"><i></i><span>3. Samples</span></button>
           <button class="tab-item" data-tab="training"><i></i><span>4. Training</span></button>
           <div class="side-label">After</div>
-          <button class="tab-item" data-tab="outputs"><i></i><span>Download your outputs</span></button>
+          <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
@@ -266,12 +266,19 @@
 
         <section id="tab-outputs" class="tab-panel">
           <div class="tab-banner">
-            <h1>Download your outputs</h1>
-            <p>Every LoRA and fine-tune saved in Fizgig's output folders, newest run first. Download sends a file to
+            <h1>Runs &amp; outputs</h1>
+            <p>Every run you've started here or in the desktop app, newest first: how it went, its previews and
+              checkpoints, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
+              output folders. Download sends a file to
               the device you're using now. Very large fine-tunes come off faster another way: on a pod, through the file
               manager on port 8080; on your own server, with scp or rsync from the folder shown.</p>
           </div>
           <div class="section-card">
+            <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>
+            <div class="card-content"><div id="runsList" class="runs-list"></div></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Saved files</span></div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Search:</span>
                 <input type="text" id="outSearch" class="w-path" placeholder="run name or folder">
