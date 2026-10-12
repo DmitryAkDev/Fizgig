@@ -1522,3 +1522,6 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .queue-row { grid-template-columns: minmax(0, 1fr) auto auto; }
 .queue-actions { display: flex; gap: 6px; }
 @media (max-width: 760px) { .queue-actions { justify-content: flex-start; } }
+
+/* a switch line followed by buttons (Bilingual: Skip... then Translate captions): room between them */
+.checkbox-label + .field-row { margin-top: 12px; }
