@@ -115,6 +115,7 @@ def kinds(desc):
 
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
+    pictures = bool({"photo", "clip"} & set(desc.media))     # sizes and megapixels only mean something for pictures
     by_section = lambda tab, section=None, mode=None: [_option_row(o) for o in opts if o.tab == tab and (
         section is None or o.section == section) and (mode is None or (o.mode == "finetune") == (mode == "finetune"))]
     sections = []
@@ -163,7 +164,7 @@ def form(desc):
              "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
              upload=True, start="output"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
-        _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
+        None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area. Any aspect ratio; 4.2 MP wants 24-32 GB.", MEGAPIXELS),
     ]
     if len(desc.network_types) > 1:
@@ -275,8 +276,10 @@ def form(desc):
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
-        _row("SAMPLE_WIDTH", "Width", "choice", choices=SIZES, default=str(desc.preview_width)),
-        _row("SAMPLE_HEIGHT", "Height", "choice", choices=SIZES, default=str(desc.preview_height)),
+        # a picture size only for a model that makes pictures (ACE-Step's previews are songs: the launcher then
+        # uses the description's own preview size)
+        _row("SAMPLE_WIDTH", "Width", "choice", choices=SIZES, default=str(desc.preview_width)) if pictures else None,
+        _row("SAMPLE_HEIGHT", "Height", "choice", choices=SIZES, default=str(desc.preview_height)) if pictures else None,
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
         *by_section("samples"),
