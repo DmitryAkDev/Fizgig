@@ -353,8 +353,7 @@ def form(desc):
     ])
     if not desc.samples_cfg_free:
         add("samples_adv", "Guidance", "samples", [
-            _row("SAMPLE_CFG_SCALE", "CFG Scale", hint=desc.preview_cfg_note or
-                 "1 = no CFG. Above 1 the negative prompt applies.", default=str(desc.preview_cfg)),
+            _row("SAMPLE_CFG_SCALE", "CFG Scale", hint=desc.cfg_note(), default=str(desc.preview_cfg)),
             _row("SAMPLE_NEGATIVE", "Negative Prompt", "text", default=neg or "") if neg is not None else None,
         ])
     return {"sections": sections, "presets": [{"name": n, "values": dict(v)} for n, v in (desc.presets or ())]}

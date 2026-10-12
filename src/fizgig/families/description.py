@@ -582,6 +582,16 @@ class FamilyDescription:
         """The SpeedLoRA used for in-training previews, or None."""
         return next((sl for sl in self.speed_loras if sl.name == self.preview_speed_lora), None)
 
+    def cfg_note(self) -> str:
+        """The Samples tab's line under CFG Scale: the family's own, plus the Turbo LoRA's CFG when previews with it
+        use another (Anima's Turbo: 1, against the plain model's 4.5) - the box follows the Turbo on and off."""
+        note = self.preview_cfg_note or "1 = no CFG. Above 1 the negative prompt applies."
+        sp = self.preview_speed()
+        if sp is not None and sp.pref_key and not self.samples_turbo_pace and sp.settings.cfg != self.preview_cfg:
+            note += (f" With the Turbo LoRA on (strength above 0), previews use CFG {sp.settings.cfg:g} and the box "
+                     "switches to it.")
+        return note
+
     def preview_speed_defaults(self):
         """(steps, strength) previews use with the preview SpeedLoRA, or None without one."""
         sp = self.preview_speed()

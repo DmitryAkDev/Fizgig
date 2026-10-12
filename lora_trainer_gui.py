@@ -11715,7 +11715,7 @@ class LoRATrainerGUI:
                 and not {k for k, _ in _d.samples_text} - {"sampler"}):
             _t = dict(_t, flow=f"Not used for {_d.display_name} previews",
                       neg="Used when CFG Scale is above 1",
-                      cfg=_d.preview_cfg_note or "1 = no CFG. Above 1 the negative prompt applies.")
+                      cfg=_d.cfg_note())
         for _attr, _key in (("_sample_flow_note", "flow"), ("_sample_neg_note", "neg"),
                             ("_sample_cfg_note", "cfg")):
             _w = getattr(self, _attr, None)
