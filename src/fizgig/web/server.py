@@ -44,12 +44,15 @@ PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
 STATE_FILE = os.path.join(BASE_DIR, "web_state.json")      # the web UI's own memory (git-ignored)
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
-MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".wav", ".mp3", ".flac", ".mp4", ".webm"}
+MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp3", ".flac", ".m4a", ".mp4",
+         ".webm"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
 TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
 
 _lock = threading.Lock()
+_login_lock = threading.Lock()
+_login_fails = [0]
 _run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": "", "family": "", "values": {},
         "image_folder": "", "pause": False}
 _log: list[tuple[int, str]] = []        # (line number, text), the last 5000
@@ -64,6 +67,31 @@ _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" e
 
 
 # ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
+def list_gpus():
+    """[{index, name, total_gb, used_gb, uuid}] from nvidia-smi (every card, whatever CUDA_VISIBLE_DEVICES says)."""
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,uuid",
+                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=4,
+                             **_NO_WINDOW)
+        rows = []
+        for line in out.stdout.strip().splitlines():
+            i, n, t, u, uid = [x.strip() for x in line.split(",")][:5]
+            rows.append({"index": int(i), "name": n, "total_gb": int(t) / 1024, "used_gb": int(u) / 1024,
+                         "uuid": uid})
+        return rows
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+
+
+def _chosen_gpu(rows, want):
+    """The row for Preferences' cuda_device (an index or a GPU-… uuid), else the first card."""
+    want = str(want or os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0].strip()
+    for r in rows:
+        if want and (want == str(r["index"]) or want == r["uuid"]):
+            return r
+    return rows[0] if rows else None
+
+
 def _poll_stats_loop():
     try:
         import psutil
@@ -79,9 +107,12 @@ def _poll_stats_loop():
     while True:
         vu = vt = 0
         name = "GPU"
+        want = str(load_prefs().get("cuda_device") or os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0]
+        want = want.strip()
         try:
             if nvml is not None:
-                h = nvml.nvmlDeviceGetHandleByIndex(0)
+                h = (nvml.nvmlDeviceGetHandleByUUID(want) if want.startswith("GPU-") else
+                     nvml.nvmlDeviceGetHandleByIndex(int(want) if want.isdigit() else 0))
                 m = nvml.nvmlDeviceGetMemoryInfo(h)
                 vu, vt = int(m.used), int(m.total)
                 name = nvml.nvmlDeviceGetName(h)
@@ -89,14 +120,9 @@ def _poll_stats_loop():
         except Exception:
             pass
         if not vt:                                   # no pynvml: nvidia-smi, as the desktop status bar falls back
-            try:
-                out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total",
-                                      "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3,
-                                     **_NO_WINDOW)
-                n, u, t = [x.strip() for x in out.stdout.splitlines()[0].split(",")][:3]
-                name, vu, vt = n, int(u) << 20, int(t) << 20
-            except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-                pass
+            r = _chosen_gpu(list_gpus(), want)
+            if r:
+                name, vu, vt = r["name"], int(r["used_gb"] * 2 ** 30), int(r["total_gb"] * 2 ** 30)
         ru = rt = 0
         if psutil is not None:
             vm = psutil.virtual_memory()
@@ -319,7 +345,9 @@ def _stop():
 
 
 # ---- uploads: a training folder sent from the browser's computer ------------------------------------------------
-UPLOAD_EXTS = (MEDIA - {".gif"}) | {".txt", ".zip"}
+# what the trainers read (dataset/image_dataset.py: pictures, .mp4 clips, songs) + captions, ACE-Step's .json song
+# details and zips. Not .gif / .webm: nothing trains on them.
+UPLOAD_EXTS = (MEDIA - {".gif", ".webm"}) | {".txt", ".caption", ".json", ".zip"}
 UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
 
 
@@ -341,22 +369,29 @@ def _save_upload(folder, name, rfile, length) -> dict:
     folder, name = _upload_name(folder, "Folder name"), _upload_name(name, "File name")
     ext = os.path.splitext(name)[1].lower()
     if ext not in UPLOAD_EXTS:
-        raise ValueError(f"{name}: not a picture, clip, song, caption or zip.")
+        raise ValueError(f"{name}: Fizgig doesn't train on {ext or 'this'} files. It takes pictures, .mp4 clips, "
+                         f"songs (.wav .mp3 .flac .m4a), caption .txt files, .json song details and .zip files.")
     dest = os.path.join(uploads_root(), folder)
     os.makedirs(dest, exist_ok=True)
     tmp = os.path.join(dest, f".{name}.part")
     left = length
-    with open(tmp, "wb") as f:
-        while left > 0:
-            chunk = rfile.read(min(left, 1 << 20))
-            if not chunk:
-                break
-            f.write(chunk)
-            left -= len(chunk)
+    try:
+        with open(tmp, "wb") as f:
+            while left > 0:
+                chunk = rfile.read(min(left, 1 << 20))
+                if not chunk:
+                    break
+                f.write(chunk)
+                left -= len(chunk)
+    except OSError:
+        left = left or 1
     if left:
-        os.remove(tmp)
-        raise ValueError(f"{name}: the upload was cut off.")
-    saved, skipped = [], []
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise ValueError(f"{name}: the upload was cut off. Upload it again.")
+    saved, skipped, replaced = [], [], []
     if ext == ".zip":
         import zipfile
         try:
@@ -368,6 +403,8 @@ def _save_upload(folder, name, rfile, length) -> dict:
                     if os.path.splitext(base)[1].lower() not in UPLOAD_EXTS - {".zip"}:
                         skipped.append(base)
                         continue
+                    if base in saved:
+                        replaced.append(base)
                     with z.open(info) as src, open(os.path.join(dest, base), "wb") as out:
                         while chunk := src.read(1 << 20):
                             out.write(chunk)
@@ -379,7 +416,7 @@ def _save_upload(folder, name, rfile, length) -> dict:
     else:
         os.replace(tmp, os.path.join(dest, name))
         saved.append(name)
-    return {"folder": dest, "saved": saved, "skipped": skipped}
+    return {"folder": dest, "saved": sorted(set(saved)), "skipped": skipped, "replaced": replaced}
 
 
 # ---- model downloads: the desktop's "Download models for me" (fizgig.scripts.fetch_models) ----------------------
@@ -593,7 +630,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
-                              "web_port": saved_port(p), "port_now": self.server.server_address[1]})
+                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(),
+                              "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
+                              "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))
+                              and not str(p.get("cuda_device") or "")})
         if path == "/api/state":
             return self.json(load_state())
         if path == "/api/fetch":
@@ -728,9 +768,15 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("X-Fizgig-Token") != TOKEN:
                 return self.json({"error": "Reload the page."}, 403)
             pwd = str(self._body().get("password") or "")
-            if self.password and not hmac.compare_digest(pwd, self.password):
-                time.sleep(1.0)
-                return self.json({"error": "Wrong password."}, 401)
+            if self.password:
+                # one guess at a time, slower after repeated misses (a threaded server would otherwise let
+                # parallel guesses all wait out the same second); bytes so a non-ASCII password compares
+                with _login_lock:
+                    if not hmac.compare_digest(pwd.encode("utf-8"), self.password.encode("utf-8")):
+                        _login_fails[0] += 1
+                        time.sleep(min(10.0, 1.0 + _login_fails[0] // 5))
+                        return self.json({"error": "Wrong password."}, 401)
+                    _login_fails[0] = 0
             return self.json({"ok": True}, extra=[("Set-Cookie", f"fizgig_session={self._session()}; Path=/; "
                                                                  "HttpOnly; SameSite=Strict")])
         if not self._api_ok():
@@ -804,6 +850,11 @@ class Handler(BaseHTTPRequestHandler):
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir"}
                 ch = b.get("changes") or {}
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
+                if "cuda_device" in ch:
+                    v = str(ch["cuda_device"] or "").strip()
+                    if v and v not in {g["uuid"] for g in list_gpus()} | {str(g["index"]) for g in list_gpus()}:
+                        raise ValueError("That GPU isn't in this machine.")
+                    upd["cuda_device"] = v
                 if "web_port" in ch:
                     port = int(ch["web_port"])
                     if not 1024 <= port <= 65535:
@@ -817,9 +868,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/captions/save":
                 folder, name, text = b.get("folder", ""), b.get("name", ""), b.get("text", "")
                 stem = os.path.splitext(os.path.basename(name))[0]
+                ext = str(b.get("ext") or ".txt")
+                if not re.fullmatch(r"(\.[A-Za-z0-9_]{1,12})?\.(txt|caption|tags)", ext):
+                    return self.json({"error": "A caption file ends in .txt, .caption or .tags."}, 400)
                 if not stem or not os.path.isdir(folder):
                     return self.json({"error": "bad folder or file"}, 400)
-                with open(os.path.join(folder, stem + (b.get("ext") or ".txt")), "w", encoding="utf-8") as f:
+                with open(os.path.join(folder, stem + ext), "w", encoding="utf-8") as f:
                     f.write(text)
                 return self.json({"ok": True})
         except ValueError as e:
@@ -867,6 +921,12 @@ def run_server(host, port=None, password=None):
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
+    def _term(*_a):                            # a service manager's stop: end the run with it, as Ctrl+C does
+        raise KeyboardInterrupt
+    try:
+        signal.signal(signal.SIGTERM, _term)
+    except (ValueError, OSError):
+        pass
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -884,14 +944,22 @@ def main(argv=None):
                                                  "password)")
     ap.add_argument("--port", type=int, default=None, help="Port to serve on (default: the one in Preferences, "
                                                             "8081 at first; a taken one moves to the next free one)")
-    ap.add_argument("--password", default=None, help="Login password (default: FIZGIG_PASSWORD, then the one in "
-                                                     "Preferences, then VNC_PASSWORD)")
+    ap.add_argument("--password", default=None, help="Login password, 8 characters or more (default: "
+                                                     "FIZGIG_PASSWORD, then on a pod VNC_PASSWORD, then the one in "
+                                                     "Preferences)")
     a = ap.parse_args(argv)
-    pwd = (a.password or os.environ.get("FIZGIG_PASSWORD") or str(load_prefs().get("web_password") or "").strip()
-           or os.environ.get("VNC_PASSWORD"))
+    # a pod: its VNC_PASSWORD, the remote desktop's, so one password opens both. Elsewhere VNC_PASSWORD is ignored (a
+    # stray one would open the web UI to the network while Preferences says no password).
+    saved = str(load_prefs().get("web_password") or "").strip()
+    pwd = (a.password or os.environ.get("FIZGIG_PASSWORD")
+           or ((os.environ.get("VNC_PASSWORD") or saved) if on_pod() else saved))
+    if pwd and len(pwd) < 8:
+        sys.exit("The web UI password needs at least 8 characters (Preferences > Web UI, web_password in "
+                 "prefs.json, FIZGIG_PASSWORD or --password).")
     host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
-        sys.exit("Listening beyond localhost needs a password (--password, VNC_PASSWORD or FIZGIG_PASSWORD).")
+        sys.exit("Listening beyond localhost needs a password: set one in Preferences > Web UI (web_password in "
+                 "prefs.json), or use FIZGIG_PASSWORD or --password.")
     run_server(host, a.port, password=pwd)
 
 

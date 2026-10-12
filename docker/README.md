@@ -69,6 +69,7 @@ You're in business when the log reaches:
 |---|---|---|---|
 | **Fizgig** | 6080 | `fizgig` | your `VNC_PASSWORD` |
 | **File manager** | 8080 | `admin` | the same one* |
+| **Web UI** | 8081 | none | your `VNC_PASSWORD` |
 
 \* One wrinkle: the file manager requires 12+ characters, so a shorter password gets zeros added
 to the end **for port 8080 only** (`mypass` becomes `mypass000000`). Pick a password of 12+
@@ -109,6 +110,10 @@ would break `/workspace` permissions on pods that already exist. The protection 
 is the password on the door, not the user behind it.
 
 ## First run
+
+**Browser only (no remote desktop):** open **port 8081**, log in, then Preferences → **⬇ Download models for me**, Start tab → **Upload a training folder**, and Training → **Start**. More in [the web UI guide](../docs/WEB_UI.md).
+
+**Or in the remote desktop:**
 
 1. Connect on **port 6080** and log in
 2. **Preferences → ⬇ Download models for me** — Krea 2 is ~45 GB and needs no HuggingFace account;

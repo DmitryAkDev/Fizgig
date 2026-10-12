@@ -65,7 +65,7 @@
                 <input type="text" id="uploadName" class="w-combo-lg" placeholder="my_subject"></div>
               <div class="upload-drop" id="uploadDrop">Drop files here, or
                 <label class="btn">Choose files…<input type="file" id="uploadFiles" multiple hidden
-                  accept="image/*,video/*,audio/*,.txt,.zip"></label></div>
+                  accept="image/*,.mp4,audio/*,.m4a,.txt,.caption,.json,.zip"></label></div>
               <div class="field-hint" id="uploadWhere"></div>
               <div class="field-hint" id="uploadStatus"></div>
             </div>
@@ -177,7 +177,9 @@
     <div class="modal-window" style="width: 380px;">
       <div class="modal-header"><span>Log in</span></div>
       <div class="modal-body">
-        <div class="card-desc">The same password as this machine's desktop session.</div>
+        <div class="card-desc">The web UI password. It was set in the desktop app's Preferences &gt; Web UI (or in
+          prefs.json). On a RunPod pod it is the pod's VNC_PASSWORD, the same one as its remote desktop; if you didn't
+          set one, it is printed in the pod's logs. No user name is needed.</div>
         <div class="field-row"><input type="password" id="loginPassword" class="w-path" autocomplete="current-password">
           <button class="btn btn-primary" id="loginButton">Log in</button></div>
         <div class="field-hint" id="loginError"></div>

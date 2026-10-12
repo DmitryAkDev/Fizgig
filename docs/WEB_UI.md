@@ -1,37 +1,43 @@
 # Fizgig web UI
 
-Fizgig can run as a web page as well as a desktop app: on a pod, on a machine with no screen, or to start and watch training from another device. The page is built from the same family descriptions as the desktop app, so the same families, presets and settings appear in both.
+Fizgig runs as a web page as well as a desktop app: on a pod, on a machine with no screen, or to set up and watch training from your phone or another computer. The page is built from the same family descriptions as the desktop app, so the same models, presets and settings appear in both.
 
-## Starting it
+## On a RunPod pod
 
-In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too.
+The pod starts the web UI by itself. In the pod's **Connect** menu, open **HTTP port 8081** and log in with the pod's password: the `VNC_PASSWORD` you set in the template, or, if you didn't set one, the password printed in the pod's logs ("generated one for this pod"). It is the same password as the remote desktop on port 6080; the web UI needs no user name.
 
-To run it on its own, without the desktop app, open a terminal in the Fizgig folder and run:
+From there everything works in the browser: download the models (Preferences), upload your training data (Start tab), train, watch the previews and download the results.
+
+## On your own computer
+
+In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too. The card has links to it: one for this computer, and one with its network address for your phone or other computers.
+
+To run the web UI on its own, without the desktop app, open a terminal in the Fizgig folder and run:
 
 ```
 venv\Scripts\python lora_trainer_gui.py --web      (Windows)
 venv/bin/python lora_trainer_gui.py --web          (Linux)
 ```
 
-That copy keeps running until you close its terminal.
+That copy keeps running until you close its terminal. It needs no screen and no Tkinter, so it runs on a headless server too (see [On a server](#on-a-server)).
 
 ## Runs started in the desktop app
 
-While the desktop app is open, a run started there shows on the web UI's Training tab: its progress, its log, its previews and checkpoints, and the desktop app's queue below it. Pause, Stop and Resume on that page work on it, exactly as the desktop app's own buttons would, so you can start a run at your desk and check on it from your phone. Change the queue itself in the desktop app.
+While the desktop app is open, a run started there shows on the web UI's Training tab: its progress, log, previews and checkpoints, and the desktop app's queue below it. Pause, Stop and Resume on that page work on it, exactly as the desktop app's own buttons would, so you can start a run at your desk and check on it from your phone. Change the queue itself in the desktop app.
 
 A run started in the web UI shows only in the web UI. One run trains at a time: the web UI won't start a run while the desktop app is training, and the desktop app won't start one while the web UI is. If the desktop app started the web UI, closing the desktop app asks before it stops a run started in the web UI.
 
-The console prints the address, for example `Fizgig web UI on http://localhost:8081/`. The desktop app's Preferences → Web UI card has links to it: one for this machine, and one with this machine's network address for other devices.
-
 ## The password
 
-Without a password the web UI only opens on the machine it runs on. With one, it listens on every address and asks for the password, so a phone, tablet or another computer on your network can open it.
+Without a password the web UI only opens on the machine it runs on. With one (8 characters or more), it listens on every address and asks for it, so a phone, tablet or another computer on your network can open it.
 
-- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only.
-- **By hand:** set `"web_password"` in `prefs.json`, e.g. `"web_password": "something long"`.
-- **For one launch:** `--password something`, or the `FIZGIG_PASSWORD` environment variable.
+- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only. If the web UI is running, it restarts with the new password, and anyone logged in logs in again.
+- **By hand:** set `"web_password"` in `prefs.json` (see the example below).
+- **For one launch:** the `FIZGIG_PASSWORD` environment variable, or `--password` (an environment variable keeps it out of the process list).
 
-The password is saved in `prefs.json` as plain text, so use one you don't use anywhere else. When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then the one in Preferences, then `VNC_PASSWORD` (the pod template's login password, so a pod has one with no setup).
+When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then on a pod its `VNC_PASSWORD`, then the one in Preferences.
+
+**Whoever has the password can use Fizgig and open files on that machine**, so treat it like a remote-desktop password: use one you don't use anywhere else (it is saved in `prefs.json` as plain text). The web UI speaks plain HTTP, which is fine on your home network but not across the internet: to reach it from outside, use a VPN such as Tailscale, or a pod (its proxy adds HTTPS), rather than forwarding the port on your router.
 
 ## The port
 
@@ -39,12 +45,12 @@ The web UI uses port **8081** unless that port is taken. When another program al
 
 To change the port:
 
-- **Desktop app:** Preferences → Web UI → Web UI port.
+- **Desktop app:** Preferences → Web UI → Web UI port. A running web UI restarts on the new port.
 - **Web UI:** Preferences → Web UI → Port. The new port is used the next time the web UI starts.
-- **By hand**, when neither is available: open `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`) and set `"web_port"`, e.g. `"web_port": "8090"` (`"web_password"` sits beside it, see above). Add the line if it is not there, keeping the file valid JSON (a comma between entries). Then start the web UI again.
-- **For one launch:** `python lora_trainer_gui.py --web --port 8090`. This uses that port only and does not change the saved one.
+- **By hand:** set `"web_port"` in `prefs.json` (see the example below), then start the web UI again.
+- **For one launch:** `--port 8090`. This uses that port only, stops with a message if it is taken, and does not change the saved one.
 
-On a RunPod pod the web UI always uses 8081, the port the pod's proxy forwards, whatever is saved.
+On a RunPod pod the web UI always uses 8081, the port the pod's proxy forwards.
 
 ## Model downloads
 
@@ -54,6 +60,55 @@ Some models are gated: their makers require each user to accept the licence on H
 
 ## Uploading training data
 
-The training folder on the Start tab is a folder on the machine running Fizgig. When your training data (pictures, clips or songs, with their caption `.txt` files) is on the computer you're browsing from, use **Upload a training folder** on the Start tab: type a name for the new folder, then drop the files in or choose them. A `.zip` is unpacked as it arrives. When the upload finishes, the new folder becomes the training folder.
+The training folder on the Start tab is a folder on the machine running Fizgig. When your training data is on the computer you're browsing from, use **Upload a training folder** on the Start tab: type a name for the new folder, then drop the files in or choose them. When the upload finishes, the new folder becomes the training folder.
 
-Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. Only pictures, clips, songs, captions and zips are accepted; anything else is left out and listed.
+It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), caption `.txt` files, ACE-Step's `.json` song details, and `.zip` files, which are unpacked as they arrive. Anything else is left out and listed. Convert other video formats (`.mov`, `.webm`) to `.mp4` first.
+
+Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. For a big dataset, uploading the files themselves is gentler than one huge zip: each file is its own upload, so a dropped connection only costs that file.
+
+## Choosing the GPU
+
+On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is the same setting as the desktop app's GPU choice (`cuda_device` in `prefs.json`). A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.
+
+## On a server
+
+On a headless machine, run the web UI as a service so it survives logging out. A systemd example (adjust the paths and user):
+
+```ini
+# /etc/systemd/system/fizgig-web.service
+[Unit]
+Description=Fizgig web UI
+After=network-online.target
+
+[Service]
+User=fizgig
+WorkingDirectory=/opt/Fizgig
+EnvironmentFile=/opt/Fizgig/fizgig-web.env
+ExecStart=/opt/Fizgig/venv/bin/python lora_trainer_gui.py --web --port 8090
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+with `/opt/Fizgig/fizgig-web.env` holding `FIZGIG_PASSWORD=your-password` (readable only by that user). Then `sudo systemctl enable --now fizgig-web`. A fixed `--port` suits a service: it never moves to another port, and stopping the service stops any run it started.
+
+## prefs.json
+
+All of these settings live in `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`). The desktop app writes it; on a machine without it, create it yourself. A minimal example:
+
+```json
+{
+  "web_port": "8090",
+  "web_password": "a long password",
+  "cuda_device": "1",
+  "input_dataset_dir": "/data/fizgig/datasets"
+}
+```
+
+- `web_port`: the web UI's port.
+- `web_password`: its password (8 characters or more); leave it out to keep the web UI on this machine only.
+- `cuda_device`: the GPU, by its number in `nvidia-smi` (`"0"`, `"1"`, …); leave it out for the machine's default.
+- `input_dataset_dir`: where uploads go.
+
+Model paths are added by the downloads in Preferences, so you don't need to type them.

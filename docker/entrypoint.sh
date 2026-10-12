@@ -161,7 +161,8 @@ Make one folder per LoRA, e.g.  /workspace/datasets/my_subject/
 and put the images and their .txt caption files in it together.
 
 Upload by dragging a folder into the file manager on port 8080, then on Fizgig's
-Start tab click Browse and pick your folder under /workspace/datasets.
+Start tab click Browse and pick your folder under /workspace/datasets. Or use
+the web UI on port 8081: Start tab -> Upload a training folder puts it here.
 
 Everything under /workspace lives on your persistent volume, so it survives
 stopping and restarting the pod. Anything outside /workspace does not.
@@ -310,6 +311,9 @@ cat <<EOF
 [fizgig]
 [fizgig]  Models: Preferences -> "Download models for me"
 [fizgig]          Krea 2 needs no HuggingFace account; Klein needs a token.
+[fizgig]
+[fizgig]  Browser only? Open HTTP port 8081 for the web UI (same password,
+[fizgig]  no username): downloads, uploads and training, from any device.
 [fizgig] ------------------------------------------------------------
 EOF
 

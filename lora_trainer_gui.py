@@ -1,5 +1,3 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, Menu, scrolledtext, simpledialog
 import subprocess
 import sys
 import threading
@@ -13,7 +11,6 @@ import glob
 import time
 import socket
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
-from PIL import Image, ImageTk
 
 # CUDA allocator policy, set before ANYTHING imports torch — the backend is fixed at CUDA init,
 # so this has to happen at startup rather than when a tool loads its model.
@@ -48,6 +45,19 @@ if (
 # point. Both vars set: KMP_* is Intel-runtime-specific, OMP_WAIT_POLICY is the portable one.
 os.environ.setdefault("KMP_BLOCKTIME", "0")
 os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+
+# The web UI (--web) needs no Tk and no display: it starts here, after the environment above (its runs inherit it)
+# and before the desktop's own imports, so a headless server without Tkinter installed can run it.
+if __name__ == "__main__" and "--web" in sys.argv:
+    _web_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+    if _web_src not in sys.path:
+        sys.path.insert(0, _web_src)
+    from fizgig.web.server import main as _web_main
+    sys.exit(_web_main())
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, Menu, scrolledtext, simpledialog
+from PIL import Image, ImageTk
 
 # Face detection imports (optional - graceful fallback if not installed)
 try:
@@ -960,7 +970,7 @@ DEFAULT_PREFS = {
     # address and asks for this password, so other devices can open it. --password / FIZGIG_PASSWORD win over it.
     "web_password": "",
     # "1" = the desktop app starts the web UI in the background when it opens (Preferences > Web UI)
-    "web_autostart": "0",
+    "web_autostart": "1" if os.environ.get("RUNPOD_POD_ID") else "0",      # a pod serves it from the start
 }
 
 
@@ -17473,15 +17483,21 @@ class LoRATrainerGUI:
         # Card: Web UI port
         web_card = self._start_section_card(
             outer, "Web UI",
-            "Fizgig can also run as a web page (start it with --web) - for a pod, or to watch a run from another "
-            "device. 8081 at first; if that port is taken, it uses the nearest free one above and remembers it here.",
+            "Fizgig as a web page too: open it from your phone, another computer, or a pod's browser tab, to set up "
+            "and watch runs. Start it below. Port 8081 at first; if that is taken, the nearest free one above, kept "
+            "here.",
         )
         web_card.columnconfigure(1, weight=1)
         ttk.Label(web_card, text="Web UI port:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10), pady=4)
         _port_var = tk.StringVar(value=self.prefs_vars["web_port"].get())
         _port_entry = ttk.Entry(web_card, textvariable=_port_var, width=8)
         _port_entry.grid(row=0, column=1, sticky=tk.W, pady=4)
-        _port_hint = tk.Label(web_card, text="Used the next time the web UI starts. A pod always uses 8081.",
+        _on_pod = bool(os.environ.get("RUNPOD_POD_ID"))
+        _PORT_HINT = ("A pod always uses 8081, the port its proxy forwards." if _on_pod else
+                      "If the web UI is running, it restarts on the new port.")
+        if _on_pod:
+            _port_entry.configure(state="disabled")
+        _port_hint = tk.Label(web_card, text=_PORT_HINT,
                               font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"])
         _port_hint.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(0, 4))
 
@@ -17489,8 +17505,7 @@ class LoRATrainerGUI:
             v = _port_var.get().strip()
             if v.isdigit() and 1024 <= int(v) <= 65535:
                 self.prefs_vars["web_port"].set(str(int(v)))
-                _port_hint.configure(text="Used the next time the web UI starts. A pod always uses 8081.",
-                                     fg=COLORS["text_explain"])
+                _port_hint.configure(text=_PORT_HINT, fg=COLORS["text_explain"])
             else:
                 _port_var.set(self.prefs_vars["web_port"].get())
                 _port_hint.configure(text="A port is a number from 1024 to 65535.", fg=COLORS["warning"])
@@ -17498,19 +17513,38 @@ class LoRATrainerGUI:
         _port_entry.bind("<Return>", _commit_port)
 
         ttk.Label(web_card, text="Password:").grid(row=3, column=0, sticky=tk.W, padx=(0, 10), pady=(8, 4))
-        _pw_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
-        _pw_row.grid(row=3, column=1, sticky=tk.W, pady=(8, 4))
-        _pw_entry = ttk.Entry(_pw_row, textvariable=self.prefs_vars["web_password"], width=28, show="*")
-        _pw_entry.pack(side=tk.LEFT)
-        _pw_show = tk.BooleanVar(value=False)
-        ttk.Checkbutton(_pw_row, text="Show", variable=_pw_show,
-                        command=lambda: _pw_entry.configure(show="" if _pw_show.get() else "*")
-                        ).pack(side=tk.LEFT, padx=(8, 0))
-        tk.Label(web_card, text="Empty: the web UI opens on this machine only. Set: other devices can open it too, "
-                                "after logging in with this password. Saved in prefs.json as plain text; used the "
-                                "next time the web UI starts.",
-                 font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"], wraplength=640,
-                 justify=tk.LEFT).grid(row=4, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+        _PW_HINT = ("Empty: the web UI opens on this machine only. Set (8 characters or more): other devices can "
+                    "open it too, after logging in with it. Whoever has it can use Fizgig and open files on this "
+                    "machine, so treat it like a remote-desktop password. Saved in prefs.json as plain text. If the "
+                    "web UI is running, it restarts with the new password.")
+        if _on_pod:
+            tk.Label(web_card, text="This pod's VNC password (the remote desktop's). Set VNC_PASSWORD in the "
+                                    "template to choose it.",
+                     font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"]
+                     ).grid(row=3, column=1, sticky=tk.W, pady=(8, 4))
+            _pw_hint = None
+        else:
+            _pw_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
+            _pw_row.grid(row=3, column=1, sticky=tk.W, pady=(8, 4))
+            _pw_entry = ttk.Entry(_pw_row, textvariable=self.prefs_vars["web_password"], width=28, show="*")
+            _pw_entry.pack(side=tk.LEFT)
+            _pw_show = tk.BooleanVar(value=False)
+            ttk.Checkbutton(_pw_row, text="Show", variable=_pw_show,
+                            command=lambda: _pw_entry.configure(show="" if _pw_show.get() else "*")
+                            ).pack(side=tk.LEFT, padx=(8, 0))
+            _pw_hint = tk.Label(web_card, text=_PW_HINT,
+                                font=(FONT_FAMILY, 10), fg=COLORS["text_explain"], bg=COLORS["bg_surface"],
+                                wraplength=640, justify=tk.LEFT)
+            _pw_hint.grid(row=4, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
+        def _pw_check(*_a):
+            if _pw_hint is None:
+                return
+            n = len(self.prefs_vars["web_password"].get().strip())
+            short = 0 < n < 8
+            _pw_hint.configure(text=f"Too short: {n} of at least 8 characters." if short else _PW_HINT,
+                               fg=COLORS["warning"] if short else COLORS["text_explain"])
+        _pw_check()
 
         # where to open it: this machine, other devices on the network (those need a password), or the pod's proxy
         _links = tk.Frame(web_card, bg=COLORS["bg_surface"])
@@ -17526,27 +17560,36 @@ class LoRATrainerGUI:
                 w.destroy()
             p = self.prefs_vars["web_port"].get().strip() or "8081"
             _pod = os.environ.get("RUNPOD_POD_ID", "").strip()
-            rows = ([("Open the web UI:", f"https://{_pod}-8081.proxy.runpod.net/", "")] if _pod else
-                    [("Open the web UI:", f"http://localhost:{p}/", "on this machine, while the web UI runs")]
+            _pw_ok = len(self.prefs_vars["web_password"].get().strip()) >= 8
+            _fw = (" The first time, Windows may ask to let Python through the firewall: allow it on private "
+                   "networks, or phones on your Wi-Fi can't connect." if os.name == "nt" else "")
+            rows = ([("Open the web UI:", f"https://{_pod}-8081.proxy.runpod.net/", "", True)] if _pod else
+                    [("Open the web UI:", f"http://localhost:{p}/", "on this machine, while the web UI runs", True)]
                     + ([("Other devices:", f"http://{_lan}:{p}/",
-                         "" if self.prefs_vars["web_password"].get().strip()
-                         else "set a password below to open it from other devices")] if _lan else []))
-            for i, (label, url, note) in enumerate(rows):
+                         ("on your network." + _fw) if _pw_ok
+                         else "set a password below to open it from other devices", _pw_ok)] if _lan else []))
+            for i, (label, url, note, live) in enumerate(rows):
                 ttk.Label(_links, text=label).grid(row=i, column=0, sticky=tk.W, padx=(0, 10), pady=2)
-                lk = tk.Label(_links, text=url, font=(FONT_FAMILY, 10, "underline"), fg=COLORS["accent"],
-                              bg=COLORS["bg_surface"], cursor="hand2")
-                lk.grid(row=i, column=1, sticky=tk.W, pady=2)
-                lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+                lk = tk.Label(_links, text=url, font=(FONT_FAMILY, 10, "underline" if live else "normal"),
+                              fg=COLORS["accent"] if live else COLORS["text_muted"],
+                              bg=COLORS["bg_surface"], cursor="hand2" if live else "")
+                lk.grid(row=i, column=1, sticky=tk.NW, pady=2)
+                if live:
+                    lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
                 if note:
                     tk.Label(_links, text=note, font=(FONT_FAMILY, 10), fg=COLORS["text_explain"],
-                             bg=COLORS["bg_surface"]).grid(row=i, column=2, sticky=tk.W, padx=(10, 0), pady=2)
+                             bg=COLORS["bg_surface"], wraplength=440, justify=tk.LEFT
+                             ).grid(row=i, column=2, sticky=tk.W, padx=(10, 0), pady=2)
         _paint_links()
 
         def _on_port_pref(*_a):
             _port_var.set(self.prefs_vars["web_port"].get())
             _paint_links()
         self.prefs_vars["web_port"].trace_add("write", _on_port_pref)
-        self.prefs_vars["web_password"].trace_add("write", lambda *a: _paint_links())
+        self.prefs_vars["web_password"].trace_add("write", lambda *a: (_paint_links(), _pw_check()))
+        # a running web UI picks up a new port or password by restarting (once typing stops)
+        for _k in ("web_port", "web_password"):
+            self.prefs_vars[_k].trace_add("write", lambda *a: self._web_ui_restart_soon())
 
         _run_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
         _run_row.grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 2))
@@ -33593,6 +33636,12 @@ class LoRATrainerGUI:
                 tail = (tail + [line])[-6:]
                 if "Fizgig web UI on " in line:
                     addr = line.split("Fizgig web UI on ", 1)[1]
+                    if "0.0.0.0" in addr:                  # every address: show the one a phone opens
+                        try:
+                            from fizgig.web.port import lan_ip as _lan_ip
+                            addr = addr.replace("0.0.0.0", _lan_ip() or "this machine's address")
+                        except Exception:
+                            pass
                     self.master.after(0, lambda a=addr: self._web_ui_say(f"Running on {a}", "success"))
                 if "takes" in line and "keeps it" in line:          # moved to a free port: show it in the card
                     self.master.after(0, lambda: self.prefs_vars["web_port"].set(
@@ -33602,9 +33651,42 @@ class LoRATrainerGUI:
                     not getattr(self, "_web_ui_stopping", False):
                 msg = tail[-1] if tail else f"exit code {code}"
                 self.master.after(0, lambda: self._web_ui_say(f"Stopped: {msg}", "warning"))
-            else:
+            elif getattr(self, "_web_ui_proc", None) is proc:     # an older copy (restarted) says nothing
                 self.master.after(0, lambda: self._web_ui_say("Not running."))
         threading.Thread(target=watch, daemon=True).start()
+
+    def _web_ui_restart_soon(self):
+        if not self._web_ui_running():
+            return
+        job = getattr(self, "_web_ui_restart_job", None)
+        if job:
+            try:
+                self.master.after_cancel(job)
+            except Exception:
+                pass
+        self._web_ui_restart_job = self.master.after(2500, self._web_ui_restart)
+
+    def _web_ui_restart(self):
+        """Stop and start the web UI this app started, on the new port / password. A password too short to use
+        waits (the card says so); a run started in the web UI asks first, since the restart stops it."""
+        self._web_ui_restart_job = None
+        if not self._web_ui_running():
+            return
+        if 0 < len(self.prefs_vars["web_password"].get().strip()) < 8:
+            return
+        try:
+            from fizgig.web import live as _live
+            if _live.busy(_live.read_fresh(_live.LIVE_WEB)) and not messagebox.askyesno(
+                    "Restart the web UI?",
+                    "The web UI restarts to use the new setting, and a run started in it is training. Restarting "
+                    "stops that run.\n\nRestart now and STOP that run? (No keeps it; the new setting is used the "
+                    "next time the web UI starts.)"):
+                return
+        except Exception:
+            pass
+        self._web_ui_stop()
+        self._web_ui_say("Restarting with the new setting…")
+        self.master.after(1500, self._web_ui_start)
 
     def _web_ui_stop(self):
         p = getattr(self, "_web_ui_proc", None)

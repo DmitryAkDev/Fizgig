@@ -45,6 +45,8 @@ async function boot() {
   S.prefs = pr.models || {};
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
+  S.onPod = pr.on_pod;
+  S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
   $("imageFolder").value = S.imageFolder;
@@ -207,6 +209,8 @@ function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
   host.append(webPortCard());
+  const gpuCard = gpuPickCard();
+  if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
   for (const f of S.schema.families) {
     const body = el("div", {class: "card-content" + (f.key === S.family ? "" : " collapsed")});
@@ -321,10 +325,41 @@ async function watchFetch() {
   if (S.fetch.state === "running") S.fetchTimer = setTimeout(watchFetch, 1500);
 }
 
+// which GPU runs use (Preferences cuda_device, the desktop's GPU setting): only shown with more than one card
+function gpuPickCard() {
+  const g = S.gpu || {list: []};
+  if (g.list.length < 2) return null;
+  const sel = el("select", {class: "w-combo-lg"},
+    el("option", {value: "", text: "The machine's default"}),
+    g.list.map((c) => el("option", {value: c.uuid, text: `${c.index}: ${c.name} (${Math.round(c.total_gb)} GB)`})));
+  const known = g.list.find((c) => c.uuid === g.chosen || String(c.index) === g.chosen);
+  sel.value = known ? known.uuid : "";
+  const hint = el("div", {class: "field-hint", text: g.envLocked ?
+    "CUDA_VISIBLE_DEVICES is set where Fizgig was started, and it wins over this setting." :
+    "The card every run started from here trains on, and the one the memory meter shows. The desktop app uses " +
+    "the same setting. A run already going keeps its card."});
+  sel.addEventListener("change", async () => {
+    try { await api("/api/prefs", {changes: {cuda_device: sel.value}}); g.chosen = sel.value; }
+    catch (e) { hint.textContent = e.message; }
+  });
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "GPU"})),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Train on:"}), sel), hint));
+}
+
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
   const hint = el("div", {class: "field-hint"});
+  if (S.onPod) {
+    input.disabled = true;
+    hint.textContent = "A pod always uses 8081, the port its proxy forwards.";
+    return el("div", {class: "section-card"},
+      el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
+      el("div", {class: "card-content"},
+        el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint));
+  }
   const say = () => {
     const p = Number(input.value);
     hint.textContent = p === S.portNow ? "The port this page is on. Fizgig uses it every time it starts." :
@@ -504,7 +539,7 @@ async function loadGallery() {
   for (const it of g.items.slice(0, 60)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     const ext = it.name.split(".").pop().toLowerCase();
-    const media = ["wav", "mp3", "flac"].includes(ext) ? el("audio", {controls: true, preload: "none", src}) :
+    const media = ["wav", "mp3", "flac", "m4a"].includes(ext) ? el("audio", {controls: true, preload: "none", src}) :
       ["mp4", "webm"].includes(ext) ? el("video", {controls: true, preload: "none", src}) :
       el("img", {loading: "lazy", src, alt: it.name});
     host.append(el("figure", {class: "gallery-item"}, media, el("figcaption", {text: it.name})));
@@ -551,7 +586,7 @@ async function loadCaptions() {
       status.textContent = "Saved";
     }});
     const ext2 = it.name.split(".").pop().toLowerCase();
-    const media = ["wav", "mp3", "flac"].includes(ext2) ? el("audio", {controls: true, preload: "none", src}) :
+    const media = ["wav", "mp3", "flac", "m4a"].includes(ext2) ? el("audio", {controls: true, preload: "none", src}) :
       ["mp4", "webm"].includes(ext2) ? el("video", {controls: true, preload: "none", src}) :
       el("img", {loading: "lazy", src, alt: it.name});
     host.append(el("div", {class: "caption-card"}, media,
@@ -604,6 +639,20 @@ function showTab(name) {
   api("/api/state", {tab: name}).catch(() => {});
 }
 
+// one file as the request body, reporting bytes sent (fetch can't report upload progress)
+function sendFile(url, file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    x.setRequestHeader("X-Fizgig-Token", TOKEN);
+    x.upload.onprogress = (e) => onProgress(e.loaded);
+    x.onload = () => { let data = {}; try { data = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+      resolve({ok: x.status >= 200 && x.status < 300, data}); };
+    x.onerror = () => reject(new Error("the connection dropped"));
+    x.send(file);
+  });
+}
+
 // ---- upload a training folder from this computer ------------------------------------------------------------
 async function uploadFiles(files) {
   const name = $("uploadName").value.trim();
@@ -611,19 +660,22 @@ async function uploadFiles(files) {
   if (!name) return say("Type a name for the new folder first.", true);
   if (!files.length) return;
   let folder = "", saved = 0;
-  const skipped = [], failed = [];
+  const skipped = [], failed = [], replaced = [];
   for (const [i, f] of [...files].entries()) {
+    const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
     say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
     try {
-      const r = await fetch(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(f.name)}`,
-        {method: "POST", headers: {"X-Fizgig-Token": TOKEN}, body: f});
-      const d = await r.json().catch(() => ({}));
+      const r = await sendFile(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(f.name)}`,
+        f, (sent) => say(`Uploading ${i + 1} of ${files.length}: ${f.name}, ${mb(sent)} of ${mb(f.size)} MB` +
+          (sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? " (unpacking…)" : "")));
+      const d = r.data;
       if (!r.ok) { failed.push(d.error || f.name); continue; }
-      folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped);
+      folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped); replaced.push(...(d.replaced || []));
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
   let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}. That is now the training folder.` : "Nothing was saved.";
   if (skipped.length) msg += ` Left out (not pictures, clips, songs or captions): ${skipped.join(", ")}.`;
+  if (replaced.length) msg += ` The zip had more than one file named ${replaced.join(", ")}; the last one was kept.`;
   if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
   say(msg, !saved || failed.length);
   if (saved) {
