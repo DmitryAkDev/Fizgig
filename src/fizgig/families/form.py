@@ -107,10 +107,35 @@ def kind_sets(desc, kind):
     return {}
 
 
+# what each kind is, under the choice (the desktop's _KIND_HINTS; a family words its own in kind_notes)
+KIND_HINTS = {
+    "standard": "A normal LoRA: a person, a style or a concept, learned from your captioned photos.",
+    "edit": "Teach the model an edit (a grade, a look, a relight) from pairs of the same photo: the original, and "
+            "your edited version. The LoRA learns to make that edit to new photos.",
+    "slider": "A dial: at strength +1 the LoRA moves a picture toward one look, at -1 toward the other, and "
+              "anything in between. Previews show -1, 0 and +1 side by side.",
+    "finetune": "The whole model learns your photos, not a LoRA on top of it. The result is a full model file "
+                "(large), loaded in place of the base. Needs plenty of system memory (the Log says how much).",
+}
+SLIDER_SOURCES = {"pairs": "Photo pairs", "prompts": "Prompts"}
+
+
+def _kind_notes(desc):
+    return {k: (label, hint) for k, label, hint in (getattr(desc, "kind_notes", ()) or ())}
+
+
 def kinds(desc):
-    """The kinds of training the family offers, in the desktop's order (Standard is always there)."""
+    """The kinds of training the family offers, in the desktop's order (Standard is always there), each labelled in
+    the family's own words when it has them (description kind_notes)."""
     on = {"standard": True, "edit": desc.edit_training, "slider": desc.slider_training, "finetune": desc.finetune}
-    return [(k, label) for k, label in KINDS if on[k]]
+    kn = _kind_notes(desc)
+    return [(k, kn.get(k, ("", ""))[0] or label) for k, label in KINDS if on[k]]
+
+
+def slider_sources(desc):
+    """Where the family's sliders come from (description slider_sources), in order; one = no chooser."""
+    return [s for s in (getattr(desc, "slider_sources", ("pairs", "prompts")) or ("pairs", "prompts"))
+            if s in SLIDER_SOURCES]
 
 
 def form(desc):
@@ -207,16 +232,19 @@ def form(desc):
             _row("FAMILY_EDIT_REF", "Test photo", "path", "A photo the previews edit.", upload=True, start="data"),
         ])
     if desc.slider_training:
+        srcs = slider_sources(desc)
+        pn = {k: (h, t) for k, h, t in (getattr(desc, "slider_prompt_notes", ()) or ())}
+        prompt_row = lambda key, label: _row(key, pn.get(key, (label, ""))[0], hint=pn.get(key, (label, ""))[1])
         add("slider", "Slider", "training", [
-            _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=["Photo pairs", "Prompts"],
-                 default="Photo pairs"),
+            _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=[SLIDER_SOURCES[x] for x in srcs],
+                 default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
             _row("FAMILY_SLIDER_DIR", "Second-look folder", "folder",
                  "The other end of the dial: one photo per training photo, same file names.", upload=True,
                  start="data"),
             _row("FAMILY_SLIDER_CAPTION", "Second-look caption"),
-            _row("FAMILY_SLIDER_BASE", "Base prompt"),
-            _row("FAMILY_SLIDER_POS", "Positive prompt"),
-            _row("FAMILY_SLIDER_NEG", "Negative prompt"),
+            prompt_row("FAMILY_SLIDER_BASE", "Base prompt"),
+            prompt_row("FAMILY_SLIDER_POS", "Positive prompt"),
+            prompt_row("FAMILY_SLIDER_NEG", "Negative prompt"),
             _row("FAMILY_SLIDER_GUIDANCE", "Guidance", default=str(desc.slider_guidance)),
             _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check") if desc.slider_ultra_blocks else None,
         ])
@@ -229,8 +257,9 @@ def form(desc):
                  default=launch.FT_WINDOW_SIZES[0]),
             _row("FAMILY_FT_FUSED", "Free each gradient as soon as it's used (less memory - recommended)", "check"),
             *by_section("training", mode="finetune"),
-            _row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", upload=True, start="data"),
-            _row("FAMILY_FT_REG_MULT", "Regularisation LR ×", "combo", choices=FT_REG_MULT),
+            *([_row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", upload=True, start="data"),
+               _row("FAMILY_FT_REG_MULT", "Regularisation LR ×", "combo", choices=FT_REG_MULT)]
+              if getattr(desc, "ft_regularisation", True) else []),
         ])
     precisions = ["auto"] + [p for p in ("bf16", "int8", "nf4", "hqq") if p in desc.precisions]
     labels = {**launch.PRECISION_LABELS, **dict(desc.precision_labels or ())}
@@ -283,7 +312,11 @@ def form(desc):
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
         *by_section("samples"),
-        _row("SAMPLE_EVERY_N_EPOCHS", "Every N epochs"),
+        _row("SAMPLE_EVERY_N_EPOCHS", "Every N epochs", default=str(getattr(desc, "preview_every", 1) or 1)),
+        _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
+             "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "
+             "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
+        if desc.preview_strengths else None,
         _row("SAMPLE_AT_FIRST", "Preview before training starts", "check"),
         *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on),
            _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
@@ -349,7 +382,19 @@ def state(desc, values, image_folder="", captioner=""):
         hidden |= {"CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH"}
     if kind != "standard":
         hidden.add("FAMILY_FAST_ID")
-    pairs = values.get("FAMILY_SLIDER_SOURCE", "Photo pairs") != "Prompts"
+    kn = _kind_notes(desc)
+    if len(kinds(desc)) > 1:
+        notes["FAMILY_KIND"] = kn.get(kind, ("", ""))[1] or KIND_HINTS.get(kind, "")
+    hint = getattr(desc, "long_run_hint", ()) or ()
+    try:
+        long_run = bool(hint) and kind == "standard" and int(float(values.get("MAX_TRAIN_EPOCHS") or 0)) >= hint[0]
+    except (TypeError, ValueError):
+        long_run = False
+    if long_run:
+        notes["MAX_TRAIN_EPOCHS"] = f"💡 Hint: {hint[1]}. {hint[2]}"
+    srcs = slider_sources(desc)
+    pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
+        else srcs[0] == "pairs"
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE"} if pairs
                else {"FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION"})
     media = launch.dataset_media(image_folder) if image_folder else set()
@@ -395,7 +440,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                 d[key] = 1e-4                    # ignored by the trainer under Adaptive LR (as Start does)
     d.update(
         FAMILY_EDIT=kind == "edit", FAMILY_SLIDER=kind == "slider", FAMILY_FT=kind == "finetune",
-        FAMILY_SLIDER_SOURCE="prompts" if s("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs",
+        FAMILY_SLIDER_SOURCE=(("prompts" if s("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")
+                              if len(slider_sources(desc)) > 1 else slider_sources(desc)[0]),
         ADAPTIVE_LR=b("ADAPTIVE_LR") and desc.adaptive_lr, SAVE_STATE=b("SAVE_STATE"),
         SAVE_STATE_ON_TRAIN_END=b("SAVE_STATE_ON_TRAIN_END"), FAMILY_FT_FUSED=b("FAMILY_FT_FUSED"),
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
@@ -417,6 +463,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or
                  str(desc.preview_cfg), "negative": s("SAMPLE_NEGATIVE"), "seed": s("SAMPLE_SEED"),
                  "at_first": b("SAMPLE_AT_FIRST"), "prompts": s("SAMPLE_PROMPT").splitlines(), "reference": "",
+                 "strengths": list(desc.preview_strengths) if desc.preview_strengths and
+                 v.get("SAMPLE_STRENGTHS", True) else [],
                  **({"checkpoint": b("SAMPLE_CHECKPOINT"), "checkpoint_cache": s("CACHE_SAMPLE_MODEL") or "auto",
                      "int8": bool(inference_int8)} if desc.train_preview_checkpoint else {})},
         samples_dir=samples_dir, edit_caption=s("FAMILY_EDIT_CAPTION"),
