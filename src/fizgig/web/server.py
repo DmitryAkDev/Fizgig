@@ -22,7 +22,6 @@ import os
 import re
 import secrets
 import signal
-import socket
 import subprocess
 import sys
 import threading
@@ -32,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
+from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
 logger = logging.getLogger("fizgig.web")
@@ -45,8 +45,6 @@ DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
 MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".wav", ".mp3", ".flac", ".mp4", ".webm"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
-PORT_DEFAULT = 8081                     # the port the pod image exposes
-PORT_WALK = 100                         # how far above a taken port to look for a free one
 
 TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
 
@@ -308,6 +306,81 @@ def _stop():
     return True
 
 
+# ---- model downloads: the desktop's "Download models for me" (fizgig.scripts.fetch_models) ----------------------
+_fetch = {"proc": None, "state": "idle", "family": "", "file": "", "done": 0, "total": 0, "lines": []}
+
+
+def _fetch_status() -> dict:
+    with _lock:
+        out = {k: v for k, v in _fetch.items() if k not in ("proc", "lines")}
+        out["lines"] = _fetch["lines"][-40:]
+    out["env_token"] = bool(os.environ.get("HF_TOKEN"))
+    return out
+
+
+def _start_fetch(family, token="", optional=False):
+    """The family's model files plus the helper models, into <repo>/models (a pod links that to its volume), paths
+    written to Preferences by the fetcher. A token is passed to that one download only, never written to disk."""
+    desc = get_family(family)
+    if desc is None:
+        raise ValueError(f"Unknown family: {family}")
+    token = (token or "").strip() or os.environ.get("HF_TOKEN", "").strip()
+    if any(f.gated and f.repo for f in desc.model_files) and not token:
+        raise ValueError(f"{desc.display_name}'s files need a Hugging Face token.")
+    with _lock:
+        if _fetch["proc"] is not None and _fetch["proc"].poll() is None:
+            raise ValueError("A model download is already running.")
+    cmd = [sys.executable, "-m", "fizgig.scripts.fetch_models", "--progress", "--family", "tools", "--family", family]
+    if optional or not desc.fetch_optional_label:
+        cmd.append("--include-optional")          # no optional tick on the family: its whole list, as the desktop
+    env = os.environ.copy()
+    env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", PYTHONPATH=os.path.join(BASE_DIR, "src"))
+    if token:
+        env["HF_TOKEN"] = token
+    kw = {"start_new_session": True} if os.name != "nt" else {
+        "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                            encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
+    with _lock:
+        _fetch.update(proc=proc, state="running", family=family, file="", done=0, total=0, lines=[])
+    threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
+
+
+def _fetch_watch(proc):
+    for line in proc.stdout:
+        line = line.rstrip()
+        if not line:
+            continue
+        m = re.match(r"\s*\[progress\] (\d+) (\d+) (.+)$", line)
+        with _lock:
+            if m:
+                _fetch.update(done=int(m.group(1)), total=int(m.group(2)), file=m.group(3))
+            else:
+                _fetch["lines"].append(line)
+                del _fetch["lines"][:-200]
+    code = proc.wait()
+    with _lock:
+        if _fetch["state"] == "running":
+            _fetch["state"] = "done" if code == 0 else "failed"
+
+
+def _cancel_fetch():
+    """Partial files resume next time; Preferences are only written when a file is complete."""
+    with _lock:
+        proc = _fetch["proc"]
+        if proc is None or proc.poll() is not None:
+            return False
+        _fetch["state"] = "cancelled"
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except OSError:
+            proc.terminate()
+    return True
+
+
 # ---- the HTTP side ----------------------------------------------------------------------------------------------
 class Handler(BaseHTTPRequestHandler):
     password: str | None = None
@@ -444,9 +517,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
-                              "web_port": _saved_port(p), "port_now": self.server.server_address[1]})
+                              "web_port": saved_port(p), "port_now": self.server.server_address[1]})
         if path == "/api/state":
             return self.json(load_state())
+        if path == "/api/fetch":
+            return self.json(_fetch_status())
         if path == "/api/stats":
             with _lock:
                 return self.json(dict(_stats))
@@ -621,6 +696,11 @@ class Handler(BaseHTTPRequestHandler):
                     _run["pause"] = True
                 append_log("\n⏸ Pause requested: the run stops cleanly at the end of this epoch.\n")
                 return self.json({"ok": True})
+            if path == "/api/fetch":
+                _start_fetch(b.get("family", ""), b.get("token", ""), bool(b.get("optional")))
+                return self.json({"ok": True})
+            if path == "/api/fetch/cancel":
+                return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
             if path == "/api/prefs":
@@ -657,28 +737,11 @@ class _Server(ThreadingHTTPServer):
     daemon_threads = True
 
 
-def _saved_port(prefs) -> int:
-    try:
-        return int(prefs.get("web_port") or PORT_DEFAULT)
-    except (TypeError, ValueError):
-        return PORT_DEFAULT
-
-
-def _listening(port) -> bool:
-    """Something already answers on this port locally (a bind on 127.0.0.1 can succeed beside another program's
-    0.0.0.0 listener on Windows and shadow it, so a free bind alone does not prove the port is free)."""
-    try:
-        with socket.create_connection(("127.0.0.1", port), timeout=0.3):
-            return True
-    except OSError:
-        return False
-
-
 def _bind(host, start, walk):
     """The server on `start`, or the nearest free port above it when `walk`. Returns (server, port)."""
     last = None
     for port in range(start, min(65536, start + (PORT_WALK if walk else 1))):
-        if _listening(port):
+        if listening(port):
             continue
         try:
             return _Server((host, port), Handler), port
@@ -695,11 +758,10 @@ def run_server(host, port=None, password=None):
     8081: it is the port its proxy forwards."""
     Handler.password = password or None
     Handler.local_only = not password
-    on_pod = bool(os.environ.get("RUNPOD_POD_ID"))
-    if port is not None or on_pod:
+    if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
     else:
-        want = _saved_port(load_prefs())
+        want = saved_port(load_prefs())
         srv, port = _bind(host, want, walk=True)
         if port != want:
             logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")

@@ -87,6 +87,7 @@ function renderAll() {
   renderSections("training", $("trainingForm"));
   renderPresets();
   renderPrefs();
+  watchFetch();
   checkModels();
   loadGallery();
   loadCheckpoints();
@@ -206,6 +207,7 @@ function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
   host.append(webPortCard());
+  S.fetchRows = {};
   for (const f of S.schema.families) {
     const body = el("div", {class: "card-content" + (f.key === S.family ? "" : " collapsed")});
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
@@ -229,10 +231,94 @@ function renderPrefs() {
       const hint = m.hint || m.note;
       if (hint) body.append(el("div", {class: "field-hint", text: hint}));
     }
+    const fetchBox = fetchRow(f);
+    if (fetchBox) body.append(fetchBox);
     host.append(el("div", {class: "section-card"},
       el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
         el("span", {text: f.prefs_title || ("Model Paths (" + f.display_name + ")")})), body));
   }
+  paintFetch();
+}
+
+// "Download models for me": the family's files + the helper models, paths filled in when they land
+function fetchRow(f) {
+  const files = f.model_files.filter((m) => m.repo && m.path);
+  if (!files.length) return null;
+  const total = files.reduce((a, m) => a + (m.size_gb || 0), 0);
+  const gated = files.filter((m) => m.gated);
+  const box = el("div", {class: "fetch-row"});
+  const opt = f.fetch_optional_label ? el("input", {type: "checkbox"}) : null;
+  const token = gated.length ? el("input", {type: "password", class: "w-path", placeholder: "hf_…"}) : null;
+  const btn = el("button", {class: "btn btn-accent", text: "⬇ Download models for me", onclick: async () => {
+    try {
+      await api("/api/fetch", {family: f.key, token: token ? token.value.trim() : "", optional: opt ? opt.checked : false});
+      if (token) token.value = "";
+      S.fetchError = null;
+      watchFetch();
+    } catch (e) { S.fetchError = {family: f.key, text: e.message}; paintFetch(); }
+  }});
+  const line = el("div", {class: "field-row"}, btn);
+  if (opt) line.append(el("label", {class: "fetch-opt"}, opt, " " + f.fetch_optional_label));
+  box.append(line);
+  if (token) {
+    const seen = new Set();
+    const links = gated.filter((m) => !seen.has(m.repo) && seen.add(m.repo)).map((m) =>
+      el("a", {target: "_blank", rel: "noopener", href: `https://huggingface.co/${m.repo}`, text: m.label + " licence"}));
+    box.append(el("div", {class: "fetch-token"},
+      el("div", {class: "field-hint", text: "These files are gated: sign in to Hugging Face, accept the licence on " +
+        "each page below, then paste a read token. It is used for this download only, never saved. " +
+        "Leave it empty when the machine or pod has HF_TOKEN set."}),
+      el("div", {class: "fetch-links"}, links,
+        el("a", {target: "_blank", rel: "noopener", href: "https://huggingface.co/settings/tokens", text: "Create a token"})),
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Token:"}), token)));
+  }
+  box.append(el("div", {class: "field-hint", text: f.fetch_note ||
+    `Fetches every file above (~${Math.round(total)} GB) and fills in these paths, plus the Qwen3-VL captioner ` +
+    "the Captions tab uses and the small helper models. Interrupted downloads resume where they left off."}));
+  const status = el("div", {class: "fetch-status"});
+  box.append(status);
+  S.fetchRows[f.key] = {status, btn};
+  return box;
+}
+
+function paintFetch() {
+  const st = S.fetch || {};
+  const busy = st.state === "running";
+  const gb = (n) => (n / 1024 ** 3).toFixed(1);
+  for (const [key, r] of Object.entries(S.fetchRows || {})) {
+    r.btn.disabled = busy;
+    r.status.innerHTML = "";
+    if (S.fetchError && S.fetchError.family === key) {
+      r.status.append(el("div", {class: "fetch-msg bad", text: S.fetchError.text}));
+    }
+    if (st.family !== key || !st.state || st.state === "idle") continue;
+    if (busy) {
+      const pct = st.total ? Math.min(100, (100 * st.done) / st.total) : 0;
+      r.status.append(
+        el("div", {class: "fetch-msg", text: st.file ? `${st.file}: ${gb(st.done)} of ${gb(st.total)} GB` :
+          (st.lines[st.lines.length - 1] || "Starting…")}),
+        el("div", {class: "fetch-bar"}, el("div", {style: `width:${pct.toFixed(1)}%`})),
+        el("button", {class: "btn", text: "Cancel", onclick: () => api("/api/fetch/cancel", {}).then(watchFetch)}));
+    } else {
+      const text = {done: "Done: the paths above are filled in.", cancelled: "Cancelled. Downloading again resumes it.",
+        failed: "Some files did not download; press the button again to retry just those."}[st.state] || "";
+      r.status.append(el("div", {class: "fetch-msg" + (st.state === "done" ? "" : " bad"), text}));
+      if (st.state === "failed") r.status.append(el("pre", {class: "fetch-log", text: st.lines.slice(-12).join("\n")}));
+    }
+  }
+}
+
+async function watchFetch() {
+  clearTimeout(S.fetchTimer);
+  const was = S.fetch && S.fetch.state;
+  try { S.fetch = await api("/api/fetch"); } catch (e) { return; }
+  if (was === "running" && S.fetch.state !== "running") {
+    S.prefs = (await api("/api/prefs")).models || {};    // the fetcher wrote the new paths
+    renderPrefs();
+    checkModels();
+  }
+  paintFetch();
+  if (S.fetch.state === "running") S.fetchTimer = setTimeout(watchFetch, 1500);
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)

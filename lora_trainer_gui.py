@@ -1331,6 +1331,16 @@ class LoRATrainerGUI:
             os.environ.get("CUDA_VISIBLE_DEVICES")) and not str(
             self.prefs.get("cuda_device", "")).strip()
         self._cuda_device_applied = _apply_cuda_device_pref(self.prefs)
+        try:
+            # the web UI's port, checked now: Preferences shows the port the web UI will really get (8081 taken by
+            # another program = the next free one, saved), before the web UI is ever opened
+            from fizgig.web.port import settle as _settle_web_port
+            _port = _settle_web_port(self.prefs)
+            if _port:
+                self.prefs["web_port"] = str(_port)
+                save_prefs(self.prefs)
+        except Exception:
+            pass
         self.prefs_vars = {}
         for key, default in DEFAULT_PREFS.items():
             var = tk.StringVar(value=self.prefs.get(key, default))

@@ -1098,3 +1098,15 @@ input[type="range"] {
 .checkpoint-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center;
   padding: 4px 8px; background: var(--bg-inset); border: 1px solid var(--border); }
 .checkpoint-name { word-break: break-all; }
+
+/* Preferences: Download models for me */
+.fetch-row { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.fetch-opt { margin-left: 14px; }
+.fetch-token { margin: 8px 0; }
+.fetch-links { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 6px; }
+.fetch-status { margin-top: 6px; }
+.fetch-msg { font-size: 13px; margin: 4px 0; }
+.fetch-msg.bad { color: var(--warning); }
+.fetch-bar { height: 8px; border-radius: 4px; background: var(--bg-deep); overflow: hidden; margin: 6px 0; max-width: 520px; }
+.fetch-bar > div { height: 100%; background: var(--accent); transition: width .5s; }
+.fetch-log { font-size: 11px; max-height: 180px; overflow: auto; white-space: pre-wrap; }
