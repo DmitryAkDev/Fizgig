@@ -212,7 +212,7 @@
             <p>Previews made while the model trains, so you can watch it learn and pick the best checkpoint.</p>
           </div>
           <div id="samplesForm"></div>
-          <div class="section-card">
+          <div class="section-card" id="galleryCard">
             <div class="card-title">Previews so far</div>
             <div class="card-desc" id="galleryInfo">The newest first, from the current run's output folder.</div>
             <div class="card-content"><div class="gallery" id="gallery"></div></div>
@@ -273,6 +273,11 @@
             <div class="card-desc" id="checkpointsInfo">The LoRAs and checkpoints this run has saved, newest first.
               Download any of them to this computer.</div>
             <div class="card-content"><div id="checkpoints" class="checkpoint-list"></div></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Previews</div>
+            <div class="card-desc">The previews this run makes, epoch by epoch, are on the Samples tab.</div>
+            <div class="card-content"><button class="btn btn-primary" id="btnViewPreviews">View the previews →</button></div>
           </div>
         </section>
 

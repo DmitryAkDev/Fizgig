@@ -1528,3 +1528,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 
 /* Check settings found nothing wrong */
 .problems.ok { color: var(--success); }
+
+/* preview tiles keep their shape before the picture arrives (it loads lazily), so the page has its full length at
+   once and View the previews can scroll the gallery to the top */
+.gallery-item > img { aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); }

@@ -1520,6 +1520,13 @@ function wire() {
   $("outTo").addEventListener("change", renderOutputs);
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
+  $("btnViewPreviews").addEventListener("click", async () => {   // the Samples tab, at its previews
+    showTab("samples");
+    const go = () => $("galleryCard").scrollIntoView({block: "start"});
+    requestAnimationFrame(go);
+    try { await loadGallery(); } catch (e) { /* the previews show when they can */ }
+    go();                                    // again with the previews in (their tiles keep a fixed shape)
+  });
   $("btnQueue").addEventListener("click", async () => {
     try {
       const r = await api("/api/queue/add", runBody());
