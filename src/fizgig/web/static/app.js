@@ -4644,7 +4644,9 @@ async function pick(start, dirOnly, done) {
 }
 async function browse(path) {
   const r = await api("/api/browse?path=" + encodeURIComponent(path));
-  $("pickerPath").value = r.path;
+  S.pickAt = r.path;
+  $("pickerPath").value = r.label || r.path;          // This computer has no path of its own
+  $("pickerChoose").disabled = $("pickerNew").disabled = !!r.label;
   $("pickerUp").onclick = () => r.parent && browse(r.parent);
   const places = $("pickerPlaces");
   places.innerHTML = "";

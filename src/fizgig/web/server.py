@@ -2007,6 +2007,10 @@ class Handler(BaseHTTPRequestHandler):
                 and not self.headers.get("X-Forwarded-For"))
 
     def _browse(self, target):
+        from fizgig.web import drives
+        if target == drives.DRIVES:                  # This computer: every drive / mounted disk
+            return self.json({"path": drives.DRIVES, "label": "This computer", "parent": "",
+                              "dirs": drives.listing(), "files": [], "places": self._places()})
         target = target or BASE_DIR
         if not os.path.isdir(target):
             target = os.path.dirname(target) if os.path.isdir(os.path.dirname(target)) else BASE_DIR
@@ -2019,12 +2023,16 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         parent = os.path.dirname(target)
+        return self.json({"path": target, "parent": parent if parent != target else drives.DRIVES,   # a root: Up = the drives
+                          "dirs": dirs, "files": files[:2000], "places": self._places()})
+
+    def _places(self):
+        from fizgig.web import drives
         last_out = (load_state().get("values") or {}).get("LORA_OUTPUT_DIR") or default_output_dir()
         places = [("Training data", uploads_root()), ("Trained LoRAs", last_out), ("Uploaded files", UPLOAD_FILES),
                   ("Fizgig", BASE_DIR)]
-        return self.json({"path": target, "parent": parent if parent != target else "", "dirs": dirs,
-                          "files": files[:2000],
-                          "places": [{"name": n, "path": p} for n, p in places if os.path.isdir(p)]})
+        return [{"name": n, "path": p} for n, p in places if os.path.isdir(p)] + [{"name": "This computer",
+                                                                                   "path": drives.DRIVES}]
 
     def _samples(self, folder, run=""):
         """A sample folder's previews, newest first, each with its run, epoch, prompt number and strength; `runs` the
