@@ -69,6 +69,16 @@
               <div class="field-hint" id="folderSummary"></div>
             </div>
           </div>
+          <div class="section-card" id="datasetsCard">
+            <div class="card-title"><span>Your training data</span>
+              <button class="btn btn-sm" id="datasetsReload">Reload</button></div>
+            <div class="card-desc" id="datasetsDesc">The folders in your training data folder. Click one to train on it.</div>
+            <div class="card-content">
+              <div class="field-row" id="datasetsSearchRow" style="display:none"><span class="field-label">Search:</span>
+                <input type="text" id="datasetsSearch" class="w-path" placeholder="folder name"></div>
+              <div class="dataset-grid" id="datasetsGrid"></div>
+            </div>
+          </div>
           <div class="section-card" id="uploadCard">
             <div class="card-title">Upload a training folder</div>
             <div class="card-desc">The folder above is on the machine running Fizgig. If your training data (pictures, clips or

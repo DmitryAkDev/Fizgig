@@ -568,6 +568,79 @@ def _upload_name(name, what) -> str:
 _WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
+_PIC = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif"}
+_SONG = {".wav", ".mp3", ".flac", ".m4a"}
+
+
+_thumbs: dict = {}            # (path, mtime) -> a small JPEG; the oldest go past 600
+
+
+def _thumb(path, size=320):
+    """A small JPEG of a picture for a tile (a phone shouldn't fetch four full photos per folder), kept in memory."""
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key in _thumbs:
+        return _thumbs[key]
+    try:
+        import io
+        from PIL import Image
+        with Image.open(path) as im:
+            im.thumbnail((size, size))
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, "JPEG", quality=82)
+        data = buf.getvalue()
+    except Exception:
+        return None
+    _thumbs[key] = data
+    while len(_thumbs) > 600:
+        _thumbs.pop(next(iter(_thumbs)))
+    return data
+
+
+def list_datasets() -> dict:
+    """The folders in the training data folder (uploads_root()), newest first: what each holds (pictures, clips,
+    songs, how many have a caption), when it last changed, and up to four pictures for its tile."""
+    root = uploads_root()
+    out = []
+    try:
+        folders = [e for e in os.scandir(root) if e.is_dir() and not e.name.startswith(".")]
+    except OSError:
+        folders = []
+    for d in folders:
+        pics = clips = songs = captioned = 0
+        thumbs, newest = [], 0.0
+        try:
+            entries = list(os.scandir(d.path))
+        except OSError:
+            continue
+        names = {e.name for e in entries}
+        for e in entries:
+            if not e.is_file():
+                continue
+            stem, ext = os.path.splitext(e.name)
+            ext = ext.lower()
+            kind = "pic" if ext in _PIC else "clip" if ext == ".mp4" else "song" if ext in _SONG else ""
+            if not kind:
+                continue
+            pics += kind == "pic"
+            clips += kind == "clip"
+            songs += kind == "song"
+            captioned += any(stem + c in names for c in (".txt", ".caption"))
+            try:
+                newest = max(newest, e.stat().st_mtime)
+            except OSError:
+                pass
+            if kind == "pic" and len(thumbs) < 4:
+                thumbs.append(e.path)
+        if pics + clips + songs:
+            out.append({"name": d.name, "path": d.path, "pictures": pics, "clips": clips, "songs": songs,
+                        "captioned": captioned, "time": newest, "thumbs": thumbs})
+    out.sort(key=lambda x: -x["time"])
+    return {"root": root, "datasets": out[:300], "total": len(out)}
+
+
 def _save_upload(folder, name, rfile, length, single=False) -> dict:
     """Into a folder under uploads_root() (training data), or `single`: one file into <Fizgig>/uploads."""
     name = _upload_name(name, "File name")
@@ -887,6 +960,8 @@ class Handler(BaseHTTPRequestHandler):
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/captions/status":
             return self.json(captions.status())
+        if path == "/api/datasets":
+            return self.json(list_datasets())
         if path == "/api/upload/root":
             return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir")),
                               "local": self._local_viewer()})
@@ -913,6 +988,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._browse((qs.get("path") or [""])[0])
         if path == "/api/samples":
             return self._samples((qs.get("dir") or [""])[0])
+        if path == "/api/thumb":
+            p = (qs.get("path") or [""])[0]
+            if os.path.splitext(p)[1].lower() not in _PIC or not os.path.isfile(p):
+                return self.json({"error": "not a picture"}, 404)
+            data = _thumb(p)
+            if data is None:
+                return self._stream(p, attachment=False)
+            return self._send(200, data, "image/jpeg", extra=[("Cache-Control", "private, max-age=3600")])
         if path == "/api/media":
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):

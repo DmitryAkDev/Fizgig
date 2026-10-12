@@ -383,7 +383,7 @@ function dataFolderCard() {
   const input = el("input", {type: "text", class: "w-path", id: "dataFolder", value: (S.uploadRoot && S.uploadRoot.set) ?
     S.uploadRoot.root : "", placeholder: "Fizgig's own training_data folder"});
   const save = async () => {
-    try { await api("/api/prefs", {changes: {input_dataset_dir: input.value.trim()}}); showUploadRoot(); }
+    try { await api("/api/prefs", {changes: {input_dataset_dir: input.value.trim()}}); showUploadRoot(); loadDatasets(); }
     catch (e) { hint.textContent = e.message; }
   };
   input.addEventListener("change", save);
@@ -671,6 +671,51 @@ async function loadCheckpoints() {
   }
   $("checkpointsInfo").textContent = r.items.length ? `${r.items.length} saved in ${out}, newest first.` :
     "Nothing saved yet. Checkpoints appear here as the run saves them.";
+}
+
+// ---- Start tab: your training data (the folders in the training data folder) ---------------------------------
+async function loadDatasets() {
+  try { S.datasets = await api("/api/datasets"); } catch (e) { return; }
+  $("datasetsDesc").textContent = `The folders in ${S.datasets.root}. Click one to train on it; ` +
+    "upload a new one below, or pick any folder with Choose… above.";
+  $("datasetsSearchRow").style.display = S.datasets.total > 8 ? "" : "none";
+  renderDatasets();
+}
+
+function renderDatasets() {
+  const r = S.datasets;
+  if (!r) return;
+  const q = $("datasetsSearch").value.trim().toLowerCase();
+  const host = $("datasetsGrid");
+  host.innerHTML = "";
+  const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const list = r.datasets.filter((d) => !q || d.name.toLowerCase().includes(q));
+  const shown = q || S.datasetsAll ? list.slice(0, 300) : list.slice(0, 12);     // the newest twelve, unless asked
+  for (const d of shown) {
+    const what = [d.pictures && `${d.pictures} picture${d.pictures === 1 ? "" : "s"}`,
+      d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
+      .filter(Boolean).join(" · ");
+    const total = d.pictures + d.clips + d.songs;
+    const caps = d.captioned >= total ? "all captioned" : d.captioned ? `${d.captioned} of ${total} captioned` : "no captions yet";
+    const mosaic = el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
+      d.thumbs.length ? d.thumbs.map((p) => el("img", {loading: "lazy", alt: "",
+        src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`})) :
+        el("span", {class: "dataset-kind", text: d.songs ? "♪" : d.clips ? "▶" : ""}));
+    const card = el("button", {class: "dataset-card" + (norm(d.path) === norm(S.imageFolder) ? " active" : ""),
+      title: d.path, onclick: () => {
+        $("imageFolder").value = d.path;
+        $("imageFolder").dispatchEvent(new Event("change"));
+        renderDatasets();
+      }}, mosaic,
+      el("div", {class: "dataset-meta"}, el("b", {text: d.name}), el("span", {text: what}),
+        el("span", {class: d.captioned >= total ? "ok" : "warn", text: caps}),
+        el("span", {class: "dataset-when", text: d.time ? new Date(d.time * 1000).toLocaleDateString() : ""})));
+    host.append(card);
+  }
+  if (shown.length < list.length) host.append(el("button", {class: "btn dataset-more", text: `Show all ${list.length}`,
+    onclick: () => { S.datasetsAll = true; renderDatasets(); }}));
+  if (!list.length) host.append(el("div", {class: "field-hint", text: r.total ?
+    "No folder matches that." : "No training data here yet. Upload a folder below, or pick one with Choose… above."}));
 }
 
 // ---- Download your outputs tab ------------------------------------------------------------------------------
@@ -1093,6 +1138,7 @@ async function uploadFiles(picked, opts = {}) {
     `${badname.length > 5 ? ", …" : ""}. Rename them (no leading dot, no slashes) and upload them again.`;
   if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
   say(msg, !saved || failed.length);
+  if (saved) loadDatasets();
   if (saved && opts.done) opts.done(folder);
   else if (saved) {
     $("imageFolder").value = folder;
@@ -1175,6 +1221,9 @@ function wire() {
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
   wireCaptions();
   $("outReload").addEventListener("click", loadOutputs);
+  $("datasetsReload").addEventListener("click", loadDatasets);
+  $("datasetsSearch").addEventListener("input", debounce(renderDatasets, 200));
+  loadDatasets();
   $("outFizgigOnly").addEventListener("change", loadOutputs);
   $("outSearch").addEventListener("input", debounce(renderOutputs, 200));
   $("outWhen").addEventListener("change", () => {
