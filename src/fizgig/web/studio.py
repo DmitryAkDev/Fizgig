@@ -65,7 +65,7 @@ def _event(ev):
         elif kind == "step":
             _S["progress"] = [ev.get("done", 0), ev.get("total", 0)]
         elif kind in ("loaded", "donor"):
-            _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash")})
+            _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash", "eq")})
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
@@ -323,6 +323,7 @@ def status():
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
         d["notes"] = _S.get("notes")
+        d["eq"] = _S.get("eq") or {}
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
@@ -418,6 +419,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       "ref_dit": bool(desc.model_path("ref_dit", look))} if kind == "video" else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),
+            "model_eq": _model_eq(desc, look) if kind != "video" else "",
             "audio_source": bool(getattr(desc.load_driver(), "supports_audio_source", False)),
             "categories": {b: CAT_SHORT.get(c, "") for b, c in cats.items()},
             "masters": [{"cat": c, "label": CAT_SHORT[c], "color": CAT_COLOR[c]} for c in
@@ -441,6 +443,15 @@ def layout(desc, prefs, pref_path, samples=None):
             "follow_ck": (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. "
                           f"Clear it in Preferences to preview with the Samples tab's settings instead.")
             if ck is not None and have(ck[0].pref_key) else ""}
+
+
+def _model_eq(desc, look):
+    """The family's Model EQ LoRA (Preferences), when set and there."""
+    try:
+        p = desc.model_path("model_eq", look)
+    except Exception:
+        p = ""
+    return p if p and os.path.isfile(p) else ""
 
 
 def _num(x, d):

@@ -445,12 +445,14 @@
               <div class="field-row"><span class="field-label">Primary LoRA:</span>
                 <input type="text" id="stPrimary" class="w-path" placeholder="the LoRA to repair (.safetensors)">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
-                <span class="field-label">at strength</span><input type="text" id="stPScale" class="w-num" value="1"></div>
+                <span class="field-label">at strength</span><input type="text" id="stPScale" class="w-num" value="1">
+                <button class="btn" id="stEqP" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div class="field-row"><span class="field-label">Donor LoRA:</span>
                 <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
                 <button class="btn" id="stDonorPick">Choose…</button>
                 <button class="btn" id="stDonorUnload">Unload donor</button>
-                <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1"></div>
+                <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1">
+                <button class="btn" id="stEqD" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div class="field-row"><span class="field-label">Prompt:</span>
                 <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
               <div id="stAudioRows" style="display:none">

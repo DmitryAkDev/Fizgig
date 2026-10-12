@@ -1569,6 +1569,7 @@ function studioKind(L, sv) {
     audio ? "Play any song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
   $("stPlayBoth").style.display = video || audio ? "" : "none";
   studioAce(L, sv);
+  studioEqButtons(L);
   if (!video) return;
   const V = L.video, h3 = sv.h3 || {};
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
@@ -1907,6 +1908,60 @@ function studioAceNotes(n) {
   $("stSrcRepNote").textContent = n.strength || "";
 }
 
+// ---- Model EQ Mode (a family with a Model EQ LoRA in Preferences): the row holds the model's own weights ----
+const ST_EQ_ROWS = {primary: ["stPrimary", "stPrimaryPick", "stPScale", "stEqP"], donor: ["stDonor", "stDonorPick", "stDScale", "stEqD"]};
+
+function studioEqButtons(L) {
+  const on = !!(L && L.model_eq);
+  for (const role of ["primary", "donor"]) {
+    if (!on && S.st.eq[role]) studioEq(role, false, false);
+    $(ST_EQ_ROWS[role][3]).style.display = on ? "" : "none";
+  }
+}
+
+function studioEq(role, on, restore = true) {
+  // on: the row loads the Model EQ LoRA at strength 1, its path, Choose and strength locked (the button lit);
+  // off: unlocked and (restore) the LoRA and strength it had before come back - as the desktop's _repair_set_eq_mode
+  const [pathId, pickId, scaleId, btnId] = ST_EQ_ROWS[role];
+  const L = S.st.layout;
+  if (on) {
+    if (!L || !L.model_eq) { $("stStatus").textContent = "Set the Model EQ LoRA in Preferences first."; return; }
+    S.st.eqSaved[role] = [$(pathId).value, $(scaleId).value];
+    $(pathId).value = L.model_eq; $(scaleId).value = "1";
+  }
+  S.st.eq[role] = on;
+  for (const id of [pathId, pickId, scaleId]) $(id).disabled = on;
+  $(btnId).classList.toggle("btn-primary", on);
+  if (on) {
+    if (role === "primary") { $("stStatus").textContent = "Model EQ as the primary: press Start / Update to load it (1.0 = the stock model).";
+      if (S.st.ready) $("stStart").textContent = "Update"; }
+    else if (S.st.ready) api("/api/studio/donor", {path: L.model_eq}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; });
+    stRemember();
+    return;
+  }
+  if (!restore) { delete S.st.eqSaved[role]; return; }
+  const [prev, prevScale] = S.st.eqSaved[role] || ["", String((L && L.default_strength) || 1)];
+  delete S.st.eqSaved[role];
+  $(scaleId).value = prevScale || "1";
+  if (role === "primary") {
+    $(pathId).value = prev;
+    $("stStatus").textContent = "Model EQ Mode off: the primary is your own LoRA again - press Update to load it.";
+    if (S.st.ready) $("stStart").textContent = "Update";
+  } else {
+    $(pathId).value = prev;
+    if (S.st.ready) api("/api/studio/donor", {path: prev}).then(() => { studioPoll(); studioSchedule(); });
+  }
+  stRemember();
+}
+
+function studioEqNote(st) {
+  // after a load: what the sliders mean for a Model EQ row (the engine's gain for that file)
+  const eq = st.eq || {}, bits = [];
+  for (const [role, g] of Object.entries(eq)) if (g != null)
+    bits.push(`${role === "primary" ? "Primary" : "Donor"} is the Model EQ: 1.0 = the stock model, 0 / 2 = -${Math.round(g * 100)}% / +${Math.round(g * 100)}% of each block's main directions.`);
+  return bits.join(" ");
+}
+
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
@@ -2180,7 +2235,8 @@ async function studioPoll() {
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
   S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
-  $("stStatus").textContent = st.status || $("stStatus").textContent;
+  $("stStatus").textContent = (st.status || $("stStatus").textContent) +
+    (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
   $("stBadge").dataset.state = st.state === "loading" || st.rendering ? "running" : st.state === "ready" ? "completed" : "idle";
   const p = st.progress;
@@ -2287,6 +2343,9 @@ function wireStudio() {
   });
   $("stStart").addEventListener("click", studioStart);
   wireStudioAce();
+  S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
+  $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
+  $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();

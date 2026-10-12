@@ -41,8 +41,15 @@ def _auto_swap():
 
 
 def _blocks(eng):
+    eq = {}
+    try:                                         # a Model EQ row: its gain (the sliders' 0 / 2 = -g / +g)
+        from fizgig.families.workbench import DONOR, PRIMARY
+        gains = getattr(eng, "_eq", {}) or {}
+        eq = {"primary": gains.get(PRIMARY), "donor": gains.get(DONOR)}
+    except Exception:
+        pass
     return {"primary_blocks": sorted(eng.primary_block_ids or ()), "donor_blocks": sorted(eng.donor_block_ids or ()),
-            "hash": getattr(eng, "primary_hash", "") or ""}
+            "hash": getattr(eng, "primary_hash", "") or "", "eq": eq}
 
 
 def cmd_load(c):
