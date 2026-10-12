@@ -513,11 +513,6 @@ MINIMAX_TRAIN_BASE_OPTIONS = [
 ]
 
 
-def minimax_train_base(raw):
-    """Dropdown label -> canonical base key. Anything unrecognised is the fl2va default."""
-    return "ref2va" if "ref2va" in str(raw or "").lower() else "fl2va"
-
-
 def ft_checkpoint_continuation(path):
     """(next_window, epochs_done) for a rotation fine-tune checkpoint.
 
@@ -555,175 +550,16 @@ SEED_TRAVEL_PRESETS = {
 }
 
 
-REFMOD_GRID_OPTIONS = ["Full reference (recommended — carries the face)", "32×32 (256 tokens)",
-                       "16×16 (64 tokens, concept-level)", "8×8 (16 tokens, stackable)"]
-# Steps: the optimisation against the frozen H3 base — the thing no other RefMod maker does.
-# Measured 9-10 Sep 2026 (mbacc photos, ref2va, ArcFace vs the dataset): 200 steps at the
-# tested rate, pull and noise window took portraits 66 -> 70 and off-dataset scenes 53 -> 59,
-# ahead on every prompt. 0 writes the plain encode, the same file the node pack's extractor makes.
-REFMOD_STEP_OPTIONS = ["0 (plain encode — what the node pack makes)", "200 (optimised against H3 — recommended)",
-                       "500", "1000"]
-REFMOD_REFS_OPTIONS = ["4", "8", "16", "all"]
-# How a clip in the dataset enters the mod (16 Sep 2026): its sharpest-face still (one frame,
-# the identity choice) or every latent frame as motion (the node pack's video reference).
-REFMOD_CLIPS_OPTIONS = ["as their sharpest still", "as motion (all their frames)"]
-# The pack's concept types (its Extract node's list). Written into the file with the description:
-# together they are the mod's HINT — what RefMod Studio's '+ mod hints' and the pack's Loader
-# emit into the prompt ("identity: a ginger woman with messy hair").
-REFMOD_CONCEPT_OPTIONS = ["identity", "style", "pose_motion", "clothing", "background", "generic"]
-# Token cap (16 Sep 2026): the pack's extractor rule for CLIPS AS MOTION only — near-duplicate
-# frames first, then an even resample to what fits. Photos are never touched (Peter: "that's not
-# what it's for"); a cap with no motion clips does nothing. Off by default.
-REFMOD_TOKEN_CAP_OPTIONS = ["off (every clip frame kept)", "5,120 (the pack's default)", "8,192 (the library's files)",
-                            "16,384"]
-# Audio mod (16 Sep 2026): the pack's audio RefMod, a plain encode of the folder's sound through
-# the H3 audio VAE, written as a second file <name>_audio.safetensors. Off by default.
-REFMOD_AUDIO_OPTIONS = ["off: the visual mod only",
-                        "on: one file — the visual mod plus an audio mod of the folder's sound",
-                        "on: two files — the visual mod, and an audio mod of the folder's sound beside it"]
-REFMOD_AUDIO_CONCEPT_OPTIONS = ["voice", "singing", "music_style", "sound_fx", "ambience"]
-REFMOD_AUDIO_SECONDS_OPTIONS = ["10", "20", "30", "60"]
-REFMOD_DEFAULTS = {
-    "MINIMAX_REFMOD_REFS": "16",
-    "MINIMAX_REFMOD_STEPS": REFMOD_STEP_OPTIONS[1],
-    "MINIMAX_REFMOD_CLIPS": REFMOD_CLIPS_OPTIONS[0],
-    "MINIMAX_REFMOD_DESC": "",
-    "MINIMAX_REFMOD_CONCEPT": REFMOD_CONCEPT_OPTIONS[0],
-    "MINIMAX_REFMOD_TOKEN_CAP": REFMOD_TOKEN_CAP_OPTIONS[0],
-    "MINIMAX_REFMOD_AUDIO": REFMOD_AUDIO_OPTIONS[0],
-    "MINIMAX_REFMOD_AUDIO_CONCEPT": REFMOD_AUDIO_CONCEPT_OPTIONS[0],
-    "MINIMAX_REFMOD_AUDIO_SECONDS": "30",
-}
-
-
-def refmod_audio_on(label) -> bool:
-    """'on: …' -> True; 'off: …', blank or anything else -> False."""
-    return str(label or "").strip().lower().startswith("on")
-
-
-def refmod_audio_value(label) -> str:
-    """The CLI's --audio: 'bundle' for the one-file choice, 'folder' for two files, else 'off'."""
-    t = str(label or "").strip().lower()
-    if not t.startswith("on"):
-        return "off"
-    return "folder" if "two files" in t else "bundle"
-
-
-def refmod_token_cap_value(label) -> str:
-    """'5,120 (the pack's default)' -> '5120'; 'off …', blank or unparsable -> '0'."""
-    head = str(label or "").strip().split(" ")[0].replace(",", "")
-    try:
-        return str(max(0, int(head)))
-    except ValueError:
-        return "0"
-
-
-def refmod_clips_value(label) -> str:
-    """'as motion (all their frames)' -> 'motion'; anything else -> 'still'."""
-    return "motion" if str(label or "").strip().lower().startswith("as motion") else "still"
-# The base every RefMod built-in starts from: the H3 Fast preset's values as they stood (3 Oct 2026), written out so
-# RefMod no longer reads the old trainer's preset table. RefMod trains no LoRA - the LoRA keys are inert for it; the
-# dataset ones (megapixels, clip stills, distillation off) are what its caching reads.
-_REFMOD_PRESET_BASE = {
-    "SEED": 42, "DATASET_MEGAPIXELS": "0.25",
-}
-
-REFMOD_BUILT_IN_PRESETS = {
-    # The community recipe (16 Sep 2026): the node pack's own extractor path — encode mode (no
-    # optimisation), full-resolution references, under its 8 192-token cap (8 references at
-    # 1 MP ~ 8 000 tokens). Same photos as the Fizgig recipe, for a fair comparison.
-    "✨ RefMod — community recipe (plain encode, 8 refs at 1 MP)": {
-        **_REFMOD_PRESET_BASE,
-        "MINIMAX_REFMOD_GRID": REFMOD_GRID_OPTIONS[0],
-        "MINIMAX_REFMOD_REFS": "8",
-        "MINIMAX_REFMOD_STEPS": REFMOD_STEP_OPTIONS[0],
-        "MINIMAX_REFMOD_CLIPS": REFMOD_CLIPS_OPTIONS[0],
-        "MINIMAX_REFMOD_TOKEN_CAP": REFMOD_TOKEN_CAP_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO": REFMOD_AUDIO_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_CONCEPT": REFMOD_AUDIO_CONCEPT_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_SECONDS": "30",
-        "MINIMAX_REFMOD_CONCEPT": "identity",
-        "DATASET_MEGAPIXELS": "1.0",
-    },
-    # Measured 10 Sep 2026: the Full-canvas mod with 16 references is the strongest file
-    # (portraits 70 vs 60 for 8), and 200 optimisation steps add ~5 on top. A companion LoRA
-    # in the same file was tried in eleven configurations and never lifted likeness beyond
-    # noise while dropping portraits ~10 (pose drift) — removed 14 Sep 2026.
-    "✨ RefMod — Fizgig recipe (Full reference, 16 refs at 1 MP, optimised)": {
-        **_REFMOD_PRESET_BASE,
-        "MINIMAX_REFMOD_GRID": REFMOD_GRID_OPTIONS[0],
-        **REFMOD_DEFAULTS,
-        # 1 MP references (the file's pixels); the optimiser's stills are cached at 0.25 MP
-        # regardless (Peter, 16 Sep 2026)
-        "DATASET_MEGAPIXELS": "1.0",
-    },
-    # The same recipe at 0.5 MP references: half the tokens per reference at generation
-    # (~8,000 for 16, the library's budget) for a lighter file (Peter, 16 Sep 2026).
-    "✨ RefMod — Fizgig recipe lite (Full reference, 16 refs at 0.5 MP, optimised)": {
-        **_REFMOD_PRESET_BASE,
-        "MINIMAX_REFMOD_GRID": REFMOD_GRID_OPTIONS[0],
-        **REFMOD_DEFAULTS,
-        "DATASET_MEGAPIXELS": "0.5",
-    },
-    # Style (16 Sep 2026): a look, not a person — plain encode of EVERY still (the optimiser's
-    # loss rewards reproducing the stills themselves, which on a style set means their subjects
-    # and framing; untested there, so Steps stays 0 and anyone can type a number). Community =
-    # the pack's concept recipe, the pooled 16x16 grid (stacks under the cap, carries palette
-    # and feel); high fidelity = Full at 0.25 MP (keeps texture, grain, brushwork).
-    "✨ RefMod — style, community (16×16 grid, all refs, plain encode)": {
-        **_REFMOD_PRESET_BASE,
-        "MINIMAX_REFMOD_GRID": REFMOD_GRID_OPTIONS[2],
-        "MINIMAX_REFMOD_REFS": "all",
-        "MINIMAX_REFMOD_STEPS": REFMOD_STEP_OPTIONS[0],
-        "MINIMAX_REFMOD_CLIPS": REFMOD_CLIPS_OPTIONS[0],
-        "MINIMAX_REFMOD_TOKEN_CAP": REFMOD_TOKEN_CAP_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO": REFMOD_AUDIO_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_CONCEPT": REFMOD_AUDIO_CONCEPT_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_SECONDS": "30",
-        "MINIMAX_REFMOD_CONCEPT": "style",
-        "DATASET_MEGAPIXELS": "0.25",
-    },
-    # High fidelity means it (Peter, 16 Sep 2026): 1 MP references, ~1 000 tokens a still, so 8 of
-    # them — the library's budget; the token readout warns anyone who takes it further.
-    "✨ RefMod — style, high fidelity (Full at 1 MP, 8 refs, plain encode)": {
-        **_REFMOD_PRESET_BASE,
-        "MINIMAX_REFMOD_GRID": REFMOD_GRID_OPTIONS[0],
-        "MINIMAX_REFMOD_REFS": "8",
-        "MINIMAX_REFMOD_STEPS": REFMOD_STEP_OPTIONS[0],
-        "MINIMAX_REFMOD_CLIPS": REFMOD_CLIPS_OPTIONS[0],
-        "MINIMAX_REFMOD_TOKEN_CAP": REFMOD_TOKEN_CAP_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO": REFMOD_AUDIO_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_CONCEPT": REFMOD_AUDIO_CONCEPT_OPTIONS[0],
-        "MINIMAX_REFMOD_AUDIO_SECONDS": "30",
-        "MINIMAX_REFMOD_CONCEPT": "style",
-        "DATASET_MEGAPIXELS": "1.0",
-    },
-}
-
-
-def refmod_num(raw, default: str, kind=float) -> str:
-    """A free-text number field -> the string the CLI gets; the measured default when blank or
-    unparsable (a typo must not silently become 0)."""
-    s = str(raw if raw is not None else "").strip()
-    try:
-        v = kind(s)
-        return str(int(v)) if kind is int else s
-    except (TypeError, ValueError):
-        return default
-
-
-def refmod_grid_value(label) -> str:
-    """'16×16 (256 tokens, recommended)' -> '16'; 'Full reference ...' -> 'full'."""
-    s = str(label or "").strip()
-    if not s or s.lower().startswith("full"):
-        return "full"
-    return s.split("×")[0].split("x")[0].strip() or "16"
-
-
-def refmod_steps_value(label) -> str:
-    """'200 (recommended)' -> '200'; a typed '75' -> '75'; junk -> the measured 200."""
-    s = str(label or "").strip().split(" ")[0]
-    return s if s.isdigit() else "200"
+# MiniMax H3 RefMod's card options, presets and value rules live in fizgig/families/refmod.py (shared with the web
+# UI's RefMod entry, so both apps build the same run)
+if os.path.join(os.path.dirname(os.path.abspath(__file__)), "src") not in sys.path:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+from fizgig.families import refmod as _refmod                                     # noqa: E402
+from fizgig.families.refmod import (                                              # noqa: E402,F401
+    REFMOD_GRID_OPTIONS, REFMOD_STEP_OPTIONS, REFMOD_REFS_OPTIONS, REFMOD_CLIPS_OPTIONS, REFMOD_CONCEPT_OPTIONS,
+    REFMOD_TOKEN_CAP_OPTIONS, REFMOD_AUDIO_OPTIONS, REFMOD_AUDIO_CONCEPT_OPTIONS, REFMOD_AUDIO_SECONDS_OPTIONS,
+    REFMOD_DEFAULTS, REFMOD_BUILT_IN_PRESETS, refmod_audio_on, refmod_audio_value, refmod_token_cap_value,
+    refmod_clips_value, refmod_num, refmod_grid_value, refmod_steps_value, minimax_train_base)
 
 # Directory for dataset configurations
 DATASET_DIR = os.path.join(os.path.dirname(__file__), "dataset")
@@ -6667,15 +6503,19 @@ class LoRATrainerGUI:
     def _is_refmod_arch(self) -> bool:
         return ARCHITECTURES.get(self.architecture_var.get(), {}).get("is_refmod", False)
 
-    REFMOD_TRAIN_MP = 0.25   # the optimiser's stills: the measured recipe, whatever Target MP says
+    REFMOD_TRAIN_MP = _refmod.TRAIN_MP   # the optimiser's stills: the measured recipe, whatever Target MP says
+
+    def _refmod_steps_label(self):
+        _e = self.entries.get("MINIMAX_REFMOD_STEPS")
+        return _e.get() if _e is not None else self.settings.get("MINIMAX_REFMOD_STEPS", "")
 
     def _refmod_ref_pass_needed(self) -> bool:
         """RefMod with Steps above 0 and Target MP other than 0.25: the references need their
         own cache pass at Target MP (the dataset's caches are the optimiser's, at 0.25)."""
-        if not self._is_refmod_arch() or self._refmod_plain_encode():
+        if not self._is_refmod_arch():
             return False
         try:
-            return abs(float(self.dataset_megapixels_var.get()) - self.REFMOD_TRAIN_MP) > 1e-6
+            return _refmod.ref_pass_needed(self._refmod_steps_label(), self.dataset_megapixels_var.get())
         except (TypeError, ValueError, AttributeError):
             return False
 
@@ -6692,11 +6532,7 @@ class LoRATrainerGUI:
             img = self.image_folder_var.get().strip()
             folders = [img] if img else []
         root = self.prefs_vars["cache_dir"].get().strip() if "cache_dir" in self.prefs_vars else ""
-        out = []
-        for img in folders:
-            base = self._cache_dir_for(root, img) if root else img
-            out.append(base.rstrip("/\\") + "-refs")
-        return out
+        return _refmod.ref_cache_dirs(folders, root, self._cache_dir_for)
 
     def _refmod_plain_encode(self) -> bool:
         """RefMod at Steps 0: a plain encode of the references. Nothing trains, so the run
@@ -6704,29 +6540,13 @@ class LoRATrainerGUI:
         both the caption check and the text-encoder stage (Peter, 16 Sep 2026)."""
         if not self._is_refmod_arch():
             return False
-        _e = self.entries.get("MINIMAX_REFMOD_STEPS")
-        _raw = _e.get() if _e is not None else self.settings.get("MINIMAX_REFMOD_STEPS", "")
-        return refmod_steps_value(_raw) == "0"
+        return _refmod.plain_encode(self._refmod_steps_label())
 
-    REFMOD_TOKEN_CAP = 5120      # the node pack's Extract default max_tokens
+    REFMOD_TOKEN_CAP = _refmod.TOKEN_CAP      # the node pack's Extract default max_tokens
 
     def refmod_token_estimate(self, grid_label, refs_label, megapixels):
-        """(tokens per reference, total or None when 'all') for the card's live readout.
-        Full: a reference at the dataset's Target Megapixels is (W/16/2)*(H/16/2) tokens — MP*1e6/1024;
-        a pooled grid g is about (g/2)^2 (aspect-corrected grids are a little smaller)."""
-        g = refmod_grid_value(grid_label)
-        try:
-            mp = float(str(megapixels or "0.25").split(" ")[0])
-        except ValueError:
-            mp = 0.25
-        per = int(round(mp * 1e6 / 1024.0)) if g == "full" else max(1, (int(g) // 2) ** 2)
-        r = str(refs_label or "8").strip().lower()
-        if r.startswith("all"):
-            return per, None
-        try:
-            return per, per * max(1, int(float(r)))
-        except ValueError:
-            return per, per * 8
+        """(tokens per reference, total or None when 'all') for the card's live readout (fizgig/families/refmod.py)."""
+        return _refmod.token_estimate(grid_label, refs_label, megapixels)
 
     def _refmod_audio_opts_refresh(self):
         """Kind / Up-to shown only while Audio support is on (hidden, not greyed)."""
@@ -31426,8 +31246,8 @@ class LoRATrainerGUI:
                 # RefMod with Steps above 0: Target MP sizes the REFERENCES (their own cache
                 # pass); the optimiser's stills are always the measured 0.25 MP.
                 try:
-                    if self._is_refmod_arch() and not self._refmod_plain_encode():
-                        megapixels = self.REFMOD_TRAIN_MP
+                    if self._is_refmod_arch():
+                        megapixels = float(_refmod.toml_megapixels(self._refmod_steps_label(), megapixels))
                 except Exception:
                     pass
                 side = int(math.sqrt(megapixels * 1_000_000))
@@ -32475,44 +32295,25 @@ class LoRATrainerGUI:
         if (_desc := self._family_desc()) is not None:
             return self._generic_cache_command(_desc, "latents")
         if config.get("is_minimax"):
-            # --skip_existing: re-launching the same dataset should not re-encode every image.
-            # Safe on LATENTS specifically because the skip validates the cached latent against
-            # the CURRENT bucket, not just the filename — change Target Megapixels and it
-            # re-encodes anyway. Deliberately NOT passed to text caching, where the skip is
-            # filename-only and would silently reuse the embedding of an edited caption.
-            cmd = self._build_krea2_cache_command(
-                "minimax_cache_latents.py", "--vae", self._krea2_pref("minimax_vae")) + \
-                ["--skip_existing"]
-            # Passed whenever it's set — the script itself decides whether to load it, and only
-            # does when the dataset actually contains clips. A stills folder never pays the
-            # 605 MB, so there's nothing to gate on here.
-            _avae = self._krea2_pref("minimax_audio_vae")
-            if _avae:
-                cmd += ["--audio_vae", _avae]
-            # Each clip lends its sharpest face as a reference: picked + encoded at cache time;
-            # with --skip_existing the script re-encodes only the clips that have no pick yet.
-            cmd += ["--clip_still"]
-            # A RefMod plain encode takes every image, captioned or not (nothing trains).
-            if config.get("is_refmod") and self._refmod_plain_encode():
-                cmd += ["--captions_optional"]
-            return cmd
+            # RefMod's H3 latent caching (fizgig/families/refmod.py, shared with the web UI)
+            return _refmod.cache_latents_command(
+                self._venv_python(), FIZGIG_DIR, self.settings["DATASET_CONFIG"], self._krea2_pref("minimax_vae"),
+                self._krea2_pref("minimax_audio_vae"),
+                self._refmod_steps_label() if config.get("is_refmod") else REFMOD_DEFAULTS["MINIMAX_REFMOD_STEPS"])
         raise ValueError(f"No caching command for {self.settings.get('ARCHITECTURE')!r}")
 
     def _build_refmod_ref_cache_command(self, config):
         """The references' own latents pass at Target MP into the '-refs' sibling folder —
         the ordinary MiniMax latents command with the resolution override and suffix."""
-        return self.build_cache_latents_command(config) + [
-            "--megapixels", str(self.dataset_megapixels_var.get()).strip(),
-            # '=' form: a bare "-refs" reads as a flag to argparse
-            "--cache_suffix=-refs"]
+        return _refmod.ref_cache_command(self.build_cache_latents_command(config), self.dataset_megapixels_var.get())
 
     def build_cache_text_command(self, config):
         """Build the cache text encoder command based on architecture"""
         if (_desc := self._family_desc()) is not None:
             return self._generic_cache_command(_desc, "text")
         if config.get("is_minimax"):
-            return self._build_krea2_cache_command("minimax_cache_text.py",
-                                                   "--text_encoder", self._krea2_pref("minimax_text_encoder"))
+            return _refmod.cache_text_command(self._venv_python(), FIZGIG_DIR, self.settings["DATASET_CONFIG"],
+                                              self._krea2_pref("minimax_text_encoder"))
         raise ValueError(f"No caching command for {self.settings.get('ARCHITECTURE')!r}")
 
     # === Krea 2 native command builders ===
@@ -32602,65 +32403,11 @@ class LoRATrainerGUI:
         """MiniMax H3 RefMod: minimax_refmod.py builds the mod from the caches and, with Steps
         above 0, optimises its latent against the frozen H3 base at the measured rate, pull and
         noise window (the script's defaults). Never a LoRA run."""
-        _d = REFMOD_DEFAULTS
-        _refs = str(self.settings.get("MINIMAX_REFMOD_REFS", _d["MINIMAX_REFMOD_REFS"]) or "16").strip().lower()
-        _refs_arg = "10000" if _refs.startswith("all") else refmod_num(_refs, "16", int)
-        _grid = refmod_grid_value(self.settings.get("MINIMAX_REFMOD_GRID"))
-        _steps = refmod_steps_value(self.settings.get("MINIMAX_REFMOD_STEPS", _d["MINIMAX_REFMOD_STEPS"]))
-        _dit = (self._krea2_pref("minimax_ref_dit")
-                if (self.settings.get("MINIMAX_TRAIN_BASE") == "ref2va" and self._krea2_pref("minimax_ref_dit"))
-                else self._krea2_pref("minimax_dit"))
-        cmd = [
-            self._venv_python(),
-            self._krea2_script("minimax_refmod.py"),
-            "--dit", _dit,
-            "--dataset_config", self.settings["DATASET_CONFIG"],
-            "--output_dir", self.settings["LORA_OUTPUT_DIR"],
-            "--output_name", self.settings["LORA_NAME"],
-            "--grid", _grid, "--steps", _steps, "--max_refs", _refs_arg,
-            "--clips", refmod_clips_value(self.settings.get("MINIMAX_REFMOD_CLIPS", _d["MINIMAX_REFMOD_CLIPS"])),
-            "--concept_type", (str(self.settings.get("MINIMAX_REFMOD_CONCEPT", "") or "").strip()
-                               if str(self.settings.get("MINIMAX_REFMOD_CONCEPT", "") or "").strip() in REFMOD_CONCEPT_OPTIONS
-                               else _d["MINIMAX_REFMOD_CONCEPT"]),
-            "--seed", str(self.settings.get("SEED", 42) or 42),
-            "--base_model", ("ref2va" if self.settings.get("MINIMAX_TRAIN_BASE") == "ref2va" else "fl2va"),
-        ]
-        _desc = str(self.settings.get("MINIMAX_REFMOD_DESC", "") or "").strip()
-        if _desc:
-            cmd += ["--description", _desc]
-        _cap = refmod_token_cap_value(self.settings.get("MINIMAX_REFMOD_TOKEN_CAP", _d["MINIMAX_REFMOD_TOKEN_CAP"]))
-        if _cap != "0":
-            cmd += ["--token_cap", _cap]
-        if refmod_audio_on(self.settings.get("MINIMAX_REFMOD_AUDIO", _d["MINIMAX_REFMOD_AUDIO"])):
-            _ac = str(self.settings.get("MINIMAX_REFMOD_AUDIO_CONCEPT", "") or "").strip()
-            cmd += ["--audio", refmod_audio_value(self.settings.get("MINIMAX_REFMOD_AUDIO", _d["MINIMAX_REFMOD_AUDIO"])),
-                    "--audio_max_seconds", refmod_num(self.settings.get("MINIMAX_REFMOD_AUDIO_SECONDS"), "30", float),
-                    "--audio_concept", _ac if _ac in REFMOD_AUDIO_CONCEPT_OPTIONS else _d["MINIMAX_REFMOD_AUDIO_CONCEPT"]]
-            _avae = self._krea2_pref("minimax_audio_vae")
-            if _avae:
-                cmd += ["--audio_vae", _avae]
-        _bs = str(self.settings.get("BLOCKS_SWAP", "auto") or "auto").strip()
-        cmd += ["--blocks_to_swap", "auto" if _bs.lower().startswith("auto") else _bs]
-        # NF4 always (Peter, 16 Sep 2026): 10.5 GB resident, so the step fits without recompute
-        # on 32 GB and without streaming on 16/24 GB; the Training tab's precision box is H3
-        # LoRA/FT's and does not apply here.
-        cmd += ["--base_quant", "nf4"]
-        if self._refmod_ref_pass_needed():
-            # With caching off the reference pass never runs, so only a '-refs' folder that
-            # already exists (an earlier run's) can be used; otherwise the references come
-            # from the dataset caches and the console says so.
-            _caching = bool(getattr(self, "enable_cache_var", None) and self.enable_cache_var.get())
-            for _d in self._refmod_ref_cache_dirs():
-                if _caching or os.path.isdir(_d):
-                    cmd += ["--ref_cache_dir", _d]
-                else:
-                    self.update_console(f"[refmod] caching is off and {_d} does not exist — the "
-                                        f"references come from the dataset caches (0.25 MP) this "
-                                        f"run; tick Enable Cache for a Target MP reference pass\n")
-        # No previews from the GUI (Peter, 16 Sep 2026): the Samples pane is ignored for this
-        # family — a mod is judged in RefMod Studio. (minimax_refmod.py keeps its --sample_*
-        # flags for command-line sweeps.)
-        return cmd
+        _caching = bool(getattr(self, "enable_cache_var", None) and self.enable_cache_var.get())
+        return _refmod.maker_command(
+            self._venv_python(), FIZGIG_DIR, self.settings, self._krea2_pref("minimax_dit"),
+            self._krea2_pref("minimax_ref_dit"), self._krea2_pref("minimax_audio_vae"),
+            self._refmod_ref_cache_dirs() if self._refmod_ref_pass_needed() else (), _caching, self.update_console)
 
     # === Pause / Resume support ===
 
