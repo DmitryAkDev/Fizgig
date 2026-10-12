@@ -919,6 +919,7 @@ async function loadGallery() {
   host.classList.toggle("gallery-as-grid", view === "grid");
   if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || []));
   else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || []));
+  S.gal = {items: g.items, run};
   likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
   $("galleryInfo").textContent = g.items.length ?
@@ -1026,6 +1027,121 @@ async function likenessSet(names) {
     $("likModal").classList.remove("active");
     loadGallery();
   } catch (e) { $("likPickStatus").textContent = e.message; }
+}
+
+// ---- the Training Run Visualiser: one prompt's previews epoch by epoch (the desktop gallery's) -----------------
+S.rv = {frames: [], i: 0, timer: null, dir: 1};
+const rvSrc = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+function rvPictures() {
+  // the shown run's full-strength pictures (a slider's strip and a clip aren't one frame of the run)
+  return ((S.gal && S.gal.items) || []).filter((it) => it.epoch != null && it.strength == null && LIK_PICS.test(it.name));
+}
+function rvOpen() {
+  const pics = rvPictures();
+  if (!pics.length) { $("galleryInfo").textContent = "No preview pictures in this run yet."; return; }
+  const slots = [...new Set(pics.map((it) => it.idx ?? 0))].sort((a, b) => a - b);
+  const keep = $("rvSlot").value;
+  $("rvSlot").replaceChildren(...slots.map((s) => el("option", {value: s, text: String(s + 1)})));
+  if (slots.map(String).includes(keep)) $("rvSlot").value = keep;
+  $("rvRun").textContent = S.gal.run || "";
+  $("rvModal").classList.add("active");
+  rvBuild();
+}
+function rvBuild() {
+  const slot = Number($("rvSlot").value || 0), by = {};
+  for (const it of rvPictures()) {
+    if ((it.idx ?? 0) !== slot) continue;
+    if (!by[it.epoch] || it.time > by[it.epoch].time) by[it.epoch] = it;    // an epoch rendered twice (a resume): the newest
+  }
+  const scores = (S.lik.data && S.lik.data.baselines.length === 3 && S.lik.data.scores) || {};
+  S.rv.frames = Object.keys(by).map(Number).sort((a, b) => a - b).map((e) => ({epoch: e, path: by[e].path, sim: scores[by[e].name]}));
+  $("rvSlider").max = Math.max(0, S.rv.frames.length - 1);
+  rvShow(S.rv.frames.length - 1);                // the newest epoch
+}
+function rvShow(i) {
+  const F = S.rv.frames;
+  if (!F.length) return;
+  S.rv.i = Math.max(0, Math.min(i, F.length - 1));
+  const fr = F[S.rv.i];
+  $("rvImg").src = rvSrc(fr.path);
+  $("rvSlider").value = S.rv.i;
+  $("rvEpoch").textContent = `Epoch ${fr.epoch}` + (typeof fr.sim === "number" ? `  ·  likeness ${Math.round(fr.sim * 100)}%` : "");
+}
+function rvStop() { clearTimeout(S.rv.timer); S.rv.timer = null; $("rvPlay").textContent = "▶ Play"; }
+function rvPlay() {
+  if (S.rv.timer) return rvStop();
+  if (S.rv.frames.length < 2) return;
+  S.rv.dir = 1;
+  $("rvPlay").textContent = "⏸ Pause";
+  const tick = () => {
+    let next = S.rv.i + S.rv.dir;
+    if ($("rvPing").checked) { if (next >= S.rv.frames.length || next < 0) { S.rv.dir = -S.rv.dir; next = S.rv.i + S.rv.dir; } }
+    else if (next >= S.rv.frames.length) next = 0;
+    rvShow(next);
+    S.rv.timer = setTimeout(tick, Number($("rvSpeed").value));
+  };
+  S.rv.timer = setTimeout(tick, Number($("rvSpeed").value));
+}
+function rvDraw(g, im, fr, W, H) {
+  g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
+  const sc = Math.min(W / im.naturalWidth, H / im.naturalHeight), dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
+  g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  if ($("rvTicker").checked) {
+    const label = "Epoch " + fr.epoch;
+    g.font = "bold 26px sans-serif";
+    const tw = g.measureText(label).width;
+    g.fillStyle = "rgba(0,0,0,0.65)"; g.fillRect(16, H - 56, tw + 24, 40);
+    g.fillStyle = "#fff"; g.fillText(label, 28, H - 28);
+  }
+  if ($("rvTag").checked) {                      // scaled with the frame, so it reads at full size too
+    const fs = Math.max(28, Math.round(H * 0.055));
+    g.font = `bold ${fs}px sans-serif`;
+    const tw = g.measureText("Fizgig").width;
+    g.fillStyle = "rgba(255,255,255,0.7)"; g.fillText("Fizgig", W - tw - 20, H - 20);
+  }
+}
+const rvLoad = (fr) => new Promise((res) => { const im = new Image(); im.onload = () => res({fr, im}); im.onerror = () => res(null); im.src = rvSrc(fr.path); });
+function rvDownload(blob, name) {
+  const a = el("a", {href: URL.createObjectURL(blob), download: name});
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function rvClip() {
+  if (S.rv.frames.length < 2) { $("rvStatus").textContent = "A clip needs at least two epochs."; return; }
+  rvStop();
+  $("rvStatus").textContent = "Preparing frames…";
+  const loaded = (await Promise.all(S.rv.frames.map(rvLoad))).filter(Boolean);
+  if (loaded.length < 2) { $("rvStatus").textContent = "Couldn't load the frames."; return; }
+  const seq = $("rvPing").checked ? loaded.concat([...loaded].reverse().slice(1, -1)) : loaded;
+  const first = loaded[0].im, W = Math.min(1024, first.naturalWidth), H = Math.round(W * first.naturalHeight / first.naturalWidth);
+  const cv = el("canvas", {width: W, height: H}), g = cv.getContext("2d");
+  let mime = "video/webm;codecs=vp9";
+  if (!MediaRecorder.isTypeSupported(mime)) mime = "video/webm";
+  const rec = new MediaRecorder(cv.captureStream(30), {mimeType: mime, videoBitsPerSecond: 8000000});
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  const done = new Promise((r) => { rec.onstop = r; });
+  const step = Number($("rvSpeed").value);
+  rec.start();
+  for (let i = 0; i < seq.length; i++) {
+    rvDraw(g, seq[i].im, seq[i].fr, W, H);
+    $("rvStatus").textContent = `Recording… ${i + 1}/${seq.length}`;
+    await new Promise((r) => setTimeout(r, step));
+  }
+  await new Promise((r) => setTimeout(r, 200));   // so the last frame lands
+  rec.stop(); await done;
+  const name = `${S.gal.run || "run"}_training_run.webm`;
+  rvDownload(new Blob(chunks, {type: "video/webm"}), name);
+  $("rvStatus").textContent = `Saved ${name} (${seq.length} frames). LoRA Royale saves MP4 and GIF.`;
+}
+async function rvFrame() {
+  const fr = S.rv.frames[S.rv.i];
+  if (!fr) return;
+  const got = await rvLoad(fr);
+  if (!got) return;
+  const cv = el("canvas", {width: got.im.naturalWidth, height: got.im.naturalHeight});
+  rvDraw(cv.getContext("2d"), got.im, fr, cv.width, cv.height);
+  cv.toBlob((b) => rvDownload(b, `${S.gal.run || "run"}_epoch${fr.epoch}.png`), "image/png");
 }
 
 async function loadCheckpoints() {
@@ -4820,6 +4936,20 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  $("rvBtn").addEventListener("click", rvOpen);
+  $("rvSlot").addEventListener("change", rvBuild);
+  $("rvPlay").addEventListener("click", rvPlay);
+  $("rvSlider").addEventListener("input", () => { rvStop(); rvShow(Number($("rvSlider").value)); });
+  $("rvClip").addEventListener("click", rvClip);
+  $("rvFrame").addEventListener("click", rvFrame);
+  document.addEventListener("keydown", (e) => {
+    if (!$("rvModal").classList.contains("active") || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === "ArrowLeft") { rvStop(); rvShow(S.rv.i - 1); }
+    else if (e.key === "ArrowRight") { rvStop(); rvShow(S.rv.i + 1); }
+    else if (e.key === " ") { e.preventDefault(); rvPlay(); }
+  });
+  new MutationObserver(() => { if (!$("rvModal").classList.contains("active")) rvStop(); })
+    .observe($("rvModal"), {attributes: true, attributeFilter: ["class"]});
   $("likStart").addEventListener("click", () => likenessSet(S.lik.picked));
   $("likClear").addEventListener("click", () => likenessSet([]));
   document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {

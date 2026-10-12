@@ -366,6 +366,7 @@
                   <button class="btn btn-sm" data-view="list">Newest first</button>
                   <button class="btn btn-sm" data-view="grid">Prompt × epoch</button></span>
                 <button class="btn btn-sm" id="likBtn" title="Score every preview's face against three photos of your subject from the training images (ArcFace, on the CPU - training keeps the GPU). Identity likeness only: overbaking and skin still need your eyes.">🎯 Likeness…</button>
+                <button class="btn btn-sm" id="rvBtn" title="Scrub this run epoch by epoch, one prompt at a time; play it, save a frame or a clip">🎞 Visualiser</button>
                 <span class="field-hint" id="likStatus"></span>
               </div>
               <div class="lik-panel" id="likPanel" style="display:none">
@@ -1272,6 +1273,27 @@
     </main>
   </div>
 
+
+  <div class="modal-backdrop" id="rvModal">
+    <div class="modal-window rv-window">
+      <div class="modal-header"><span>Training Run Visualiser <span class="field-hint" id="rvRun"></span></span>
+        <button class="btn" data-close="rvModal">✕</button></div>
+      <div class="modal-body">
+        <div class="field-row"><span class="field-hint">Prompt</span><select id="rvSlot" class="w-combo st-small-select"></select>
+          <button class="btn btn-sm" id="rvPlay">▶ Play</button>
+          <span class="field-hint">Speed</span><select id="rvSpeed" class="w-combo st-small-select">
+            <option value="600">Slow</option><option value="350" selected>Normal</option><option value="180">Fast</option></select>
+          <label class="checkbox-label"><input type="checkbox" id="rvPing" checked> Loop (ping-pong)</label>
+          <label class="checkbox-label"><input type="checkbox" id="rvTicker" checked> Epoch ticker</label>
+          <label class="checkbox-label"><input type="checkbox" id="rvTag" checked> Fizgig tag</label></div>
+        <div class="rv-stage"><img id="rvImg" alt=""><div class="rv-epoch" id="rvEpoch"></div></div>
+        <input type="range" id="rvSlider" min="0" max="0" value="0" class="rv-slider">
+        <div class="field-row"><button class="btn btn-sm" id="rvClip">⬇ Save clip (WebM)</button>
+          <button class="btn btn-sm" id="rvFrame">⬇ Save frame (PNG)</button>
+          <span class="field-hint" id="rvStatus">← → step, space plays. LoRA Royale renders any epoch on any prompt and saves MP4 or GIF.</span></div>
+      </div>
+    </div>
+  </div>
 
   <div class="modal-backdrop" id="likModal">
     <div class="modal-window" style="width: 860px;">
