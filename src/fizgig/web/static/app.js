@@ -1080,6 +1080,40 @@ function nameFromFolder(name) {
   if (name && !box.value.trim()) box.value = name.replace(/[\/\\<>:"|?*]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "");
 }
 
+// a file in 8 MB pieces: asks what is already there first (an earlier, dropped upload resumes; a file already there
+// is skipped), retries a piece after a drop, and reports the bytes sent. Returns {ok, data, skipped}
+const PIECE = 8 * 2 ** 20;
+async function uploadResumable(params, file, onProgress) {
+  const q = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  let st;
+  try { st = await api(`/api/upload/status?${q({...params, size: file.size})}`); }
+  catch (e) { return {ok: false, data: {error: e.message}}; }
+  if (st.done) {
+    onProgress(file.size);
+    return {ok: true, skipped: true, data: {saved: [], skipped: [], replaced: [], path: st.path, folder: st.folder}};
+  }
+  let offset = st.have || 0, tries = 0, last = null;
+  while (true) {
+    const piece = file.slice(offset, Math.min(file.size, offset + PIECE));
+    try {
+      const r = await sendFile(`/api/upload/chunk?${q({...params, offset, total: file.size})}`, piece,
+        (sent) => onProgress(offset + sent));
+      if (!r.ok) return r;
+      last = r.data;
+      if (last.resync !== undefined) { offset = last.resync; continue; }      // the server says where it is
+      tries = 0;
+      if (last.have === undefined) return {ok: true, data: last};             // the last piece: finished
+      offset = last.have;
+    } catch (e) {                                                             // the connection dropped: wait, carry on
+      if (++tries > 6) return {ok: false, data: {error: `${file.name}: the connection kept dropping (` +
+        `${Math.round(100 * offset / file.size)}% sent). Upload again to carry on from there.`}};
+      onProgress(offset, `connection dropped, retrying (${tries})…`);
+      await new Promise((r) => setTimeout(r, 1500 * tries));
+      try { offset = (await api(`/api/upload/status?${q({...params, size: file.size})}`)).have || 0; } catch (e2) { /* still down */ }
+    }
+  }
+}
+
 // one file as the request body, reporting bytes sent (fetch can't report upload progress)
 function sendFile(url, file, onProgress) {
   return new Promise((resolve, reject) => {
@@ -1113,23 +1147,30 @@ async function uploadFiles(picked, opts = {}) {
   if (!name) return say("Type a name for the new folder first.", true);
   if (!files.length) return say(["Nothing to upload: no pictures, .mp4 clips, songs, captions or zips in there."]
     .concat(notes).join(" "), true);
-  let folder = "", saved = 0;
+  let folder = "", saved = 0, already = 0, doneBytes = 0;
   const skipped = [], failed = [], replaced = [], badname = [];
+  const allBytes = files.reduce((a, f) => a + f.size, 0);
+  const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(2) + " GB" : (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0) + " MB";
   for (const [i, f] of [...files].entries()) {
-    const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
     say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
     try {
-      const r = await sendFile(`/api/upload?folder=${encodeURIComponent(name)}&name=${encodeURIComponent(tidyName(f.name))}`,
-        f, (sent) => say(`Uploading ${i + 1} of ${files.length}: ${f.name}, ${mb(sent)} of ${mb(f.size)} MB` +
-          (sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? " (unpacking…)" : "")));
+      const r = await uploadResumable({folder: name, name: tidyName(f.name)}, f, (sent, note) => say(
+        `Uploading ${i + 1} of ${files.length}: ${f.name}, ${mb(sent)} of ${mb(f.size)}` +
+        (note ? ` (${note})` : sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? " (unpacking…)" : "") +
+        ` · all files: ${Math.round(100 * (doneBytes + sent) / Math.max(1, allBytes))}% of ${mb(allBytes)}`));
+      doneBytes += f.size;
       const d = r.data;
+      if (r.skipped) { already++; folder = folder || d.folder; continue; }
       if (!r.ok) { failed.push(d.error || f.name); continue; }
       folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped); replaced.push(...(d.replaced || []));
       badname.push(...(d.badname || []));
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
-  let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}.` + (opts.done ? " It is filled in above." :
-    " That is now the training folder.") : "Nothing was saved.";
+
+  let msg = saved || already ? `${saved} file${saved === 1 ? "" : "s"} uploaded` +
+    (already ? `, ${already} already there (same size, skipped)` : "") + ` in ${folder}.` +
+    (opts.done ? " It is filled in above." : " That is now the training folder.") : "Nothing was saved.";
+  if (!saved && already) saved = already;           // all already there: still the folder to use
   if (skipped.length) msg += ` Left out (not pictures, clips, songs or captions): ${skipped.join(", ")}.`;
   if (replaced.length) msg += ` Replaced files that were already there with the same name: ` +
     `${replaced.slice(0, 5).join(", ")}${replaced.length > 5 ? ", …" : ""}.`;
@@ -1164,9 +1205,14 @@ function uploadButton(r, input, set) {
     const f = files[0];
     const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
     try {
-      const res = await sendFile(`/api/upload?single=1&name=${encodeURIComponent(tidyName(f.name))}`, f,
-        (sent) => say(`Uploading ${f.name}: ${mb(sent)} of ${mb(f.size)} MB`));
+      const res = await uploadResumable({single: 1, folder: "", name: tidyName(f.name)}, f,
+        (sent, note) => say(`Uploading ${f.name}: ${mb(sent)} of ${mb(f.size)} MB` + (note ? ` (${note})` : "")));
       if (!res.ok) return say(res.data.error || "Upload failed.", true);
+      if (res.skipped) {                     // the same file is already there: use it, nothing to send
+        input.value = res.data.path;
+        set(res.data.path);
+        return say(`Already uploaded (same size): ${res.data.path}`);
+      }
       input.value = res.data.path;
       set(res.data.path);
       say(`Uploaded to ${res.data.path}` + ((res.data.replaced || []).length ? " (replacing the one there)." : "."));

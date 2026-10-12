@@ -64,7 +64,7 @@ The training folder on the Start tab is a folder on the machine running Fizgig. 
 
 It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), caption `.txt` files, ACE-Step's `.json` song details, and `.zip` files, which are unpacked as they arrive. Anything else is left out and listed. Convert other video formats (`.mov`, `.webm`) to `.mp4` first.
 
-Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. For a big dataset, uploading the files themselves is gentler than one huge zip: each file is its own upload, so a dropped connection only costs that file.
+Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. Files go up in 8 MB pieces: a dropped connection carries on where it stopped, and uploading the same folder again skips the files already there (same name and size), so only what's missing is sent. The progress line shows the file and the whole batch. For a big dataset, uploading the files themselves is still gentler than one huge zip, which has to arrive in full before it is unpacked.
 
 ### Other files and folders
 

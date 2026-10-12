@@ -641,8 +641,8 @@ def list_datasets() -> dict:
     return {"root": root, "datasets": out[:300], "total": len(out)}
 
 
-def _save_upload(folder, name, rfile, length, single=False) -> dict:
-    """Into a folder under uploads_root() (training data), or `single`: one file into <Fizgig>/uploads."""
+def _upload_target(folder, name, single):
+    """(name, ext, the folder it goes into, its half-written .part) - every check an upload goes through."""
     name = _upload_name(name, "File name")
     ext = os.path.splitext(name)[1].lower()
     if single:
@@ -655,8 +655,51 @@ def _save_upload(folder, name, rfile, length, single=False) -> dict:
             raise ValueError(f"{name}: Fizgig doesn't train on {ext or 'this'} files. It takes pictures, .mp4 clips, "
                              f"songs (.wav .mp3 .flac .m4a), caption .txt files, .json song details and .zip files.")
         dest = os.path.join(uploads_root(), folder)
+    return name, ext, dest, os.path.join(dest, f".{name}.part")
+
+
+def upload_status(folder, name, single, size):
+    """For a resumed upload: how much of the file is already here (its .part), or done (the file itself, the same
+    size), so the page sends only the rest - or nothing."""
+    name, ext, dest, tmp = _upload_target(folder, name, single)
+    final = os.path.join(dest, name)
+    if ext != ".zip" and os.path.isfile(final) and os.path.getsize(final) == size:
+        return {"have": size, "done": True, "path": final, "folder": dest}
+    have = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
+    return {"have": have if have <= size else 0, "done": False}
+
+
+def save_chunk(folder, name, rfile, length, offset, total, single=False):
+    """One piece of a file at `offset` (a big upload goes up in pieces, so a dropped connection costs one piece, not
+    the file); the last piece finishes it exactly as a whole-file upload. A piece that doesn't follow on from what
+    is here is refused with what is here, so the page carries on from there."""
+    name, ext, dest, tmp = _upload_target(folder, name, single)
     os.makedirs(dest, exist_ok=True)
-    tmp = os.path.join(dest, f".{name}.part")
+    have = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
+    if offset != (0 if offset == 0 else have):
+        return {"resync": have}
+    left = length
+    with open(tmp, "wb" if offset == 0 else "r+b") as f:
+        f.seek(offset)
+        f.truncate()
+        while left > 0:
+            chunk = rfile.read(min(left, 1 << 20))
+            if not chunk:
+                break
+            f.write(chunk)
+            left -= len(chunk)
+    if left:
+        return {"resync": os.path.getsize(tmp)}       # cut off mid-piece: what arrived stays, the page resends the rest
+    if offset + length < total:
+        return {"have": offset + length}
+    return _finish_upload(name, ext, dest, tmp, single)
+
+
+def _save_upload(folder, name, rfile, length, single=False) -> dict:
+    """A whole file in one request, into a folder under uploads_root() (training data), or `single`: one file into
+    <Fizgig>/uploads."""
+    name, ext, dest, tmp = _upload_target(folder, name, single)
+    os.makedirs(dest, exist_ok=True)
     left = length
     try:
         with open(tmp, "wb") as f:
@@ -674,6 +717,11 @@ def _save_upload(folder, name, rfile, length, single=False) -> dict:
         except OSError:
             pass
         raise ValueError(f"{name}: the upload was cut off. Upload it again.")
+    return _finish_upload(name, ext, dest, tmp, single)
+
+
+def _finish_upload(name, ext, dest, tmp, single):
+    """The arrived file put in place: a zip unpacked (what it held), anything else renamed from its .part."""
     saved, skipped, replaced, badname = [], [], [], []
     if ext == ".zip" and not single:
         import zipfile
@@ -962,6 +1010,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(captions.status())
         if path == "/api/datasets":
             return self.json(list_datasets())
+        if path == "/api/upload/status":
+            try:
+                return self.json(upload_status((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0],
+                                               bool((qs.get("single") or [""])[0]), int((qs.get("size") or ["0"])[0])))
+            except ValueError as e:
+                return self.json({"error": str(e)}, 400)
         if path == "/api/upload/root":
             return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir")),
                               "local": self._local_viewer()})
@@ -1163,6 +1217,17 @@ class Handler(BaseHTTPRequestHandler):
                 d = _save_upload((qs.get("folder") or [""])[0], (qs.get("name") or [""])[0], self.rfile,
                                  int(self.headers.get("Content-Length") or 0), single=bool(qs.get("single")))
                 if qs.get("single"):
+                    d["path"] = os.path.join(d["folder"], d["saved"][0])
+                return self.json(d)
+            except (ValueError, OSError) as e:
+                return self.json({"error": str(e)}, 400)
+        if path == "/api/upload/chunk":               # one piece of a resumable upload
+            qs = parse_qs(urlparse(self.path).query)
+            g = lambda k: (qs.get(k) or [""])[0]
+            try:
+                d = save_chunk(g("folder"), g("name"), self.rfile, int(self.headers.get("Content-Length") or 0),
+                               int(g("offset") or 0), int(g("total") or 0), single=bool(g("single")))
+                if d.get("saved") and g("single"):
                     d["path"] = os.path.join(d["folder"], d["saved"][0])
                 return self.json(d)
             except (ValueError, OSError) as e:
