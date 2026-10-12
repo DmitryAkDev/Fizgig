@@ -366,10 +366,6 @@ function gpuPickCard() {
 function showUploadRoot() {
   api("/api/upload/root").then((d) => {
     S.uploadRoot = d;
-    // on the Fizgig machine itself Choose is enough: the card says so instead of offering an upload
-    $("uploadBody").style.display = d.local ? "none" : "";
-    $("uploadLocalNote").style.display = d.local ? "" : "none";
-    $("uploadCard").querySelector(".card-desc:not(#uploadLocalNote)").style.display = d.local ? "none" : "";
     const box = $("dataFolder");
     if (box && document.activeElement !== box) box.value = d.set ? d.root : "";
     $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
