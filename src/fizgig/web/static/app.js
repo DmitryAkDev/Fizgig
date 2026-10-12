@@ -51,6 +51,7 @@ async function boot() {
   S.onPod = pr.on_pod;
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
+  S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
@@ -594,6 +595,41 @@ function podCard() {
       el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the pod, not in your browser."})));
 }
 
+// the web UI's password (prefs web_password, the desktop's): empty = this machine only; set = other devices log in
+function webPasswordRows() {
+  if (S.onPod) return [el("div", {class: "field-hint", text: "Password: this pod's VNC password. Set VNC_PASSWORD in the template to choose it."})];
+  const P = S.pw;
+  const input = el("input", {type: "password", class: "w-path", autocomplete: "new-password",
+    placeholder: P.saved ? "saved - type a new one to replace it" : "8 characters or more"});
+  const show = el("input", {type: "checkbox", onchange: () => { input.type = show.checked ? "text" : "password"; }});
+  const say = el("div", {class: "field-hint"});
+  const base = () => (P.env ? "A password given when Fizgig was started (FIZGIG_PASSWORD or --password) is used instead of this one. " : "") +
+    "Empty: the web UI opens on this machine only. Set (8 characters or more): other devices can open it too, after " +
+    "logging in. Whoever has it can use Fizgig and open files on this machine, so treat it like a remote-desktop " +
+    "password. Saved in prefs.json as plain text. It applies the next time Fizgig starts.";
+  const links = el("div", {class: "field-hint"});
+  const remove = el("button", {class: "btn btn-sm", text: "Remove", onclick: () => save("")});
+  const paint = () => {
+    remove.style.display = P.saved ? "" : "none";
+    const port = S.portNow || S.webPort;
+    links.textContent = P.lan ? (P.saved ? `Other devices on your network: http://${P.lan}:${port}/ (from the next start).` +
+      (navigator.platform.startsWith("Win") ? " The first time, Windows may ask to let Python through the firewall: allow it on private networks." : "")
+      : "Set a password to open it from other devices.") : "";
+  };
+  const save = async (v) => {
+    try {
+      const r = await api("/api/prefs/password", {password: v});
+      P.saved = r.saved; input.value = "";
+      input.placeholder = P.saved ? "saved - type a new one to replace it" : "8 characters or more";
+      say.textContent = (r.saved ? "Saved. " : "Removed. ") + base(); paint();
+    } catch (e) { say.textContent = e.message; }
+  };
+  input.addEventListener("change", () => input.value.trim() && save(input.value.trim()));
+  say.textContent = base(); paint();
+  return [el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Password:"}), input,
+    el("label", {class: "checkbox-label"}, show, " Show"), remove), say, links];
+}
+
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
@@ -606,7 +642,8 @@ function webPortCard() {
     return el("div", {class: "section-card"},
       el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
       el("div", {class: "card-content"},
-        el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint, logoutRow()));
+        el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint,
+        ...webPasswordRows(), logoutRow()));
   }
   const say = () => {
     const p = Number(input.value);
@@ -626,7 +663,7 @@ function webPortCard() {
     el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint,
-      logoutRow()));
+      ...webPasswordRows(), logoutRow()));
 }
 
 // with a password: log this device out, or every device (a phone left logged in, a password you shared)
@@ -640,7 +677,7 @@ function logoutRow() {
         api("/api/logout_all", {}).then(done)})),
     el("div", {class: "field-hint", text: "Log out everywhere ends every device's login, this one too: a phone left " +
       "logged in, say. Each one asks for the password again. If someone else knows the password, change it too " +
-      "(the desktop app's Preferences > Web UI), or they can just log in again."}));
+      "(Password, above), or they can just log in again."}));
 }
 
 function checkModels() {

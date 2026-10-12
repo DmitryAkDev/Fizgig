@@ -1654,6 +1654,9 @@ class Handler(BaseHTTPRequestHandler):
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
+                              "password_saved": bool(str(p.get("web_password") or "").strip()),
+                              "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
+                              "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
                               "pod": {"stop_when_done": str(p.get("runpod_stop_when_done") or "0") == "1",
                                       "key_saved": bool(str(p.get("runpod_api_key") or "").strip()),
@@ -2358,6 +2361,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/prefs/password":       # the web UI's password: used from the next start
+                pwd = str(b.get("password") or "").strip()
+                if pwd and len(pwd) < 8:
+                    return self.json({"error": f"Too short: {len(pwd)} of at least 8 characters."}, 400)
+                update_prefs({"web_password": pwd})
+                return self.json({"ok": True, "saved": bool(pwd)})
             if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
                 from fizgig.web import pod_stop
                 return self.json({"ok": pod_stop.cancel(append_log)})
@@ -2741,7 +2750,7 @@ def _follow_parent(pid):
             os._exit(0)
 
 
-def run_server(host, port=None, password=None):
+def run_server(host, port=None, password=None, password_arg=False):
     """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
     nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
     8081: it is the port its proxy forwards."""
@@ -2750,6 +2759,7 @@ def run_server(host, port=None, password=None):
         threading.Thread(target=_follow_parent, args=(int(parent),), daemon=True).start()
     Handler.password = password or None
     Handler.local_only = not password
+    Handler.password_arg = password_arg
     Handler.port_fixed = port is not None
     if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
@@ -2806,7 +2816,7 @@ def main(argv=None):
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
         sys.exit("Listening beyond localhost needs a password: set one in Preferences > Web UI (web_password in "
                  "prefs.json), or use FIZGIG_PASSWORD or --password.")
-    run_server(host, a.port, password=pwd)
+    run_server(host, a.port, password=pwd, password_arg=bool(a.password))
 
 
 if __name__ == "__main__":
