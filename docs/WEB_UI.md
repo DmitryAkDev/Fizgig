@@ -116,6 +116,46 @@ with `/opt/Fizgig/fizgig-web.env` holding `FIZGIG_PASSWORD=your-password` (reada
 
 **Stopping the service stops any run it started, without saving**: everything since the run's last saved epoch is lost. Before `systemctl stop`, a restart or a reboot, press **Pause** in the web UI and wait for the run to save and stop; **Resume** carries on from there.
 
+## Behind nginx or Caddy
+
+A reverse proxy in front adds HTTPS and a proper domain name (`https://fizgig.example.com`). Two things matter:
+
+- **Set a password.** Without one the web UI only answers requests addressed to `localhost`, so a proxy's request for your domain is refused ("bad host"). With one it answers any address and asks for the password. Keep Fizgig itself off the network with `--host 127.0.0.1`: it then listens only for the proxy on the same machine.
+- **Don't buffer the log.** The live log is a stream (server-sent events), so tell the proxy not to hold it back.
+
+nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name fizgig.example.com;
+    # ssl_certificate / ssl_certificate_key as usual
+    client_max_body_size 64m;              # upload pieces are 8 MB
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_set_header Host $host;
+        proxy_buffering off;               # the live log
+        proxy_read_timeout 1h;
+    }
+}
+```
+
+Caddy (it fetches the certificate itself):
+
+```
+fizgig.example.com {
+    reverse_proxy 127.0.0.1:8090 {
+        flush_interval -1
+    }
+}
+```
+
+with Fizgig started as `lora_trainer_gui.py --web --host 127.0.0.1 --port 8090` and its password in `FIZGIG_PASSWORD`. Behind your own proxy every visitor reaches Fizgig from the proxy's address, so the wrong-password lockout counts them together (on a RunPod pod it tells visitors apart).
+
+## Logging out
+
+With a password set, Preferences → Web UI has **Log out** (this device) and **Log out everywhere** (every device's login ends, this one too: a phone left logged in, or after you've shared the password). Each device then asks for the password again. Restarting the web UI also logs everyone out.
+
 ## prefs.json
 
 All of these settings live in `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`). The desktop app writes it; on a machine without it, create it yourself. A minimal example:

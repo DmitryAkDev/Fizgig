@@ -47,6 +47,7 @@ async function boot() {
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
+  S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
@@ -410,7 +411,7 @@ function webPortCard() {
     return el("div", {class: "section-card"},
       el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
       el("div", {class: "card-content"},
-        el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint));
+        el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint, logoutRow()));
   }
   const say = () => {
     const p = Number(input.value);
@@ -429,7 +430,21 @@ function webPortCard() {
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
     el("div", {class: "card-content"},
-      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint));
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint,
+      logoutRow()));
+}
+
+// with a password: log this device out, or every device (a phone left logged in, a password you shared)
+function logoutRow() {
+  if (!S.passwordOn) return null;
+  const done = () => { showLogin(); };
+  return el("div", {class: "logout-row"},
+    el("div", {class: "field-row"},
+      el("button", {class: "btn", text: "Log out", onclick: () => api("/api/logout", {}).then(done)}),
+      el("button", {class: "btn btn-warning", text: "Log out everywhere", onclick: () =>
+        api("/api/logout_all", {}).then(done)})),
+    el("div", {class: "field-hint", text: "Log out everywhere ends every device's login, this one too: a phone left " +
+      "logged in, or after you've shared the password. Each one asks for the password again; nothing else changes."}));
 }
 
 function checkModels() {

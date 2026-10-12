@@ -49,6 +49,7 @@ MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
 TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
+_SESSION_KEY = [secrets.token_urlsafe(24)]      # the logins' key: replaced by Log out everywhere
 
 _lock = threading.Lock()
 _login_lock = threading.Lock()
@@ -940,7 +941,7 @@ class Handler(BaseHTTPRequestHandler):
         return not self.local_only or host in LOCAL_HOSTS
 
     def _session(self):
-        return hmac.new(TOKEN.encode(), (self.password or "").encode(), hashlib.sha256).hexdigest()
+        return hmac.new((TOKEN + _SESSION_KEY[0]).encode(), (self.password or "").encode(), hashlib.sha256).hexdigest()
 
     def _logged_in(self):
         if not self.password:
@@ -994,6 +995,7 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
+                              "password_on": bool(self.password),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
@@ -1285,6 +1287,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": _cancel_fetch()})
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
+            if path == "/api/logout":                     # this device: its login cookie goes
+                return self.json({"ok": True}, extra=[("Set-Cookie", "fizgig_session=; Path=/; Max-Age=0; HttpOnly; "
+                                                                     "SameSite=Strict")])
+            if path == "/api/logout_all":                 # every device: a new key makes every login stale
+                _SESSION_KEY[0] = secrets.token_urlsafe(24)
+                return self.json({"ok": True})
             if path == "/api/desktop":
                 if not live.read_fresh(live.LIVE_DESKTOP):          # commands need the app itself answering
                     return self.json({"error": "The desktop app isn't open."}, 400)
