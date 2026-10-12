@@ -195,6 +195,18 @@ def pref_path(prefs, key) -> str:
     return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(BASE_DIR, v))
 
 
+PRESETS_DIR = os.path.join(BASE_DIR, "presets")
+
+
+def user_presets(desc) -> list:
+    """The presets saved for this model, in either app (presets/<model's name>/<name>.json), by name."""
+    d = os.path.join(PRESETS_DIR, desc.gui_label)
+    try:
+        return sorted(f[:-5] for f in os.listdir(d) if f.endswith(".json"))
+    except OSError:
+        return []
+
+
 def default_output_dir() -> str:
     """The LoRA output folder in Preferences (the desktop's Preferences > Output Directories > LoRA output, the same
     prefs.json key), else output_loras inside Fizgig: where a model's LoRAs go until a folder is picked for it."""
@@ -1250,6 +1262,12 @@ class Handler(BaseHTTPRequestHandler):
             desc = get_family((qs.get("family") or [""])[0])
             return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
+        if path == "/api/presets":               # a model's presets: the built-in ones, then the ones you saved
+            desc = get_family((qs.get("family") or [""])[0])
+            if desc is None:
+                return self.json({"error": "unknown family"}, 400)
+            built = [n for n, _ in (desc.presets or ())]
+            return self.json({"builtin": built, "user": [n for n in user_presets(desc) if n not in built]})
         if path == "/api/prep/options":            # Image Prep: its choices, and whether face tools are here
             from fizgig.dataset import prep as _prep
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
@@ -1531,9 +1549,30 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(form.state(desc, b.get("values") or {}, b.get("image_folder") or "",
                                             captioner=cap if cap and os.path.isfile(cap) else "",
                                             speed_file=bool(spf and os.path.isfile(spf))))
+            if path == "/api/preset/save":            # Save preset: the desktop's format and folder
+                desc = get_family(b.get("family", ""))
+                name = str(b.get("name") or "").strip()
+                if desc is None:
+                    return self.json({"error": "unknown family"}, 400)
+                if not name or any(c in name for c in '<>:"/\\|?*'):
+                    return self.json({"error": 'A preset name can\'t be empty or hold < > : " / \\ | ? *'}, 400)
+                d = os.path.join(PRESETS_DIR, desc.gui_label)
+                path_ = os.path.join(d, name + ".json")
+                if os.path.exists(path_) and not b.get("overwrite"):
+                    return self.json({"exists": True})
+                os.makedirs(d, exist_ok=True)
+                with open(path_, "w", encoding="utf-8") as f:
+                    json.dump(form.to_preset(desc, b.get("values") or {}), f, indent=4)
+                return self.json({"ok": True, "user": user_presets(desc)})
             if path == "/api/preset":
                 desc = get_family(b.get("family", ""))
                 preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
+                if preset is None and desc is not None and b.get("name") in user_presets(desc):
+                    try:                             # one you saved, in either app
+                        with open(os.path.join(PRESETS_DIR, desc.gui_label, b["name"] + ".json"), encoding="utf-8") as f:
+                            preset = json.load(f)
+                    except (OSError, ValueError):
+                        return self.json({"error": "That preset's file can't be read."}, 400)
                 if preset is None:
                     return self.json({"error": "unknown preset"}, 400)
                 return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})

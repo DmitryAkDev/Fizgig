@@ -1605,3 +1605,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 
 /* a combo's own value, typed after picking Other… */
 .combo-other { flex: 0 1 140px; min-width: 90px; }
+
+/* Model Area to Train > Custom: the block picker */
+.form-row.kind-blocks { grid-column: 1 / -1; }
+.block-head { gap: 6px; flex-wrap: wrap; align-items: center; }
+.block-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin: 4px 0; }
+.block-group { width: 64px; color: var(--text-secondary); font-size: 9pt; }
+.block-tick { display: inline-flex; align-items: center; gap: 4px; font-size: 9pt; }
+.block-tick input { width: 15px; height: 15px; }

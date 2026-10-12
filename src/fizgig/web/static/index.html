@@ -320,6 +320,9 @@
                 <button class="btn" id="captionsReload">Reload</button></div>
               <div class="field-row"><span class="field-label">Search:</span>
                 <input type="text" id="capSearch" class="w-path" placeholder="file name or caption text"></div>
+              <div class="field-row"><span class="field-label">Per page:</span>
+                <select id="capPerPage" class="w-combo"><option>12</option><option>24</option><option>48</option>
+                  <option>96</option><option>200</option></select></div>
               <div class="field-row"><button class="btn btn-sm" id="capPrev">‹ Prev</button>
                 <span class="field-hint" id="captionsSummary"></span>
                 <button class="btn btn-sm" id="capNext">Next ›</button></div>
@@ -362,8 +365,10 @@
             <div class="card-title">Presets</div>
             <div class="card-content"><div class="field-row preset-row">
               <select id="presets" class="w-combo preset-select"></select>
-              <span class="field-hint">Ready-made settings for this model: picking one fills the form below.</span>
-            </div></div>
+              <button class="btn" id="presetSave">Save preset…</button>
+              <span class="field-hint">Ready-made settings for this model, then any you saved (here or in the desktop
+                app): picking one fills the form below.</span>
+            </div><div id="presetSaveRow"></div></div>
           </div>
           <div id="trainingForm"></div>
           <div class="section-card accent-card run-card">

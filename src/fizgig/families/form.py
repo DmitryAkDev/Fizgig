@@ -43,7 +43,7 @@ DEFAULTS = {
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
-    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "COMPILE_BLOCKS": "auto", "SAVE_STATE": True,
+    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -75,6 +75,21 @@ def _optimizers():
         return ["adamw8bit", "adamw"]
 
 
+_BLOCK_GROUPS = {}
+
+
+def _block_groups(desc):
+    """The family's block map as the Custom picker shows it: [{label, blocks: [{id, label}]}] (kept per family -
+    loading the driver to read it takes a second)."""
+    if desc.key not in _BLOCK_GROUPS:
+        try:
+            _BLOCK_GROUPS[desc.key] = [{"label": g.label.split()[0], "blocks": [
+                {"id": b.id, "label": b.label.split()[-1]} for b in g.blocks]} for g in desc.load_driver().block_map()]
+        except Exception:
+            _BLOCK_GROUPS[desc.key] = []
+    return _BLOCK_GROUPS[desc.key]
+
+
 def _option_row(opt):
     """A family's own control (FamilyOption) as a row: its declared label, kind, choices, default and hint."""
     kind = {"choice": "choice", "check": "check"}.get(opt.kind, "combo" if opt.suggestions else "entry")
@@ -82,7 +97,8 @@ def _option_row(opt):
     default = ((opt.default if opt.default in labels else labels[0]) if labels else
                opt.default == "1" if opt.kind == "check" else opt.default)
     return _row(opt.key, opt.label, kind, opt.hint, opt.choice_labels() if opt.kind == "choice" else
-                [s.split(" · ")[0] for s in opt.suggestions], default, option=True, suffix=opt.suffix)
+                [s.split(" · ")[0] for s in opt.suggestions], default, option=True, suffix=opt.suffix,
+                **({"labels": list(opt.suggestions)} if kind == "combo" else {}))
 
 
 def model_keys(desc):
@@ -177,9 +193,14 @@ def form(desc):
     if desc.train_areas:
         names = [a[0] for a in desc.train_areas]
         params.append(_row("TARGET_LAYERS", "Model Area to Train", "choice",
-                           "Which blocks train. Style also limits training to the late, clean timesteps.", names,
+                           "Which blocks train. Style also limits training to the late, clean timesteps. Custom picks "
+                           "the blocks yourself.", names + ["Custom"],
                            names[0], timesteps={a[0]: [str(int(a[2][0] * 1000)), str(int(a[2][1] * 1000))]
                                                 if a[2] else ["", ""] for a in desc.train_areas}))
+        groups = _block_groups(desc)
+        if groups:                           # the desktop's Custom block picker: All / None, an area's blocks, ticks
+            params.append(_row("TRAINING_BLOCKS", "Blocks to train", "blocks", "", default={}, groups=groups,
+                               areas={a[0]: list(a[1]) for a in desc.train_areas if a[1]}))
         params += [_row("MIN_TIMESTEP", "Min timestep", hint="0-1000; empty = the whole range"),
                    _row("MAX_TIMESTEP", "Max timestep")]
     params += [
@@ -194,6 +215,11 @@ def form(desc):
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area. Any aspect ratio; 4.2 MP wants 24-32 GB.", MEGAPIXELS),
+        _row("CLIP_MEGAPIXELS", "Clip Target Megapixels", "combo",
+             "The size your video clips are cached and trained at; photos keep the Target Megapixels. A clip takes "
+             "far more memory and time than a photo of the same size, so e.g. photos at 1.0 with clips at 0.25 "
+             "keeps caching and training fast. A clip that would not fit in your card's free memory is cached "
+             "smaller still.", MEGAPIXELS, "0.25") if "clip" in desc.media else None,
     ]
     if len(desc.network_types) > 1:
         params += [_row("NETWORK_TYPE", "Network Type", "choice",
@@ -274,7 +300,7 @@ def form(desc):
              SWAP),
         _row("FAMILY_PRECISION", desc.precision_label or "Base precision", "choice", desc.precision_hint,
              [labels[p] for p in precisions], default=labels["auto"]) if len(desc.precisions) > 1 else None,
-        _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["auto", "on", "off"])
+        _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["Auto", "On", "Off"])
         if desc.compiles else None,
         _row("RESUME_TRAINING", "Resume Training", "folder", "Empty for a normal run. A state folder "
              "(myLora-000012-state) continues that run."),
@@ -382,6 +408,18 @@ def apply_preset(desc, values, preset):
     return out
 
 
+def to_preset(desc, values):
+    """The form's values as a saved preset, in the desktop's format (presets/<model>/<name>.json): its settings by
+    the same keys, the kind of training as FAMILY_EDIT / FAMILY_SLIDER / FAMILY_FT, and none of the Base Model card's
+    options (a preset never carries those, as on the desktop)."""
+    model_keys = {o.key for o in desc.options if o.tab == "model"}
+    kind = _kind(desc, values)
+    out = {k: v for k, v in values.items() if not k.startswith("__") and k not in model_keys and k != "FAMILY_KIND"
+           and not (k == "LORA_OUTPUT_DIR" and not str(v or "").strip())}      # an empty folder = the default
+    out.update(FAMILY_EDIT=kind == "edit", FAMILY_SLIDER=kind == "slider", FAMILY_FT=kind == "finetune")
+    return out
+
+
 def _kind(desc, values):
     label = values.get("FAMILY_KIND", "")
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
@@ -438,6 +476,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE"} if pairs
                else {"FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION"})
     media = launch.dataset_media(image_folder) if image_folder else set()
+    if "clip" not in media:                          # clips' own size only when the folder holds clips
+        hidden.add("CLIP_MEGAPIXELS")
+    if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
+        hidden.add("TRAINING_BLOCKS")
     vals = _option_values(desc, values)
     for o in desc.options:
         if o.kind == "fixed" or o.tab == "model":
@@ -486,13 +528,15 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         SAVE_STATE_ON_TRAIN_END=b("SAVE_STATE_ON_TRAIN_END"), FAMILY_FT_FUSED=b("FAMILY_FT_FUSED"),
         FAMILY_SLIDER_ULTRA=b("FAMILY_SLIDER_ULTRA"),
         FAMILY_FAST_ID=b("FAMILY_FAST_ID") and kind == "standard" and bool(desc.identity_blocks),
-        **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0], "FAMILY_TRAIN_BLOCKS": []}
+        **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0],
+            "FAMILY_TRAIN_BLOCKS": [k for k, on in (v.get("TRAINING_BLOCKS") or {}).items() if on]}
            if desc.train_areas else {}),
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
+        clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
         blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),
         loss_watch={"detect": b("KREA2_LOSS_WATCH") and desc.loss_watch,

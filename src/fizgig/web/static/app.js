@@ -130,6 +130,7 @@ function renderRow(r) {
   const v = S.values[r.key];
   let input;
   const set = (val) => onValue(r, val);
+  if (r.kind === "blocks") return blockPicker(r, wrap);
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
     input.checked = !!v;
@@ -146,9 +147,13 @@ function renderRow(r) {
   } else {
     if (r.kind === "choice") {
       input = el("select", {id: "f_" + r.key, onchange: (e) => set(e.target.value)});
-      const opts = r.choices.includes(String(v)) || !v ? r.choices : [String(v), ...r.choices];
+      // a saved value in another case is the same choice ("auto" saved before the box read "Auto")
+      const same = v != null && r.choices.find((c) => c.toLowerCase() === String(v).toLowerCase());
+      const val = same || v;
+      if (same && same !== v) S.values[r.key] = same;
+      const opts = r.choices.includes(String(val)) || !val ? r.choices : [String(val), ...r.choices];
       for (const c of opts) input.append(el("option", {value: c, text: c}));
-      input.value = String(v ?? "");
+      input.value = String(val ?? "");
     } else if (r.kind === "text") {
       input = el("textarea", {id: "f_" + r.key, rows: 4, oninput: (e) => set(e.target.value)});
       input.value = v ?? "";
@@ -162,7 +167,7 @@ function renderRow(r) {
         other.style.display = custom ? "" : "none";
         if (custom) { other.value = ""; other.focus(); } else set(e.target.value);
       }});
-      fillCombo(input, r.choices, v);
+      fillCombo(input, r.choices, v, r.labels);
       other.style.display = "none";
       input._other = other;
     } else {
@@ -216,6 +221,32 @@ function shareSamples(keys) {
   sendDesktopSoon();
 }
 
+// Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's
+function blockPicker(r, wrap) {
+  const sel = () => ({...(S.values[r.key] || {})});
+  const ticks = {};
+  const put = (m) => { onValue(r, m); for (const [id, t] of Object.entries(ticks)) t.checked = !!m[id]; count(); };
+  const n = el("span", {class: "field-hint"});
+  const count = () => { const m = S.values[r.key] || {}; n.textContent = `${Object.values(m).filter(Boolean).length} chosen`; };
+  const all = (on) => { const m = {}; for (const g of r.groups) for (const b of g.blocks) m[b.id] = on; put(m); };
+  wrap.append(el("div", {class: "field-row block-head"}, el("b", {text: "Select blocks to train:"}),
+    el("button", {class: "btn btn-sm", text: "All", onclick: () => all(true)}),
+    el("button", {class: "btn btn-sm", text: "None", onclick: () => all(false)}),
+    ...Object.entries(r.areas || {}).map(([name, ids]) => el("button", {class: "btn btn-sm", text: name, onclick: () => {
+      const m = {}; for (const g of r.groups) for (const b of g.blocks) m[b.id] = ids.includes(b.id); put(m); }})), n));
+  for (const g of r.groups) {
+    const row = el("div", {class: "block-row"}, el("span", {class: "block-group", text: g.label + ":"}));
+    for (const b of g.blocks) {
+      const t = ticks[b.id] = el("input", {type: "checkbox", onchange: (e) => { const m = sel(); m[b.id] = e.target.checked; onValue(r, m); count(); }});
+      t.checked = !!(S.values[r.key] || {})[b.id];
+      row.append(el("label", {class: "block-tick"}, t, el("span", {text: b.label})));
+    }
+    wrap.append(row);
+  }
+  count();
+  return wrap;
+}
+
 function onValue(r, val) {
   S.values[r.key] = val;
   shareSamples([r.key]);
@@ -231,11 +262,11 @@ function onValue(r, val) {
 }
 
 // a combo row's dropdown: the usual values, a value of your own kept as an option, and Other…
-function fillCombo(sel, choices, v) {
+function fillCombo(sel, choices, v, labels) {
   sel.innerHTML = "";
   const val = v == null ? "" : String(v);
   const opts = val && !choices.includes(val) ? [...choices, val] : choices;
-  for (const c of opts) sel.append(el("option", {value: c, text: c}));
+  opts.forEach((c, i) => sel.append(el("option", {value: c, text: (labels && labels[i]) || c})));
   sel.append(el("option", {value: "__other", text: "Other…"}));
   sel.value = val || (choices[0] ?? "");
 }
@@ -246,7 +277,7 @@ function syncInputs(keys) {
     if (!i) continue;
     if (i.tagName === "SELECT" && [...i.options].some((o) => o.value === "__other")) {
       const row = (S.fam.form.sections.flatMap((s) => s.rows).find((r) => r && r.key === k)) || {choices: []};
-      fillCombo(i, row.choices, S.values[k]);
+      fillCombo(i, row.choices, S.values[k], row.labels);
       continue;
     }
     if (i.type === "checkbox") i.checked = !!S.values[k]; else i.value = S.values[k] ?? "";
@@ -293,15 +324,19 @@ function turboFollow() {
 }
 const refreshStateSoon = debounce(refreshState, 250);
 
-function renderPresets() {
+async function renderPresets() {
   const sel = $("presets");
+  const fam = S.family;
+  const list = await api("/api/presets?family=" + encodeURIComponent(fam)).catch(() =>
+    ({builtin: S.fam.form.presets.map((p) => p.name), user: []}));
+  if (fam !== S.family) return;
   sel.innerHTML = "";
-  const presets = S.fam.form.presets;
-  sel.closest(".section-card").style.display = presets.length ? "" : "none";
   // the preset last picked shows (a first visit applies the first, as the desktop); "Choose a preset…" before any
   sel.append(el("option", {value: "", text: "Choose a preset…"}));
-  for (const p of presets) sel.append(el("option", {value: p.name, text: p.name}));
-  sel.value = presets.some((p) => p.name === S.values.__preset) ? S.values.__preset : "";
+  for (const n of list.builtin) sel.append(el("option", {value: n, text: n}));
+  if (list.user.length) sel.append(el("optgroup", {label: "Your presets"}, ...list.user.map((n) => el("option", {value: n, text: n}))));
+  const names = [...list.builtin, ...list.user];
+  sel.value = names.includes(S.values.__preset) ? S.values.__preset : "";
   sel.onchange = async () => {
     const name = sel.value;
     if (!name) return;
@@ -441,7 +476,7 @@ function gpuPickCard() {
   const g = S.gpu || {list: []};
   if (g.list.length < 2) return null;
   const sel = el("select", {class: "w-combo-lg"},
-    el("option", {value: "", text: "The machine's default"}),
+    el("option", {value: "", text: "System default (GPU 0)"}),
     g.list.map((c) => el("option", {value: c.uuid, text: `${c.index}: ${c.name} (${Math.round(c.total_gb)} GB)`})));
   const known = g.list.find((c) => c.uuid === g.chosen || String(c.index) === g.chosen);
   sel.value = known ? known.uuid : "";
@@ -1397,6 +1432,36 @@ function lookMoveAsk() {
       el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { $("lookConfirm").innerHTML = ""; }}))));
 }
 
+// Save preset: a name, then saved for this model in the desktop's format (asks before replacing one)
+function presetSaveOpen() {
+  const host = $("presetSaveRow");
+  if (host.childNodes.length) { host.innerHTML = ""; return; }
+  const name = el("input", {type: "text", class: "w-path", placeholder: "A name for this preset",
+    value: S.values.__preset && !S.fam.form.presets.some((p) => p.name === S.values.__preset) ? S.values.__preset : ""});
+  const msg = el("span", {class: "field-hint"});
+  const save = async (overwrite) => {
+    const n = name.value.trim();
+    if (!n) { msg.textContent = "Type a name first."; return; }
+    try {
+      const r = await api("/api/preset/save", {family: S.family, name: n, values: S.values, overwrite: !!overwrite});
+      if (r.exists) {
+        msg.replaceChildren(document.createTextNode(`There's a preset called ${n} already. `),
+          el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)}));
+        return;
+      }
+      S.values.__preset = n;
+      saveState();
+      host.innerHTML = "";
+      await renderPresets();
+      $("runStatus").textContent = `Saved the preset ${n}: it's in both apps' preset list for this model.`;
+    } catch (e) { msg.textContent = e.message; }
+  };
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") save(false); });
+  host.append(el("div", {class: "field-row"}, name, el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
+    el("button", {class: "btn", text: "Cancel", onclick: () => { host.innerHTML = ""; }}), msg));
+  name.focus();
+}
+
 function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
@@ -1413,13 +1478,13 @@ function wirePrep() {
 
 // ---- Captions tab ----------------------------------------------------------------------------------------
 // The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
-const CAP_PAGE = 40;
+let CAP_PAGE = 12;                         // Per page (the desktop's sizes), remembered with the tab's settings
 S.cap = {page: 0, items: [], opts: null, lastState: ""};
 
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
-    skipCjk: $("capSkipCjk").checked};
+    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
 const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
@@ -1440,6 +1505,7 @@ async function loadCaptionOptions() {
   if (saved.trigger !== undefined) $("capTrigger").value = saved.trigger;
   if (saved.overwrite !== undefined) $("capOverwrite").checked = saved.overwrite;
   if (saved.skipCjk !== undefined) $("capSkipCjk").checked = saved.skipCjk;
+  if (saved.perPage) { $("capPerPage").value = saved.perPage; CAP_PAGE = Number(saved.perPage) || 12; }
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
   $("capSongCard").style.display = o.song_words ? "" : "none";
@@ -1607,6 +1673,8 @@ async function findReplace(apply) {
 function wireCaptions() {
   $("captionsReload").addEventListener("click", loadCaptions);
   $("capModel").addEventListener("change", () => { fillTasks(); onCapTask(); });
+  $("capPerPage").addEventListener("change", () => {
+    CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
   $("capTask").addEventListener("change", onCapTask);
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
     $(id).addEventListener("change", saveCapSoon);
@@ -1943,6 +2011,7 @@ function wire() {
   window.addEventListener("focus", catchUp);
   wireLightbox();
   wirePrep();
+  $("presetSave").addEventListener("click", presetSaveOpen);
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
   // the sidebar's run opens the run card itself (it sits under the Training form)
