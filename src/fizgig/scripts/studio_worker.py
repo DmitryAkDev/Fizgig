@@ -68,6 +68,7 @@ def cmd_load(c):
         if eng is None:
             eng = desc.make_workbench_engine()
         S["engine"], S["desc"] = eng, desc
+        S["nolora_out"] = S["nolora_song"] = None
         eng.turbo_preview = bool(c.get("turbo", True))
         if getattr(desc, "video_workbench", False):
             eng.int8_attention = True                # as the desktop's Repair Studio (comfy-kitchen where it exists)
@@ -136,10 +137,11 @@ def _render(c):
             out = c["out_dir"]
             os.makedirs(out, exist_ok=True)
             desc = S["desc"]
+            nolora = None                        # the No-LoRA pane's render, after the pair is up
             if getattr(desc, "video_workbench", False):
-                paths = _render_clips(eng, desc, st, c, out, gen)
+                paths, nolora = _render_clips(eng, desc, st, c, out, gen)
             elif getattr(desc, "audio_workbench", False):
-                paths = _render_songs(eng, st, c, out, gen)
+                paths, nolora = _render_songs(eng, st, c, out, gen)
             else:
                 base = eng.generate_baseline(st)
                 tweak = eng.generate_preview(st)
@@ -148,7 +150,13 @@ def _render(c):
                     p = os.path.join(out, f"{name}_{gen}.png")
                     img.save(p)
                     paths[name] = p
-        emit(ev="rendered", gen=gen, **paths)
+            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, **paths)
+            _tidy(out, gen)
+            if nolora is not None:               # as the desktop: the pair first, then the base model's own
+                try:
+                    emit(ev="nolora", gen=gen, **nolora())
+                except Exception as e:           # a newer edit took the engine (or it failed: say so)
+                    emit(ev="nolora", gen=gen, aborted=_aborted(e), msg="" if _aborted(e) else str(e))
     except Exception as e:
         if _aborted(e):
             emit(ev="aborted", gen=gen)
@@ -238,7 +246,19 @@ def _render_clips(eng, desc, st, c, out, gen):
         png = os.path.join(out, f"{name}_{gen}.png")
         mp4 = _write_clip(clip, png, os.path.join(out, f"{name}_{gen}.mp4"), fps, rate)
         paths[name], paths[name + "_media"] = png, mp4
-    return paths
+
+    def nolora():
+        """The same seed / prompt / canvas / length / photos on the base model with no LoRA (the engine keeps it, so
+        a slider move doesn't re-render it - nor re-write it here)."""
+        clip = eng.nolora_clip(st, cache=None, **opts)
+        hit = S.get("nolora_out")
+        if hit and hit[0] is clip and os.path.isfile(hit[1]["nolora"]):
+            return hit[1]
+        png = os.path.join(out, f"nolora_{gen}.png")
+        got = {"nolora": png, "nolora_media": _write_clip(clip, png, os.path.join(out, f"nolora_{gen}.mp4"), fps, rate)}
+        S["nolora_out"] = (clip, got)
+        return got
+    return paths, (nolora if v.get("nolora") and hasattr(eng, "nolora_clip") else None)
 
 
 def _render_songs(eng, st, c, out, gen):
@@ -259,7 +279,39 @@ def _render_songs(eng, st, c, out, gen):
         song.picture().save(png)
         write_wav(wav, song.wave, sample_rate=48000)
         paths[name], paths[name + "_media"] = png, wav
-    return paths
+    key = (eng.primary_path, st.seed, st.prompt, seconds,
+           eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None,
+           eng._audio_key() if hasattr(eng, "_audio_key") else None)
+
+    def nolora():
+        hit = S.get("nolora_song")
+        if hit and hit[0] == key and os.path.isfile(hit[1]["nolora"]):
+            return hit[1]
+        import copy
+        base_st = copy.deepcopy(st)
+        base_st.primary_scale, base_st.donor_scale = 0.0, 0.0
+        song = eng.generate_preview(base_st)
+        png, wav = os.path.join(out, f"nolora_{gen}.png"), os.path.join(out, f"nolora_{gen}.wav")
+        song.picture().save(png)
+        write_wav(wav, song.wave, sample_rate=48000)
+        got = {"nolora": png, "nolora_media": wav}
+        S["nolora_song"] = (key, got)
+        return got
+    return paths, nolora
+
+
+def _tidy(out, gen):
+    """Drop renders two or more generations old (the page shows the newest), keeping the No-LoRA files in use."""
+    import re
+    keep = {os.path.normcase(p) for k in ("nolora_out", "nolora_song") if S.get(k) for p in S[k][1].values() if p}
+    try:
+        for f in os.listdir(out):
+            m = re.match(r"(baseline|tweaked|nolora)_(\d+)\.(png|mp4|wav)$", f)
+            p = os.path.join(out, f)
+            if m and int(m.group(2)) < gen - 1 and os.path.normcase(p) not in keep:
+                os.remove(p)
+    except OSError:
+        pass
 
 
 def cmd_render(c):

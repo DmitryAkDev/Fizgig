@@ -1581,6 +1581,7 @@ function studioKind(L, sv) {
   if (h3.turbo != null) $("stH3Turbo").value = h3.turbo;
   $("stH3Sound").checked = V.sound && h3.sound !== false;
   $("stH3Sound").disabled = !V.sound;
+  $("stH3NoLora").checked = !!h3.nolora;
   S.st.kf = h3.kf || {};
   studioSlots();
 }
@@ -1615,7 +1616,7 @@ function studioH3Remember() {
     const d = stSaved();
     d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
       h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, kf: S.st.kf};
+      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, kf: S.st.kf};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
 }
@@ -1632,7 +1633,8 @@ function studioExtra() {
   const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
-    turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked},
+    turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
+    nolora: $("stH3NoLora").checked},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s]})), ref_mode: ref};
 }
 
@@ -1930,6 +1932,7 @@ async function studioPoll() {
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
   }
+  studioNoLoraPane(st);
   const pr = st.profile;
   $("stProfile").style.display = pr ? "" : "none";
   if (pr) {
@@ -1944,6 +1947,27 @@ async function studioPoll() {
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
   const active = st.state === "loading" || st.rendering || st.pending;
   if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+}
+
+function studioNoLoraPane(st) {
+  // the base model's own clip / song, left of the pair (the desktop's player has it there): H3 with the tick, ACE always
+  const kind = S.st.layout && S.st.layout.kind;
+  const on = kind === "audio" || (kind === "video" && $("stH3NoLora").checked);
+  $("stNolPane").style.display = on ? "" : "none";
+  $("stPreview").classList.toggle("three", on);
+  if (!on) return;
+  $("stNolCap").textContent = st.nolora_busy ? "No LoRA (rendering…)" : "No LoRA (base model, same seed)";
+  if (st.nolora_gen && st.nolora_gen !== S.st.nolShown && st.media && st.media.nolora != null) {
+    S.st.nolShown = st.nolora_gen;
+    const q = (w) => `/api/studio/image?which=${w}&gen=${st.nolora_gen}&t=${encodeURIComponent(TOKEN)}`;
+    const media = st.media.nolora;
+    $("stNol").src = q("nolora");
+    $("stNolVid").style.display = kind === "video" && media ? "" : "none";
+    $("stNolAud").style.display = kind === "audio" && media ? "" : "none";
+    $("stNol").style.display = kind === "video" && media ? "none" : "";
+    if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = q("nolora_media"); }
+    if (kind === "audio" && media) $("stNolAud").src = q("nolora_media");
+  }
 }
 
 function studioSavedSay(sv) {
@@ -1974,13 +1998,14 @@ async function studioSave(overwrite) {
 function wireStudio() {
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
-  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound"])
+  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3NoLora"])
     $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
   $("stPlayBothBtn").addEventListener("click", () => {
-    const pair = S.st.layout.kind === "video" ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
-    for (const id of pair) { const m = $(id); m.currentTime = 0; m.play().catch(() => {}); }
+    const v = S.st.layout.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
+    if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
+    for (const id of ids) { const m = $(id); m.currentTime = 0; m.play().catch(() => {}); }
   });
   $("stStart").addEventListener("click", studioStart);
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });

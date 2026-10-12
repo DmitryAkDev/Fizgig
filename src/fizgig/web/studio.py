@@ -67,6 +67,7 @@ def _event(ev):
         elif kind in ("loaded", "donor"):
             _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash")})
             if kind == "loaded":
+                _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
                           donor=ev.get("donor", ""), status="Loaded. Generating preview…", error="")
                 _S["profile"] = _profile(ev.get("hash", ""))
@@ -76,8 +77,14 @@ def _event(ev):
         elif kind == "rendered":
             _S.update(rendering=False, progress=None, baseline=ev.get("baseline", ""), tweaked=ev.get("tweaked", ""),
                       baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
-                      shown=ev.get("gen", 0), status="Ready.", error="")
+                      shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")))
             nxt, _S["pending"] = _S["pending"], None
+        elif kind == "nolora":                   # the No-LoRA pane's render landed (or a newer edit cut it short)
+            _S["nolora_busy"] = False
+            if ev.get("nolora") and ev["nolora"] != _S.get("nolora"):   # the same file again: the pane plays on
+                _S.update(nolora=ev["nolora"], nolora_media=ev.get("nolora_media", ""), nolora_gen=ev.get("gen", 0))
+            elif ev.get("msg"):
+                _S["status"] = "The No-LoRA render failed: " + ev["msg"]
         elif kind == "aborted":
             _S.update(rendering=False, progress=None)
             nxt, _S["pending"] = _S["pending"], None
@@ -123,6 +130,12 @@ def _ensure_worker():
     with _lock:
         if _S["proc"] is not None and _S["proc"].poll() is None:
             return
+    try:                                         # a fresh worker: an earlier one's renders are nobody's now
+        for f in os.listdir(OUT_DIR):
+            if os.path.splitext(f)[1].lower() in (".png", ".mp4", ".wav"):
+                os.remove(os.path.join(OUT_DIR, f))
+    except OSError:
+        pass
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     proc = subprocess.Popen([sys.executable, "-m", "fizgig.scripts.studio_worker"], cwd=BASE_DIR,
@@ -235,14 +248,16 @@ def render(state, extra=None):
         _S["used"] = time.time()
         if _S["rendering"]:
             _S["pending"] = (state, extra)
-            busy = True
+            busy, cut = True, False
         else:
             _S["gen"] += 1
             gen = _S["gen"]
             _S.update(rendering=True, progress=None, status="Generating preview…")
             busy = False
-    if busy:
+            cut = _S.get("nolora_busy")
+    if busy or cut:                              # the newest edit takes the engine (from a No-LoRA render too)
         _send({"cmd": "cancel"})
+    if busy:
         return {"ok": True, "queued": True}
     _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
     return {"ok": True, "gen": gen}
@@ -292,7 +307,8 @@ def status():
     with _lock:
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
-        d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked")}
+        d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
+        d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
     return d
@@ -300,7 +316,8 @@ def status():
 
 def image(which, gen):
     with _lock:
-        p = _S.get(which) if which in ("baseline", "tweaked", "baseline_media", "tweaked_media") else ""
+        p = _S.get(which) if which in ("baseline", "tweaked", "nolora", "baseline_media", "tweaked_media",
+                                       "nolora_media") else ""
     return p if p and os.path.isfile(p) else ""
 
 

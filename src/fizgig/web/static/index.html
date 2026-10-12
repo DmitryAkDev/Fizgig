@@ -469,7 +469,8 @@
                 <div class="field-row"><span class="field-label"></span>
                   <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4">
                     <span class="field-hint">Turbo</span><input type="text" id="stH3Turbo" value="1">
-                    <label class="checkbox-label"><input type="checkbox" id="stH3Sound" checked> Sound</label></span></div>
+                    <label class="checkbox-label"><input type="checkbox" id="stH3Sound" checked> Sound</label>
+                    <label class="checkbox-label" title="Also render the same seed, prompt and photos with no LoRA at all, shown on the left. Rendered once per setup: a slider move doesn't re-render it."><input type="checkbox" id="stH3NoLora"> No-LoRA clip</label></span></div>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
                 <textarea id="stNeg" rows="2"></textarea></div>
@@ -500,7 +501,10 @@
           <div class="section-card">
             <div class="card-title">Preview</div>
             <div class="card-content">
-              <div class="st-preview">
+              <div class="st-preview" id="stPreview">
+                <figure class="gallery-item st-pane" id="stNolPane" style="display:none"><img id="stNol" alt=""><video id="stNolVid" controls loop playsinline
+                  style="display:none"></video><audio id="stNolAud" controls style="display:none"></audio>
+                  <figcaption id="stNolCap">No LoRA (base model, same seed)</figcaption></figure>
                 <figure class="gallery-item st-pane"><img id="stBase" alt=""><video id="stBaseVid" controls loop playsinline
                   style="display:none"></video><audio id="stBaseAud" controls style="display:none"></audio>
                   <figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
@@ -509,7 +513,7 @@
                   <figcaption>Tweaked (current sliders)</figcaption></figure>
               </div>
               <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
-              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play both together</button></div>
+              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
             </div>
           </div>
           <div class="section-card" id="stMasters" style="display:none">
