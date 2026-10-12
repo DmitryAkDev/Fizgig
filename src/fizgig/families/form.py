@@ -23,7 +23,9 @@ from fizgig.families import launch
 ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4 - rank 4/8 only", "3e-4 - low-rank only")
 ADAPTIVE_MAX = ("1e-4", "2e-4", "3e-4", "4e-4")
 MEGAPIXELS = ("0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2")
-SWAP = ("Auto (detect from GPU)", "0", "2", "4", "6", "8", "10", "12", "14", "16", "20", "24")
+SWAP = ("Auto (detect from GPU)", "0  (No swap — 16GB fp8 / 24GB bf16)", "4  (Light — 14GB fp8 / 20GB bf16)",
+        "8  (Moderate — 12GB fp8 / 16GB bf16)", "12 (Aggressive — 10GB fp8 / 12GB bf16)", "16 (Max — 8GB fp8 / 10GB bf16)",
+        "1", "2", "3", "5", "6", "7", "9", "10", "11", "13", "14", "15")        # the desktop's Blocks Swap list
 NETWORK_TYPES = {"lora": "LoRA (standard)", "lokr": "LoKR (Kronecker)"}
 EMA = ("Off", "0.98 (recommended)", "0.99 (stronger)", "0.995 (long runs only)")
 EMA_SHORT = "Short run (window = ¼ of the run)"
@@ -257,8 +259,8 @@ def form(desc):
             _row("FAMILY_FT_ROTATIONS", "Rotations", hint="Each rotation trains every part of the model once."),
             _row("FAMILY_FT_SAVE_EVERY", "Checkpoint + preview every N rotations"),
             _row("FAMILY_FT_ROTATE_EVERY", "Epochs per part before the next"),
-            _row("FAMILY_FT_MAX_PARTS", "Window size", "choice", choices=list(launch.FT_WINDOW_SIZES),
-                 default=launch.FT_WINDOW_SIZES[0]),
+            _row("FAMILY_FT_MAX_PARTS", "Window size", "choice", choices=[lab for lab, _ in launch.FT_WINDOW_SIZES],
+                 default=launch.FT_WINDOW_SIZES[0][0]),
             _row("FAMILY_FT_FUSED", "Free each gradient as soon as it's used (less memory - recommended)", "check"),
             *by_section("training", mode="finetune"),
             *([_row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", upload=True, start="data"),
@@ -271,7 +273,7 @@ def form(desc):
         _row("BLOCKS_SWAP", "Blocks Swap", "combo", "Auto plans the fewest swapped blocks that fit your free VRAM.",
              SWAP),
         _row("FAMILY_PRECISION", desc.precision_label or "Base precision", "choice", desc.precision_hint,
-             [labels[p] for p in precisions]) if len(desc.precisions) > 1 else None,
+             [labels[p] for p in precisions], default=labels["auto"]) if len(desc.precisions) > 1 else None,
         _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["auto", "on", "off"])
         if desc.compiles else None,
         _row("RESUME_TRAINING", "Resume Training", "folder", "Empty for a normal run. A state folder "

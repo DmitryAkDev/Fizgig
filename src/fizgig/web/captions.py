@@ -95,8 +95,9 @@ def options(prefs, captioner):
     custom_builtin = tasks[default][1]
     qwen.append({"key": "custom", "label": CUSTOM_TASK, "tokens": tasks[default][2], "builtin": custom_builtin,
                  "instruction": str(ovr.get("custom") or "").strip() or custom_builtin, "edited": bool(ovr.get("custom"))})
-    models = ([QWEN_MODEL] if captioner else []) + FLORENCE_MODELS
-    return {"models": models, "default_model": models[0], "qwen_tasks": qwen,
+    models = FLORENCE_MODELS + ([QWEN_MODEL] if captioner else [])          # the desktop's order
+    return {"models": models, "default_model": QWEN_MODEL if captioner else models[0], "qwen_model": QWEN_MODEL,
+            "qwen_tasks": qwen,
             "default_qwen_task": tasks[default][0], "florence_tasks": FLORENCE_TASKS,
             "qwen_available": bool(captioner)}
 

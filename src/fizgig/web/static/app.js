@@ -1422,7 +1422,7 @@ function capSettings() {
     skipCjk: $("capSkipCjk").checked};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
-const qwenOn = () => $("capModel").value === (S.cap.opts && S.cap.opts.models[0]) && S.cap.opts.qwen_available;
+const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
 const qwenTask = () => (S.cap.opts.qwen_tasks || []).find((t) => t.label === $("capTask").value);
 
 async function loadCaptionOptions() {
