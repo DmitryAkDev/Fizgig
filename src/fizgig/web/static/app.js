@@ -839,7 +839,10 @@ async function loadRuns() {
         try {
           const s = await api("/api/runs/settings", {id: run.id});
           if (s.family !== S.family) await chooseFamily(s.family);
-          S.values = {...S.values, ...s.values};
+          const kept = Object.fromEntries(Object.entries(s.values).filter(([, v]) => v != null));
+          S.values = {...S.values, ...kept};
+          // a run recorded before it had a Turbo value: its steps and CFG follow the Turbo on now (refreshState)
+          if (!("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
           S.all[S.family] = S.values;
           if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; }
           renderSections("samples", $("samplesForm"));
