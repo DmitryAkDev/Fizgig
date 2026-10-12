@@ -31962,6 +31962,11 @@ class LoRATrainerGUI:
 
         step = update["step"]
         total_steps = update["total_steps"]
+        self._live_progress = {                     # the web UI's run card shows the same figures
+            "epoch": update.get("epoch"), "total_epochs": update.get("total_epochs"), "step": step,
+            "total_steps": total_steps, "speed": update.get("speed_text") or "",
+            "loss": update.get("average_loss_text") or "", "eta": update.get("eta_text") or "",
+            "percent": 100.0 * max(0, min(step, total_steps)) / total_steps if total_steps else 0.0, "note": ""}
         loss = update.get("average_loss_text")
         loss_text = "Loss —" if loss is None else f"Loss {loss}"
         prefix = ("RefMod" if update["kind"] == "refmod"
@@ -33594,6 +33599,7 @@ class LoRATrainerGUI:
             if busy_now and not was_busy:
                 self._live_result = None
                 self._live_stopped = False
+                self._live_progress = None
             elif was_busy and not busy_now and state != "paused":
                 lp = getattr(self, "_live_last_proc", None)
                 code = lp.poll() if lp is not None else None
@@ -33605,6 +33611,7 @@ class LoRATrainerGUI:
             _live.write(_live.LIVE_DESKTOP, {
                 "running": running, "state": state, "trainer_pid": proc.pid if running else None,
                 "captioning": bool(getattr(self, "_captioning_running", False)),
+                "progress": getattr(self, "_live_progress", None) if busy_now else None,
                 "caption_loaded": bool(self._caption_worker_alive()),
                 "trainer_started": self._live_proc_started(proc) if running else None,
                 "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),

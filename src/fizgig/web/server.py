@@ -70,14 +70,21 @@ _NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" e
 def list_gpus():
     """[{index, name, total_gb, used_gb, uuid}] from nvidia-smi (every card, whatever CUDA_VISIBLE_DEVICES says)."""
     try:
-        out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,uuid",
-                              "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=4,
-                             **_NO_WINDOW)
+        out = subprocess.run(["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,uuid,utilization.gpu,"
+                              "temperature.gpu,power.draw,power.limit", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=4, **_NO_WINDOW)
+
+        def num(v):
+            try:
+                return float(v)
+            except ValueError:
+                return None
         rows = []
         for line in out.stdout.strip().splitlines():
-            i, n, t, u, uid = [x.strip() for x in line.split(",")][:5]
+            i, n, t, u, uid, *more = [x.strip() for x in line.split(",")]
+            util, temp, pw, pl = (more + [""] * 4)[:4]
             rows.append({"index": int(i), "name": n, "total_gb": int(t) / 1024, "used_gb": int(u) / 1024,
-                         "uuid": uid})
+                         "uuid": uid, "util": num(util), "temp": num(temp), "power": num(pw), "power_limit": num(pl)})
         return rows
     except (OSError, ValueError, subprocess.SubprocessError):
         return []
@@ -107,6 +114,7 @@ def _poll_stats_loop():
     while True:
         vu = vt = 0
         name = "GPU"
+        extra = {}
         want = str(os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device") or "").split(",")[0]
         want = want.strip()
         try:
@@ -123,13 +131,14 @@ def _poll_stats_loop():
             r = _chosen_gpu(list_gpus(), want)
             if r:
                 name, vu, vt = r["name"], int(r["used_gb"] * 2 ** 30), int(r["total_gb"] * 2 ** 30)
+                extra = {k: r.get(k) for k in ("util", "temp", "power", "power_limit")}
         ru = rt = 0
         if psutil is not None:
             vm = psutil.virtual_memory()
             ru, rt = vm.total - vm.available, vm.total
         with _lock:
             _stats.update(vram=[vu, vt], ram=[ru, rt], device_name=name, vram_peak=max(_stats["vram_peak"], vu),
-                          ram_peak=max(_stats["ram_peak"], ru))
+                          ram_peak=max(_stats["ram_peak"], ru), **extra)
             mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
                     "lora": _run["lora"], "output_dir": _run["output_dir"]}
         cs = captions.status()                   # the desktop app won't start a run beside a caption job
@@ -441,10 +450,23 @@ def _popen(cmd):
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
 
 
+def _progress_dict(upd):
+    """The tracker's update as the page shows it (the desktop app sends the same from its own tracker)."""
+    step, total = int(upd.get("step") or 0), int(upd.get("total_steps") or 0)
+    return {"epoch": upd.get("epoch"), "total_epochs": upd.get("total_epochs"), "step": step, "total_steps": total,
+            "speed": upd.get("speed_text") or "", "loss": upd.get("average_loss_text") or "",
+            "eta": upd.get("eta_text") or "", "percent": 100.0 * min(step, total) / total if total else 0.0,
+            "note": ""}
+
+
 def _run_stages(stages, out_dir):
+    from fizgig.training.progress import TrainingProgressTracker
     append_log(f"\n=== Fizgig run, {datetime.datetime.now():%Y-%m-%d %H:%M:%S} ===\n")
     with _lock:
         _run["state"] = "running"
+        _run["progress"] = None
+        tracker = TrainingProgressTracker((_run.get("values") or {}).get("MAX_TRAIN_EPOCHS", 1))
+        _run["started_at"] = time.time()
     for stage in stages:
         with _lock:
             if _run["state"] == "stopped":
@@ -462,6 +484,18 @@ def _run_stages(stages, out_dir):
             _run["proc"] = proc
         for line in proc.stdout:
             append_log(line)
+            try:
+                upd = tracker.consume(line)
+            except Exception:
+                upd = None
+            if upd:
+                with _lock:
+                    if upd.get("kind") == "preview":
+                        p = dict(_run.get("progress") or _progress_dict({}))
+                        p["note"] = {"start": "Making previews…", "complete": ""}.get(upd.get("phase"), "")
+                        _run["progress"] = p
+                    else:
+                        _run["progress"] = _progress_dict(upd)
         ret = proc.wait()
         with _lock:
             stopped = _run["state"] == "stopped"
@@ -866,7 +900,8 @@ class Handler(BaseHTTPRequestHandler):
             r["resume"] = latest_state(r["output_dir"], r["lora"]) if r["lora"] else ""
             d = live.desktop_state()
             r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
-                                                   "percent", "last_result", "ack", "unresponsive")} if d else None)
+                                                   "percent", "last_result", "ack", "unresponsive", "progress",
+                                                   "started_at")} if d else None)
             r["queue"] = live.queue_summary() if d else []
             return self.json(r)
         if path == "/api/desktop/log":

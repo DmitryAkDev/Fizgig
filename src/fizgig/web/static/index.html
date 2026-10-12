@@ -18,17 +18,26 @@
 
   <div class="app-window-body">
     <main class="notebook-container">
-      <div class="tab-strip-row">
+      <aside class="tab-strip-row">
+        <div class="side-brand"><img src="/icon.png" alt="" onerror="this.style.display='none'">
+          <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span></div>
         <nav class="tab-bar-scroller" id="tabs">
-          <button class="tab-item active" data-tab="start">1. Start</button>
-          <button class="tab-item" data-tab="captions">2. Captions</button>
-          <button class="tab-item" data-tab="samples">3. Samples</button>
-          <button class="tab-item" data-tab="training">4. Training</button>
-          <button class="tab-item" data-tab="outputs">Download your outputs</button>
-          <button class="tab-item" data-tab="prefs">Preferences</button>
+          <div class="side-label">Train</div>
+          <button class="tab-item active" data-tab="start"><i></i><span>1. Start</span></button>
+          <button class="tab-item" data-tab="captions"><i></i><span>2. Captions</span></button>
+          <button class="tab-item" data-tab="samples"><i></i><span>3. Samples</span></button>
+          <button class="tab-item" data-tab="training"><i></i><span>4. Training</span></button>
+          <div class="side-label">After</div>
+          <button class="tab-item" data-tab="outputs"><i></i><span>Download your outputs</span></button>
+          <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
         </nav>
-        <div class="top-status-container run-badge" id="runBadge" title="The current run"></div>
-      </div>
+        <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
+          <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>
+          <span class="run-bar"><span id="sideRunBar"></span></span>
+          <span class="side-run-text" id="sideRunText"></span>
+        </button>
+        <div class="gpu-monitor" id="statusBar"></div>
+      </aside>
 
       <div class="notebook-pane">
         <section id="tab-start" class="tab-panel active">
@@ -208,9 +217,13 @@
             <div class="card-content"><div class="preset-chips-row" id="presets"></div></div>
           </div>
           <div id="trainingForm"></div>
-          <div class="section-card accent-card">
-            <div class="card-title">Run</div>
+          <div class="section-card accent-card run-card">
+            <div class="card-title"><span>Run</span><span class="run-badge" id="runCardBadge"></span></div>
             <div class="card-content">
+              <div class="run-head"><span class="run-name" id="runName"></span>
+                <span class="field-hint" id="runWhen"></span></div>
+              <div class="run-bar run-bar-lg"><span id="runBar"></span></div>
+              <div class="run-tiles" id="runTiles"></div>
               <div class="field-row">
                 <button class="btn" id="btnCheck">Check settings</button>
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
@@ -275,7 +288,6 @@
     </main>
   </div>
 
-  <div class="bottom-status-bar" id="statusBar"></div>
 
   <div class="modal-backdrop" id="pickerModal">
     <div class="modal-window" style="width: 640px;">

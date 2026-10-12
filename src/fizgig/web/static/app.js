@@ -503,6 +503,10 @@ async function pollRun() {
         "Resume wait until it does." : "")) + ack;
     $("runBadge").textContent = label;
     $("runBadge").dataset.state = state;
+    $("runCardBadge").textContent = label;
+    $("runCardBadge").dataset.state = state;
+    showProgress(deskDone ? null : d.progress, state, deskDone ? d.last_result.lora : d.lora,
+      deskDone ? "" : d.stage);
     $("btnStart").disabled = !deskDone;
     $("btnPause").disabled = !(d.running && d.state === "running");
     $("btnStop").disabled = !d.running;
@@ -513,6 +517,9 @@ async function pollRun() {
     $("runSource").textContent = d ? "The desktop app is open too. A run started there shows here." : "";
     $("runBadge").textContent = label;
     $("runBadge").dataset.state = r.state;
+    $("runCardBadge").textContent = label;
+    $("runCardBadge").dataset.state = r.state;
+    showProgress(r.progress, r.state, r.lora, r.stage);
     $("btnStart").disabled = live;
     $("btnPause").disabled = !r.running;
     $("btnStop").disabled = !live;
@@ -584,12 +591,45 @@ function followLog() {
 }
 
 async function pollStats() {
-  try {
-    const s = await api("/api/stats");
-    const gb = (b) => (b / 2 ** 30).toFixed(1);
-    $("statusBar").textContent = `${s.device_name} · VRAM ${gb(s.vram[0])} / ${gb(s.vram[1])} GB ` +
-      `(peak ${gb(s.vram_peak)}) · RAM ${gb(s.ram[0])} / ${gb(s.ram[1])} GB`;
-  } catch (e) { /* the server restarts */ }
+  let s;
+  try { s = await api("/api/stats"); } catch (e) { return; }     // the server restarts
+  const gb = (b) => (b / 2 ** 30).toFixed(1);
+  const meter = (label, value, frac, warn) => el("div", {class: "meter" + (warn ? " warn" : "")},
+    el("div", {class: "meter-head"}, el("span", {text: label}), el("span", {text: value})),
+    el("div", {class: "meter-bar"}, el("span", {style: `width:${Math.max(0, Math.min(100, frac * 100)).toFixed(1)}%`})));
+  const host = $("statusBar");
+  host.innerHTML = "";
+  host.append(el("div", {class: "gpu-name", text: s.device_name}));
+  if (s.util !== undefined && s.util !== null) host.append(meter("GPU", `${Math.round(s.util)}%` +
+    (s.temp ? ` · ${Math.round(s.temp)}°C` : ""), s.util / 100, s.temp >= 85));
+  host.append(meter("VRAM", `${gb(s.vram[0])} / ${gb(s.vram[1])} GB`, s.vram[1] ? s.vram[0] / s.vram[1] : 0,
+    s.vram[1] && s.vram[0] / s.vram[1] > 0.95));
+  host.append(meter("RAM", `${gb(s.ram[0])} / ${gb(s.ram[1])} GB`, s.ram[1] ? s.ram[0] / s.ram[1] : 0,
+    s.ram[1] && s.ram[0] / s.ram[1] > 0.95));
+}
+
+// the run's figures (the same from a web run and from a desktop run): the bar, the tiles, the sidebar
+function showProgress(p, state, name, extraNote) {
+  const pct = p ? p.percent : (["completed"].includes(state) ? 100 : 0);
+  for (const id of ["runBar", "sideRunBar"]) $(id).style.width = pct.toFixed(1) + "%";
+  for (const id of ["runBar", "sideRunBar"]) $(id).parentElement.dataset.state = state;
+  $("runName").textContent = name || "";
+  $("sideRunName").textContent = name || "No run yet";
+  const tiles = $("runTiles");
+  tiles.innerHTML = "";
+  const tile = (k, v) => v ? tiles.append(el("div", {class: "run-tile"}, el("span", {text: k}), el("b", {text: v}))) : null;
+  if (p) {
+    tile("Epoch", p.epoch ? `${p.epoch} / ${p.total_epochs}` : "");
+    tile("Step", p.total_steps ? `${p.step} / ${p.total_steps}` : "");
+    tile("Speed", p.speed);
+    tile("Loss", p.loss);
+    tile("Time left", p.eta);
+  }
+  const live = ["running", "starting", "pausing"].includes(state);
+  $("sideRunText").textContent = (p && p.note) || extraNote ||
+    (p && live && p.total_steps ? `Epoch ${p.epoch || "?"}/${p.total_epochs || "?"} · ${Math.round(p.percent)}%` +
+      (p.eta ? ` · ${p.eta} left` : "") : "");
+  $("runWhen").textContent = (p && p.note) || "";
 }
 
 async function loadGallery() {
@@ -1094,6 +1134,9 @@ function wire() {
   wired = true;
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
+  // the sidebar's run opens the run card itself (it sits under the Training form)
+  $("sideRun").addEventListener("click", () => setTimeout(() =>
+    document.querySelector(".run-card").scrollIntoView({behavior: "smooth", block: "start"}), 50));
   document.querySelectorAll("[data-close]").forEach((b) =>
     b.addEventListener("click", () => $(b.dataset.close).classList.remove("active")));
   $("familySelect").addEventListener("change", (e) => chooseFamily(e.target.value));
