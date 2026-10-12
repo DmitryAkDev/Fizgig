@@ -60,7 +60,7 @@ Some models are gated: their makers require each user to accept the licence on H
 
 ## Uploading training data
 
-The training folder on the Start tab is a folder on the machine running Fizgig. When your training data is on the computer you're browsing from, use **Upload a training folder** on the Start tab: type a name for the new folder, then drop the files in or choose them. When the upload finishes, the new folder becomes the training folder.
+The training folder on the Start tab is a folder on the machine running Fizgig. When your training data is on the computer you're browsing from, use **Upload a training folder** on the Start tab: drop your folder onto it (or click **Choose a folder…**), and it uploads everything inside, subfolders included, into a new folder with the same name. You can also drop or choose single files, after typing a name for the new folder. When the upload finishes, the new folder becomes the training folder.
 
 It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), caption `.txt` files, ACE-Step's `.json` song details, and `.zip` files, which are unpacked as they arrive. Anything else is left out and listed. Convert other video formats (`.mov`, `.webm`) to `.mp4` first.
 

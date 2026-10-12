@@ -639,6 +639,28 @@ function showTab(name) {
   api("/api/state", {tab: name}).catch(() => {});
 }
 
+// a dropped / chosen folder: every file inside it, subfolders included (each still goes up on its own)
+function collect(entry, out) {
+  if (entry.isFile) return new Promise((res) => entry.file((f) => { out.push(f); res(); }, () => res()));
+  const reader = entry.createReader();
+  return new Promise((res) => {
+    const batch = () => reader.readEntries(async (list) => {          // readEntries returns at most ~100 a call
+      if (!list.length) return res();
+      for (const en of list) await collect(en, out);
+      batch();
+    }, () => res());
+    batch();
+  });
+}
+// skip what no family trains on and the system's own files, so a folder upload doesn't list them as failures
+const UPLOAD_OK = /\.(png|jpe?g|webp|bmp|avif|mp4|wav|mp3|flac|m4a|txt|caption|json|zip)$/i;
+const wanted = (f) => !f.name.startsWith(".") && f.name !== "Thumbs.db" && f.name !== "desktop.ini" && UPLOAD_OK.test(f.name);
+// a dropped folder names the new one, unless a name is typed already
+function nameFromFolder(name) {
+  const box = $("uploadName");
+  if (name && !box.value.trim()) box.value = name.replace(/[^\w .()-]/g, "_");
+}
+
 // one file as the request body, reporting bytes sent (fetch can't report upload progress)
 function sendFile(url, file, onProgress) {
   return new Promise((resolve, reject) => {
@@ -658,7 +680,7 @@ async function uploadFiles(files) {
   const name = $("uploadName").value.trim();
   const say = (t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); };
   if (!name) return say("Type a name for the new folder first.", true);
-  if (!files.length) return;
+  if (!files.length) return say("Nothing to upload: no pictures, clips, songs, captions or zips in there.", true);
   let folder = "", saved = 0;
   const skipped = [], failed = [], replaced = [];
   for (const [i, f] of [...files].entries()) {
@@ -696,11 +718,28 @@ function wire() {
   const folder = $("imageFolder");
   const setFolder = () => { S.imageFolder = folder.value.trim(); refreshStateSoon(); saveStateSoon(); };
   folder.addEventListener("change", setFolder);
-  $("uploadFiles").addEventListener("change", (e) => { uploadFiles(e.target.files); e.target.value = ""; });
+  $("uploadFiles").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
+  $("uploadDir").addEventListener("change", (e) => {
+    const files = [...e.target.files];
+    nameFromFolder(files.length ? (files[0].webkitRelativePath || "").split("/")[0] : "");
+    uploadFiles(files.filter(wanted));
+    e.target.value = "";
+  });
   const drop = $("uploadDrop");
   drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); uploadFiles(e.dataTransfer.files); });
+  drop.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    const entries = [...e.dataTransfer.items].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (!entries.some((en) => en.isDirectory)) return uploadFiles([...e.dataTransfer.files]);
+    const dirs = entries.filter((en) => en.isDirectory);
+    if (dirs.length === 1) nameFromFolder(dirs[0].name);
+    $("uploadStatus").textContent = "Reading the folder…";
+    const files = [];
+    for (const en of entries) await collect(en, files);
+    uploadFiles(files.filter(wanted));
+  });
   api("/api/upload/root").then((d) => {
     $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
       "Uploading again with the same name adds to that folder.";
