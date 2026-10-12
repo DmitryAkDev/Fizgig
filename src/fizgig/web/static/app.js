@@ -2725,6 +2725,9 @@ function studioKind(L, sv) {
   $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
     audio ? "Play any song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
   $("stPlayBoth").style.display = video ? "" : "none";
+  // Hold structure: only for a model whose block map marks the bands (lucky_zones), and on there
+  $("stLuckyHoldBox").style.display = (L.lucky_zones || []).length ? "" : "none";
+  $("stLuckyHold").checked = true;
   $("stSong").style.display = audio ? "" : "none";
   if (!audio) songStop();
   studioAce(L, sv);
@@ -2980,7 +2983,7 @@ function studioRegionDraw() {
 }
 
 // ---- the song player: one full-width waveform of the side being heard, its playhead, the section (the desktop's) ----
-S.song = {side: null, pos: 0, src: {}, gen: {}, peaks: {}, drag: null};
+S.song = {side: null, pos: 0, src: {}, gen: {}, peaks: {}, act: {}, glow: {}, drag: null};
 const SONG_SIDES = {baseline: "stBaseAud", tweaked: "stTweakAud", nolora: "stNolAud"};
 const songPlayer = (side) => $(SONG_SIDES[side]);
 const songHas = (side) => !!S.song.src[side];
@@ -2998,11 +3001,14 @@ function songSpan() {
   const d = songDur(), r = S.st.region;
   return r && $("stSongLoop").checked && r[0] < d ? [r[0], Math.min(r[1], d)] : [0, d];
 }
-function songLoad(side, url, gen) {
+function songLoad(side, url, gen, actUrl) {
   // a new render of one side: its waveform, and - when it's the side being heard - the new version carries on at the
   // same moment (Restart on tweak: a new Tweaked plays from the top)
   if (S.song.src[side] === url) return;
   S.song.src[side] = url;
+  delete S.song.act[side];                          // the block activity of the new render, when the model gives one
+  if (actUrl) fetch(actUrl, {headers: {"X-Fizgig-Token": TOKEN}}).then((r) => r.json())
+    .then((a) => { if (S.song.src[side] === url) { S.song.act[side] = a; songDraw(); } }).catch(() => {});
   const p = songPlayer(side), heard = S.song.side === side, was = heard && songPlaying(), at = songNow();
   fetch(url.replace("/api/studio/image?", "/api/studio/peaks?"), {headers: {"X-Fizgig-Token": TOKEN}})
     .then((r) => r.json()).then((pk) => { if (S.song.src[side] === url) { S.song.peaks[side] = pk; songDraw(); } }).catch(() => {});
@@ -3086,6 +3092,7 @@ function songDraw() {
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
   const now = Math.min(songNow(), d || 0);
   $("stSongTime").textContent = `${fmt(now)} / ${fmt(d || 0)}`;
+  songGlow(side, d ? now / d : 0);
   if (!pk || !d) return;
   const x = Math.round(w * now / d), mid = h / 2, n = pk.pk.length;
   for (let px = 0; px < w; px++) {                  // the peaks (dim) and the loudness (bright); the played part lit
@@ -3118,6 +3125,33 @@ function songDraw() {
   g.fillStyle = accent;                             // grab handles top and bottom: drag them to scrub
   for (const [y0, dy] of [[0, 1], [h, -1]]) { g.beginPath(); g.moveTo(x - 7, y0); g.lineTo(x + 7, y0); g.lineTo(x, y0 + 10 * dy); g.fill(); }
 }
+// block activity (description block_activity): each block's name glows orange with how hard its LoRA pushes at the
+// playhead - playing, paused or scrubbed - on the side heard; scaled to the song's own strongest pushes, a 5-point
+// window so it reads steady; none for a side without a map (No LoRA)
+function songGlow(side, frac) {
+  const act = side && S.song.act[side];
+  if (!act) {
+    if (Object.values(S.song.glow).some(Boolean)) {
+      for (const [id, lvl] of Object.entries(S.song.glow)) if (lvl) songGlowSet(id, 0);
+      S.song.glow = {};
+    }
+    return;
+  }
+  for (const [id, v] of Object.entries(act.blocks)) {
+    const i = Math.floor(Math.min(0.999, Math.max(0, frac)) * v.length), lo = Math.max(0, i - 2), hi = Math.min(v.length, i + 3);
+    let sum = 0;
+    for (let j = lo; j < hi; j++) sum += v[j];
+    const level = Math.round(Math.min(1, sum / Math.max(1, hi - lo) / act.top) * 8);
+    if ((S.song.glow[id] || 0) !== level) songGlowSet(id, level);
+  }
+}
+function songGlowSet(id, level) {
+  S.song.glow[id] = level;
+  const box = document.querySelector(`#stBlocks .st-block[data-id="${CSS.escape(id)}"]`);
+  const lab = box && box._rows && box._rows[0].querySelector(".st-label");
+  if (lab) lab.style.background = level ? `rgba(237, 125, 49, ${(0.85 * level / 8).toFixed(3)})` : "";
+}
+
 function wireSong() {
   const cv = $("stSongBar"), GRAB = 10;
   const xOf = (e) => e.clientX - cv.getBoundingClientRect().left;
@@ -3817,7 +3851,7 @@ function studioBulk(kind) {
     else if (kind === "lucky") {
       if ((S.st.ready && !S.st.primaryBlocks.has(id)) || !b.pe) continue;
       let a = lo, z = hi;
-      for (const zone of L.lucky_zones || []) if (zone[0] && zone[0].includes && zone[0].includes(id)) { a = Math.max(a, zone[1]); z = Math.min(z, zone[2]); }
+      for (const zone of $("stLuckyHold").checked ? L.lucky_zones || [] : []) if (zone[0] && zone[0].includes && zone[0].includes(id)) { a = Math.max(a, zone[1]); z = Math.min(z, zone[2]); }
       b.ps = Math.round((a + Math.random() * (z - a)) * 20) / 20; rolled++;
     }
   }
@@ -3927,7 +3961,7 @@ async function studioPoll() {
       $(aud).style.display = "none";
       $(img).style.display = kind === "video" && has ? "none" : "";
       if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
-      if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown);
+      if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
     const ps = Number($("stPScale").value) || 1;

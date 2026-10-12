@@ -391,6 +391,30 @@ def _audio_inputs(eng, a, seconds):
     return notes
 
 
+def _write_activity(act, path, most=1500):
+    """A song's block activity (description block_activity: {block id: push along the song}) as JSON for the page:
+    each block's curve averaged down to `most` points, and the 98th percentile of every push - the glow's full scale,
+    as the desktop scales it. "" without one."""
+    if not act:
+        return ""
+    import numpy as np
+    blocks = {}
+    for bid, v in act.items():
+        v = np.asarray(v, dtype=np.float32).ravel()
+        if not len(v):
+            continue
+        k = -(-len(v) // most)
+        if k > 1:
+            v = np.pad(v, (0, k * (-(-len(v) // k)) - len(v)), mode="edge").reshape(-1, k).mean(1)
+        blocks[str(bid)] = [round(float(x), 5) for x in v]
+    if not blocks:
+        return ""
+    top = max(1e-6, float(np.percentile(np.concatenate([np.asarray(v) for v in blocks.values()]), 98)))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"top": top, "blocks": blocks}, f)
+    return path
+
+
 def _render_songs(eng, st, c, out, gen):
     """ACE-Step: the baseline and tweaked songs (the length is the Res box, in seconds) as WAVs with their
     waveform pictures."""
@@ -411,6 +435,7 @@ def _render_songs(eng, st, c, out, gen):
         song.picture().save(png)
         write_wav(wav, song.wave, sample_rate=48000)
         paths[name], paths[name + "_media"] = png, wav
+        paths[name + "_act"] = _write_activity(getattr(song, "activity", None), os.path.join(out, f"{name}_{gen}.json"))
     key = (eng.primary_path, st.seed, st.prompt, seconds,
            eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None,
            eng._audio_key() if hasattr(eng, "_audio_key") else None)
@@ -438,7 +463,7 @@ def _tidy(out, gen):
     keep = {os.path.normcase(p) for k in ("nolora_out", "nolora_song") if S.get(k) for p in S[k][1].values() if p}
     try:
         for f in os.listdir(out):
-            m = re.match(r"(baseline|tweaked|nolora)_(\d+)\.(png|mp4|wav)$", f)
+            m = re.match(r"(baseline|tweaked|nolora)_(\d+)\.(png|mp4|wav|json)$", f)
             p = os.path.join(out, f)
             if m and int(m.group(2)) < gen - 1 and os.path.normcase(p) not in keep:
                 os.remove(p)
