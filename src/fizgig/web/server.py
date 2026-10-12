@@ -340,8 +340,17 @@ def samples_zip(folder, name) -> str:
     files = _run_samples(folder, name)
     if not files:
         raise ValueError("This run has no previews.")
-    os.makedirs(os.path.join(BASE_DIR, ".fizgig_web_zips"), exist_ok=True)
-    out = os.path.join(BASE_DIR, ".fizgig_web_zips", re.sub(r"[^\w.-]+", "_", name) + "_previews.zip")
+    import tempfile
+    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    os.makedirs(zdir, exist_ok=True)
+    for old in os.scandir(zdir):                  # one left by a download that never finished, a day on
+        if time.time() - old.stat().st_mtime > 86400:
+            try:
+                os.remove(old.path)
+            except OSError:
+                pass
+    fd, out = tempfile.mkstemp(prefix="previews_", suffix=".zip", dir=zdir)   # each download its own file
+    os.close(fd)
     with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
         for p in files:
             z.write(p, os.path.basename(p))
@@ -717,7 +726,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         self._send(200, data, ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
 
-    def _stream(self, path, attachment=True):
+    def _stream(self, path, attachment=True, filename=None):
         """A file sent in pieces (a fine-tune checkpoint is ~10 GB; it never sits in memory), honouring a byte
         range: a player dragged along a song or clip asks for "Range: bytes=N-" and gets just that (206), and a
         dropped download can carry on where it stopped. attachment: a download (else played in the page)."""
@@ -741,7 +750,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return None
             code = 206
-        name = os.path.basename(path).replace('"', "")
+        name = (filename or os.path.basename(path)).replace('"', "")
         with f:
             f.seek(start)
             self.send_response(code)
@@ -876,9 +885,16 @@ class Handler(BaseHTTPRequestHandler):
             if os.path.abspath(folder) not in output_folders():
                 return self.json({"error": "not an output folder"}, 404)
             try:
-                return self._stream(samples_zip(folder, name))
+                zpath = samples_zip(folder, name)
             except ValueError as e:
                 return self.json({"error": str(e)}, 404)
+            try:
+                return self._stream(zpath, filename=re.sub(r'[\\/:*?"<>|]+', "_", name) + "_previews.zip")
+            finally:
+                try:
+                    os.remove(zpath)             # sent (or abandoned): it was only ever for this download
+                except OSError:
+                    pass
         if path == "/api/download":
             p = (qs.get("path") or [""])[0]
             if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
