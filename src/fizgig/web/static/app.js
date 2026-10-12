@@ -1501,7 +1501,13 @@ const stRemember = debounce(() => {
 
 async function studioOpen() {
   if (!S.st.familiesLoaded) {
-    const r = await api("/api/studio/families");
+    let r;
+    try { r = await api("/api/studio/families"); }
+    catch (e) {                                 // a server started before Studio existed: the page is newer than it
+      $("stStatus").textContent = "This web UI was started before Studio was added: restart it (Preferences > Web UI " +
+        "in the desktop app, or close and reopen the Fizgig window), then reload this page.";
+      return;
+    }
     const sel = $("stFamily");
     sel.innerHTML = "";
     for (const f of r.families) sel.append(el("option", {value: f.key, text: f.name}));
