@@ -8661,7 +8661,7 @@ class LoRATrainerGUI:
             settings_card, text="Overwrite existing caption files", variable=self.overwrite_captions_var,
         ).grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(10, 0))
         tk.Label(settings_card,
-                 text="Untick to caption ONLY images that don't have a .txt yet — e.g. after "
+                 text="Untick to caption ONLY images that don't have a caption file yet — e.g. after "
                       "adding new images or face-cropping, existing captions stay untouched.",
                  font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
                  bg=COLORS["bg_surface"], wraplength=680, justify=tk.LEFT).grid(
@@ -8739,7 +8739,7 @@ class LoRATrainerGUI:
         # Card 4: Find & Replace
         fr_card = self._start_section_card(
             outer, "Find & Replace",
-            "Bulk-edit every `.txt` caption file in the image folder. Preview first to see which files change.",
+            "Bulk-edit every caption file in the image folder (the Training tab's Caption Extension, .txt unless set). Preview first to see which files change.",
         )
         fr_card.grid_columnconfigure(1, weight=1)
 
@@ -8753,7 +8753,7 @@ class LoRATrainerGUI:
 
         fr_buttons = tk.Frame(fr_card, bg=COLORS["bg_surface"])
         fr_buttons.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
-        ttk.Button(fr_buttons, text="Replace in All .txt Files", command=self.find_replace_in_captions).pack(side=tk.LEFT, padx=(0, 8))
+        ttk.Button(fr_buttons, text="Replace in All Captions", command=self.find_replace_in_captions).pack(side=tk.LEFT, padx=(0, 8))
         ttk.Button(fr_buttons, text="Preview Changes", command=self.preview_find_replace).pack(side=tk.LEFT)
 
         # Card 5: Image Preview
@@ -9028,6 +9028,17 @@ class LoRATrainerGUI:
         except OSError:
             return False
 
+    def _caption_ext(self) -> str:
+        """The caption files' extension: Training > Other Options > Caption Extension (.txt, or e.g. .caption for a
+        kohya-style dataset). The Captions tab writes, reads and edits these, so it matches what training reads."""
+        try:
+            ext = str(self.dataset_caption_ext_var.get() or "").strip()
+        except (AttributeError, tk.TclError):
+            ext = ""
+        if ext and not ext.startswith("."):
+            ext = "." + ext
+        return ext if re.fullmatch(r"\.[A-Za-z0-9_]{1,12}", ext or "") else ".txt"
+
     def get_caption_image_files(self):
         """Get list of image files in caption folder"""
         folder = self.image_folder_var.get()
@@ -9153,7 +9164,7 @@ class LoRATrainerGUI:
                       foreground=COLORS["text_muted"]).pack()
 
         # Load and display caption if exists — wrapped to the cell's usable width
-        caption_path = os.path.splitext(img_path)[0] + ".txt"
+        caption_path = os.path.splitext(img_path)[0] + self._caption_ext()
         if os.path.exists(caption_path):
             try:
                 with open(caption_path, 'r', encoding='utf-8') as f:
@@ -9175,7 +9186,7 @@ class LoRATrainerGUI:
         dest_dir = os.path.join(folder, "removed")
         try:
             os.makedirs(dest_dir, exist_ok=True)
-            for p in (img_path, os.path.splitext(img_path)[0] + ".txt"):
+            for p in (img_path, os.path.splitext(img_path)[0] + self._caption_ext()):
                 if not os.path.exists(p):
                     continue
                 dest = os.path.join(dest_dir, os.path.basename(p))
@@ -9316,7 +9327,7 @@ class LoRATrainerGUI:
         caption_text.pack(padx=10, pady=5, fill=tk.X)
 
         def _cap_path():
-            return os.path.splitext(state["path"])[0] + ".txt"
+            return os.path.splitext(state["path"])[0] + self._caption_ext()
 
         def _load(path):
             state["path"] = path
@@ -9889,6 +9900,7 @@ class LoRATrainerGUI:
             "list_file": list_file,
             "max_new_tokens": max_tokens,
             "trigger": trigger,
+            "caption_ext": self._caption_ext(),
             "stop_file": stop_file,
         }
         if self._is_qwen_captioner():
@@ -10312,7 +10324,9 @@ class LoRATrainerGUI:
         import glob
         # glob.escape: a dataset folder containing [brackets] is a glob character class,
         # so an unescaped pattern silently matches nothing.
-        files = sorted(glob.glob(os.path.join(glob.escape(folder), "*.txt")))
+        _ext = self._caption_ext()
+        files = sorted(f for f in glob.glob(os.path.join(glob.escape(folder), "*" + _ext))
+                       if not f.lower().endswith(".lyrics.txt"))      # a song's lyrics are not a caption
         if not files:
             self.master.after(0, lambda: self.update_caption_log(f"No .txt files in {folder}\n"))
             return
@@ -10425,7 +10439,7 @@ class LoRATrainerGUI:
 
         overwrite = self.overwrite_captions_var.get()
         if not overwrite:
-            images = [img for img in images if not os.path.exists(os.path.splitext(img)[0] + ".txt")]
+            images = [img for img in images if not os.path.exists(os.path.splitext(img)[0] + self._caption_ext())]
             if not images:
                 messagebox.showinfo("Info", "All images already have captions. Enable 'Overwrite' to regenerate.")
                 return
@@ -10528,7 +10542,8 @@ class LoRATrainerGUI:
             return []
 
         results = []
-        txt_files = glob.glob(os.path.join(glob.escape(folder), "*.txt"))
+        txt_files = [f for f in glob.glob(os.path.join(glob.escape(folder), "*" + self._caption_ext()))
+                     if not f.lower().endswith(".lyrics.txt")]          # a song's lyrics are not a caption
 
         # Compile case-insensitive pattern
         pattern = re.compile(re.escape(find_text), re.IGNORECASE)
@@ -10645,7 +10660,7 @@ class LoRATrainerGUI:
         self.caption_log.delete(1.0, tk.END)
         written = skipped = 0
         for name in songs:
-            path = os.path.join(folder, os.path.splitext(name)[0] + ".txt")
+            path = os.path.join(folder, os.path.splitext(name)[0] + self._caption_ext())
             if os.path.exists(path) and not overwrite:
                 self.caption_log.insert(tk.END, f"⊘ Skipped (has a caption): {name}\n")
                 skipped += 1
@@ -10706,7 +10721,7 @@ class LoRATrainerGUI:
                 continue
 
             # Create caption file path
-            caption_path = os.path.splitext(filepath)[0] + ".txt"
+            caption_path = os.path.splitext(filepath)[0] + self._caption_ext()
 
             try:
                 if os.path.exists(caption_path) and not overwrite:

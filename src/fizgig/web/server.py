@@ -1321,23 +1321,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(captions.ai_captions(
                     prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
-                    bool(b.get("overwrite")), clips, only=only or None, photos=photos))
+                    bool(b.get("overwrite")), clips, only=only or None, photos=photos,
+                    ext=captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/static":
                 _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
-                                                          bool(b.get("overwrite")), clips, photos, voice))
+                                                          bool(b.get("overwrite")), clips, photos, voice,
+                                                          captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/songs":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.song_captions(folder, str(b.get("trigger") or ""),
-                                                        str(b.get("words") or ""), bool(b.get("overwrite"))))
+                                                        str(b.get("words") or ""), bool(b.get("overwrite")),
+                                                        captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/replace":
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.find_replace(folder, str(b.get("find") or ""), str(b.get("replace") or ""),
-                                                       bool(b.get("apply"))))
+                                                       bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/translate":
                 prefs, folder, *_ = _caption_args(b)
                 _caption_gpu_check(1.0)
-                return self.json(captions.translate(prefs, folder, bool(b.get("skip_existing"))))
+                return self.json(captions.translate(prefs, folder, bool(b.get("skip_existing")),
+                                                    captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/stop":
                 return self.json({"ok": captions.stop()})
             if path == "/api/captions/unload":

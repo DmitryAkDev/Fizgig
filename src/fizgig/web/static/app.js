@@ -852,9 +852,15 @@ async function saveInstr(text) {
   $("capInstrStatus").textContent = "Saved.";
 }
 
+const capExt = () => {                    // Training > Other Options > Caption Extension (.txt unless set)
+  let e = String(S.values.DATASET_CAPTION_EXT || ".txt").trim();
+  if (e && !e.startsWith(".")) e = "." + e;
+  return /^\.[A-Za-z0-9_]{1,12}$/.test(e) ? e : ".txt";
+};
+
 function capJobBody(extra = {}) {
   const t = qwenOn() && qwenTask();
-  return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value,
+  return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value, ext: capExt(),
     instruction: t ? t.instruction : "", max_tokens: Number($("capTokens").value) || 120,
     trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
 }
@@ -898,6 +904,7 @@ async function loadCaptions() {
     S.cap.optsFamily = S.family;
   }
   pollCaptions();
+  $("captionExt").value = capExt();         // the files this tab writes and reads are the ones training reads
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}`);
@@ -950,7 +957,7 @@ async function findReplace(apply) {
   const host = $("frChanges");
   try {
     const r = await api("/api/captions/replace", {family: S.family, folder: S.imageFolder, find: $("frFind").value,
-      replace: $("frReplace").value, apply});
+      replace: $("frReplace").value, apply, ext: capExt()});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Replaced in ${r.changes.length} captions.` :
       `${r.changes.length} captions would change:`) : "No caption contains that.";

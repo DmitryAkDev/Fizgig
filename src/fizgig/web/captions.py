@@ -34,6 +34,14 @@ FLORENCE_TASKS = ["<CAPTION>", "<DETAILED_CAPTION>", "<MORE_DETAILED_CAPTION>"]
 QWEN_MODEL = "Qwen3-VL 4B (Krea 2 text encoder)"
 CUSTOM_TASK = "Custom…"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+
+
+def caption_ext(ext) -> str:
+    """The caption files' extension (Training > Caption Extension): .txt unless a plain one like .caption is set."""
+    ext = str(ext or "").strip()
+    if ext and not ext.startswith("."):
+        ext = "." + ext
+    return ext if re.fullmatch(r"\.[A-Za-z0-9_]{1,12}", ext) else ".txt"
 AUDIO_EXTS = {".wav", ".mp3", ".flac", ".m4a"}
 
 _lock = threading.Lock()
@@ -118,14 +126,14 @@ def media_files(folder, clips, photos=True, audio=False):
         return []
 
 
-def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False):
+def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False, ext=".txt"):
     """The trigger word as every file's caption (only files without one unless overwrite); a family that trains on
     recordings gets them too."""
     if not trigger.strip():
         raise ValueError("Type a trigger word first.")
     made = skipped = 0
     for p in media_files(folder, clips, photos, audio=voice):
-        cap = os.path.splitext(p)[0] + ".txt"
+        cap = os.path.splitext(p)[0] + ext
         if os.path.exists(cap) and not overwrite:
             skipped += 1
             continue
@@ -136,7 +144,7 @@ def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False)
     return {"written": made, "skipped": skipped}
 
 
-def song_captions(folder, trigger, words, overwrite):
+def song_captions(folder, trigger, words, overwrite, ext=".txt"):
     """"<trigger>, <common words>" beside every song (as the desktop's Caption every song)."""
     caption = ", ".join(p for p in (trigger.strip().rstrip(","), " ".join(words.split()).strip(", ")) if p)
     if not caption:
@@ -149,7 +157,7 @@ def song_captions(folder, trigger, words, overwrite):
         raise ValueError("No songs (wav, mp3, flac, m4a) in the training folder.")
     made = skipped = 0
     for n in songs:
-        cap = os.path.join(folder, os.path.splitext(n)[0] + ".txt")
+        cap = os.path.join(folder, os.path.splitext(n)[0] + ext)
         if os.path.exists(cap) and not overwrite:
             skipped += 1
             continue
@@ -160,13 +168,13 @@ def song_captions(folder, trigger, words, overwrite):
     return {"written": made, "skipped": skipped, "caption": caption}
 
 
-def find_replace(folder, find, replace, apply):
+def find_replace(folder, find, replace, apply, ext=".txt"):
     """Case-insensitive find & replace across the folder's .txt captions: the changes, and (apply) written."""
     if not find:
         raise ValueError("Type the text to find first.")
     pat = re.compile(re.escape(find), re.IGNORECASE)
     changes = []
-    for fp in sorted(glob.glob(os.path.join(glob.escape(folder), "*.txt"))):
+    for fp in sorted(glob.glob(os.path.join(glob.escape(folder), "*" + ext))):
         if fp.lower().endswith(".lyrics.txt"):          # a song's lyrics are the words sung, not a caption
             continue
         try:
@@ -250,7 +258,7 @@ def _popen(cmd, prefs, stdin=False):
 
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
-                only=None, photos=True):
+                only=None, photos=True, ext=".txt"):
     """Caption the folder's pictures (and clips) with Florence-2 or Qwen3-VL, or just `only` (a re-caption). The
     worker loads once and stays loaded for the next batch."""
     if _busy():
@@ -263,7 +271,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
                          "or Caption every song." if not photos and not clips else
                          "No pictures or clips in the training folder.")
     if not only and not overwrite:
-        images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ".txt")]
+        images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ext)]
     if not images:
         raise ValueError("Every file already has a caption. Tick Overwrite to caption them again."
                          if not only else "That file isn't there any more.")
@@ -294,7 +302,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     except OSError:
         pass
     job = {"list_file": list_file, "max_new_tokens": int(max_tokens or 120), "trigger": trigger.strip(),
-           "stop_file": stop_file}
+           "stop_file": stop_file, "caption_ext": ext}
     if model == QWEN_MODEL:
         instr = os.path.join(JOB_DIR, "instruction.txt")
         with open(instr, "w", encoding="utf-8") as f:
@@ -329,7 +337,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     return {"files": len(images)}
 
 
-def translate(prefs, folder, skip_existing):
+def translate(prefs, folder, skip_existing, ext=".txt"):
     """Add a Chinese translation to every caption (fizgig.scripts.translate_captions, its own process)."""
     if _busy():
         raise ValueError("A captioning job is already running. Stop it first.")
@@ -339,7 +347,7 @@ def translate(prefs, folder, skip_existing):
         os.remove(stop_file)
     except OSError:
         pass
-    cmd = [sys.executable, "-m", "fizgig.scripts.translate_captions", folder, "--stop_file", stop_file]
+    cmd = [sys.executable, "-m", "fizgig.scripts.translate_captions", folder, "--stop_file", stop_file, "--ext", ext]
     if skip_existing:
         cmd.append("--skip_existing")
     proc = _popen(cmd, prefs)

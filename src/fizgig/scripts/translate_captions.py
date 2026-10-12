@@ -52,7 +52,7 @@ def main():
     p = argparse.ArgumentParser(description="Add a Chinese translation to every caption in a folder")
     p.add_argument("folder")
     p.add_argument("--skip_existing", action="store_true", help="Leave captions that already contain Chinese")
-    p.add_argument("--ext", default=".txt")
+    p.add_argument("--ext", default=".txt", help="The caption files' extension (.txt, .caption)")
     p.add_argument("--stop_file", default="")
     a = p.parse_args()
     # captions only: a song's <name>.lyrics.txt are the words sung, not a description to translate
