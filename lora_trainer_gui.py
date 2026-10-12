@@ -10971,7 +10971,7 @@ class LoRATrainerGUI:
         self.sample_steps_label = ttk.Label(prompt_card, text="Steps:")
         self.sample_steps_label.grid(row=4, column=0, sticky=tk.W, padx=(0, 10), pady=4)
         self.sample_steps_var = tk.StringVar(value=str(self.settings["SAMPLE_STEPS"]))
-        _steps_frame = tk.Frame(prompt_card, bg=COLORS["bg_surface"])
+        _steps_frame = self._sample_steps_frame = tk.Frame(prompt_card, bg=COLORS["bg_surface"])
         _steps_frame.grid(row=4, column=1, columnspan=2, sticky=tk.W, pady=4)
         self.sample_steps_entry = ttk.Entry(_steps_frame, textvariable=self.sample_steps_var, width=10)
         self.sample_steps_entry.pack(side=tk.LEFT)
@@ -11075,6 +11075,7 @@ class LoRATrainerGUI:
         self.turbo_strength_entry.insert(0, str(self.settings.get("FAMILY_TURBO_PACE", 75)))
         self.turbo_strength_entry.pack(side=tk.LEFT)
         ttk.Label(self._turbo_pace_row, text="% strength").pack(side=tk.LEFT, padx=(6, 0))
+        self.turbo_strength_entry.bind("<KeyRelease>", self._refresh_turbo_pace_steps, add="+")
         self._turbo_pace_hint = tk.Label(prompt_card,
                  text="Used when the Turbo LoRA is set in Preferences: previews render in "
                       "these few steps with the Turbo at this strength on top of your "
@@ -11625,9 +11626,27 @@ class LoRATrainerGUI:
                 if _w is None:
                     continue
                 (_w.grid if _mm else _w.grid_remove)()
+            self._refresh_turbo_pace_steps()
 
         # Update sample output path label
         self.update_sample_output_label()
+
+    def _refresh_turbo_pace_steps(self, *_):
+        """H3's previews with its Turbo LoRA (file set, strength above 0) render at the Turbo row's own steps, so the
+        plain-model Steps row is hidden then; it shows again with the Turbo off or its file not set."""
+        try:
+            desc = self._family_desc()
+            sp = desc.preview_speed() if desc is not None and desc.samples_turbo_pace else None
+            path = self._krea2_pref(sp.pref_key) if sp is not None and sp.pref_key else ""
+            try:
+                pace = float(self.turbo_strength_entry.get().strip() or 0)
+            except ValueError:
+                pace = 0.0
+            turbo = bool(path and os.path.exists(path) and pace > 0)
+            for _w in (self.sample_steps_label, self._sample_steps_frame):
+                (_w.grid_remove if turbo else _w.grid)()
+        except (AttributeError, tk.TclError):
+            pass
 
     def _apply_samples_minimax(self, is_minimax):
         """Reword the Samples tab for MiniMax H3, and hide what belongs to the other families.

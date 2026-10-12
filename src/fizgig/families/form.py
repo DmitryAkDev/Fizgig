@@ -391,6 +391,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
     hidden, disabled, notes = set(), set(), {}
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
+    if speed_file and desc.samples_turbo_pace:     # H3 with its Turbo on renders at the Turbo row's steps
+        try:
+            pace = float(str(values.get("FAMILY_TURBO_PACE", "") or round(100 * desc.preview_speed_defaults()[1])))
+        except ValueError:
+            pace = 0.0
+        if pace > 0:
+            hidden.add("SAMPLE_STEPS")
     if not captioner:
         hidden |= {"KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
     kind = _kind(desc, values)
