@@ -1,4 +1,4 @@
-"""RefMod Studio maths: what the community node pack's Load H3 RefMods / Axis / Apply /
+"""RefMod Toolkit maths: what the community node pack's Load H3 RefMods / Axis / Apply /
 Step Curve nodes do to a reference latent between the file and the DiT, as Fizgig code.
 
 Every formula here is the pack's (verified against its core.py / nodes.py, 15 Sep 2026, and

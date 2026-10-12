@@ -1,4 +1,4 @@
-"""RefMod Studio's file writes for the web UI, in a process of their own (the server stays torch-free): a JSON job on
+"""RefMod Toolkit's file writes for the web UI, in a process of their own (the server stays torch-free): a JSON job on
 stdin, one "@@R {json}" line out.
 
   bake     {meta, strength, retention, curve, copies, out}  one mod with its settings folded in (the desktop's Bake)

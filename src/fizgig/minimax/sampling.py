@@ -179,7 +179,7 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
     """Denoise one image OR clip and return its LATENT [1, 24, T, H/16, W/16].
 
     ref_schedule(step, n_steps, sigma) -> list of reference latents for THAT step replaces
-    `ref_latents` at the top of every evaluation (the RefMod Studio's step curve: the same
+    `ref_latents` at the top of every evaluation (the RefMod Toolkit's step curve: the same
     references, re-mixed toward their blurred copies as the denoise progresses).
 
     num_frames is PIXEL frames on the model's 17n+5 grid (5, 22, ..., 124, 141); off-grid

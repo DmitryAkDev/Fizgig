@@ -151,7 +151,7 @@ class VideoCheckpoint:
 
 @dataclass(frozen=True)
 class VideoWorkbench:
-    """A video family's workbench controls (Studio's clip settings, RefMod Studio's): the choices each picker offers,
+    """A video family's workbench controls (Studio's clip settings, RefMod Toolkit's): the choices each picker offers,
     the first of each the default unless a default is named."""
     lengths: tuple = ()               # (label, frames)
     sizes: tuple = ()                 # edge lengths for width and height
@@ -160,7 +160,7 @@ class VideoWorkbench:
     scales: tuple = ()                # (label, factor): the dial canvas
     checkpoints: tuple = ()           # VideoCheckpoint, Studio's picker
     bases: tuple = ()                 # (label, the engine's base_mode)
-    refmod_checkpoints: tuple = ()    # RefMod Studio's picker (its saved setups' words)
+    refmod_checkpoints: tuple = ()    # RefMod Toolkit's picker (its saved setups' words)
     refmod_lengths: tuple = ()        # (label, frames)
     refmod_size: tuple = (640, 768)
     sweep_frames: int = 22            # a RefMod sweep's clips: a still doesn't show what a RefMod does
@@ -487,7 +487,7 @@ class FamilyDescription:
     helper_files: tuple = ()
 
     # workbench tools that support this family ("repair", "explorer", "profiler", "extract", "royale", and "refmod":
-    # RefMod Studio, the engine's render_refmod / reference_items); the generic WorkbenchEngine drives them all
+    # RefMod Toolkit, the engine's render_refmod / reference_items); the generic WorkbenchEngine drives them all
     workbench: tuple = ()
     # the workbench engine class ("module:Class") when the generic engines do not fit (a family with clips gets the
     # generic video engine, families/video_workbench.py). H3 brings its own for keyframes, references and RefMod on

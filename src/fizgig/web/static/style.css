@@ -1764,7 +1764,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 #tab-royale select.st-small-select { width: auto !important; min-width: 84px; flex: none; }
 #tab-royale .ry-scrub { width: 100%; margin: 6px 0 4px; box-sizing: border-box; }
 
-/* RefMod Studio */
+/* RefMod Toolkit */
 #tab-refmod .field-row > .field-label { min-width: 150px; }
 #tab-refmod select.st-small-select { width: auto !important; min-width: 0; }
 #tab-refmod .rm-hint { padding-left: 158px; margin: -2px 0 8px; }

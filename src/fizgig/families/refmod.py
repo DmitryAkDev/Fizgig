@@ -26,7 +26,7 @@ REFMOD_REFS_OPTIONS = ["4", "8", "16", "all"]
 # the identity choice) or every latent frame as motion (the node pack's video reference).
 REFMOD_CLIPS_OPTIONS = ["as their sharpest still", "as motion (all their frames)"]
 # The pack's concept types (its Extract node's list). Written into the file with the description:
-# together they are the mod's HINT — what RefMod Studio's '+ mod hints' and the pack's Loader
+# together they are the mod's HINT — what RefMod Toolkit's '+ mod hints' and the pack's Loader
 # emit into the prompt ("identity: a ginger woman with messy hair").
 REFMOD_CONCEPT_OPTIONS = ["identity", "style", "pose_motion", "clothing", "background", "generic"]
 # Token cap (16 Sep 2026): the pack's extractor rule for CLIPS AS MOTION only — near-duplicate
@@ -331,7 +331,7 @@ def maker_command(python, repo_dir, st, dit, ref_dit, audio_vae, ref_dirs=(), ca
             elif console is not None:
                 console(f"[refmod] caching is off and {rd} does not exist — the references come from the dataset "
                         f"caches (0.25 MP) this run; tick Enable Cache for a Target MP reference pass\n")
-    # No previews (Peter, 16 Sep 2026): a mod is judged in RefMod Studio (the script keeps its --sample_* flags for
+    # No previews (Peter, 16 Sep 2026): a mod is judged in RefMod Toolkit (the script keeps its --sample_* flags for
     # command-line sweeps).
     return cmd
 

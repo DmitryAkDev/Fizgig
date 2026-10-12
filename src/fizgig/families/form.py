@@ -595,7 +595,7 @@ def refmod_form(h3, ref_dit_set=False):
                  rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_CLIPS"]),
             _row("MINIMAX_REFMOD_DESC", "Description (mod hint)",
                  hint="A few words saying what the mod is — 'a ginger woman with messy hair', 'a 1970s film look'. "
-                      "Stored in the file; RefMod Studio's '+ mod hints' and the pack's loader put 'concept: "
+                      "Stored in the file; RefMod Toolkit's '+ mod hints' and the pack's loader put 'concept: "
                       "description' into the prompt so the model knows what it is looking at.", default=""),
             _row("MINIMAX_REFMOD_CONCEPT", "Concept", "choice",
                  "What the mod is, in the pack's terms: identity (a person), style (a look), pose_motion (a dance, a "
@@ -613,7 +613,7 @@ def refmod_form(h3, ref_dit_set=False):
                  "beside the visual mod (the pack's bundle; needs the current pack). Two files writes it as "
                  "<name>_audio.safetensors, which any version reads. A clip Gizmo marked mute (_mute in its name) "
                  "lends no sound, the same rule as H3 training. A plain encode, no training. Needs the Audio VAE "
-                 "path in Preferences. RefMod Studio renders visual mods only; audio mods play in ComfyUI.",
+                 "path in Preferences. RefMod Toolkit renders visual mods only; audio mods play in ComfyUI.",
                  rm.REFMOD_AUDIO_OPTIONS, rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_AUDIO"]),
             _row("MINIMAX_REFMOD_AUDIO_CONCEPT", "Kind", "choice",
                  "What the sound is, in the pack's terms: voice, singing, music_style, sound_fx, ambience. Stored in "
@@ -623,11 +623,11 @@ def refmod_form(h3, ref_dit_set=False):
                  rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_AUDIO_SECONDS"]),
             _row("_refmod_note", "Steps 0 writes the plain encode (no captions needed). Steps above 0 optimise the mod "
                  "against H3: level on shots like your photos, well ahead on looks they never showed, cleaner skin in "
-                 "both. RefMods make no previews: judge a mod in the desktop app's RefMod Studio.", "note"),
+                 "both. RefMods make no previews: judge a mod in RefMod Toolkit.", "note"),
             _row("ENABLE_CACHE", "Prepare the cache before making the mod", "check", default=True)]},
         {"id": "samples_none", "title": "Previews", "tab": "samples", "rows": [_row(
             "_samples_note", "RefMods have no previews, so this tab isn't used. Judge a mod in the desktop app's "
-            "RefMod Studio once it is made.", "note")]},
+            "RefMod Toolkit once it is made.", "note")]},
     ]
     return {"sections": sections,
             "presets": [{"name": n, "values": dict(v)} for n, v in rm.REFMOD_BUILT_IN_PRESETS.items()]}

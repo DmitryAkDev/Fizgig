@@ -4125,7 +4125,7 @@ function wireCaptions() {
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
 }
 
-// ---- RefMod Studio (the desktop tab's): mods, how they apply, a render beside the same seed without them ----------
+// ---- RefMod Toolkit (the desktop tab's): mods, how they apply, a render beside the same seed without them ----------
 S.rm = {wired: false, info: null, mods: {}, rows: [], calc: {}, seen: {}, left: null, lastT: 0, polling: false};
 const RM_KEY = "fizgig.refmod";
 const rmSaved = () => { try { return JSON.parse(localStorage.getItem(RM_KEY) || "null"); } catch (e) { return null; } };
@@ -4461,7 +4461,7 @@ async function refmodOpen() {
     S.rm.wired = true;
     try { S.rm.info = await api("/api/refmod/info"); } catch (e) { $("rmStatus").textContent = e.message; return; }
     const I = S.rm.info;
-    if (!I.families.length) { $("rmStatus").textContent = "No model offers RefMod Studio."; $("rmRender").disabled = $("rmSweep").disabled = true; return; }
+    if (!I.families.length) { $("rmStatus").textContent = "No model offers RefMod Toolkit."; $("rmRender").disabled = $("rmSweep").disabled = true; return; }
     rmFill("rmFamily", I.families.map((f) => f.key), I.families.map((f) => f.name));
     $("rmFamRow").style.display = I.families.length > 1 ? "" : "none";
     rmFill("rmModel", I.models); rmFill("rmBase", I.bases);

@@ -582,7 +582,7 @@ def make_audio_refmod(image_dirs, out_path_no_ext: str, *, name: str, audio_vae_
                             extra={"ss_refmod_audio_seconds": f"{max_seconds:g}"})
     logger.info(f"[refmod] audio mod saved {out} ({audio_token_count(latent)} tokens, "
                 f"{int(latent.shape[-1])} latent frames) — a second file for the same loader slot "
-                f"(components: Audio) or its own; plays in ComfyUI, RefMod Studio renders visual mods only")
+                f"(components: Audio) or its own; plays in ComfyUI, RefMod Toolkit renders visual mods only")
     return out
 
 

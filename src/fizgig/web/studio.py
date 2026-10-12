@@ -14,7 +14,7 @@ import time
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 OUT_DIR = os.path.join(BASE_DIR, ".fizgig_web_studio")
-RM_DIR = os.path.join(OUT_DIR, "refmod")      # RefMod Studio's renders: its history outlives a worker restart
+RM_DIR = os.path.join(OUT_DIR, "refmod")      # RefMod Toolkit's renders: its history outlives a worker restart
 EV = "@@EV "
 
 _lock = threading.Lock()
@@ -45,7 +45,7 @@ _TG = [0]                                    # one generation counter across the
 _R = {"state": "idle", "gen": 0, "items": [], "total": 0, "status": "", "error": "", "progress": None, "meta": {}}
 
 
-# RefMod Studio on the same worker: the With-mods render, the comparison (kept while its settings hold), the sweep's
+# RefMod Toolkit on the same worker: the With-mods render, the comparison (kept while its settings hold), the sweep's
 # chips and the last renders (history)
 _M = {"state": "idle", "gen": 0, "kind": "", "status": "", "error": "", "progress": None, "early": "", "tweaked": None,
       "baseline": None, "baseline_key": None, "pending_key": None, "chips": [], "history": [], "label": "", "sweep": ""}
@@ -502,7 +502,7 @@ def travel_render(mode, desc, plan, settings, params):
 
 
 def refmod_render(desc, plan, canvas, kind, jobs, lora, compare, base_key, label=""):
-    """RefMod Studio's render (kind "render": With mods, then the comparison unless the kept one still matches
+    """RefMod Toolkit's render (kind "render": With mods, then the comparison unless the kept one still matches
     base_key) or sweep, on the worker; a Studio session there ends, as for Royale."""
     with _lock:
         if _M["state"] == "rendering" or _R["state"] == "rendering" or any(t["state"] == "rendering" for t in _T.values()):
@@ -519,7 +519,7 @@ def refmod_render(desc, plan, canvas, kind, jobs, lora, compare, base_key, label
             _M.update(chips=[], sweep=label)
         if _S["state"] == "ready":
             _S.update(state="idle", primary="", donor="", rendering=False, pending=None, progress=None,
-                      status="RefMod Studio took the GPU worker - press Start to load Studio again.")
+                      status="RefMod Toolkit took the GPU worker - press Start to load Studio again.")
         family = _S.get("family")
         keep = {_M["baseline"]["gen"]} if _M["baseline"] and not need_base else set()
         keep |= {h["gen"] for h in _M["history"]} | ({_M["chips"][0]["gen"]} if _M["chips"] else set())

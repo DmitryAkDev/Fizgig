@@ -409,7 +409,7 @@ def _studio_post(what, b):
 
 
 def _rm_metas(b):
-    """RefMod Studio: the folder's mods (and the LoRA's, a ReFLoRA's) by their picker names."""
+    """RefMod Toolkit: the folder's mods (and the LoRA's, a ReFLoRA's) by their picker names."""
     from fizgig.web import refmod_studio as rms
     return {m["name"]: m for m in rms.scan(str(b.get("folder") or "").strip(), str(b.get("lora") or "").strip())["mods"]}
 
@@ -419,7 +419,7 @@ def _rm_family(b):
     fams = {d.key: d for d in rms.families()}
     desc = fams.get(str(b.get("family") or "")) or next(iter(fams.values()), None)
     if desc is None:
-        raise ValueError("No model offers RefMod Studio.")
+        raise ValueError("No model offers RefMod Toolkit.")
     return desc
 
 
@@ -434,7 +434,7 @@ def _rm_plan(b):
 
 
 def _refmod_post(what, b):
-    """RefMod Studio's actions (fizgig/web/refmod_studio.py; renders on the Studio worker)."""
+    """RefMod Toolkit's actions (fizgig/web/refmod_studio.py; renders on the Studio worker)."""
     from fizgig.web import refmod_studio as rms
     st = b.get("state") or {}
     if what == "calc":                       # the tokens readout, reference map, ComfyUI readout, prompt hints
@@ -449,7 +449,7 @@ def _refmod_post(what, b):
                 "readout": j["readout"], "hints": rms.prompt_hints(st.get("rows"), metas), "describe": j["describe"]}
     if what in ("render", "sweep"):
         if _gpu_training():
-            raise ValueError("A training run is using the GPU. RefMod Studio can render when it finishes.")
+            raise ValueError("A training run is using the GPU. RefMod Toolkit can render when it finishes.")
         from fizgig.web import tools
         if tools.holding_gpu():
             raise ValueError("The Profiler is rendering on the GPU - wait for it, or Stop it.")
@@ -1690,7 +1690,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(studio.layout(desc, load_prefs(), pref_path, samples=_studio_samples(desc)))
         if path == "/api/studio/status":
             return self.json(studio.status())
-        if path == "/api/refmod/info":              # RefMod Studio: its choices, the desktop's last setup, presets
+        if path == "/api/refmod/info":              # RefMod Toolkit: its choices, the desktop's last setup, presets
             from fizgig.web import refmod_studio as rms
             fams = rms.families()
             want = (qs.get("family") or [""])[0]

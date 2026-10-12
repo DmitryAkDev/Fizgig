@@ -5,7 +5,7 @@ thread, so a "cancel" is heard while it renders.
 
 Commands (cmd=...): load {family, plan, primary, donor, turbo, preview_settings}, donor {path} / unload_donor,
 settings {turbo, preview_settings}, render {gen, state, out_dir}, cancel, save {out, state, include_donor}, reset, quit;
-royale / royale_travel (LoRA Royale), refmod (RefMod Studio).
+royale / royale_travel (LoRA Royale), refmod (RefMod Toolkit).
 Events (ev=...): status {text}, step {done, total}, loaded {...}, rendered {gen, baseline, tweaked},
 aborted {gen}, error {where, msg}, saved {summary}, reset, donor {...}.
 """
@@ -474,7 +474,7 @@ def _plan_for(desc, plan):
 
 
 def _engine_for(c, status_ev="royale_status"):
-    """LoRA Royale's (and RefMod Studio's) engine: the family's preview model loaded with this plan (the one already
+    """LoRA Royale's (and RefMod Toolkit's) engine: the family's preview model loaded with this plan (the one already
     here when it matches - a Studio session's or the last render's), no LoRA chosen yet. Under the engine lock."""
     from fizgig.families.registry import get as get_family
     desc = get_family(c["family"])
@@ -762,7 +762,7 @@ def _rm_sync_lora(eng, path):
 
 
 def cmd_refmod(c):
-    """RefMod Studio: kind "render" = With mods, then (need_base) the comparison render; kind "sweep" = one short clip
+    """RefMod Toolkit: kind "render" = With mods, then (need_base) the comparison render; kind "sweep" = one short clip
     per job. Each lands as a PNG (+ MP4 for a clip) and an rm_item event."""
     gen, out, kind = c["gen"], c["out_dir"], c.get("kind", "render")
     os.makedirs(out, exist_ok=True)

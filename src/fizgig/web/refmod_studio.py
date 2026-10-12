@@ -1,4 +1,4 @@
-"""The web UI's RefMod Studio (the desktop tab's): try RefMods and ReFLoRAs on MiniMax H3 before ComfyUI - a still or a
+"""The web UI's RefMod Toolkit (the desktop tab's): try RefMods and ReFLoRAs on MiniMax H3 before ComfyUI - a still or a
 short clip with them and the same seed without them, side by side. The renders run on the GPU worker
 (fizgig.web.studio refmod_render); everything here is CPU work in the server, without torch - the folder scan and each
 mod's header (fizgig.minimax.refmod_meta), the job the worker renders, the ComfyUI readout, the curve presets and
@@ -344,7 +344,7 @@ def setup_load(name):
     with open(os.path.join(PRESETS_DIR, _safe(name) + ".json"), encoding="utf-8") as f:
         d = json.load(f)
     if not isinstance(d, dict):
-        raise ValueError("Not a RefMod Studio setup.")
+        raise ValueError("Not a RefMod Toolkit setup.")
     return d
 
 

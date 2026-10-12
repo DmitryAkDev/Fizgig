@@ -768,7 +768,7 @@ class H3RepairEngine(ClipContract):
 
     @_locked
     def unload_primary(self) -> None:
-        """Take the primary out without a full reset (RefMod Studio changing its LoRA): switched off for good,
+        """Take the primary out without a full reset (RefMod Toolkit changing its LoRA): switched off for good,
         like unload_donor, and its AdaLN rows dropped."""
         if self.primary_network is not None:
             self.primary_network.set_enabled(False)
@@ -1342,7 +1342,7 @@ class H3RepairEngine(ClipContract):
         ref_latents: bare reference latents ([1,24,T,h,w] each — RefMods) riding as condition
         rows with the prompt encoded WITHOUT pictures (no vision side, no token tags), what
         refmod.render_previews does; ref_schedule(step, n, sigma) -> that step's list (the
-        RefMod Studio's step curve). Either one turns the pass-1 resume off."""
+        RefMod Toolkit's step curve). Either one turns the pass-1 resume off."""
         from fizgig.minimax import sampling
         self.apply_state(state)
         if no_lora and self.primary_network is not None:
@@ -1593,7 +1593,7 @@ class H3RepairEngine(ClipContract):
                       with_audio: bool = True, early_step: int = 0, on_early=None,
                       steps=None, turbo_strength=None, ref_images=None, ref_items=None,
                       no_lora: bool = False) -> dict:
-        """The RefMod Studio's render: the base model - with its LoRA when one is loaded (a ReFLoRA's weights; no_lora
+        """The RefMod Toolkit's render: the base model - with its LoRA when one is loaded (a ReFLoRA's weights; no_lora
         leaves it out) at default sliders - and bare reference
         latents as condition rows, decoded to the same clip dict render_clip returns
         ({"latent", "audio_rows", "frames", "wav", "middle", "regime", "steps",
