@@ -41,7 +41,8 @@ EMIT_PROGRESS = False
 class Weight:
     """One .safetensors file: where it lives on HF, where it goes, which pref points at it."""
 
-    def __init__(self, pref_key, repo, path_in_repo, gb, note, optional=False, gated=False, local_name=None):
+    def __init__(self, pref_key, repo, path_in_repo, gb, note, optional=False, gated=False, local_name=None,
+                 replaces=()):
         self.pref_key = pref_key
         self.repo = repo
         self.path_in_repo = path_in_repo
@@ -50,6 +51,7 @@ class Weight:
         self.note = note
         self.optional = optional
         self.gated = gated
+        self.replaces = tuple(replaces)          # earlier versions of this file: a pref on one moves to this one
 
 
 # The Captions tab captions ANY dataset with the Krea 2 Qwen3-VL text encoder — it follows an
@@ -135,7 +137,8 @@ def _described_families():
         if not d.training_ready:
             continue
         ws = [Weight(f.pref_key, f.repo, f.path, f.size_gb, f.label + (" — " + f.note if f.note else ""),
-                     optional=f.fetch_is_optional, gated=f.gated, local_name=f.local_name or None)
+                     optional=f.fetch_is_optional, gated=f.gated, local_name=f.local_name or None,
+                     replaces=f.replaces)
               for f in d.model_files if f.repo and f.path]
         out[d.key] = ws + ([] if any(w.pref_key == _CAPTION_TE.pref_key for w in ws) else [_CAPTION_TE])
     return out
@@ -293,6 +296,9 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
     # every one of those would have been "too small", silently re-downloaded, and the user's
     # path overwritten with ours.
     current = str(prefs.get(w.pref_key) or "").strip()
+    if current and os.path.basename(current) in w.replaces:
+        log(f"  [new]  {w.pref_key}: {os.path.basename(current)} has a newer version, {w.filename}")
+        current = ""                             # an earlier version of ours: fetch the new one and point at it
     if current and os.path.isfile(current):
         if os.path.basename(current) != w.filename:
             log(f"  [keep] {w.pref_key} -> {os.path.basename(current)} (your own choice, not replacing it)")
