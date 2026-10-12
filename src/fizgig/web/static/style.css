@@ -697,35 +697,6 @@ input[type="range"] {
   border-radius: 0;
 }
 
-/* Preset Chips */
-.preset-chips-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.preset-chip {
-  padding: 4px 12px;
-  border-radius: 0;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  font-size: 10pt;
-  font-weight: 600;
-  color: var(--text-primary);
-  cursor: pointer;
-  user-select: none;
-}
-.preset-chip:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent);
-}
-.preset-chip.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #FFFFFF;
-  font-weight: 700;
-}
-
 /* Terminal Console */
 .console-terminal {
   background: var(--bg-inset);
@@ -1168,7 +1139,6 @@ input[type="range"] {
   textarea { height: auto; }
   .btn, .btn-accent { height: 42px; font-size: 11pt; }
   .btn-sm { height: 36px; }
-  .preset-chip { padding: 8px 12px; }
   input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
 
   .console-terminal { max-height: 300px; font-size: 11px; }
@@ -1323,7 +1293,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent) !importa
   box-shadow: 0 0 0 3px rgba(59,130,246,.22); outline: none; }
 .btn { border-radius: var(--radius-sm); height: 34px; font-size: 13px; font-weight: 600; transition: background .12s, border-color .12s; }
 .btn-sm { border-radius: 7px; height: 28px; font-size: 12px; }
-.preset-chip { border-radius: 999px; }
 /* tick boxes as switches */
 input[type="checkbox"] { -webkit-appearance: none; appearance: none; width: 32px; height: 18px; flex: 0 0 32px;
   border-radius: 999px; background: #3A4555; position: relative; cursor: pointer; transition: background .15s;
