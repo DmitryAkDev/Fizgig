@@ -183,7 +183,13 @@ def _cond(eng, c, width, height, frames):
         if not ref and slot == "last" and int(frames) <= 1:
             continue
         img = Image.open(path).convert("RGB")
-        rect = tuple(k.get("rect") or _centre_crop(img.size, width, height))
+        rect = k.get("rect")
+        if rect:                                 # the box placed for another W x H: its shape now, centred inside it
+            x0, y0, x1, y1 = (int(v) for v in rect)
+            c = _centre_crop((x1 - x0, y1 - y0), width, height)
+            rect = (x0 + c[0], y0 + c[1], x0 + c[2], y0 + c[3])
+        else:
+            rect = _centre_crop(img.size, width, height)
         key = ("ref" if ref else "kf", slot, path, os.path.getmtime(path), rect, int(width), int(height))
         hit = S["kf"].get(key)
         if hit is None:

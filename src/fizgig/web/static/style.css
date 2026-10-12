@@ -1661,3 +1661,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
 .st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
 .st-slot .field-row { margin: 0; }
+
+/* Studio: the crop window for H3's first / last frame and reference photos */
+.crop-window { width: auto !important; max-width: 96vw; }
+#cropCanvas { display: block; margin: 8px 0; touch-action: none; cursor: move; max-width: 100%; }
+.st-slot canvas { display: block; background: var(--bg-deep); }

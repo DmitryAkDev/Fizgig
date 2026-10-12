@@ -1583,6 +1583,7 @@ function studioKind(L, sv) {
   $("stH3Sound").disabled = !V.sound;
   $("stH3NoLora").checked = !!h3.nolora;
   S.st.kf = h3.kf || {};
+  S.st.kfRect = h3.kfRect || {};
   studioSlots();
 }
 
@@ -1590,25 +1591,127 @@ function studioSlots() {
   const ref = $("stH3Model").value.includes("ref2va");
   $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
   $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (the ref2va model's " +
-    "references), each cropped to the clip's shape from its middle." :
-    "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape " +
-    "from its middle.";
+    "references), each cropped to the clip's shape - you place the crop when you pick one." :
+    "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
+    "you place the crop when you pick one.";
   const host = $("stFrameSlots");
   host.innerHTML = "";
   const slots = ref ? [["ref1", "Reference 1"], ["ref2", "Reference 2"]] : [["first", "First frame"], ["last", "Last frame"]];
   for (const [slot, label] of slots) {
     const input = el("input", {type: "text", class: "w-path", value: (S.st.kf[slot] || ""), placeholder: "a photo (optional)"});
-    const thumb = el("img", {alt: ""});
-    const set = (p) => { input.value = p || ""; if (p) S.st.kf[slot] = p; else delete S.st.kf[slot];
-      thumb.src = p ? `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}` : ""; studioH3Remember(); };
+    const thumb = el("canvas", {width: 1, height: 1});
+    const info = el("span", {class: "field-hint"});
+    const show = () => {
+      const p = S.st.kf[slot], r = S.st.kfRect[slot];
+      input.value = p || "";
+      info.textContent = p && r ? `crop ${r[2] - r[0]}×${r[3] - r[1]}` : "";
+      studioSlotThumb(thumb, p, r);
+    };
+    // a new photo: place its crop (Cancel keeps what was there); Re-crop moves the box of the one there
+    const set = (p) => {
+      if (!p) { delete S.st.kf[slot]; delete S.st.kfRect[slot]; show(); studioH3Remember(); studioSchedule(); return; }
+      studioCrop(p, p === S.st.kf[slot] ? S.st.kfRect[slot] : null, (rect) => {
+        S.st.kf[slot] = p; S.st.kfRect[slot] = rect; show(); studioH3Remember(); studioSchedule();
+      }, show);
+    };
     input.addEventListener("change", () => set(input.value.trim()));
     const up = uploadButton({kind: "path", key: "STUDIO_" + slot}, input, set);
     host.append(el("div", {class: "st-slot"}, el("span", {class: "field-label", text: label + ":"}), thumb,
       el("div", {}, el("div", {class: "field-row"}, input,
         el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}), up.btn,
-        el("button", {class: "btn", text: "Clear", onclick: () => set("")})), up.status)));
-    set(input.value);
+        el("button", {class: "btn", text: "Re-crop", onclick: () => S.st.kf[slot] && set(S.st.kf[slot])}),
+        el("button", {class: "btn", text: "Clear", onclick: () => set("")}), info), up.status)));
+    show();
   }
+}
+
+const mediaUrl = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+
+function studioSlotThumb(cv, path, rect) {
+  // the slot's thumbnail: the crop itself, as the desktop shows it
+  const ctx = cv.getContext("2d");
+  if (!path) { cv.width = cv.height = 1; return; }
+  const img = new Image();
+  img.onload = () => {
+    const r = rect || [0, 0, img.naturalWidth, img.naturalHeight];
+    const w = r[2] - r[0], h = r[3] - r[1], k = Math.min(160 / w, 96 / h);
+    cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+    ctx.drawImage(img, r[0], r[1], w, h, 0, 0, cv.width, cv.height);
+  };
+  img.src = mediaUrl(path);
+}
+
+function studioCrop(path, initial, ok, cancel) {
+  // the desktop's crop window: the photo fitted, a box locked to the clip's shape (W x H) - drag to move, drag a
+  // corner to resize. ok([x0, y0, x1, y1] in the photo's pixels); cancel() leaves things as they were.
+  const W = Number($("stH3W").value) || 768, H = Number($("stH3H").value) || 640, aspect = W / H;
+  const cv = $("cropCanvas"), ctx = cv.getContext("2d"), img = new Image();
+  $("cropTitle").textContent = `Crop to the clip's shape (${W}×${H})`;
+  img.onerror = () => { $("stStatus").textContent = "Couldn't open that photo."; if (cancel) cancel(); };
+  img.onload = () => {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const scale = Math.min((window.innerWidth * 0.9 - 40) / sw, (window.innerHeight * 0.85 - 200) / sh, 1);
+    const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale));
+    cv.width = dw; cv.height = dh;
+    const HANDLE = 9, MIN_W = 32 * scale * 4;
+    let box;
+    const centre = () => { const bw = dw / dh >= aspect ? dh * aspect : dw, bh = bw / aspect;
+      box = {x0: (dw - bw) / 2, y0: (dh - bh) / 2, x1: (dw + bw) / 2, y1: (dh + bh) / 2}; };
+    if (initial) box = {x0: initial[0] * scale, y0: initial[1] * scale, x1: initial[2] * scale, y1: initial[3] * scale};
+    else centre();
+    const src = () => [box.x0, box.y0, box.x1, box.y1].map((v, i) => Math.min(i % 2 ? sh : sw, Math.max(0, Math.round(v / scale))));
+    const draw = () => {
+      ctx.clearRect(0, 0, dw, dh); ctx.drawImage(img, 0, 0, dw, dh);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(0, 0, dw, box.y0); ctx.fillRect(0, box.y1, dw, dh - box.y1);
+      ctx.fillRect(0, box.y0, box.x0, box.y1 - box.y0); ctx.fillRect(box.x1, box.y0, dw - box.x1, box.y1 - box.y0);
+      ctx.strokeStyle = "#3B9FD8"; ctx.lineWidth = 2; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      ctx.fillStyle = "#3B9FD8";
+      for (const [hx, hy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]])
+        ctx.fillRect(hx - HANDLE, hy - HANDLE, HANDLE * 2, HANDLE * 2);
+      const r = src();
+      $("cropSize").textContent = `crop ${r[2] - r[0]}×${r[3] - r[1]} of ${sw}×${sh} → ${W}×${H}`;
+    };
+    const at = (e) => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * dw / b.width, (e.clientY - b.top) * dh / b.height]; };
+    let drag = null;
+    cv.onpointerdown = (e) => {
+      const [x, y] = at(e);
+      const corner = [["nw", box.x0, box.y0], ["ne", box.x1, box.y0], ["sw", box.x0, box.y1], ["se", box.x1, box.y1]]
+        .find(([, hx, hy]) => Math.abs(x - hx) <= HANDLE * 1.5 && Math.abs(y - hy) <= HANDLE * 1.5);
+      if (corner) drag = {mode: "resize", c: corner[0]};
+      else if (x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1) drag = {mode: "move", dx: x - box.x0, dy: y - box.y0};
+      else return;
+      cv.setPointerCapture(e.pointerId);
+    };
+    cv.onpointermove = (e) => {
+      if (!drag) return;
+      const [x, y] = at(e);
+      if (drag.mode === "move") {
+        const bw = box.x1 - box.x0, bh = box.y1 - box.y0;
+        const nx = Math.min(Math.max(0, x - drag.dx), dw - bw), ny = Math.min(Math.max(0, y - drag.dy), dh - bh);
+        box = {x0: nx, y0: ny, x1: nx + bw, y1: ny + bh};
+      } else {
+        // the opposite corner anchors; the width follows the pointer, the height the shape; clamped to the photo
+        const c = drag.c, east = c === "ne" || c === "se", south = c === "sw" || c === "se";
+        const ax = east ? box.x0 : box.x1, ay = south ? box.y0 : box.y1;
+        let w = Math.abs(Math.min(Math.max(x, 0), dw) - ax), h = Math.abs(Math.min(Math.max(y, 0), dh) - ay);
+        w = Math.max(MIN_W, w, h * aspect); h = w / aspect;
+        const maxW = east ? dw - ax : ax, maxH = south ? dh - ay : ay;
+        if (w > maxW) { w = maxW; h = w / aspect; }
+        if (h > maxH) { h = maxH; w = h * aspect; }
+        box = {x0: east ? ax : ax - w, x1: east ? ax + w : ax, y0: south ? ay : ay - h, y1: south ? ay + h : ay};
+      }
+      draw();
+    };
+    cv.onpointerup = () => { drag = null; };
+    const close = () => { $("cropModal").classList.remove("active"); cv.onpointerdown = cv.onpointermove = cv.onpointerup = null; };
+    $("cropOk").onclick = () => { close(); ok(src()); };
+    $("cropCancel").onclick = $("cropX").onclick = () => { close(); if (cancel) cancel(); };
+    $("cropCentre").onclick = () => { centre(); draw(); };
+    draw();
+    $("cropModal").classList.add("active");
+  };
+  img.src = mediaUrl(path);
 }
 
 function studioH3Remember() {
@@ -1616,7 +1719,7 @@ function studioH3Remember() {
     const d = stSaved();
     d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
       h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, kf: S.st.kf};
+      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, kf: S.st.kf, kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
 }
@@ -1635,7 +1738,8 @@ function studioExtra() {
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
     nolora: $("stH3NoLora").checked},
-    keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s]})), ref_mode: ref};
+    keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
+    ref_mode: ref};
 }
 
 function studioCanvas() {

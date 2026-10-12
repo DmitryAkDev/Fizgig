@@ -627,6 +627,21 @@
     </div>
   </div>
 
+  <div class="modal-backdrop" id="cropModal">
+    <div class="modal-window crop-window">
+      <div class="modal-header"><span id="cropTitle">Crop to the clip's shape</span>
+        <button class="btn" id="cropX">✕</button></div>
+      <div class="modal-body">
+        <div class="field-hint">Drag the box to move it, drag a corner to resize. The box keeps the clip's shape; what's
+          inside becomes the frame.</div>
+        <canvas id="cropCanvas"></canvas>
+        <div class="field-hint" id="cropSize"></div>
+      </div>
+      <div class="modal-footer"><button class="btn" id="cropCentre">Centre</button>
+        <button class="btn" id="cropCancel">Cancel</button><button class="btn btn-primary" id="cropOk">Use this crop</button></div>
+    </div>
+  </div>
+
   <div class="modal-backdrop" id="aboutModal">
     <div class="modal-window about-window">
       <div class="modal-header"><span>About Fizgig</span>
