@@ -608,6 +608,8 @@ def _run_stages(stages, out_dir):
                         _run["progress"] = p
                     else:
                         _run["progress"] = _progress_dict(upd)
+                        if upd.get("kind") == "training":
+                            history.feed_loss(_run.get("history_id"), upd.get("epoch"), upd.get("average_loss_text"))
         ret = proc.wait()
         with _lock:
             stopped = _run["state"] == "stopped"
@@ -709,6 +711,29 @@ def _audio_seconds(path):
         except Exception:
             return None
     return None
+
+
+# a preview: <run>_e<epoch>_<prompt>_<time>_<seed>[_s<strength %>].<ext> (families/train.py)
+_SAMPLE_NAME = re.compile(r"^(?P<run>.+)_e(?P<epoch>\d{6})_(?P<idx>\d{2})_\d+_\d+(?:_s(?P<s>\d{3}))?\.\w+$")
+
+
+def sample_info(name) -> dict:
+    """What a preview's name says: its run, epoch, prompt number and strength (None = full)."""
+    m = _SAMPLE_NAME.match(name)
+    if not m:
+        return {}
+    return {"run": m.group("run"), "epoch": int(m.group("epoch")), "idx": int(m.group("idx")),
+            "strength": int(m.group("s")) / 100.0 if m.group("s") else None}
+
+
+def run_prompts(out_dir, name) -> list:
+    """The preview prompts the newest run of this name in this folder used (its recorded settings), in order."""
+    norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
+    for r in history.runs():
+        if (r.get("lora") or "") == name and norm(r.get("output_dir")) == norm(out_dir):
+            text = str((r.get("values") or {}).get("SAMPLE_PROMPT") or "")
+            return [ln.strip() for ln in text.splitlines() if ln.strip()]
+    return []
 
 
 def pair_songs(entries):
@@ -1257,7 +1282,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/browse":
             return self._browse((qs.get("path") or [""])[0])
         if path == "/api/samples":
-            return self._samples((qs.get("dir") or [""])[0])
+            return self._samples((qs.get("dir") or [""])[0], (qs.get("run") or [""])[0])
         if path == "/api/thumb":
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in _PIC or not os.path.isfile(p):
@@ -1349,13 +1374,21 @@ class Handler(BaseHTTPRequestHandler):
                           "files": files[:2000],
                           "places": [{"name": n, "path": p} for n, p in places if os.path.isdir(p)]})
 
-    def _samples(self, folder):
+    def _samples(self, folder, run=""):
+        """A sample folder's previews, newest first, each with its run, epoch, prompt number and strength; `runs` the
+        runs that have previews here (newest first). With run: only that run's, and the prompts it used."""
         try:
             items = [e for e in os.scandir(folder) if os.path.splitext(e.name)[1].lower() in MEDIA]
         except OSError:
-            return self.json({"items": []})
+            return self.json({"items": [], "runs": [], "prompts": []})
         items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
-        return self.json({"items": pair_songs([(e.name, e.path, {"time": e.stat().st_mtime}) for e in items[:600]])[:300]})
+        infos = {e.name: sample_info(e.name) for e in items}
+        runs = list(dict.fromkeys(infos[e.name]["run"] for e in items if infos[e.name]))
+        if run:
+            items = [e for e in items if infos[e.name].get("run") == run]
+        out = pair_songs([(e.name, e.path, {"time": e.stat().st_mtime, **infos[e.name]}) for e in items[:1500]])
+        return self.json({"items": out[:1000] if run else out[:300], "runs": runs,
+                          "prompts": run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else []})
 
     def _checkpoints(self, folder):
         """The run's saved LoRAs / checkpoints in its output folder, newest first."""
@@ -1366,9 +1399,10 @@ class Handler(BaseHTTPRequestHandler):
         now = time.time()
         items = [e for e in items if now - e.stat().st_mtime > 5]       # not one still being written
         items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
         return self.json({"items": [{"name": e.name, "path": e.path, "size": e.stat().st_size,
-                                     "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path)}
-                                    for e in items]})
+                                     "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path),
+                                     "run": base(e.name)} for e in items]})
 
     def _captions(self, folder, ext):
         out = []

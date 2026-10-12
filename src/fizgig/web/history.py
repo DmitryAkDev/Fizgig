@@ -99,10 +99,51 @@ def start(source, family, lora, output_dir, image_folder, values, resume=False):
     return rec["id"]
 
 
+_curves = {}                                # run id -> [epoch on show, its last loss, [[epoch, loss], ...]]
+
+
+def _set_curve(run_id, points):
+    try:
+        with _Lock():
+            runs = _read()
+            for r in runs:
+                if r.get("id") == run_id:
+                    r["curve"] = points[-2000:]
+            _write(runs)
+    except OSError:
+        pass
+
+
+def feed_loss(run_id, epoch, loss_text):
+    """The run's average loss as the trainer reports it: each epoch's last value is kept on its record (written once
+    an epoch, when the next begins, and at the end), for the loss curve on Runs & outputs."""
+    if not run_id:
+        return
+    try:
+        loss, epoch = float(loss_text), int(epoch)
+    except (TypeError, ValueError):
+        return
+    c = _curves.get(run_id)
+    if c is None:                            # a resumed run carries on its own curve
+        rec = get(run_id) or {}
+        c = _curves[run_id] = [None, None, [p for p in (rec.get("curve") or []) if isinstance(p, list)]]
+    if c[0] is not None and epoch != c[0] and c[1] is not None:
+        c[2] = [p for p in c[2] if p[0] != c[0]] + [[c[0], c[1]]]
+        _set_curve(run_id, c[2])
+    c[0], c[1] = epoch, loss
+
+
+def _flush_curve(run_id):
+    c = _curves.pop(run_id, None)
+    if c and c[0] is not None and c[1] is not None:
+        _set_curve(run_id, [p for p in c[2] if p[0] != c[0]] + [[c[0], c[1]]])
+
+
 def end(run_id, result, progress=None):
     """A run ended (finished / failed / stopped / paused), with its last figures."""
     if not run_id:
         return
+    _flush_curve(run_id)
     try:
         with _Lock():
             runs = _read()

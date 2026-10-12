@@ -32066,6 +32066,12 @@ class LoRATrainerGUI:
             "loss": update.get("average_loss_text") or "", "eta": update.get("eta_text") or "",
             "percent": 100.0 * max(0, min(step, total_steps)) / total_steps if total_steps else 0.0, "note": ""}
         loss = update.get("average_loss_text")
+        if update.get("kind") == "training":
+            try:                                      # the run's loss curve on the web UI's Runs & outputs
+                from fizgig.web import history as _hist
+                _hist.feed_loss(getattr(self, "_live_hist", None), update.get("epoch"), loss)
+            except Exception:
+                pass
         loss_text = "Loss —" if loss is None else f"Loss {loss}"
         prefix = ("RefMod" if update["kind"] == "refmod"
                   else f"Epoch {update['epoch']}/{update['total_epochs']}")

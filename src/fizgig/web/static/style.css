@@ -1545,3 +1545,33 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .runpod-btn { order: 2; margin: 0; padding: 7px 9px; border-radius: 999px; flex: 0 0 auto; }
   .runpod-btn span { display: none; }
 }
+
+/* previews: labelled by epoch and prompt, one run at a time, as a list or prompt x epoch */
+.gallery-item figcaption b { display: block; color: var(--text-primary); font-size: 9pt; }
+.gallery-item figcaption .preview-prompt, .prompt-head .preview-prompt { display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden; color: var(--text-explain); font-size: 8.5pt; }
+.gallery-item figcaption .preview-file { display: block; color: var(--text-muted); font-size: 7.5pt; }
+.gallery-controls { align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.seg { display: inline-flex; gap: 0; }
+.seg .btn { border-radius: 0; }
+.seg .btn:first-child { border-radius: 7px 0 0 7px; }
+.seg .btn:last-child { border-radius: 0 7px 7px 0; }
+.seg .btn.active { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+.gallery.gallery-as-grid { display: block; }
+.prompt-grid-wrap { display: block; overflow-x: auto; }
+.prompt-grid { border-collapse: separate; border-spacing: 6px; }
+.prompt-grid th { color: var(--text-secondary); font-size: 9pt; font-weight: 600; text-align: center; white-space: nowrap; }
+.prompt-grid th.prompt-head { text-align: left; white-space: normal; width: 180px; min-width: 140px; vertical-align: top; }
+.prompt-grid th.prompt-head b { display: block; color: var(--text-primary); }
+.prompt-grid td { vertical-align: top; }
+.prompt-grid td .gallery-item { width: 170px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.inline-link { color: var(--accent-hover); }
+/* a run's loss by epoch */
+.loss-chart-box { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0 2px; }
+.loss-chart { width: 220px; height: 44px; background: var(--bg-inset); border: 1px solid var(--border); border-radius: 6px; }
+.loss-chart polyline { fill: none; stroke: var(--accent-hover); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.loss-chart circle { fill: var(--success); }
+/* a dataset tile's own buttons */
+.dataset-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.dataset-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -217,7 +217,15 @@
           <div class="section-card" id="galleryCard">
             <div class="card-title">Previews so far</div>
             <div class="card-desc" id="galleryInfo">The newest first, from the current run's output folder.</div>
-            <div class="card-content"><div class="gallery" id="gallery"></div></div>
+            <div class="card-content">
+              <div class="field-row gallery-controls" id="galleryControls" style="display:none">
+                <span class="field-label">Run:</span><select id="galleryRun" class="w-combo"></select>
+                <span class="seg" id="galleryView">
+                  <button class="btn btn-sm" data-view="list">Newest first</button>
+                  <button class="btn btn-sm" data-view="grid">Prompt × epoch</button></span>
+              </div>
+              <div class="gallery" id="gallery"></div>
+            </div>
           </div>
         </section>
 
@@ -299,8 +307,11 @@
             <div class="card-content"><div id="runsList" class="runs-list"></div></div>
           </div>
           <div class="section-card">
-            <div class="card-title"><span>Saved files</span></div>
-            <div class="card-content">
+            <div class="card-title"><span>Saved files</span>
+              <button class="btn btn-sm" id="outToggle">Show</button></div>
+            <div class="card-desc" id="outFolded">Every LoRA and fine-tune in Fizgig's output folders, the runs above
+              included, to search and download. Press Show to list them.</div>
+            <div class="card-content" id="outBody" style="display:none">
               <div class="field-row"><span class="field-label">Search:</span>
                 <input type="text" id="outSearch" class="w-path" placeholder="run name or folder">
                 <button class="btn" id="outReload">Reload</button></div>
@@ -316,7 +327,7 @@
               <div class="field-hint" id="outSummary"></div>
             </div>
           </div>
-          <div id="outRuns"></div>
+          <div id="outRuns" style="display:none"></div>
         </section>
         <section id="tab-prefs" class="tab-panel">
           <div class="tab-banner">

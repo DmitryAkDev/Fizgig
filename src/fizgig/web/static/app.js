@@ -740,17 +740,73 @@ function showProgress(p, state, name, extraNote) {
   $("runWhen").textContent = (p && p.note) || "";
 }
 
+// the run on show: the one training (here or in the desktop app), else the LoRA name in the form
+const currentRunName = () => (S.mode === "desktop" && S.run.desktop ? S.run.desktop.lora : S.run.lora) ||
+  S.values.LORA_NAME || "";
+
+// what a preview is, from its name (the server reads it): "Epoch 4 · Prompt 1 · strength 0.5"
+function previewLabel(it) {
+  if (it.epoch == null) return it.name;
+  return [`Epoch ${it.epoch}`, `Prompt ${it.idx + 1}`, it.strength != null && `strength ${it.strength}`]
+    .filter(Boolean).join(" · ");
+}
+function previewFigure(it, prompts) {
+  const prompt = it.idx != null && prompts ? prompts[it.idx] : "";
+  return el("figure", {class: "gallery-item", title: it.name}, mediaFor(it),
+    el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt}) : null,
+      el("span", {class: "preview-file", text: it.name})));
+}
+
+// prompts as rows, epochs as columns (full-strength pictures; a slider's strip is its own picture)
+function previewGrid(items, prompts) {
+  const full = items.filter((it) => it.epoch != null && it.strength == null);
+  const epochs = [...new Set(full.map((it) => it.epoch))].sort((a, b) => a - b);
+  const idxs = [...new Set(full.map((it) => it.idx))].sort((a, b) => a - b);
+  const at = new Map(full.map((it) => [it.epoch + ":" + it.idx, it]));
+  const table = el("table", {class: "prompt-grid"});
+  table.append(el("tr", {}, el("th", {}), ...epochs.map((e) => el("th", {text: `Epoch ${e}`}))));
+  for (const i of idxs) {
+    table.append(el("tr", {},
+      el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
+        prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i]}) : null),
+      ...epochs.map((e) => { const it = at.get(e + ":" + i);
+        return el("td", {}, it ? el("figure", {class: "gallery-item", title: it.name}, mediaFor(it),
+          el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
+            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)) : null); })));
+  }
+  return el("div", {class: "gallery prompt-grid-wrap"}, table);
+}
+
 async function loadGallery() {
   const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
   const host = $("gallery");
-  if (!out) { host.innerHTML = ""; return; }
+  if (!out) { host.innerHTML = ""; $("galleryControls").style.display = "none"; return; }
   const sep = out.includes("\\") ? "\\" : "/";
-  const g = await api("/api/samples?dir=" + encodeURIComponent(out + sep + "sample")).catch(() => ({items: []}));
+  const dir = out + sep + "sample";
+  // the run picked here stays picked until another run starts
+  const cur = currentRunName();
+  if (S.galleryFor !== cur) { S.galleryRun = ""; S.galleryFor = cur; }
+  const want = S.galleryRun || cur;
+  const get = (run) => api(`/api/samples?dir=${encodeURIComponent(dir)}&run=${encodeURIComponent(run)}`)
+    .catch(() => ({items: [], runs: [], prompts: []}));
+  let g = await get(want);
+  let run = want;
+  if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  const sel = $("galleryRun");
+  sel.innerHTML = "";
+  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? " (this run)" : "")}));
+  sel.value = run;
+  $("galleryControls").style.display = g.runs.length ? "" : "none";
+  const view = S.galleryView || "list";
+  document.querySelectorAll("#galleryView button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   host.innerHTML = "";
-  for (const it of g.items.slice(0, 60)) {
-    host.append(el("figure", {class: "gallery-item"}, mediaFor(it), el("figcaption", {text: mediaLabel(it)})));
-  }
-  $("galleryInfo").textContent = g.items.length ? `${g.items.length} previews in ${out}${sep}sample` :
+  host.classList.toggle("gallery-as-grid", view === "grid");
+  if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || []));
+  else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || []));
+  const others = g.runs.filter((r) => r !== run).length;
+  $("galleryInfo").textContent = g.items.length ?
+    `${g.items.length} preview${g.items.length === 1 ? "" : "s"} of ${run} in ${dir}` +
+    (others ? ` · ${others} other run${others === 1 ? "" : "s"} have previews here too (pick one above)` : "") :
     "No previews yet. They appear here as the run makes them.";
 }
 
@@ -761,7 +817,10 @@ async function loadCheckpoints() {
   const r = await api("/api/checkpoints?dir=" + encodeURIComponent(out)).catch(() => ({items: []}));
   host.innerHTML = "";
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
-  for (const it of r.items) {
+  const run = currentRunName();
+  const mine = r.items.filter((it) => it.run === run);
+  const shown = S.ckptAll ? r.items : mine;
+  for (const it of shown) {
     const href = `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     host.append(el("div", {class: "checkpoint-row"},
       el("span", {class: "checkpoint-name", text: it.name}),
@@ -769,8 +828,14 @@ async function loadCheckpoints() {
         `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
       el("a", {class: "btn btn-sm btn-primary", href, download: it.name, text: "Download"})));
   }
-  $("checkpointsInfo").textContent = r.items.length ? `${r.items.length} saved in ${out}, newest first.` :
-    "Nothing saved yet. Checkpoints appear here as the run saves them.";
+  const others = r.items.length - mine.length;
+  $("checkpointsInfo").replaceChildren(
+    document.createTextNode(S.ckptAll ? `All ${r.items.length} saved in ${out}, newest first. ` :
+      mine.length ? `${mine.length} saved by ${run} in ${out}, newest first. ` :
+      `Nothing saved by ${run || "this run"} yet: checkpoints appear here as the run saves them. `),
+    others ? el("a", {href: "#", class: "inline-link", text: S.ckptAll ? `Only ${run}'s` :
+      `Show the ${others} from other runs in this folder`,
+      onclick: (e) => { e.preventDefault(); S.ckptAll = !S.ckptAll; loadCheckpoints(); }}) : document.createTextNode(""));
 }
 
 // ---- Start tab: your training data (the folders in the training data folder) ---------------------------------
@@ -780,6 +845,18 @@ async function loadDatasets() {
     "upload a new one below, or pick any folder with Choose… above.";
   $("datasetsSearchRow").style.display = S.datasets.total > 8 ? "" : "none";
   renderDatasets();
+}
+
+// a dataset's pictures in the viewer, stepping through them all
+async function datasetPictures(d) {
+  const r = await api(`/api/captions?folder=${encodeURIComponent(d.path)}&ext=${encodeURIComponent(capExt())}`)
+    .catch(() => ({items: []}));
+  const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp|avif|gif)$/i.test(it.name))
+    .map((it) => ({src: q(it.path), name: it.name + (it.caption ? " · " + it.caption : "")}));
+  if (!pics.length) return;
+  S.lb.list = pics;
+  lightboxShow(0);
 }
 
 function renderDatasets() {
@@ -801,15 +878,25 @@ function renderDatasets() {
       d.thumbs.length ? d.thumbs.map((p) => el("img", {loading: "lazy", alt: "",
         src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`})) :
         el("span", {class: "dataset-kind", text: d.songs ? "♪" : d.clips ? "▶" : ""}));
-    const card = el("button", {class: "dataset-card" + (norm(d.path) === norm(S.imageFolder) ? " active" : ""),
-      title: d.path, onclick: () => {
+    const choose = () => {
+      if (norm(d.path) !== norm(S.imageFolder)) {
         $("imageFolder").value = d.path;
         $("imageFolder").dispatchEvent(new Event("change"));
-        renderDatasets();
-      }}, mosaic,
+      }
+      renderDatasets();
+    };
+    const act = (text, title, fn) => el("button", {class: "btn btn-sm", text, title, onclick: (e) => {
+      e.stopPropagation(); fn(); }});
+    // the tile chooses the folder; its buttons also open it in Captions, or show its pictures big
+    const card = el("div", {class: "dataset-card" + (norm(d.path) === norm(S.imageFolder) ? " active" : ""),
+      title: d.path, role: "button", tabindex: "0", onclick: choose,
+      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); } }}, mosaic,
       el("div", {class: "dataset-meta"}, el("b", {text: d.name}), el("span", {text: what}),
         el("span", {class: d.captioned >= total ? "ok" : "warn", text: caps}),
-        el("span", {class: "dataset-when", text: d.time ? new Date(d.time * 1000).toLocaleDateString() : ""})));
+        el("span", {class: "dataset-when", text: d.time ? new Date(d.time * 1000).toLocaleDateString() : ""}),
+        el("div", {class: "dataset-actions"},
+          act("Captions", "Train on this folder and open it on the Captions tab", () => { choose(); showTab("captions"); }),
+          d.pictures ? act("Pictures", "Look through its pictures, big", () => datasetPictures(d)) : null)));
     host.append(card);
   }
   if (shown.length < list.length) host.append(el("button", {class: "btn dataset-more", text: `Show all ${list.length}`,
@@ -897,10 +984,38 @@ async function loadRuns() {
       el("div", {class: "field-hint", text: [run.image_folder && `Trained on ${run.image_folder}`,
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
+      lossChart(run.curve),
       el("div", {class: "field-row"}, showFiles, again, del), delBox, alertRow, files));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
     "the desktop app, is listed here with its results."}));
+}
+
+// a run's loss, epoch by epoch, as a small chart (the history keeps each epoch's last average loss)
+function lossChart(curve) {
+  const pts = (curve || []).filter((p) => Array.isArray(p) && isFinite(p[1]));
+  if (pts.length < 2) return null;
+  const W = 220, Hh = 44, pad = 3;
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const X = (x) => pad + (W - 2 * pad) * (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0));
+  const Y = (y) => pad + (Hh - 2 * pad) * (y1 === y0 ? 0.5 : 1 - (y - y0) / (y1 - y0));
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
+  svg.setAttribute("class", "loss-chart");
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "));
+  svg.append(line);
+  const best = pts.reduce((a, b) => (b[1] < a[1] ? b : a));
+  const dot = document.createElementNS(ns, "circle");
+  dot.setAttribute("cx", X(best[0])); dot.setAttribute("cy", Y(best[1])); dot.setAttribute("r", 2.6);
+  svg.append(dot);
+  const t = document.createElementNS(ns, "title");
+  t.textContent = pts.map((p) => `epoch ${p[0]}: ${p[1]}`).join("\n");
+  svg.append(t);
+  return el("div", {class: "loss-chart-box"}, svg, el("span", {class: "field-hint",
+    text: `Loss by epoch: ${ys[0]} → ${ys[ys.length - 1]} · lowest ${best[1]} at epoch ${best[0]}`}));
 }
 
 // a run's previews and checkpoints, from its output folder
@@ -908,14 +1023,13 @@ async function runFiles(run) {
   const out = [];
   const sep = (run.output_dir || "").includes("\\") ? "\\" : "/";
   const [g, c] = await Promise.all([
-    api("/api/samples?dir=" + encodeURIComponent(run.output_dir + sep + "sample")).catch(() => ({items: []})),
+    api(`/api/samples?dir=${encodeURIComponent(run.output_dir + sep + "sample")}&run=${encodeURIComponent(run.lora)}`)
+      .catch(() => ({items: [], prompts: []})),
     api("/api/checkpoints?dir=" + encodeURIComponent(run.output_dir)).catch(() => ({items: []}))]);
-  const mine = (n) => n.startsWith(run.lora + "_") || n.startsWith(run.lora + "-") || n.startsWith(run.lora + ".");
-  const shots = g.items.filter((it) => mine(it.name)).slice(0, 12);
-  if (shots.length) out.push(el("div", {class: "gallery run-gallery"},
-    shots.map((it) => el("figure", {class: "gallery-item"}, mediaFor(it), el("figcaption", {text: mediaLabel(it)})))));
+  const shots = g.items.slice(0, 12);
+  if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(it, g.prompts))));
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
-  const ckpts = c.items.filter((it) => mine(it.name));
+  const ckpts = c.items.filter((it) => it.run === run.lora);
   if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
     el("span", {class: "checkpoint-name", text: it.name}),
     el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
@@ -1290,7 +1404,7 @@ function showTab(name) {
   if (name === "captions") loadCaptions();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
-  if (name === "outputs") { loadRuns(); loadOutputs(); }
+  if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
   api("/api/state", {tab: name}).catch(() => {});
 }
 
@@ -1480,13 +1594,11 @@ let wired = false;
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";
 S.lb = {list: [], at: 0};
 function lightboxShow(i) {
-  const img = S.lb.list[i];
-  if (!img) return;
+  const pic = S.lb.list[i];
+  if (!pic) return;
   S.lb.at = i;
-  $("lightboxImg").src = img.currentSrc || img.src;
-  const fig = img.closest(".gallery-item, .caption-card");
-  const name = fig && fig.querySelector("figcaption, .caption-card-title");
-  $("lightboxName").textContent = name ? name.textContent : "";
+  $("lightboxImg").src = pic.src;
+  $("lightboxName").textContent = pic.name;
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
@@ -1497,8 +1609,14 @@ function wireLightbox() {
     const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
     if (!img) return;
     const host = img.closest(".gallery, .captions-grid") || document;   // step through the pictures beside it
-    S.lb.list = [...host.querySelectorAll(LIGHTBOX_PICS)];
-    lightboxShow(S.lb.list.indexOf(img));
+    const imgs = [...host.querySelectorAll(LIGHTBOX_PICS)];
+    S.lb.list = imgs.map((i) => {
+      const fig = i.closest(".gallery-item, .caption-card");
+      const cap = fig && fig.querySelector("figcaption, .caption-card-title");
+      const label = cap ? [...cap.childNodes].map((n) => n.textContent).filter(Boolean).join(" · ") : "";
+      return {src: i.currentSrc || i.src, name: label || i.alt};
+    });
+    lightboxShow(imgs.indexOf(img));
   });
   $("lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox" || e.target.id === "lightboxImg") lightboxClose(); });
   $("lightboxClose").addEventListener("click", lightboxClose);
@@ -1570,6 +1688,13 @@ function wire() {
   $("pickerNewName").addEventListener("keydown", (e) => { if (e.key === "Enter") makeFolder(); });
   wireCaptions();
   $("outReload").addEventListener("click", loadOutputs);
+  $("outToggle").addEventListener("click", () => {     // Saved files: folded until asked for, scanned only then
+    S.outputsOpen = !S.outputsOpen;
+    for (const id of ["outBody", "outRuns"]) $(id).style.display = S.outputsOpen ? "" : "none";
+    $("outFolded").style.display = S.outputsOpen ? "none" : "";
+    $("outToggle").textContent = S.outputsOpen ? "Hide" : "Show";
+    if (S.outputsOpen) loadOutputs();
+  });
   $("runsReload").addEventListener("click", loadRuns);
   $("datasetsReload").addEventListener("click", loadDatasets);
   $("aboutBtn").addEventListener("click", async () => {
@@ -1592,6 +1717,9 @@ function wire() {
   $("outTo").addEventListener("change", renderOutputs);
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
+  $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
+  document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {
+    S.galleryView = b.dataset.view; loadGallery(); }));
   $("btnViewPreviews").addEventListener("click", async () => {   // the Samples tab, at its previews
     showTab("samples");
     const go = () => $("galleryCard").scrollIntoView({block: "start"});
