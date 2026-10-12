@@ -1532,3 +1532,12 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 /* preview tiles keep their shape before the picture arrives (it loads lazily), so the page has its full length at
    once and View the previews can scroll the gallery to the top */
 .gallery-item > img { aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); }
+
+/* Training > Presets: one dropdown */
+.preset-select { min-width: 280px; max-width: 100%; }
+.preset-row { align-items: center; gap: 12px; flex-wrap: wrap; }
+
+/* a small button keeps its colour: red Delete, blue Start again */
+.btn-sm.btn-danger { background: var(--danger); border-color: var(--danger); color: #FFFFFF; }
+.btn-sm.btn-danger:hover { background: #DC2626; border-color: #DC2626; }
+.btn-sm.btn-primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }

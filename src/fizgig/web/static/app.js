@@ -74,7 +74,10 @@ async function chooseFamily(key) {
   } else {                              // a first visit takes the family's first preset, as the desktop does
     S.values = defaults();
     const first = S.fam.form.presets[0];
-    if (first) S.values = (await api("/api/preset", {family: key, name: first.name, values: S.values})).values;
+    if (first) {
+      S.values = (await api("/api/preset", {family: key, name: first.name, values: S.values})).values;
+      S.values.__preset = first.name;
+    }
   }
   renderAll();
   await refreshState();
@@ -251,17 +254,24 @@ function turboFollow() {
 const refreshStateSoon = debounce(refreshState, 250);
 
 function renderPresets() {
-  const host = $("presets");
-  host.innerHTML = "";
-  for (const p of S.fam.form.presets) {
-    host.append(el("button", {class: "preset-chip", text: p.name, onclick: async () => {
-      S.values = (await api("/api/preset", {family: S.family, name: p.name, values: S.values})).values;
-      renderSections("samples", $("samplesForm"));
-      renderSections("training", $("trainingForm"));
-      await refreshState();
-      saveState();
-    }}));
-  }
+  const sel = $("presets");
+  sel.innerHTML = "";
+  const presets = S.fam.form.presets;
+  sel.closest(".section-card").style.display = presets.length ? "" : "none";
+  // the preset last picked shows (a first visit applies the first, as the desktop); "Choose a preset…" before any
+  sel.append(el("option", {value: "", text: "Choose a preset…"}));
+  for (const p of presets) sel.append(el("option", {value: p.name, text: p.name}));
+  sel.value = presets.some((p) => p.name === S.values.__preset) ? S.values.__preset : "";
+  sel.onchange = async () => {
+    const name = sel.value;
+    if (!name) return;
+    S.values = (await api("/api/preset", {family: S.family, name, values: S.values})).values;
+    S.values.__preset = name;
+    renderSections("samples", $("samplesForm"));
+    renderSections("training", $("trainingForm"));
+    await refreshState();
+    saveState();
+  };
 }
 
 // ---- Preferences: every family's model files, from its description -----------------------------------------
@@ -853,6 +863,31 @@ async function loadRuns() {
           $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});
+    // Delete run: says what goes first (checkpoints, saved states, previews - never the training folder), then deletes
+    const delBox = el("div", {class: "run-delete", style: "display:none"});
+    const del = el("button", {class: "btn btn-sm btn-danger", text: "Delete run…", onclick: async () => {
+      if (delBox.style.display !== "none") { delBox.style.display = "none"; return; }
+      delBox.style.display = "";
+      delBox.textContent = "Checking…";
+      try {
+        const w = await api("/api/runs/delete", {id: run.id});
+        const gb = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
+        const parts = [w.checkpoints && `${w.checkpoints} checkpoint${w.checkpoints > 1 ? "s" : ""}`,
+          w.states && `${w.states} saved state${w.states > 1 ? "s" : ""} (for resuming)`,
+          w.previews && `${w.previews} preview${w.previews > 1 ? "s" : ""}`].filter(Boolean);
+        delBox.replaceChildren(
+          el("div", {class: "field-hint", text: (parts.length ?
+            `Deletes ${parts.join(", ")} - ${gb(w.bytes)} from ${w.folder} - for good, and takes the run off this ` +
+            "list." : "Nothing of this run is left on disk: this takes it off the list.") +
+            " Your training folder and its captions are not touched."}),
+          el("div", {class: "field-row"},
+            el("button", {class: "btn btn-sm btn-danger", text: "Delete", onclick: async () => {
+              try { await api("/api/runs/delete", {id: run.id, confirm: true}); loadRuns(); loadOutputs(); }
+              catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+            }}),
+            el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { delBox.style.display = "none"; }})));
+      } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+    }});
     const alertRow = el("div", {class: "field-hint"});
     host.append(el("div", {class: "run-row"},
       el("div", {class: "run-row-head"},
@@ -862,7 +897,7 @@ async function loadRuns() {
       el("div", {class: "field-hint", text: [run.image_folder && `Trained on ${run.image_folder}`,
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
-      el("div", {class: "field-row"}, showFiles, again), alertRow, files));
+      el("div", {class: "field-row"}, showFiles, again, del), delBox, alertRow, files));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
     "the desktop app, is listed here with its results."}));

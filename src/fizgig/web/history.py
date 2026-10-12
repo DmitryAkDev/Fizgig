@@ -114,6 +114,16 @@ def end(run_id, result, progress=None):
         pass
 
 
+def remove(run_id):
+    """Take a run off the list (Runs & outputs' Delete run; its files are deleted by the caller)."""
+    try:
+        with _Lock():
+            runs = _read()
+            _write([r for r in runs if r.get("id") != run_id])
+    except OSError:
+        pass
+
+
 def runs():
     """Newest first. A run still marked running whose app is gone for good (a crash) reads as ended unknown, a week on."""
     out = list(reversed(_read()))

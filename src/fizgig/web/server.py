@@ -385,6 +385,86 @@ def _checkpoint_kind(path) -> str:
     return "finetune" if meta.get("fizgig_finetune") else "lora"
 
 
+def run_outputs(folder, name) -> dict:
+    """Everything a run made in its output folder, for Delete run: its LoRAs / checkpoints (<name>.safetensors,
+    <name>-NNNNNN.safetensors), its resumable states (<name>-NNNNNN-state, <name>-state) and its previews in sample/.
+    Only names that are exactly this run's: a longer-named run in the same folder (name2) is never caught."""
+    ckpts, states = [], []
+    try:
+        entries = list(os.scandir(folder))
+    except OSError:
+        entries = []
+    for e in entries:
+        if e.is_file() and e.name.lower().endswith(".safetensors"):
+            stem = e.name[:-len(".safetensors")]
+            m = _CKPT.match(stem)
+            if (m.group(1) if m else stem) == name:
+                ckpts.append(e.path)
+        elif e.is_dir() and re.fullmatch(re.escape(name) + r"(-\d{6})?-state", e.name):
+            states.append(e.path)
+    previews = _run_samples(folder, name)
+
+    def size(p):
+        if os.path.isdir(p):
+            return sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(p) for f in fs)
+        return os.path.getsize(p)
+    total = 0
+    for p in ckpts + states + previews:
+        try:
+            total += size(p)
+        except OSError:
+            pass
+    return {"checkpoints": ckpts, "states": states, "previews": previews, "bytes": total}
+
+
+def delete_run(run_id, confirm=False) -> dict:
+    """Delete run: what it would delete (confirm False), or delete it - its checkpoints, states and previews, and its
+    line in the run history. The training folder is never touched. Refused while that run is training."""
+    import shutil
+    rec = history.get(run_id)
+    if rec is None:
+        return {"error": "That run isn't in the list any more."}
+    folder, name = str(rec.get("output_dir") or ""), str(rec.get("lora") or "")
+    same = lambda d, n: (os.path.normcase(os.path.abspath(d or ".")) == os.path.normcase(os.path.abspath(folder or "."))
+                         and (n or "").lower() == name.lower())
+    with _lock:
+        web_live = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
+        if web_live and same(_run["output_dir"], _run["lora"]):
+            return {"error": "That run is training now. Stop it first."}
+    d = live.desktop_state()
+    if d and live.busy(d) and same(d.get("output_dir"), d.get("lora")):
+        return {"error": "That run is training in the desktop app now. Stop it there first."}
+    found = run_outputs(folder, name) if folder and name else {"checkpoints": [], "states": [], "previews": [],
+                                                              "bytes": 0}
+    if not confirm:
+        return {"ok": True, "checkpoints": len(found["checkpoints"]), "states": len(found["states"]),
+                "previews": len(found["previews"]), "bytes": found["bytes"], "folder": folder}
+    failed = []
+    for p in found["checkpoints"] + found["previews"]:
+        try:
+            os.remove(p)
+        except OSError:
+            failed.append(p)
+    for p in found["states"]:
+        try:
+            shutil.rmtree(p)
+        except OSError:
+            failed.append(p)
+    try:                                       # a pause record for this run would offer a Resume that can't work
+        side = os.path.join(folder, ".fizgig_paused.json")
+        with open(side, encoding="utf-8") as f:
+            paused = json.load(f)
+        if str(paused.get("output_name") or "") == name:
+            os.remove(side)
+    except (OSError, ValueError, AttributeError):
+        pass
+    if failed:
+        return {"error": f"{len(failed)} file(s) couldn't be deleted (in use?), e.g. {failed[0]}. The run stays "
+                         "in the list; try again."}
+    history.remove(run_id)
+    return {"ok": True}
+
+
 def latest_state(out_dir, name) -> str:
     """The run's newest resumable state folder (<name>-NNNNNN-state), or ""."""
     try:
@@ -1432,6 +1512,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/queue/hold":
                 webqueue.hold("Held by you. Press Start queue to carry on.")
                 return self.json({"ok": True})
+            if path == "/api/runs/delete":              # Delete run: asks first (confirm false = what it'd delete)
+                r = delete_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/settings":            # Start again with these settings
                 rec = history.get(str(b.get("id") or ""))
                 desc = get_family(rec.get("family", "")) if rec else None
