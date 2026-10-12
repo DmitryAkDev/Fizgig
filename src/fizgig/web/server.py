@@ -318,7 +318,7 @@ def _studio_post(what, b):
     if what == "keep":
         return {"path": studio.keep_tweaked()}
     if what == "render":
-        return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode")
+        return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode", "mix")
                                                           if b.get(k) is not None})
     if what == "cancel":
         studio._send({"cmd": "cancel"})
@@ -1459,6 +1459,21 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
             return self._stream(p, attachment=False)
+        if path == "/api/studio/epochs":             # the run a LoRA belongs to (the mix's Up to dial)
+            p = (qs.get("path") or [""])[0]
+            if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
+                return self.json({"error": "That LoRA isn't there."}, 404)
+            from fizgig.families.epochs import run_epochs
+            run = run_epochs(p)
+            own = next((e for e, f in run if os.path.normcase(os.path.abspath(f)) == os.path.normcase(os.path.abspath(p))), None)
+            return self.json({"epochs": [e for e, _f in run], "own": own})
+        if path == "/api/studio/lorafamily":         # which model a LoRA is for (the mix only takes this model's)
+            from fizgig.families.registry import family_of_lora
+            try:
+                d = family_of_lora((qs.get("path") or [""])[0])
+            except Exception:
+                d = None
+            return self.json({"key": d.key if d else "", "name": d.display_name if d else ""})
         if path == "/api/studio/report":             # the Profiler's HTML report for the loaded LoRA
             st = studio.status()
             rep = (st.get("profile") or {}).get("report") or ""

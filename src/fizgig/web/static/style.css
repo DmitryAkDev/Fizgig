@@ -1673,3 +1673,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   background: rgba(59, 159, 216, 0.25); border-left: 2px solid #3B9FD8; border-right: 2px solid #3B9FD8; }
 .st-pane.audio #stTweak { cursor: crosshair; }
 #stAudioRows input[type=range] { width: 130px; }
+
+/* Studio: the epoch / LoRA mix rows */
+#stMixRows input[type=range], #stDmixRows input[type=range] { width: 150px; }
+.st-mix-txt { min-width: 9ch; display: inline-block; }
+.st-mixrow { display: flex; align-items: center; gap: 8px; margin: 2px 0; flex: 1 1 auto; min-width: 0; }
+.st-mixrow .field-hint { white-space: nowrap; flex: none; }
+.st-mixrow .st-mixname { min-width: 0; flex: 0 1 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-mixrow input[type=range] { width: 200px; }

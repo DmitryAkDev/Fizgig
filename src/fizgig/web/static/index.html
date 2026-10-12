@@ -447,12 +447,37 @@
                 <button class="btn" id="stPrimaryPick">Choose…</button>
                 <span class="field-label">at strength</span><input type="text" id="stPScale" class="w-num" value="1">
                 <button class="btn" id="stEqP" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
+              <div id="stMixRows" style="display:none">
+                <div class="field-row"><span class="field-label">Mix:</span>
+                  <label class="radio-label" title="The primary file alone."><input type="radio" name="stMixMode" value="off" checked> Off</label>
+                  <label class="radio-label" title="The saved epochs beside the primary, mixed as a moving average: Up to = the newest epoch in it, History = how much of the earlier ones comes with it. Block sliders apply to the whole mix; Save bakes it into one LoRA."><input type="radio" name="stMixMode" value="epochs"> Epochs of this run</label>
+                  <label class="radio-label" title="The primary plus any LoRAs of this model, each at its own amount - e.g. funk 1.0 + synthwave 0.5 - then shaped with the block sliders. Save bakes it into one LoRA."><input type="radio" name="stMixMode" value="mix"> LoRA mix</label></div>
+                <div class="field-row" id="stMixEpochs" style="display:none"><span class="field-label"></span>
+                  <span class="st-inline" title="Mixes the saved epochs of the primary's run (the files beside it) as an exponential moving average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs comes with it (0 = that epoch alone). The primary's block sliders apply to the whole mix, and Save bakes it into the LoRA.">
+                    <span class="field-hint">Up to</span><input type="range" id="stMixUpto" min="0" max="1" step="1" value="1">
+                    <span class="field-hint st-mix-txt" id="stMixUptoTxt"></span>
+                    <span class="field-hint">History</span><input type="range" id="stMixHist" min="0" max="0.95" step="0.05" value="0.5">
+                    <span class="field-hint st-mix-txt" id="stMixHistTxt"></span></span></div>
+                <div id="stMixList" style="display:none"><div id="stMixListRows"></div>
+                  <div class="field-row"><span class="field-label"></span><button class="btn btn-sm" id="stMixAdd">+ Add LoRA…</button></div></div>
+                <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stMixInfo"></span></div>
+              </div>
               <div class="field-row"><span class="field-label">Donor LoRA:</span>
                 <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
                 <button class="btn" id="stDonorPick">Choose…</button>
                 <button class="btn" id="stDonorUnload">Unload donor</button>
                 <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1">
                 <button class="btn" id="stEqD" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
+              <div id="stDmixRows" style="display:none">
+                <div class="field-row"><span class="field-label">Donor epoch blend:</span>
+                  <label class="checkbox-label"><input type="checkbox" id="stDmixOn"> Blend the donor's epochs</label>
+                  <span class="st-inline" title="Mixes the saved epochs of the donor's run (the files beside it) as an exponential moving average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs comes with it (0 = that epoch alone). The donor's block sliders apply to the whole mix, and Save bakes it into the LoRA.">
+                    <span class="field-hint">Up to</span><input type="range" id="stDmixUpto" min="0" max="1" step="1" value="1">
+                    <span class="field-hint st-mix-txt" id="stDmixUptoTxt"></span>
+                    <span class="field-hint">History</span><input type="range" id="stDmixHist" min="0" max="0.95" step="0.05" value="0.5">
+                    <span class="field-hint st-mix-txt" id="stDmixHistTxt"></span></span></div>
+                <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stDmixInfo"></span></div>
+              </div>
               <div class="field-row"><span class="field-label">Prompt:</span>
                 <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
               <div id="stAudioRows" style="display:none">

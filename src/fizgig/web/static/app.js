@@ -1570,6 +1570,7 @@ function studioKind(L, sv) {
   $("stPlayBoth").style.display = video || audio ? "" : "none";
   studioAce(L, sv);
   studioEqButtons(L);
+  studioMixShow(L);
   if (!video) return;
   const V = L.video, h3 = sv.h3 || {};
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
@@ -1962,6 +1963,146 @@ function studioEqNote(st) {
   return bits.join(" ");
 }
 
+// ---- the mix: Epochs of this run / LoRA mix for the primary, the donor's epoch blend (the desktop's) ----
+// S.st.mix = {mode: "off"|"epochs"|"mix", epochs: [n...], upto, hist, rows: [[path, amount]...]}; S.st.dmix the donor's
+function studioMixReset(note) {
+  S.st.mix = {mode: "off", epochs: [], rows: []}; S.st.dmix = {on: false, epochs: []};
+  document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+  $("stDmixOn").checked = false;
+  $("stMixInfo").textContent = note || ""; $("stDmixInfo").textContent = "";
+  studioMixLayout();
+}
+
+function studioDmixOff() {
+  if (!S.st.dmix) return;
+  S.st.dmix = {on: false, epochs: []}; $("stDmixOn").checked = false; $("stDmixInfo").textContent = ""; studioMixLayout();
+}
+
+function studioMixShow(L) {
+  const on = !!L && L.kind !== "video";                 // H3's engine has no mix (as the desktop)
+  $("stMixRows").style.display = $("stDmixRows").style.display = on ? "" : "none";
+  studioMixReset();
+}
+
+function studioMixLayout() {
+  const m = S.st.mix || {mode: "off"};
+  $("stMixEpochs").style.display = m.mode === "epochs" ? "" : "none";
+  $("stMixList").style.display = m.mode === "mix" ? "" : "none";
+  for (const [p, st, on] of [["stMix", m, m.mode === "epochs"], ["stDmix", S.st.dmix || {}, !!(S.st.dmix || {}).on]]) {
+    const eps = st.epochs || [];
+    for (const id of [p + "Upto", p + "Hist"]) $(id).disabled = !on || eps.length < 2;
+    $(p + "Upto").max = Math.max(1, eps.length - 1);
+    const i = Math.max(0, Math.min(eps.length - 1, parseInt($(p + "Upto").value, 10) || 0));
+    $(p + "UptoTxt").textContent = eps.length ? `epoch ${eps[i]}` : "";
+    const h = snap05($(p + "Hist").value);
+    $(p + "HistTxt").textContent = !eps.length ? "" : h < 0.025 ? "0 (that epoch alone)" : `${h.toFixed(2)} (about ${Math.round(1 / (1 - h))} epochs)`;
+  }
+}
+
+async function studioMixEpochs(role) {
+  // the run beside the role's file; false when there is nothing to blend (the note says why)
+  const path = (role === "primary" ? $("stPrimary") : $("stDonor")).value.trim();
+  const info = role === "primary" ? "stMixInfo" : "stDmixInfo";
+  if (!S.st.ready || (role === "donor" && !S.st.donor)) {
+    $("stStatus").textContent = `Load the ${role} LoRA first, then ${role === "primary" ? "pick a mix" : "tick its epoch blend"}.`;
+    return false;
+  }
+  let r;
+  try { r = await api(`/api/studio/epochs?path=${encodeURIComponent(path)}`); }
+  catch (e) { $("stStatus").textContent = `Could not read the ${role}'s epochs: ${e.message}`; return false; }
+  if ((r.epochs || []).length < 2) {
+    $(info).textContent = `Only one epoch of the ${role}'s run is beside its file, so there is nothing to blend.`;
+    return false;
+  }
+  const st = role === "primary" ? S.st.mix : S.st.dmix, p = role === "primary" ? "stMix" : "stDmix";
+  st.epochs = r.epochs;
+  $(p + "Upto").max = r.epochs.length - 1;
+  $(p + "Upto").value = r.epochs.indexOf(r.own) >= 0 ? r.epochs.indexOf(r.own) : r.epochs.length - 1;
+  return true;
+}
+
+function studioMixRows() {
+  const host = $("stMixListRows");
+  host.replaceChildren();
+  S.st.mix.rows.forEach(([path, amount], i) => {
+    const name = path.split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
+    const val = el("span", {class: "field-hint", text: Number(amount).toFixed(2)});
+    const range = el("input", {type: "range", min: "-1", max: "2", step: "0.05", value: String(amount)});
+    range.addEventListener("input", () => { val.textContent = Number(range.value).toFixed(2); });
+    range.addEventListener("change", () => { S.st.mix.rows[i][1] = snap05(range.value); studioSchedule(); });
+    host.append(el("div", {class: "field-row"}, el("span", {class: "field-label"}), el("div", {class: "st-mixrow"},
+      el("span", {class: "st-mixname", title: path, text: (i === 0 ? "★ " : "") + name}), range, val,
+      i === 0 ? el("span", {class: "field-hint", text: "(the primary)"}) :
+        el("button", {class: "btn btn-sm", text: "✕", title: "Take it out of the mix", onclick: () => {
+          S.st.mix.rows.splice(i, 1); studioMixRows(); studioSchedule(); }}))));
+  });
+}
+
+async function studioMixMode(mode) {
+  const m = S.st.mix;
+  if (mode !== "off" && !S.st.ready) {
+    document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+    $("stStatus").textContent = "Load the primary LoRA first, then pick a mix.";
+    return;
+  }
+  m.mode = mode;
+  if (mode === "epochs" && !(await studioMixEpochs("primary"))) {
+    m.mode = "off"; document.querySelector('input[name="stMixMode"][value="off"]').checked = true;
+  }
+  if (mode === "mix") {
+    const prim = $("stPrimary").value.trim();
+    if (!m.rows.length || m.rows[0][0] !== prim) m.rows = [[prim, 1.0]];
+    studioMixRows();
+  }
+  if (m.mode === "off") $("stMixInfo").textContent = "Off: the primary file alone.";
+  studioMixLayout();
+  studioSchedule();
+}
+
+function studioMixExtra() {
+  // what the worker mixes before the render: {primary, donor}, each null for the file alone
+  const L = S.st.layout;
+  if (!L || L.kind === "video" || !S.st.mix) return {};
+  const m = S.st.mix, d = S.st.dmix || {};
+  const dial = (p, eps) => ({upto: eps[Math.max(0, Math.min(eps.length - 1, parseInt($(p + "Upto").value, 10) || 0))],
+    hist: snap05($(p + "Hist").value)});
+  return {mix: {
+    primary: m.mode === "epochs" && m.epochs.length > 1 ? {mode: "epochs", ...dial("stMix", m.epochs)} :
+      m.mode === "mix" && m.rows.length ? {mode: "mix", paths: m.rows.map((r) => r[0]), amounts: m.rows.map((r) => r[1])} : null,
+    donor: d.on && d.epochs.length > 1 && S.st.donor ? {mode: "epochs", ...dial("stDmix", d.epochs)} : null}};
+}
+
+function wireStudioMix() {
+  document.querySelectorAll('input[name="stMixMode"]').forEach((r) => r.addEventListener("change", () => studioMixMode(r.value)));
+  for (const p of ["stMix", "stDmix"]) for (const id of [p + "Upto", p + "Hist"]) {
+    $(id).addEventListener("input", studioMixLayout);
+    $(id).addEventListener("change", () => { studioMixLayout(); studioSchedule(); });
+  }
+  $("stDmixOn").addEventListener("change", async () => {
+    S.st.dmix.on = $("stDmixOn").checked;
+    if (S.st.dmix.on && !(await studioMixEpochs("donor"))) { S.st.dmix.on = false; $("stDmixOn").checked = false; }
+    if (!S.st.dmix.on) $("stDmixInfo").textContent = "Off: the donor file alone.";
+    studioMixLayout(); studioSchedule();
+  });
+  $("stMixAdd").addEventListener("click", () => pick($("stPrimary").value.trim(), false, async (p) => {
+    if (S.st.mix.rows.some((r) => r[0].toLowerCase() === p.toLowerCase())) return;
+    try {
+      const f = await api(`/api/studio/lorafamily?path=${encodeURIComponent(p)}`);
+      if (f.key && S.st.layout && f.key !== S.st.layout.key) {
+        $("stStatus").textContent = `Not added: ${p.split(/[\\/]/).pop()} is a LoRA for ${f.name}.`;
+        return;
+      }
+    } catch (e) { /* unreadable: the render says so */ }
+    S.st.mix.rows.push([p, 0.5]); studioMixRows(); studioSchedule();
+  }));
+}
+
+function studioMixNotes(n) {
+  if (!n) return;
+  if (n.mix_primary != null && S.st.mix && S.st.mix.mode !== "off") $("stMixInfo").textContent = n.mix_primary;
+  if (n.mix_donor != null && S.st.dmix && S.st.dmix.on) $("stDmixInfo").textContent = n.mix_donor;
+}
+
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
@@ -2200,7 +2341,7 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
-  try { await api("/api/studio/render", {state: studioState(), ...studioExtra()}); studioPoll(); }
+  try { await api("/api/studio/render", {state: studioState(), ...studioExtra(), ...studioMixExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
 }
 
@@ -2221,6 +2362,7 @@ async function studioStart() {
       fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
       h3_model: L.kind === "video" ? $("stH3Model").value : "", base_mode: L.kind === "video" ? L.video.base_of[$("stH3Base").value] : "",
       canvas: studioCanvas()});
+    if (S.st.mix && S.st.mix.mode !== "off" || (S.st.dmix && S.st.dmix.on)) studioMixReset();
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
     studioPoll();
@@ -2267,6 +2409,7 @@ async function studioPoll() {
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
+  studioMixNotes(st.notes);
   const pr = st.profile;
   $("stProfile").style.display = pr ? "" : "none";
   if (pr) {
@@ -2345,12 +2488,14 @@ function wireStudio() {
   wireStudioAce();
   S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
+  wireStudioMix();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
+    studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
-  $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember();
+  $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember(); studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioSchedule(); }); });
   $("stRefPick").addEventListener("click", () => pick($("stRef").value || S.imageFolder, false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioSchedule(); });

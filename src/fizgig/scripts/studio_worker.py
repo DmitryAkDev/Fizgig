@@ -76,6 +76,7 @@ def cmd_load(c):
             eng = desc.make_workbench_engine()
         S["engine"], S["desc"] = eng, desc
         S["nolora_out"] = S["nolora_song"] = None
+        S["mix_files"] = {}
         eng.turbo_preview = bool(c.get("turbo", True))
         if getattr(desc, "video_workbench", False):
             eng.int8_attention = True                # as the desktop's Repair Studio (comfy-kitchen where it exists)
@@ -99,6 +100,7 @@ def cmd_donor(c):
         eng = S["engine"]
         if eng is None or eng.primary_network is None:
             raise ValueError("Load a primary LoRA first.")
+        S.setdefault("mix_files", {}).pop("donor", None)      # a new donor: its epoch blend starts off
         if eng.donor_network is not None:
             eng.unload_donor()
         if c.get("path"):
@@ -141,6 +143,9 @@ def _render(c):
                 raise ValueError("Load a LoRA first.")
             st = _state(c["state"])
             eng.clear_cancel()
+            S["notes"] = {}
+            if not getattr(S["desc"], "video_workbench", False):
+                S["notes"].update(_apply_mix(eng, c.get("mix")))
             emit(ev="status", text=c.get("status") or "Generating preview…")
             out = c["out_dir"]
             os.makedirs(out, exist_ok=True)
@@ -282,6 +287,48 @@ def _render_clips(eng, desc, st, c, out, gen):
     return paths, (nolora if v.get("nolora") and hasattr(eng, "nolora_clip") else None)
 
 
+def _apply_mix(eng, mix):
+    """The primary's Epochs of this run / LoRA mix and the donor's epoch blend onto the engine, as the desktop's
+    _repair_blend_moved / _repair_mix_push; the "Mix: ..." lines for the page."""
+    from fizgig.families.workbench import DONOR, PRIMARY, ema_weights
+    if not hasattr(eng, "set_blend"):
+        return {}
+    notes, mix = {}, mix or {}
+    mem = S.setdefault("mix_files", {})
+    for role, key in (("primary", PRIMARY), ("donor", DONOR)):
+        net = eng.primary_network if role == "primary" else eng.donor_network
+        m = mix.get(role)
+        path = eng.primary_path if role == "primary" else eng.donor_path
+        if net is None:
+            mem.pop(role, None)
+            continue
+        if not m:
+            if mem.get(role):
+                eng.set_blend(None, role=key)
+                mem.pop(role, None)
+            continue
+        if m.get("mode") == "epochs":
+            if mem.get(role, (None,))[0] != ("epochs", path):
+                mem[role] = (("epochs", path), eng.find_epochs(role=key))
+            w = ema_weights(mem[role][1], int(m["upto"]), float(m["hist"]))
+            eng.set_blend(w, role=key)
+            top = sorted(w.items(), key=lambda kv: -kv[0])
+            notes["mix_" + role] = ("Mix: " + " \u00b7 ".join(f"e{e} {v * 100:.0f}%" for e, v in top[:6])
+                                    + (f" \u00b7 +{len(top) - 6} more" if len(top) > 6 else ""))
+        else:
+            paths = tuple(m.get("paths") or ())
+            amounts = [round(float(a) / 0.05) * 0.05 for a in (m.get("amounts") or ())]
+            if mem.get(role, (None,))[0] != ("mix", paths):
+                eng.set_sources(dict(enumerate(paths)), role=key)
+                mem[role] = (("mix", paths), None)
+            eng.set_blend({i: a for i, a in enumerate(amounts) if a}, role=key)
+            names = [os.path.splitext(os.path.basename(p))[0][:24] for p in paths]
+            notes["mix_" + role] = (f"Mix: {' · '.join(f'{n} {a:.2f}' for n, a in zip(names, amounts))}  "
+                                    f"(total {sum(amounts):.2f})" if len(paths) > 1 else
+                                    "Add LoRAs to mix with the primary; each gets its own amount.")
+    return notes
+
+
 def _audio_inputs(eng, a, seconds):
     """Prompt B, the song to start from and the reference recording onto the engine (it reads them each render), as
     the desktop's _repair_pb_push / _repair_src_effective; returns the readouts beside its sliders."""
@@ -351,7 +398,7 @@ def _render_songs(eng, st, c, out, gen):
         eng.driver.set_options({"preview_seconds": seconds})
     except Exception:
         pass
-    S["notes"] = _audio_inputs(eng, a, seconds)
+    S["notes"].update(_audio_inputs(eng, a, seconds))
     base = eng.generate_baseline(st)
     tweak = eng.generate_preview(st)
     from fizgig.minimax.common import write_wav
