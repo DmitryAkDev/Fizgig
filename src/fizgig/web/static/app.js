@@ -49,6 +49,8 @@ async function boot() {
   S.onPod = pr.on_pod;
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
+  S.outputDefault = pr.output_default || "";
+  S.outputPref = pr.lora_output_dir || "";
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -164,6 +166,12 @@ function renderRow(r) {
         row.append(up.btn);
         upStatus = up.status;
       }
+    }
+    if (r.key === "LORA_OUTPUT_DIR") {
+      // empty = the default from Preferences; a folder picked here is this model's own (kept per model)
+      input.placeholder = "Default: " + (S.outputDefault || "output_loras inside Fizgig");
+      row.append(el("button", {class: "btn", text: "Reset to default",
+        title: "Back to the LoRA output folder in Preferences", onclick: () => { input.value = ""; set(""); }}));
     }
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
     wrap.append(row);
@@ -281,6 +289,7 @@ function renderPrefs() {
   host.innerHTML = "";
   host.append(webPortCard());
   host.append(dataFolderCard());
+  host.append(outputFolderCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
@@ -433,6 +442,33 @@ function showUploadRoot() {
         "That is Fizgig's own training_data folder; choose another in Preferences (Training data folder). ") +
       "Uploading again with the same name adds to that folder.";
   }).catch(() => {});
+}
+
+// the default LoRA output folder: where a model's LoRAs go until you pick its own on the Training tab
+function outputFolderCard() {
+  const input = el("input", {type: "text", class: "w-path", value: S.outputPref || "",
+    placeholder: "output_loras inside Fizgig"});
+  const hint = el("div", {class: "field-hint", text: "Where a model's LoRAs and checkpoints go until you pick a " +
+    "folder for it on the Training tab (that one is kept for that model; Reset to default comes back here). Leave " +
+    "it empty for output_loras inside Fizgig. The desktop app's Preferences > Output Directories > LoRA output is " +
+    "the same setting."});
+  const save = async () => {
+    try {
+      await api("/api/prefs", {changes: {lora_output_dir: input.value.trim()}});
+      const pr = await api("/api/prefs");
+      S.outputDefault = pr.output_default; S.outputPref = pr.lora_output_dir;
+      const f = $("f_LORA_OUTPUT_DIR");
+      if (f) f.placeholder = "Default: " + S.outputDefault;
+      hint.dataset.saved = "1";
+    } catch (e) { hint.textContent = e.message; }
+  };
+  input.addEventListener("change", save);
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "LoRA output folder"})),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Folder:"}), input,
+        el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
+          pick(input.value || S.outputDefault, true, (p) => { input.value = p; save(); })})), hint));
 }
 
 function dataFolderCard() {

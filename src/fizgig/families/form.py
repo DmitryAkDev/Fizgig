@@ -153,7 +153,8 @@ def form(desc):
     add("model", "Base Model", "training",
         by_section("model") + ([_row("_model_note", desc.model_note, "note")] if desc.model_note else []))
     add("output", "Output", "training", [
-        _row("LORA_OUTPUT_DIR", "Output Directory", "folder", "Where the LoRA, its checkpoints and the previews go.",
+        _row("LORA_OUTPUT_DIR", "Output Directory", "folder", "Where the LoRA, its checkpoints and the previews go. A folder picked here is kept for "
+             "this model; empty (or Reset to default) uses the LoRA output folder in Preferences.",
              default=""),
         _row("LORA_NAME", "LoRA Name", default=f"my_lora_{desc.lora_name_suffix}" if desc.lora_name_suffix else "my_lora"),
     ])

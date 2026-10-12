@@ -195,6 +195,12 @@ def pref_path(prefs, key) -> str:
     return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(BASE_DIR, v))
 
 
+def default_output_dir() -> str:
+    """The LoRA output folder in Preferences (the desktop's Preferences > Output Directories > LoRA output, the same
+    prefs.json key), else output_loras inside Fizgig: where a model's LoRAs go until a folder is picked for it."""
+    return pref_path(load_prefs(), "lora_output_dir") or OUTPUT_DEFAULT
+
+
 def load_state() -> dict:
     return _read_json(STATE_FILE)
 
@@ -216,7 +222,7 @@ def _plan(family_key, values, image_folder, resume=""):
     if resume:
         values["RESUME_TRAINING"] = resume
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
-    out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or OUTPUT_DEFAULT
+    out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
     captioner = pref_path(prefs, "krea2_text_encoder")
     raw_ovr = prefs.get("caption_qwen_instructions")
@@ -261,7 +267,7 @@ def _fizgig_made(meta) -> bool:
 def output_folders() -> list:
     """Every folder Fizgig saves LoRAs and fine-tunes to: the web UI's per-model output folders, the desktop app's
     (its .last_used.json lora_output_dirs), the default output_loras, and the runs going now."""
-    found = [OUTPUT_DEFAULT]
+    found = [OUTPUT_DEFAULT, default_output_dir()]
     for vals in (load_state().get("values") or {}).values():
         if isinstance(vals, dict) and vals.get("LORA_OUTPUT_DIR"):
             found.append(vals["LORA_OUTPUT_DIR"])
@@ -1227,6 +1233,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
+                              "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
@@ -1394,7 +1401,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         parent = os.path.dirname(target)
-        last_out = (load_state().get("values") or {}).get("LORA_OUTPUT_DIR") or OUTPUT_DEFAULT
+        last_out = (load_state().get("values") or {}).get("LORA_OUTPUT_DIR") or default_output_dir()
         places = [("Training data", uploads_root()), ("Trained LoRAs", last_out), ("Uploaded files", UPLOAD_FILES),
                   ("Fizgig", BASE_DIR)]
         return self.json({"path": target, "parent": parent if parent != target else "", "dirs": dirs,
@@ -1600,7 +1607,7 @@ class Handler(BaseHTTPRequestHandler):
                     last = {"family": lr.get("family", ""), "values": lr.get("values") or {},
                             "image_folder": lr.get("image_folder", ""),
                             "lora": (lr.get("values") or {}).get("LORA_NAME", ""),
-                            "output_dir": (lr.get("values") or {}).get("LORA_OUTPUT_DIR") or OUTPUT_DEFAULT}
+                            "output_dir": (lr.get("values") or {}).get("LORA_OUTPUT_DIR") or default_output_dir()}
                 state = latest_state(last["output_dir"], last["lora"])
                 if not state:
                     return self.json({"error": "No saved state to resume from in the output folder."}, 400)
@@ -1646,7 +1653,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir",
-                                                                                          "input_dataset_dir"}
+                                                                                          "input_dataset_dir",
+                                                                                          "lora_output_dir"}
                 ch = b.get("changes") or {}
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
                 if "cuda_device" in ch:
