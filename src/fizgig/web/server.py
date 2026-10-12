@@ -132,6 +132,8 @@ def _poll_stats_loop():
                           ram_peak=max(_stats["ram_peak"], ru))
             mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
                     "lora": _run["lora"], "output_dir": _run["output_dir"]}
+        cs = captions.status()                   # the desktop app won't start a run beside a caption job
+        mine["captioning"] = cs["state"] in ("loading", "running", "translating")
         live.write(live.LIVE_WEB, mine)          # the desktop app reads this before starting a run
         if captions.model_loaded() and captions.status()["state"] == "loaded" and live.busy(live.desktop_state()):
             captions.unload()                    # the desktop app is training: give it the caption model's memory
@@ -301,7 +303,7 @@ def list_outputs(fizgig_only=True) -> dict:
             r["files"].append({"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
                                "epoch": epoch, "kind": "finetune" if meta.get("fizgig_finetune") else "lora"})
             r["time"] = max(r["time"], st.st_mtime)
-            r["samples"] = previews.get(base, 0)
+            r["samples"], r["samples_bytes"] = previews.get(base, (0, 0))
     for r in runs.values():
         r["files"].sort(key=lambda f: (f["epoch"] is not None, -(f["epoch"] or 0), -f["time"]))
     return {"runs": sorted(runs.values(), key=lambda r: -r["time"]), "hidden": hidden,
@@ -309,7 +311,7 @@ def list_outputs(fizgig_only=True) -> dict:
 
 
 def _folder_previews(folder) -> dict:
-    """{run name: how many previews} for an output folder's sample/, scanned once: a preview is named
+    """{run name: (how many previews, their bytes)} for an output folder's sample/, scanned once: a preview is named
     <run>_e<epoch>_…, so its run is everything before the last "_e<digits>_"."""
     out = {}
     try:
@@ -317,7 +319,8 @@ def _folder_previews(folder) -> dict:
             if e.is_file() and os.path.splitext(e.name)[1].lower() in MEDIA:
                 m = re.match(r"^(.*)_e\d+_", e.name)
                 if m:
-                    out[m.group(1)] = out.get(m.group(1), 0) + 1
+                    n, b = out.get(m.group(1), (0, 0))
+                    out[m.group(1)] = (n + 1, b + e.stat().st_size)
     except OSError:
         pass
     return out
@@ -388,6 +391,10 @@ def _start(family_key, values, image_folder, resume=""):
         return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
+    dk = live.desktop_state() or {}
+    if dk.get("captioning") or dk.get("caption_loaded"):
+        return {"error": "The desktop app's Captions tab has its caption model on the GPU. Press Unload Model there "
+                         "(or Stop, if it is captioning), then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
     desc, inputs, plan = _plan(family_key, values, image_folder, resume)
     if plan.problems:
@@ -661,7 +668,7 @@ def _caption_gpu_check(need_gb):
         mine = _run["proc"] is not None and _run["proc"].poll() is None
     if not (mine or live.busy(live.desktop_state())):
         return
-    g = _chosen_gpu(list_gpus(), load_prefs().get("cuda_device"))
+    g = _chosen_gpu(list_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device"))
     free = (g["total_gb"] - g["used_gb"]) if g else 0.0
     if free < need_gb + 3.0:
         raise ValueError(f"A run is training and the card has {free:.0f} GB free; this needs about {need_gb + 3:.0f} GB "
@@ -671,11 +678,11 @@ def _caption_gpu_check(need_gb):
 def _caption_args(b):
     prefs = load_prefs()
     desc = get_family(b.get("family", ""))
-    clips = bool(desc is not None and "clip" in desc.media)
+    media = set(desc.media) if desc is not None else {"photo"}
     folder = str(b.get("folder") or "")
     if not os.path.isdir(folder):
         raise ValueError("Choose the training folder on the Start tab first.")
-    return prefs, folder, clips
+    return prefs, folder, "clip" in media, "photo" in media, "voice" in media
 
 
 def _cancel_fetch():
@@ -1122,7 +1129,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                     "captions")})
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
-                prefs, folder, clips = _caption_args(b)
+                prefs, folder, clips, photos, _ = _caption_args(b)
                 cap = pref_path(prefs, "krea2_text_encoder")
                 model = str(b.get("model") or "")
                 _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
@@ -1131,21 +1138,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(captions.ai_captions(
                     prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
-                    bool(b.get("overwrite")), clips, only=only or None))
+                    bool(b.get("overwrite")), clips, only=only or None, photos=photos))
             if path == "/api/captions/static":
-                _, folder, clips = _caption_args(b)
+                _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
-                                                          bool(b.get("overwrite")), clips))
+                                                          bool(b.get("overwrite")), clips, photos, voice))
             if path == "/api/captions/songs":
-                _, folder, _ = _caption_args(b)
+                _, folder, *_ = _caption_args(b)
                 return self.json(captions.song_captions(folder, str(b.get("trigger") or ""),
                                                         str(b.get("words") or ""), bool(b.get("overwrite"))))
             if path == "/api/captions/replace":
-                _, folder, _ = _caption_args(b)
+                _, folder, *_ = _caption_args(b)
                 return self.json(captions.find_replace(folder, str(b.get("find") or ""), str(b.get("replace") or ""),
                                                        bool(b.get("apply"))))
             if path == "/api/captions/translate":
-                prefs, folder, _ = _caption_args(b)
+                prefs, folder, *_ = _caption_args(b)
                 _caption_gpu_check(1.0)
                 return self.json(captions.translate(prefs, folder, bool(b.get("skip_existing"))))
             if path == "/api/captions/stop":

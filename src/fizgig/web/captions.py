@@ -107,8 +107,10 @@ def instruction_override(prefs, key, text):
 
 
 # ---- the files a job works on --------------------------------------------------------------------------------
-def media_files(folder, clips):
-    exts = IMAGE_EXTS | ({".mp4"} if clips else set())
+def media_files(folder, clips, photos=True, audio=False):
+    """The files a family captions: pictures (unless it trains on no pictures - a song folder's waveform previews
+    are not training data), .mp4 clips when it trains on clips, and recordings when asked (Static captions)."""
+    exts = (IMAGE_EXTS if photos else set()) | ({".mp4"} if clips else set()) | (AUDIO_EXTS if audio else set())
     try:
         return sorted(os.path.join(folder, n) for n in os.listdir(folder)
                       if os.path.splitext(n)[1].lower() in exts and os.path.isfile(os.path.join(folder, n)))
@@ -116,12 +118,13 @@ def media_files(folder, clips):
         return []
 
 
-def static_captions(folder, trigger, overwrite, clips):
-    """The trigger word as every file's caption (only files without one unless overwrite)."""
+def static_captions(folder, trigger, overwrite, clips, photos=True, voice=False):
+    """The trigger word as every file's caption (only files without one unless overwrite); a family that trains on
+    recordings gets them too."""
     if not trigger.strip():
         raise ValueError("Type a trigger word first.")
     made = skipped = 0
-    for p in media_files(folder, clips):
+    for p in media_files(folder, clips, photos, audio=voice):
         cap = os.path.splitext(p)[0] + ".txt"
         if os.path.exists(cap) and not overwrite:
             skipped += 1
@@ -206,7 +209,7 @@ def _reader(proc):
             if line == "READY":
                 _st["ready"].set()
                 if _st["state"] == "loading":
-                    _st["state"] = "loaded"
+                    _st["state"] = "running" if _st["job"] else "loaded"     # a queued job goes straight on
                 continue
             m = re.match(r"PROGRESS: (\d+) (\d+)", line)
             if m:
@@ -233,6 +236,8 @@ def _env(prefs):
     want = str(prefs.get("cuda_device") or "").strip()
     if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):
         env["CUDA_VISIBLE_DEVICES"] = want
+        if want.isdigit():
+            env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # the same card as training (server._popen)
     return env
 
 
@@ -245,14 +250,18 @@ def _popen(cmd, prefs, stdin=False):
 
 
 def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_tokens, trigger, overwrite, clips,
-                only=None):
+                only=None, photos=True):
     """Caption the folder's pictures (and clips) with Florence-2 or Qwen3-VL, or just `only` (a re-caption). The
     worker loads once and stays loaded for the next batch."""
     if _busy():
         raise ValueError("A captioning job is already running. Stop it first.")
     if model == QWEN_MODEL and not captioner:
         raise ValueError("Qwen3-VL needs the Krea 2 text encoder set in Preferences.")
-    images = [p for p in (only or media_files(folder, clips)) if os.path.isfile(p)]
+    images = [p for p in (only or media_files(folder, clips, photos)) if os.path.isfile(p)]
+    if not images and not only:
+        raise ValueError("Nothing here for the AI to caption: this model trains on recordings. Use Static Caption All "
+                         "or Caption every song." if not photos and not clips else
+                         "No pictures or clips in the training folder.")
     if not only and not overwrite:
         images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ".txt")]
     if not images:
@@ -299,11 +308,13 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     with _lock:
         _st.update(job="re-caption" if only else "captions", done=0, total=len(images), ok=0, fail=0)
         if _st["state"] == "loaded":
-            _st["state"] = "running"
+            _st["state"] = "running"                  # busy from now: a second job waits for this one
         ready, proc = _st["ready"], _st["proc"]
 
     def send():
-        ready.wait(600)                           # the model loads first (minutes the first time: a download)
+        while not ready.wait(5):                  # the model loads first (minutes the first time: a download)
+            if proc is None or proc.poll() is not None:
+                return
         with _lock:
             if proc is None or proc.poll() is not None or _st["proc"] is not proc:
                 return

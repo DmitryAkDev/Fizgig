@@ -1193,3 +1193,24 @@ input[type="range"] {
 .pref-file:last-of-type { border-bottom: none; }
 .pref-file .field-row { margin-bottom: 6px; }
 .pref-file .field-label { align-self: center; }
+
+/* a disabled button looks it (Stop with nothing running) */
+.btn:disabled, .btn[disabled] { opacity: 0.4; cursor: default; filter: grayscale(0.6); }
+/* links on dark cards (licence pages, Create a token) */
+.section-card a:not(.btn), .modal-window a:not(.btn) { color: var(--queue-blue); }
+.section-card a:not(.btn):hover { color: var(--queue-blue-hover); }
+/* the captions grid lines up with the cards above it; players fit their tile */
+.captions-grid { margin: 12px 36px 16px 36px; }
+.caption-card audio, .caption-card video, .gallery-item audio { width: 100%; max-width: 100%; box-sizing: border-box; }
+/* rows of file names never push the page sideways */
+.checkpoint-row { min-width: 0; }
+.checkpoint-row > * { min-width: 0; overflow-wrap: anywhere; }
+.card-desc { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  /* every tab on screen: the row wraps instead of hiding the last ones off to the right */
+  .tab-bar-scroller { flex-wrap: wrap; overflow-x: visible; height: auto; gap: 2px; }
+  .tab-item { margin-right: 0; border-bottom: 1px solid var(--border); }
+  .pref-file .field-label { align-self: auto; }
+  .captions-grid { margin: 8px; }
+  .checkpoint-row .btn, .section-card .card-content > .btn-sm { width: 100%; justify-content: center; }
+}

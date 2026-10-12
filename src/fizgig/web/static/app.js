@@ -366,6 +366,7 @@ function gpuPickCard() {
 function showUploadRoot() {
   api("/api/upload/root").then((d) => {
     S.uploadRoot = d;
+    if (!S.onPod) $("imageFolder").placeholder = d.root + (d.root.includes("\\") ? "\\" : "/") + "my_subject";
     const box = $("dataFolder");
     if (box && document.activeElement !== box) box.value = d.set ? d.root : "";
     $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
@@ -679,7 +680,7 @@ function renderOutputs() {
           (rest.length === 1 ? "" : "s");
       }}), more);
     if (run.samples) body.append(el("div", {class: "field-row"}, el("a", {class: "btn btn-sm",
-      text: `Download the previews (${run.samples} files, .zip)`,
+      text: `Download the previews (${run.samples} files, ${size(run.samples_bytes || 0)}, .zip)`,
       href: `/api/outputs/previews?dir=${encodeURIComponent(run.folder)}&name=${encodeURIComponent(run.name)}` +
         `&t=${encodeURIComponent(TOKEN)}`})));
     host.append(el("div", {class: "section-card"},
@@ -841,7 +842,8 @@ function renderCaptions() {
     }});
     const kind = it.name.split(".").pop().toLowerCase();
     const isAudio = ["wav", "mp3", "flac", "m4a"].includes(kind);
-    const recap = isAudio ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
+    const trainsPictures = !S.fam || !S.fam.media || S.fam.media.includes("photo") || kind === "mp4";
+    const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
       title: "Write this file's caption again with the model and task above", onclick: async () => {
         status.textContent = "Re-captioning…";
         const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
@@ -941,7 +943,10 @@ async function login() {
 
 // ---- tabs and wiring ---------------------------------------------------------------------------------------
 function showTab(name) {
-  document.querySelectorAll(".tab-item").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-item").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    if (b.dataset.tab === name) b.scrollIntoView({block: "nearest", inline: "nearest"});
+  });
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "captions") loadCaptions();
   if (name === "samples") loadGallery();

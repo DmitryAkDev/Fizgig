@@ -32344,11 +32344,18 @@ class LoRATrainerGUI:
         # One run on the GPU at a time: a run started in the web UI holds it
         try:
             from fizgig.web import live as _live
-            if _live.busy(_live.read_fresh(_live.LIVE_WEB)):
+            _web = _live.read_fresh(_live.LIVE_WEB)
+            if _live.busy(_web):
                 messagebox.showwarning(
                     "The web UI is training",
                     "A run started in the web UI is using the GPU. Stop or pause it there (its Training tab), "
                     "then start this one.")
+                return
+            if _web and _web.get("captioning"):
+                messagebox.showwarning(
+                    "The web UI is making captions",
+                    "The web UI's Captions tab is captioning on the GPU. Let it finish or press Stop there, then "
+                    "start this run (the web UI then frees the caption model by itself).")
                 return
         except Exception:
             pass
@@ -33597,6 +33604,8 @@ class LoRATrainerGUI:
             self._live_was_busy = busy_now
             _live.write(_live.LIVE_DESKTOP, {
                 "running": running, "state": state, "trainer_pid": proc.pid if running else None,
+                "captioning": bool(getattr(self, "_captioning_running", False)),
+                "caption_loaded": bool(self._caption_worker_alive()),
                 "trainer_started": self._live_proc_started(proc) if running else None,
                 "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),
                 "lora": str(self.settings.get("LORA_NAME", "") or ""),
