@@ -110,6 +110,7 @@ training_data/
 # the desktop app and the web UI showing each other's runs (src/fizgig/web/live.py)
 .fizgig_live_*.json
 .fizgig_desktop_cmd.json*
+.fizgig_desktop_samples.json*
 .fizgig_desktop_console.log
 # single files uploaded through the web UI (a context LoRA, a test photo)
 uploads/
