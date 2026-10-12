@@ -610,11 +610,24 @@
                 <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
                 <span class="st-chip" id="stMetTex"></span><span class="st-chip" id="stMetClip"></span><span class="st-chip" id="stMetSat"></span>
               </div>
-              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
-                <span id="stSongTools" style="display:none">
-                  <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint the loop section.">⤵ Use as source</button>
-                  <button class="btn btn-sm" id="stRegionClear">Whole song</button>
-                  <span class="field-hint" id="stRegionNote">Drag across the Tweaked waveform to loop a section (and choose what Repaint remakes).</span></span></div>
+              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
+              <div class="st-song" id="stSong" style="display:none">
+                <div class="field-row st-song-btns">
+                  <button class="btn btn-sm" id="stSongBaseline" data-side="baseline">▶ Baseline</button>
+                  <button class="btn btn-sm" id="stSongTweaked" data-side="tweaked">▶ Tweaked</button>
+                  <label class="checkbox-label" title="The song repeats - the section when one is set, else the whole song"><input type="checkbox" id="stSongLoop"> 🔁 Loop</label>
+                  <label class="checkbox-label" title="Each new Tweaked render plays from the top (off: the song carries on at the same moment in its new version)"><input type="checkbox" id="stSongRestart"> ⏮ Restart on tweak</label>
+                  <button class="btn btn-sm" id="stSongNolora" data-side="nolora">▶ No LoRA</button>
+                  <button class="btn btn-sm" id="stSongPause">⏸ Pause</button>
+                  <a class="btn btn-sm" id="stSongSave" title="The whole Tweaked song as rendered (48 kHz WAV)">💾 Save Tweaked WAV</a>
+                  <span id="stSongTools">
+                    <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint: drag across the waveform to choose a section to make new (the rest stays exactly as it is), or switch Use to Extend.">⤵ Use as source</button></span>
+                  <span class="st-song-time" id="stSongTime">0:00 / 0:00</span>
+                </div>
+                <canvas id="stSongBar" class="st-song-bar" height="72"></canvas>
+                <div class="field-row"><span class="field-hint" id="stRegionNote"></span>
+                  <button class="btn btn-sm" id="stRegionClear">Whole song</button></div>
+              </div>
             </div>
           </div>
           <div class="section-card" id="stMasters" style="display:none">

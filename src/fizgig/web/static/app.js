@@ -2724,7 +2724,9 @@ function studioKind(L, sv) {
   document.querySelectorAll(".st-pane").forEach((p) => p.classList.toggle("audio", audio));
   $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
     audio ? "Play any song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
-  $("stPlayBoth").style.display = video || audio ? "" : "none";
+  $("stPlayBoth").style.display = video ? "" : "none";
+  $("stSong").style.display = audio ? "" : "none";
+  if (!audio) songStop();
   studioAce(L, sv);
   studioEqButtons(L);
   studioMixShow(L);
@@ -2909,7 +2911,7 @@ const snap05 = (v) => Math.round(Number(v) / 0.05) * 0.05;
 function studioAce(L, sv) {
   const on = L.kind === "audio";
   $("stAudioRows").style.display = on && (L.prompt_blend || L.audio_source) ? "" : "none";
-  $("stSongTools").style.display = on ? "" : "none";
+  $("stSongTools").style.display = L.audio_source ? "" : "none";
   if (!on) { S.st.region = null; studioRegionDraw(); return; }
   const a = sv.ace || {};
   $("stPbOn").parentElement.style.display = L.prompt_blend ? "" : "none";
@@ -2967,17 +2969,224 @@ function studioAceExtra() {
 }
 
 function studioRegionDraw() {
-  const r = S.st.region, box = $("stRegion"), img = $("stTweak"), secs = Number($("stRes").value) || 30;
-  if (!r || img.style.display === "none" || !img.naturalWidth) { box.style.display = "none"; }
-  else {
-    box.style.display = "block";
-    box.style.top = img.offsetTop + "px"; box.style.height = img.offsetHeight + "px";
-    box.style.left = (img.offsetLeft + img.offsetWidth * r[0] / secs) + "px";
-    box.style.width = (img.offsetWidth * (r[1] - r[0]) / secs) + "px";
+  const r = S.st.region;
+  $("stRegionClear").style.display = r ? "" : "none";
+  $("stRegionNote").textContent = r ? `Section ${r[0].toFixed(1)}–${r[1].toFixed(1)} s` +
+    ($("stSongLoop").checked ? " - Loop repeats it" : " - tick Loop to repeat it") +
+    ($("stSrcOn").checked && $("stSrcMode").value === "repaint" ? "; Repaint remakes it." : ".") + " Drag its tabs to refine it." :
+    "Click the waveform to jump, drag the playhead to scrub, drag across it to choose a section to loop" +
+    ($("stSrcOn").checked && $("stSrcMode").value === "repaint" ? " (and what Repaint remakes)" : "") + ". Right-click: the whole song.";
+  songDraw();
+}
+
+// ---- the song player: one full-width waveform of the side being heard, its playhead, the section (the desktop's) ----
+S.song = {side: null, pos: 0, src: {}, gen: {}, peaks: {}, drag: null};
+const SONG_SIDES = {baseline: "stBaseAud", tweaked: "stTweakAud", nolora: "stNolAud"};
+const songPlayer = (side) => $(SONG_SIDES[side]);
+const songHas = (side) => !!S.song.src[side];
+function songStripSide() {
+  return songHas(S.song.side) ? S.song.side : ["tweaked", "baseline", "nolora"].find(songHas) || null;
+}
+function songDur(side) {
+  const pk = S.song.peaks[side || songStripSide()];
+  return pk ? pk.dur : 0;
+}
+function songPlaying() { const p = S.song.side && songPlayer(S.song.side); return !!(p && !p.paused); }
+function songNow() { const p = S.song.side && songPlayer(S.song.side); return p && p.getAttribute("src") ? p.currentTime : S.song.pos; }
+function songSpan() {
+  // where Loop repeats: the section when one is set, else the whole song
+  const d = songDur(), r = S.st.region;
+  return r && $("stSongLoop").checked && r[0] < d ? [r[0], Math.min(r[1], d)] : [0, d];
+}
+function songLoad(side, url, gen) {
+  // a new render of one side: its waveform, and - when it's the side being heard - the new version carries on at the
+  // same moment (Restart on tweak: a new Tweaked plays from the top)
+  if (S.song.src[side] === url) return;
+  S.song.src[side] = url;
+  const p = songPlayer(side), heard = S.song.side === side, was = heard && songPlaying(), at = songNow();
+  fetch(url.replace("/api/studio/image?", "/api/studio/peaks?"), {headers: {"X-Fizgig-Token": TOKEN}})
+    .then((r) => r.json()).then((pk) => { if (S.song.src[side] === url) { S.song.peaks[side] = pk; songDraw(); } }).catch(() => {});
+  p.src = url;
+  if (heard) {
+    const restart = side === "tweaked" && $("stSongRestart").checked;
+    p.addEventListener("loadedmetadata", () => {
+      p.currentTime = restart ? songSpan()[0] : Math.min(at, Math.max(0, p.duration - 0.05));
+      if (was || restart) p.play().catch(() => {});
+    }, {once: true});
   }
-  $("stRegionNote").textContent = r ? `Section ${r[0].toFixed(1)}–${r[1].toFixed(1)} s: the players loop it` +
-    ($("stSrcOn").checked && $("stSrcMode").value === "repaint" ? "; Repaint remakes it." : ".") :
-    "Drag across the Tweaked waveform to loop a section (and choose what Repaint remakes).";
+  songMark();
+}
+function songPlay(side, at) {
+  if (!songHas(side)) { $("stStatus").textContent = side === "nolora" ? "The No LoRA song renders after the first preview." :
+    "That song is not rendered yet."; return; }
+  let pos = at ?? songNow();
+  const [a, b] = songSpan(), d = songDur(side) || Infinity;
+  if ($("stSongLoop").checked && S.st.region && !(pos >= a && pos < b - 0.05)) pos = a;   // outside the section: its start
+  if (pos >= d - 0.05 || pos < 0) pos = 0;
+  for (const s of Object.keys(SONG_SIDES)) if (s !== side) songPlayer(s).pause();
+  const p = songPlayer(side);
+  S.song.side = side;
+  p.loop = $("stSongLoop").checked && !S.st.region;      // the whole song loops by itself; a section loops in songTick
+  const go = () => { p.currentTime = pos; p.play().catch(() => {}); };
+  if (p.readyState >= 1) go(); else p.addEventListener("loadedmetadata", go, {once: true});
+  songMark(); songTick();
+}
+function songStop() {
+  for (const s of Object.keys(SONG_SIDES)) { const p = songPlayer(s); if (p && !p.paused) { S.song.pos = p.currentTime; p.pause(); } }
+  songMark(); songDraw();
+}
+function songTick() {
+  if (!songPlaying()) { songMark(); songDraw(); return; }
+  const p = songPlayer(S.song.side), [a, b] = songSpan();
+  if ($("stSongLoop").checked && S.st.region && p.currentTime >= b) p.currentTime = a;     // the section, again
+  songDraw();
+  requestAnimationFrame(songTick);
+}
+function songMark() {
+  const playing = songPlaying();
+  for (const s of Object.keys(SONG_SIDES)) {
+    const b = $("stSong" + s[0].toUpperCase() + s.slice(1));
+    b.classList.toggle("on", playing && S.song.side === s);
+    b.disabled = !songHas(s);
+  }
+  const any = Object.keys(SONG_SIDES).some(songHas);
+  $("stSongPause").textContent = playing || !any ? "⏸ Pause" : "▶ Resume";
+  $("stSongPause").disabled = !any;
+  const t = S.song.src.tweaked;
+  $("stSongSave").style.pointerEvents = t ? "" : "none";
+  $("stSongSave").style.opacity = t ? "" : "0.5";
+  if (t) {
+    const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "song").replace(/\.safetensors$/i, "");
+    const seed = ($("stSeed") && $("stSeed").value.trim()) || "";
+    const name = `${lora}_tweaked${seed ? "_seed" + seed : ""}.wav`;
+    $("stSongSave").href = t + "&dl=" + encodeURIComponent(name);
+    $("stSongSave").setAttribute("download", name);
+  }
+}
+function songRegion(r) {
+  // the section Loop repeats (null = the whole song): setting one ticks Loop; a playing song jumps into it
+  S.st.region = r;
+  if (r) $("stSongLoop").checked = true;
+  studioAceRemember();
+  if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule();   // Repaint remakes the new section
+  if (songPlaying()) songPlay(S.song.side, r ? r[0] : undefined);
+  else if (r) S.song.pos = r[0];
+  for (const s of Object.keys(SONG_SIDES)) songPlayer(s).loop = $("stSongLoop").checked && !r;
+  studioRegionDraw();
+}
+function songDraw() {
+  const cv = $("stSongBar");
+  if (!cv || $("stSong").style.display === "none") return;
+  const w = cv.clientWidth || 600, h = cv.height;
+  if (cv.width !== w) cv.width = w;
+  const g = cv.getContext("2d"), css = getComputedStyle(document.documentElement);
+  const accent = (css.getPropertyValue("--accent") || "#3B9FD8").trim(), blue = "#4FA3E0", muted = "#6B7685";
+  g.clearRect(0, 0, w, h);
+  const side = songStripSide(), pk = side && S.song.peaks[side], d = songDur();
+  const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const now = Math.min(songNow(), d || 0);
+  $("stSongTime").textContent = `${fmt(now)} / ${fmt(d || 0)}`;
+  if (!pk || !d) return;
+  const x = Math.round(w * now / d), mid = h / 2, n = pk.pk.length;
+  for (let px = 0; px < w; px++) {                  // the peaks (dim) and the loudness (bright); the played part lit
+    const i0 = Math.floor(px * n / w), i1 = Math.max(i0 + 1, Math.floor((px + 1) * n / w));
+    let p = 0, r = 0;
+    for (let i = i0; i < i1; i++) { p = Math.max(p, pk.pk[i]); r = Math.max(r, pk.rms[i]); }
+    const played = px < x;
+    g.fillStyle = played ? "rgb(70,110,170)" : "rgb(52,62,82)";
+    g.fillRect(px, mid - p * mid * 0.92, 1, 2 * p * mid * 0.92);
+    g.fillStyle = played ? "rgb(140,190,250)" : "rgb(82,98,124)";
+    g.fillRect(px, mid - r * mid * 0.92, 1, 2 * r * mid * 0.92);
+  }
+  const drag = S.song.drag;
+  if (drag && drag.kind === "new" && Math.abs(drag.x1 - drag.x0) >= 5) {
+    g.strokeStyle = blue; g.lineWidth = 2; g.setLineDash([]);
+    g.strokeRect(Math.min(drag.x0, drag.x1), 1, Math.abs(drag.x1 - drag.x0), h - 2);
+  } else {
+    const r = (drag && drag.kind === "edge" && drag.live) || S.st.region;
+    if (r) {
+      const live = $("stSongLoop").checked, col = live ? blue : muted;
+      const x0 = Math.round(w * r[0] / d), x1 = Math.round(w * Math.min(r[1], d) / d);
+      g.strokeStyle = col; g.lineWidth = 2; g.setLineDash(live ? [] : [3, 2]);
+      g.strokeRect(x0, 1, x1 - x0, h - 2); g.setLineDash([]);
+      g.fillStyle = col;
+      for (const xe of [x0, x1]) g.fillRect(xe - 5, mid - 12, 10, 24);      // the tabs: drag to refine
+    }
+  }
+  g.strokeStyle = accent; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+  g.fillStyle = accent;                             // grab handles top and bottom: drag them to scrub
+  for (const [y0, dy] of [[0, 1], [h, -1]]) { g.beginPath(); g.moveTo(x - 7, y0); g.lineTo(x + 7, y0); g.lineTo(x, y0 + 10 * dy); g.fill(); }
+}
+function wireSong() {
+  const cv = $("stSongBar"), GRAB = 10;
+  const xOf = (e) => e.clientX - cv.getBoundingClientRect().left;
+  const tOf = (x) => Math.max(0, Math.min(1, x / (cv.clientWidth || 1))) * songDur();
+  const headX = () => { const d = songDur(); return d ? cv.clientWidth * Math.min(songNow(), d) / d : 0; };
+  const edgeAt = (e) => {                          // 0 / 1 on the section's start / end tab (the middle of the bar)
+    const r = S.st.region, d = songDur(), y = e.clientY - cv.getBoundingClientRect().top;
+    if (!r || !d || y < cv.clientHeight * 0.25 || y > cv.clientHeight * 0.75) return null;
+    const xs = [cv.clientWidth * r[0] / d, cv.clientWidth * Math.min(r[1], d) / d], x = xOf(e);
+    const best = Math.abs(x - xs[0]) <= Math.abs(x - xs[1]) ? 0 : 1;
+    return Math.abs(x - xs[best]) <= GRAB ? best : null;
+  };
+  const onHead = (e) => !!songDur() && Math.abs(xOf(e) - headX()) <= GRAB;
+  cv.addEventListener("pointermove", (e) => {
+    const D = S.song.drag;
+    if (!D) { cv.style.cursor = edgeAt(e) != null || onHead(e) ? "ew-resize" : "pointer"; return; }
+    if (D.kind === "edge") { const r = [...S.st.region]; r[D.edge] = tOf(xOf(e)); D.live = [Math.min(...r), Math.max(...r)]; }
+    else if (D.kind === "scrub") { S.song.pos = tOf(xOf(e)); const p = S.song.side && songPlayer(S.song.side); if (p) p.currentTime = S.song.pos; }
+    else D.x1 = xOf(e);
+    songDraw();
+  });
+  cv.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !songDur()) return;
+    cv.setPointerCapture(e.pointerId);
+    const edge = edgeAt(e);
+    if (edge != null) S.song.drag = {kind: "edge", edge, live: null};
+    else if (onHead(e)) { const was = songPlaying(); if (was) songStop(); S.song.drag = {kind: "scrub", resume: was}; }
+    else S.song.drag = {kind: "new", x0: xOf(e), x1: xOf(e)};
+  });
+  cv.addEventListener("pointerup", (e) => {
+    const D = S.song.drag;
+    S.song.drag = null;
+    if (!D) return;
+    const d = songDur();
+    if (D.kind === "edge") {
+      if (!D.live) return songDraw();
+      if (D.live[0] <= 0.15 && D.live[1] >= d - 0.15) return songRegion(null);   // out to both ends: the whole song
+      return D.live[1] - D.live[0] >= 0.25 ? songRegion(D.live) : songDraw();
+    }
+    if (D.kind === "scrub") {
+      S.song.pos = tOf(xOf(e));
+      return D.resume ? songPlay(S.song.side || songStripSide(), S.song.pos) : songDraw();
+    }
+    if (Math.abs(xOf(e) - D.x0) < 5) {              // a click: jump there
+      const t = tOf(xOf(e));
+      if (songPlaying()) songPlay(S.song.side, t); else { S.song.pos = t; const p = S.song.side && songPlayer(S.song.side); if (p && p.getAttribute("src")) p.currentTime = t; songDraw(); }
+      return;
+    }
+    const t0 = tOf(Math.min(D.x0, xOf(e))), t1 = tOf(Math.max(D.x0, xOf(e)));
+    if (t1 - t0 < 0.25) return songDraw();
+    songRegion([t0, t1]);
+  });
+  cv.addEventListener("contextmenu", (e) => { e.preventDefault(); songRegion(null); });   // right-click: the whole song
+  for (const s of Object.keys(SONG_SIDES)) {
+    $("stSong" + s[0].toUpperCase() + s.slice(1)).addEventListener("click", () => songPlay(s));
+    songPlayer(s).addEventListener("ended", () => { S.song.pos = 0; songMark(); songDraw(); });
+  }
+  $("stSongPause").addEventListener("click", () => {
+    if (songPlaying()) return songStop();
+    const s = songHas(S.song.side) ? S.song.side : songStripSide();
+    if (s) songPlay(s);
+  });
+  $("stSongLoop").addEventListener("change", () => {     // switched while playing: carry on from the same moment
+    for (const s of Object.keys(SONG_SIDES)) songPlayer(s).loop = $("stSongLoop").checked && !S.st.region;
+    studioRegionDraw();
+    if (songPlaying()) songPlay(S.song.side);
+  });
+  window.addEventListener("resize", songDraw);
+  songMark();
 }
 
 function studioRecordButton(input, set) {
@@ -3024,30 +3233,10 @@ function wireStudioAce() {
     $(host).replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}),
       up.btn, studioRecordButton(input, set), up.status);
   }
-  // the section: drag across the Tweaked waveform; the players loop it
-  const img = $("stTweak");
-  let a0 = null;
-  const secAt = (e) => { const b = img.getBoundingClientRect(), secs = Number($("stRes").value) || 30;
-    return Math.min(secs, Math.max(0, (e.clientX - b.left) / b.width * secs)); };
-  img.addEventListener("click", (e) => { if (S.st.layout && S.st.layout.kind === "audio") e.stopPropagation(); });   // no viewer for a waveform
-  img.addEventListener("pointerdown", (e) => { if (!(S.st.layout && S.st.layout.kind === "audio")) return;
-    e.preventDefault(); a0 = secAt(e); img.setPointerCapture(e.pointerId); });
-  img.addEventListener("pointermove", (e) => { if (a0 == null) return; const t = secAt(e);
-    S.st.region = [Math.min(a0, t), Math.max(a0, t)]; studioRegionDraw(); });
-  img.addEventListener("pointerup", () => {
-    if (a0 == null) return;
-    a0 = null;
-    if (S.st.region && S.st.region[1] - S.st.region[0] < 0.25) S.st.region = null;   // a click, not a drag
-    studioRegionDraw();
-    if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule();
-  });
-  $("stRegionClear").addEventListener("click", () => { S.st.region = null; studioRegionDraw();
-    if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule(); });
-  for (const id of ["stNolAud", "stBaseAud", "stTweakAud"])
-    $(id).addEventListener("timeupdate", (e) => { const r = S.st.region, m = e.target;
-      if (r && S.st.layout && S.st.layout.kind === "audio" && (m.currentTime >= r[1] || m.currentTime < r[0] - 0.05)) m.currentTime = r[0]; });
-  window.addEventListener("resize", studioRegionDraw);
-  $("stTweak").addEventListener("load", studioRegionDraw);
+  $("stTweak").addEventListener("click", (e) => { if (S.st.layout && S.st.layout.kind === "audio") e.stopPropagation(); });  // no viewer for a waveform
+  $("stBase").addEventListener("click", (e) => { if (S.st.layout && S.st.layout.kind === "audio") e.stopPropagation(); });
+  $("stRegionClear").addEventListener("click", () => songRegion(null));
+  wireSong();
   $("stKeepBtn").addEventListener("click", async () => {
     try {
       const r = await api("/api/studio/keep", {});
@@ -3735,10 +3924,10 @@ async function studioPoll() {
     for (const [w, img, vid, aud] of [["baseline", "stBase", "stBaseVid", "stBaseAud"], ["tweaked", "stTweak", "stTweakVid", "stTweakAud"]]) {
       const has = st.media && st.media[w];
       $(vid).style.display = kind === "video" && has ? "" : "none";
-      $(aud).style.display = kind === "audio" && has ? "" : "none";
+      $(aud).style.display = "none";
       $(img).style.display = kind === "video" && has ? "none" : "";
       if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
-      if (kind === "audio" && has) $(aud).src = q(w + "_media");
+      if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown);
     }
     studioMetrics();
     const ps = Number($("stPScale").value) || 1;
@@ -3767,8 +3956,9 @@ function studioNoLoraPane(st) {
   // the base model's own clip / song, left of the pair (the desktop's player has it there): H3 with the tick, ACE always
   const kind = S.st.layout && S.st.layout.kind;
   const on = kind === "audio" || (kind === "video" && $("stH3NoLora").checked);
-  $("stNolPane").style.display = on ? "" : "none";
-  $("stPreview").classList.toggle("three", on);
+  $("stNolPane").style.display = on && kind === "video" ? "" : "none";     // a song's No LoRA is heard in the player
+  $("stPreview").classList.toggle("three", on && kind === "video");
+  if (kind === "audio") $("stSongNolora").textContent = st.nolora_busy ? "▶ No LoRA (rendering…)" : "▶ No LoRA";
   if (!on) return;
   $("stNolCap").textContent = st.nolora_busy ? "No LoRA (rendering…)" : "No LoRA (base model, same seed)";
   if (st.nolora_gen && st.nolora_gen !== S.st.nolShown && st.media && st.media.nolora != null) {
@@ -3777,10 +3967,10 @@ function studioNoLoraPane(st) {
     const media = st.media.nolora;
     $("stNol").src = q("nolora");
     $("stNolVid").style.display = kind === "video" && media ? "" : "none";
-    $("stNolAud").style.display = kind === "audio" && media ? "" : "none";
+    $("stNolAud").style.display = "none";
     $("stNol").style.display = kind === "video" && media ? "none" : "";
     if (kind === "video" && media) { $("stNolVid").poster = q("nolora"); $("stNolVid").src = q("nolora_media"); }
-    if (kind === "audio" && media) $("stNolAud").src = q("nolora_media");
+    if (kind === "audio" && media) songLoad("nolora", q("nolora_media"), st.nolora_gen);
   }
 }
 

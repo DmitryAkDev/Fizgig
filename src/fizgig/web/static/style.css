@@ -1841,3 +1841,10 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 /* a pod's auto-stop countdown, over every tab */
 .pod-stop-bar { position: sticky; top: 0; z-index: 20; }
 .pod-stop-bar .btn { margin-left: 12px; }
+
+/* ACE: one song player under the two waveform pictures (the desktop's) */
+.st-song { margin-top: 8px; }
+.st-song-btns { flex-wrap: wrap; gap: 6px; }
+.st-song-btns .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.st-song-time { margin-left: auto; font-size: 9pt; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.st-song-bar { display: block; width: 100%; height: 72px; background: var(--bg-deep); cursor: pointer; touch-action: none; }

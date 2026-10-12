@@ -665,6 +665,32 @@ def image(which, gen):
     return p if p and os.path.isfile(p) else ""
 
 
+_peaks = {}
+
+
+def song_peaks(path, bins=2000):
+    """{dur, pk, rms}: a 16-bit WAV's channels averaged, each bin's peak and loudness against the song's loudest
+    (the desktop strip's measure), for the song player to draw at any width."""
+    import wave
+    import numpy as np
+    key = (path, os.path.getmtime(path))
+    if key in _peaks:
+        return _peaks[key]
+    with wave.open(path, "rb") as f:
+        ch, rate, n = f.getnchannels(), f.getframerate(), f.getnframes()
+        a = np.frombuffer(f.readframes(n), dtype=np.int16).astype(np.float32)
+    a = np.abs(a.reshape(-1, ch).mean(1)) if ch > 1 else np.abs(a)
+    k = max(1, len(a) // bins)
+    cols = a[:k * bins].reshape(-1, k) if len(a) >= bins else a.reshape(-1, 1)
+    peak = max(1e-6, float(cols.max()))
+    out = {"dur": n / float(rate), "pk": [round(float(v), 3) for v in cols.max(1) / peak],
+           "rms": [round(float(v), 3) for v in np.sqrt((cols ** 2).mean(1)) / peak]}
+    if len(_peaks) > 12:
+        _peaks.clear()
+    _peaks[key] = out
+    return out
+
+
 # ---- what the page draws for a model (the desktop tab's layout, from the family's description) ----------------
 CAT_COLOR = {"style_composition": "#5B9BD5", "style_ident_overlap": "#5BB3A6", "identity": "#70AD47",
              "ident_details_overlap": "#B8A547", "details": "#ED7D31", "look": "#5B9BD5"}

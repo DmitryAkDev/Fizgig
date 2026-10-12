@@ -1714,7 +1714,13 @@ class Handler(BaseHTTPRequestHandler):
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
-            return self._stream(p, attachment=False)
+            dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # Save Tweaked WAV: a download
+            return self._stream(p, attachment=bool(dl), filename=dl or None)
+        if path == "/api/studio/peaks":             # a song's waveform for the player's strip
+            p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
+            if not p or not p.lower().endswith(".wav"):
+                return self.json({"error": "no song"}, 404)
+            return self.json(studio.song_peaks(p))
         if path == "/api/extract/info":             # Extract: the models, a model's presets and block picker
             from fizgig.web import tools
             fams = tools.families()
