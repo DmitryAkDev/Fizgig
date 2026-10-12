@@ -577,6 +577,12 @@
                   <figcaption>Tweaked (current sliders)</figcaption></figure>
               </div>
               <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
+              <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: ArcFace similarity to your reference photo. Grid: the model's patch lattice showing through (rising = overbake). Detail: face texture energy (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
+                <button class="btn btn-sm" id="stMetRefPick">📷 Reference…</button><span class="field-hint" id="stMetRefName">(none)</span>
+                <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button>
+                <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
+                <span class="st-chip" id="stMetTex"></span><span class="st-chip" id="stMetClip"></span><span class="st-chip" id="stMetSat"></span>
+              </div>
               <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
                 <span id="stSongTools" style="display:none">
                   <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint the loop section.">⤵ Use as source</button>

@@ -1498,7 +1498,7 @@ const stRemember = debounce(() => {
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
     luckyHi: $("stLuckyHi").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
     scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]},
-    h3: stSaved().h3};                           // H3's clip settings and photos (studioH3Remember's)
+    h3: stSaved().h3, ace: stSaved().ace, metricsRef: stSaved().metricsRef};                           // H3's clip settings and photos (studioH3Remember's)
   try { localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
 }, 500);
 
@@ -1571,6 +1571,7 @@ function studioKind(L, sv) {
   studioAce(L, sv);
   studioEqButtons(L);
   studioMixShow(L);
+  studioMetricsShow();
   if (!video) return;
   const V = L.video, h3 = sv.h3 || {};
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
@@ -2103,6 +2104,48 @@ function studioMixNotes(n) {
   if (n.mix_donor != null && S.st.dmix && S.st.dmix.on) $("stDmixInfo").textContent = n.mix_donor;
 }
 
+// ---- the metrics strip (the desktop's pop-out strip): paired numbers for the renders on screen ----
+function studioMetricsShow() {
+  const L = S.st.layout, on = !!L && L.kind !== "audio";
+  $("stMetrics").style.display = on ? "" : "none";
+  const ref = (stSaved().metricsRef) || "";
+  $("stMetRefName").textContent = ref ? ref.split(/[\\/]/).pop() : "(none)";
+}
+
+async function studioMetrics() {
+  const L = S.st.layout;
+  if (!L || L.kind === "audio" || !S.st.shown) return;
+  const gen = (S.st.metGen = (S.st.metGen || 0) + 1), ref = stSaved().metricsRef || "";
+  const chips = {like: "stMetLike", grid: "stMetGrid", tex: "stMetTex", clip: "stMetClip", sat: "stMetSat"};
+  const put = (k, text, cls) => { const c = $(chips[k]); c.textContent = text; c.className = "st-chip" + (cls ? " " + cls : ""); };
+  for (const k in chips) put(k, "…");
+  let m;
+  try { m = await api(`/api/studio/metrics?ref=${encodeURIComponent(ref)}`); } catch (e) { m = {error: e.message}; }
+  if (gen !== S.st.metGen) return;                    // a newer pair is on screen: these numbers aren't its
+  if (m.error) { put("like", `metrics failed: ${String(m.error).slice(0, 60)}`, "bad"); for (const k of ["grid", "tex", "clip", "sat"]) put(k, ""); return; }
+  if (!m.ref_set) put("like", "Likeness: set a reference photo →");
+  else if (!m.ref_face) put("like", "Likeness: no face in reference", "bad");
+  else if (m.like_base == null || m.like_tweak == null) put("like", "Likeness: no face in render");
+  else {
+    const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
+    put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
+  }
+  put("grid", `Grid ${m.grid_base.toFixed(2)} → ${m.grid_tweak.toFixed(2)}`, m.grid_delta > 0.05 ? "bad" : m.grid_delta < -0.05 ? "good" : "");
+  const td = (m.texture_tweak - m.texture_base) / Math.max(m.texture_base, 1e-6);
+  put("tex", `Detail ${m.texture_base.toFixed(0)} → ${m.texture_tweak.toFixed(0)}`, Math.abs(td) > 0.10 ? "warm" : "");
+  put("clip", `Clipped ${m.clip_base.toFixed(1)}% → ${m.clip_tweak.toFixed(1)}%`, m.clip_delta > 0.2 ? "bad" : m.clip_delta < -0.2 ? "good" : "");
+  put("sat", `Sat ${m.sat_base.toFixed(0)} → ${m.sat_tweak.toFixed(0)}`, Math.abs(m.sat_delta) > 12 ? "warm" : "");
+}
+
+function wireStudioMetrics() {
+  const setRef = (p) => {
+    try { const d = stSaved(); d.metricsRef = p || ""; localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
+    studioMetricsShow(); studioMetrics();
+  };
+  $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || S.imageFolder, false, setRef));
+  $("stMetRefClear").addEventListener("click", () => setRef(""));
+}
+
 function studioCanvas() {
   // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
   if (S.st.layout.kind !== "video") return null;
@@ -2404,6 +2447,7 @@ async function studioPoll() {
       if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
       if (kind === "audio" && has) $(aud).src = q(w + "_media");
     }
+    studioMetrics();
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
   }
@@ -2489,6 +2533,7 @@ function wireStudio() {
   S.st.eq = {primary: false, donor: false}; S.st.eqSaved = {};
   $("stEqP").addEventListener("click", () => studioEq("primary", !S.st.eq.primary));
   wireStudioMix();
+  wireStudioMetrics();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));

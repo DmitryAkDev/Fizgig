@@ -127,6 +127,37 @@ def _embed(path):
     return _embed_cache[key]
 
 
+def embed_face_box(path):
+    """(embedding, bbox) for the largest face in a picture file - the desktop's _repair_embed_pil, on the same lazily
+    made embedder as the Look Filter. The unpadded detection gives both; the pad-retry fallback (frame-filling faces)
+    gives the embedding only (its box is in padded space). (None, None) without a face."""
+    global _embedder
+    try:
+        import cv2
+        import numpy as np
+        bgr = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if bgr is None:
+            return None, None
+        with _model_lock:
+            if _embedder is None:
+                from face_utils import FaceEmbedder
+                _embedder = FaceEmbedder()
+            _embedder._ensure_loaded()
+            faces = _embedder._app.get(bgr)
+            if faces:
+                f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
+                x1, y1, x2, y2 = (int(v) for v in f.bbox)
+                h, w = bgr.shape[:2]
+                return np.asarray(f.normed_embedding, dtype=np.float32), (max(0, x1), max(0, y1), min(w, x2), min(h, y2))
+            faces = _embedder._detect_with_pad_retry(bgr)
+            if faces:
+                f = max(faces, key=lambda x: (x.bbox[2] - x.bbox[0]) * (x.bbox[3] - x.bbox[1]))
+                return np.asarray(f.normed_embedding, dtype=np.float32), None
+    except Exception:
+        pass
+    return None, None
+
+
 def look_status():
     with _lock:
         scores = dict(_look["scores"])

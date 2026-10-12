@@ -1459,6 +1459,8 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
             return self._stream(p, attachment=False)
+        if path == "/api/studio/metrics":            # the pair on screen, measured (and likeness to a reference)
+            return self.json(studio.metrics((qs.get("ref") or [""])[0]))
         if path == "/api/studio/epochs":             # the run a LoRA belongs to (the mix's Up to dial)
             p = (qs.get("path") or [""])[0]
             if not p.lower().endswith(".safetensors") or not os.path.isfile(p):

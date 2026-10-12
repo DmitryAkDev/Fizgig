@@ -264,6 +264,34 @@ def render(state, extra=None):
     return {"ok": True, "gen": gen}
 
 
+def metrics(ref=""):
+    """The desktop's metrics strip for the pair on screen: likeness to a reference photo (ArcFace, the Look Filter's
+    embedder) and repair_studio.metrics' paired numbers - patch grid, face detail, clipping, saturation. CPU only."""
+    import numpy as np
+    from PIL import Image
+    from fizgig.repair_studio.metrics import PATCH_PITCH, compare
+    from fizgig.web.prep_jobs import _embed, embed_face_box
+    with _lock:
+        base_p, tweak_p, fam = _S.get("baseline") or "", _S.get("tweaked") or "", _S.get("family") or ""
+    if not (base_p and tweak_p and os.path.isfile(base_p) and os.path.isfile(tweak_p)):
+        return {"error": "Nothing rendered yet."}
+    from fizgig.families.registry import get as get_family
+    d = get_family(fam)
+    pitch = PATCH_PITCH.get((d.shares_prefs_with or d.key) if d is not None else fam, 16)
+    try:
+        b_emb, b_box = embed_face_box(base_p)
+        t_emb, t_box = embed_face_box(tweak_p)
+        ref_emb = _embed(ref) if ref and os.path.isfile(ref) else None
+        m = compare(np.array(Image.open(base_p).convert("RGB")), np.array(Image.open(tweak_p).convert("RGB")),
+                    pitch, b_box, t_box)
+        m["ref_set"], m["ref_face"] = bool(ref), ref_emb is not None
+        m["like_base"] = float(np.dot(ref_emb, b_emb)) if ref_emb is not None and b_emb is not None else None
+        m["like_tweak"] = float(np.dot(ref_emb, t_emb)) if ref_emb is not None and t_emb is not None else None
+        return {k: (float(v) if isinstance(v, (np.floating, np.integer)) else v) for k, v in m.items()}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def keep_tweaked():
     """ACE-Step's "Use as source": the Tweaked song copied where it stays (renders are tidied away), its path back."""
     import shutil

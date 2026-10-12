@@ -1681,3 +1681,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-mixrow .field-hint { white-space: nowrap; flex: none; }
 .st-mixrow .st-mixname { min-width: 0; flex: 0 1 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .st-mixrow input[type=range] { width: 200px; }
+
+/* Studio: the metrics strip under the preview */
+.st-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 4px; }
+.st-chip { font-size: 9pt; color: var(--text-secondary); white-space: nowrap; }
+.st-chip.good { color: #2ECC71; } .st-chip.bad { color: #E74C3C; } .st-chip.warm { color: #F39C12; }
