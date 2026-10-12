@@ -3839,6 +3839,7 @@ async function studioPresetApply(v) {
 function studioBulk(kind) {
   const L = S.st.layout;
   const lo = Number($("stLuckyLo").value) || 0, hi = Number($("stLuckyHi").value) || 1.5;
+  const order = L.groups.flatMap((g) => g.blocks.map((b) => b.id));
   let rolled = 0;
   for (const [id, b] of Object.entries(S.st.blocks)) {
     if (S.st.locks.has(id)) continue;
@@ -3850,8 +3851,12 @@ function studioBulk(kind) {
     else if (kind === "donor_off") b.ds = 0;
     else if (kind === "lucky") {
       if ((S.st.ready && !S.st.primaryBlocks.has(id)) || !b.pe) continue;
-      let a = lo, z = hi;
-      for (const zone of $("stLuckyHold").checked ? L.lucky_zones || [] : []) if (zone[0] && zone[0].includes && zone[0].includes(id)) { a = Math.max(a, zone[1]); z = Math.min(z, zone[2]); }
+      // a held band (lucky_zones: [first, last, low, high] by the block's place in the model's order), bounded by
+      // Min / Max as the desktop does
+      const i = order.indexOf(id);
+      const zone = $("stLuckyHold").checked ? (L.lucky_zones || []).find((zn) => zn[0] <= i && i <= zn[1]) : null;
+      let a = zone ? Math.max(zone[2], lo) : lo, z = zone ? Math.min(zone[3], hi) : hi;
+      if (a > z) a = z = Math.min(Math.max(1, lo), hi);
       b.ps = Math.round((a + Math.random() * (z - a)) * 20) / 20; rolled++;
     }
   }
