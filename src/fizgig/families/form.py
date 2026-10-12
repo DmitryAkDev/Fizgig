@@ -18,6 +18,8 @@ in _family_launch_inputs: the same keys, the same switches, the family options u
 
 The generic rows mirror the desktop Training and Samples tabs (lora_trainer_gui.py); their defaults are its
 self.settings defaults, and a family's first preset is applied over them on a first visit, as the desktop does."""
+import os
+
 from fizgig.families import launch
 
 ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4 - rank 4/8 only", "3e-4 - low-rank only")
@@ -470,6 +472,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
         long_run = False
     if long_run:
         notes["MAX_TRAIN_EPOCHS"] = f"💡 Hint: {hint[1]}. {hint[2]}"
+    lr_note = _lr_hint(desc, values, kind, image_folder)
+    if lr_note:
+        notes[lr_note[0]] = lr_note[1]
     srcs = slider_sources(desc)
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
@@ -490,6 +495,48 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
                 notes[o.key] = o.unmet_notes[1] if len(o.unmet_notes) > 1 else o.unmet_notes[0]
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file)}
+
+
+_lr_counts = {}                     # folder -> (modified time, pictures)
+
+
+def _lr_hint(desc, values, kind, image_folder):
+    """The desktop's large-dataset hint: a standard LoRA whose learning rate (adaptive: Min LR) is at or above the
+    family's lr_hint rate, on more steps an epoch than its count (one picture a step), moves a long way each epoch -
+    the best point can fall between two saves. -> (the box it goes under, the text) or None."""
+    hint = getattr(desc, "lr_hint", (2e-4, 125))
+    if not hint or kind != "standard" or not image_folder:
+        return None
+    adaptive = bool(values.get("ADAPTIVE_LR"))
+    key = "ADAPTIVE_LR_MIN" if adaptive else "LEARNING_RATE"
+    raw = str(values.get(key) or "").split(" ")[0].strip()
+    try:
+        if float(raw) < hint[0] * 0.999:
+            return None
+    except ValueError:
+        return None
+    try:
+        mt = os.stat(image_folder).st_mtime
+    except OSError:
+        return None
+    hit = _lr_counts.get(image_folder)
+    if not hit or hit[0] != mt:
+        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+        exts = {e.lower() for e in IMAGE_EXTENSIONS}
+        try:
+            n = sum(1 for e in os.scandir(image_folder) if e.is_file() and os.path.splitext(e.name)[1].lower() in exts)
+        except OSError:
+            n = 0
+        hit = _lr_counts[image_folder] = (mt, n)
+    n = hit[1]
+    if n <= hint[1]:
+        return None
+    if adaptive:
+        return key, (f"💡 Hint: a large dataset. With {n} images, a Min LR of {raw} moves the LoRA a long way each "
+                     "epoch, so the best point can fall between two saves. A Min LR of 1e-4 and a Max LR of 2e-4 "
+                     "suit a dataset this size.")
+    return key, (f"💡 Hint: a large dataset. With {n} images, a learning rate of {raw} moves the LoRA a long way each "
+                 "epoch, so the best point can fall between two saves. 1e-4 suits a dataset this size.")
 
 
 def _option_values(desc, values):
