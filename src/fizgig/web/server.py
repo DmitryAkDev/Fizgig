@@ -1579,6 +1579,28 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
             return self._stream(p, attachment=False)
+        if path == "/api/extract/info":             # Extract: the models, a model's presets and block picker
+            from fizgig.web import tools
+            fams = tools.families()
+            want = (qs.get("family") or [""])[0]
+            desc = next((d for d in fams if d.key == want), fams[0] if fams else None)
+            if desc is None:
+                return self.json({"error": "No model offers Extract."}, 404)
+            out_dir = str(((load_state().get("values") or {}).get(desc.key) or {}).get("LORA_OUTPUT_DIR") or "").strip()
+            return self.json({"families": [{"key": d.key, "name": d.display_name} for d in fams],
+                              **tools.info(desc, out_dir or default_output_dir())})
+        if path == "/api/extract/status":
+            from fizgig.web import tools
+            return self.json(tools.status())
+        if path == "/api/metadata":                  # Metadata: any .safetensors file's metadata (header only)
+            p = (qs.get("path") or [""])[0]
+            if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
+                return self.json({"error": "Choose a .safetensors file (that file isn't there)."}, 404)
+            from fizgig.utils.st_meta import read_metadata
+            try:
+                return self.json({"meta": read_metadata(p), "size": os.path.getsize(p)})
+            except (OSError, ValueError) as e:
+                return self.json({"error": f"Could not read metadata: {e}"}, 400)
         if path == "/api/studio/setups":
             return self.json({"setups": _setups()})
         if path == "/api/studio/setup":
@@ -2176,6 +2198,41 @@ class Handler(BaseHTTPRequestHandler):
                                                     str(b.get("text") or ""))
                 update_prefs({"caption_qwen_instructions": ovr})
                 return self.json({"ok": True})
+            if path == "/api/extract/run":
+                from fizgig.web import tools
+                desc = next((d for d in tools.families() if d.key == b.get("family")), None)
+                if desc is None:
+                    raise ValueError("Pick a model first.")
+                name = str(b.get("name") or "").strip()
+                if not name:
+                    raise ValueError("Give the extraction a name.")
+                if not name.lower().endswith(".safetensors"):
+                    name += ".safetensors"
+                folder = str(b.get("out_dir") or "").strip() or default_output_dir()
+                out = tools.run(desc, str(b.get("source") or "").strip(), os.path.join(folder, os.path.basename(name)),
+                                int(b.get("rank") or 4), str(b.get("preset") or ""), [str(x) for x in (b.get("blocks") or [])])
+                return self.json({"ok": True, "output": out})
+            if path == "/api/metadata/save":         # the header rewritten, every tensor byte as it was
+                from fizgig.utils.st_meta import write_metadata
+                src = str(b.get("path") or "")
+                dest = str(b.get("dest") or "").strip() or src
+                if not src.lower().endswith(".safetensors") or not os.path.isfile(src):
+                    raise ValueError("Load a .safetensors file first.")
+                if not dest.lower().endswith(".safetensors"):
+                    dest += ".safetensors"
+                if os.path.abspath(dest) != os.path.abspath(src) and os.path.exists(dest) and not b.get("overwrite"):
+                    return self.json({"exists": True})
+                meta = {str(k): str(v) for k, v in (b.get("meta") or {}).items() if str(v).strip()}
+                for stale in ("sshs_model_hash", "sshs_legacy_hash", "modelspec.hash_sha256"):
+                    meta.pop(stale, None)                  # the hashes were of the old bytes (as the desktop's save)
+                write_metadata(src, dest, meta)
+                return self.json({"ok": True, "dest": dest})
+            if path == "/api/metadata/thumbnail":    # a picture as the thumbnail ComfyUI shows (a data URI)
+                from fizgig.training.metadata import thumbnail_data_uri
+                uri = thumbnail_data_uri(str(b.get("path") or ""))
+                if not uri:
+                    raise ValueError("Could not read that picture.")
+                return self.json({"uri": uri})
             if path == "/api/captions/remove":       # out of the training set, into removed_images/ (never deleted)
                 return self.json({"moved": remove_from_dataset(str(b.get("folder") or ""), str(b.get("name") or ""),
                                                                captions.caption_ext(b.get("ext")))})

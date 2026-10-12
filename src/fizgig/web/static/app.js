@@ -1206,6 +1206,219 @@ function imageLossTile(im, ymax) {
     svg);
 }
 
+// ---- Extract: a LoRA reduced to a lower rank (exact weight SVD from the file; fizgig/web/tools.py runs it) ----
+S.ex = {info: null, poll: null, wired: false};
+const EX_KEY = "fizgig_extract";
+const exSaved = () => { try { return JSON.parse(localStorage.getItem(EX_KEY) || "{}"); } catch (e) { return {}; } };
+function exRemember() {
+  try { localStorage.setItem(EX_KEY, JSON.stringify({family: $("exFamily").value, source: $("exSource").value,
+    rank: $("exRank").value, preset: $("exPreset").value})); } catch (e) { /* private window */ }
+}
+
+async function extractOpen() {
+  if (!S.ex.wired) wireExtract();
+  const sv = exSaved();
+  if (!S.ex.info) {
+    if (sv.source) $("exSource").value = sv.source;
+    if (sv.rank) $("exRank").value = sv.rank;
+    await extractFamily(sv.family, sv.preset);
+  }
+  extractPoll();
+}
+
+async function extractFamily(key, preset) {
+  let r;
+  try { r = await api("/api/extract/info?family=" + encodeURIComponent(key || "")); }
+  catch (e) { $("exStatus").textContent = e.message; return; }
+  S.ex.info = r;
+  $("exFamily").replaceChildren(...r.families.map((f) => el("option", {value: f.key, text: f.name})));
+  $("exFamily").value = r.family;
+  $("exOutDir").value = r.out_dir;
+  const names = r.presets.map((p) => p.name).concat(r.presets.length ? ["Custom"] : []);
+  $("exPresetCard").style.display = names.length ? "" : "none";
+  $("exPreset").replaceChildren(...names.map((n) => el("option", {value: n, text: n})));
+  $("exPreset").value = names.includes(preset) ? preset : (names[0] || "");
+  // the Custom picker: All / None, a quick pick per preset, the model's block groups
+  const box = $("exCustom");
+  box.replaceChildren();
+  if (r.presets.length) {
+    const tick = (on) => box.querySelectorAll("input[type=checkbox]").forEach((c) => { c.checked = on; });
+    box.append(el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Select blocks:"}),
+      el("button", {class: "btn btn-sm", text: "All", onclick: () => tick(true)}),
+      el("button", {class: "btn btn-sm", text: "None", onclick: () => tick(false)}),
+      ...r.presets.filter((p) => p.blocks.length).map((p) => el("button", {class: "btn btn-sm", text: p.name, onclick: () =>
+        box.querySelectorAll("input[type=checkbox]").forEach((c) => { c.checked = p.blocks.includes(c.value); })}))));
+    for (const g of r.groups)
+      box.append(el("div", {class: "ex-group"}, el("span", {class: "field-label", text: g.label.split(" ")[0] + ":"}),
+        ...g.blocks.map((b) => el("label", {class: "checkbox-label"}, el("input", {type: "checkbox", value: b.id}),
+          " " + b.label.split(" ").pop()))));
+  }
+  extractPresetChanged();
+}
+
+function extractPresetChanged() {
+  $("exCustom").style.display = $("exPreset").value === "Custom" ? "" : "none";
+  extractName();
+  exRemember();
+}
+
+function extractName() {
+  // the desktop's suggestion: <source>_<preset>_r<rank>
+  const src = $("exSource").value.trim();
+  if (!src) return;
+  const base = src.split(/[\\/]/).pop().replace(/\.safetensors$/i, "");
+  const slug = ($("exPreset").value || "all_blocks").toLowerCase().replace(/\+/g, "_").replace(/ /g, "_");
+  $("exName").value = `${base}_${slug}_r${$("exRank").value}.safetensors`;
+}
+
+async function extractSource(p) {
+  $("exSource").value = p;
+  try {                                           // a LoRA of another model: switch to it, as the desktop does
+    const f = await api(`/api/studio/lorafamily?path=${encodeURIComponent(p)}`);
+    if (f.key && f.key !== $("exFamily").value && [...$("exFamily").options].some((o) => o.value === f.key))
+      await extractFamily(f.key, $("exPreset").value);
+  } catch (e) { /* unreadable: the run says so */ }
+  extractName(); exRemember();
+}
+
+async function extractRun() {
+  const custom = $("exPreset").value === "Custom";
+  const blocks = custom ? [...$("exCustom").querySelectorAll("input:checked")].map((c) => c.value) : [];
+  if (custom && !blocks.length) { $("exStatus").textContent = "Custom is selected but no blocks are ticked."; return; }
+  try {
+    const r = await api("/api/extract/run", {family: $("exFamily").value, source: $("exSource").value.trim(),
+      name: $("exName").value.trim(), out_dir: $("exOutDir").value.trim(), rank: Number($("exRank").value),
+      preset: custom || !(S.ex.info.presets || []).length ? "" : $("exPreset").value, blocks});
+    $("exStatus").textContent = `Extracting to ${r.output}…`;
+    $("exDone").replaceChildren();
+    extractPoll();
+  } catch (e) { $("exStatus").textContent = e.message; }
+}
+
+async function extractPoll() {
+  clearTimeout(S.ex.poll);
+  let st;
+  try { st = await api("/api/extract/status"); } catch (e) { return; }
+  const running = st.state === "running";
+  $("exRun").disabled = running;
+  $("exBadge").textContent = {running: "Running", done: "Done", failed: "Failed"}[st.state] || "";
+  $("exBadge").dataset.state = running ? "running" : st.state === "done" ? "completed" : st.state === "failed" ? "failed" : "idle";
+  const p = st.progress;
+  $("exBar").style.width = running ? (p && p[1] ? `${Math.round(100 * (p[0] + 1) / p[1])}%` : "100%") : st.state === "done" ? "100%" : "0";
+  $("exBar").parentElement.classList.toggle("indeterminate", running && !(p && p[1]));
+  $("exLog").textContent = st.log.join("\n");
+  if (running && p) $("exStatus").textContent = `SVD: ${p[0] + 1} of ${p[1]} layers…`;
+  if (st.state === "done") {
+    $("exStatus").textContent = `Saved ${st.output}`;
+    if (!$("exDone").children.length) $("exDone").append(el("a", {class: "btn btn-sm btn-primary", download: "", text: "Download",
+      href: `/api/download?path=${encodeURIComponent(st.output)}&t=${encodeURIComponent(TOKEN)}`}));
+  }
+  if (st.state === "failed") $("exStatus").textContent = `The extraction failed: ${st.error}`;
+  if (running && $("tab-extract").classList.contains("active")) S.ex.poll = setTimeout(extractPoll, 500);
+}
+
+function wireExtract() {
+  S.ex.wired = true;
+  $("exFamily").addEventListener("change", () => { extractFamily($("exFamily").value, $("exPreset").value); exRemember(); });
+  $("exPreset").addEventListener("change", extractPresetChanged);
+  $("exRank").addEventListener("change", () => { extractName(); exRemember(); });
+  $("exSource").addEventListener("change", () => extractSource($("exSource").value.trim()));
+  const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE"}, $("exSource"), extractSource);
+  $("exSourceBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
+    pick($("exSource").value || S.outputDefault, false, extractSource)}), up.btn, up.status);
+  $("exOutPick").addEventListener("click", () => pick($("exOutDir").value, true, (p) => { $("exOutDir").value = p; }));
+  $("exRun").addEventListener("click", extractRun);
+}
+
+// ---- Metadata: any .safetensors file's ModelSpec metadata, edited (the header rewritten; tensors untouched) ----
+const MD_FIELDS = [["modelspec.title", "Title"], ["modelspec.author", "Author"], ["modelspec.license", "License"],
+  ["modelspec.tags", "Tags"], ["modelspec.trigger_phrase", "Trigger phrase"], ["modelspec.usage_hint", "Usage hint"]];
+S.md = {path: "", thumb: null, wired: false};
+
+function mdWire() {
+  if (S.md.wired) return;
+  S.md.wired = true;
+  $("mdStandard").replaceChildren(...MD_FIELDS.map(([k, label]) => el("div", {class: "field-row"},
+    el("span", {class: "field-label", text: label + ":"}), el("input", {type: "text", class: "w-path", "data-key": k}))),
+  el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Description:"}),
+    el("textarea", {rows: 4, "data-key": "modelspec.description"})));
+  const load = (p) => { $("mdPath").value = p; mdLoad(p); };
+  const up = uploadButton({kind: "path", key: "METADATA_FILE"}, $("mdPath"), load);
+  $("mdPathBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("mdPath").value || S.outputDefault, false, load)}),
+    up.btn, up.status);
+  $("mdPath").addEventListener("change", () => mdLoad($("mdPath").value.trim()));
+  const setThumb = async (p) => {
+    try { const r = await api("/api/metadata/thumbnail", {path: p}); S.md.thumb = r.uri; mdThumb(); }
+    catch (e) { $("mdSaveMsg").textContent = e.message; }
+  };
+  const tup = uploadButton({kind: "path", key: "METADATA_THUMB"}, el("input", {type: "text"}), setThumb);
+  $("mdThumbBtns").replaceChildren(el("button", {class: "btn", text: "Replace…", onclick: () => pick(S.imageFolder, false, setThumb)}),
+    tup.btn, tup.status);
+  $("mdThumbClear").addEventListener("click", () => { S.md.thumb = null; mdThumb(); });
+  $("mdAdd").addEventListener("click", () => mdRow("", ""));
+  $("mdSave").addEventListener("click", () => mdSave(""));
+  $("mdSaveAs").addEventListener("click", () => mdSave($("mdDest").value.trim()));
+}
+
+function mdThumb() {
+  $("mdThumb").replaceChildren(S.md.thumb && String(S.md.thumb).startsWith("data:image") ?
+    el("img", {src: S.md.thumb, alt: "thumbnail"}) : document.createTextNode("(no thumbnail)"));
+}
+
+function mdRow(k, v) {
+  const row = el("div", {class: "md-row"}, el("input", {type: "text", class: "md-key", value: k, placeholder: "key"}),
+    el("input", {type: "text", class: "md-val", value: v, placeholder: "value"}),
+    el("button", {class: "btn btn-sm", text: "✕", title: "Remove this field", onclick: () => row.remove()}));
+  $("mdCustom").append(row);
+}
+
+async function mdLoad(p) {
+  mdWire();
+  if (!p) return;
+  let r;
+  try { r = await api(`/api/metadata?path=${encodeURIComponent(p)}`); }
+  catch (e) { $("mdStatus").textContent = e.message; return; }
+  S.md.path = p;
+  const meta = r.meta || {};
+  document.querySelectorAll("#mdStandard [data-key]").forEach((i) => { i.value = meta[i.dataset.key] || ""; });
+  S.md.thumb = meta["modelspec.thumbnail"] || null;
+  mdThumb();
+  const std = new Set([...MD_FIELDS.map((f) => f[0]), "modelspec.description", "modelspec.thumbnail"]);
+  $("mdCustom").replaceChildren();
+  for (const k of Object.keys(meta).filter((k) => !std.has(k)).sort()) mdRow(k, meta[k]);
+  const n = Object.keys(meta).length;
+  $("mdStatus").textContent = `Loaded - ${n} metadata key${n !== 1 ? "s" : ""} found.`;
+  $("mdSaveMsg").textContent = "";
+  $("mdDest").value = "";
+}
+
+async function mdSave(dest, overwrite) {
+  if (!S.md.path) { $("mdSaveMsg").textContent = "Load a .safetensors file first."; return; }
+  const meta = {};
+  $("mdCustom").querySelectorAll(".md-row").forEach((r) => {
+    const k = r.querySelector(".md-key").value.trim();
+    if (k) meta[k] = r.querySelector(".md-val").value;
+  });
+  document.querySelectorAll("#mdStandard [data-key]").forEach((i) => { if (i.value.trim()) meta[i.dataset.key] = i.value.trim(); });
+  if (S.md.thumb) meta["modelspec.thumbnail"] = S.md.thumb;
+  if (!dest && !overwrite) {                      // the file itself: say so first, as the desktop asks
+    $("mdSaveMsg").replaceChildren(el("span", {text: `Save the changes into ${S.md.path}? `}),
+      el("button", {class: "btn btn-sm btn-primary", text: "Save", onclick: () => mdSave("", true)}));
+    return;
+  }
+  $("mdSaveMsg").textContent = "Saving…";
+  try {
+    const r = await api("/api/metadata/save", {path: S.md.path, dest, meta, overwrite: !!overwrite});
+    if (r.exists) {
+      $("mdSaveMsg").replaceChildren(el("span", {text: "That file is there already. "}),
+        el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => mdSave(dest, true)}));
+      return;
+    }
+    if (dest) { $("mdPath").value = r.dest; await mdLoad(r.dest); }       // the copy is the file being edited now
+    $("mdSaveMsg").textContent = `Saved ${r.dest}`;
+  } catch (e) { $("mdSaveMsg").textContent = e.message; }
+}
+
 // a run's loss, epoch by epoch, as a small chart (the history keeps each epoch's last average loss)
 function lossChart(curve) {
   const pts = (curve || []).filter((p) => Array.isArray(p) && isFinite(p[1]));
@@ -3118,6 +3331,8 @@ function showTab(name) {
   if (name === "captions") loadCaptions();
   if (name === "prep") loadPrep();
   if (name === "studio") studioOpen();
+  if (name === "extract") extractOpen();
+  if (name === "metadata") mdWire();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }

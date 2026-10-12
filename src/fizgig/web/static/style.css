@@ -1708,3 +1708,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .il-chart polyline { fill: none; stroke-width: 1.6; }
 .il-zero { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; }
 .il-plateau { margin: 6px 0; color: #2ECC71; }
+
+/* Extract and Metadata */
+.tab-item[data-tab="extract"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7'/%3E%3C/svg%3E"); }
+.tab-item[data-tab="metadata"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z'/%3E%3Ccircle cx='7.5' cy='7.5' r='1.5'/%3E%3C/svg%3E"); }
+#exCustom .ex-group { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; margin: 4px 0; }
+#exCustom .ex-group .field-label { min-width: 70px; }
+#exLog { max-height: 260px; overflow: auto; }
+.md-thumb img { max-width: 320px; max-height: 320px; display: block; margin-bottom: 8px; }
+.md-row { display: grid; grid-template-columns: minmax(120px, 260px) 1fr auto; gap: 6px; margin: 3px 0; }
+.md-row input { width: 100%; box-sizing: border-box; }

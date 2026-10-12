@@ -31,6 +31,8 @@
           <div class="side-label">After</div>
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
+          <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
+          <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
@@ -638,6 +640,101 @@
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>
               <div id="stSaveMsg"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-extract" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Extract</h1>
+            <p>Distill an existing LoRA down to a lower rank: exact weight SVD, straight from the file - no model loaded.
+              A model with block groups can keep just one (identity, style+composition, details) or a hand-picked set.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Source &amp; Output</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Model:</span><select id="exFamily" class="w-combo"></select>
+                <span class="field-hint">Choosing a LoRA switches to its model.</span></div>
+              <div class="field-row"><span class="field-label">Source LoRA:</span>
+                <input type="text" id="exSource" class="w-path" placeholder="the LoRA to reduce (.safetensors)"><span id="exSourceBtns"></span></div>
+              <div class="field-row"><span class="field-label">Output name:</span>
+                <input type="text" id="exName" class="w-path" placeholder="name.safetensors"></div>
+              <div class="field-row"><span class="field-label">Output folder:</span>
+                <input type="text" id="exOutDir" class="w-path"><button class="btn" id="exOutPick">Choose…</button></div>
+            </div>
+          </div>
+          <div class="section-card" id="exPresetCard">
+            <div class="card-title">Preset</div>
+            <div class="card-desc">Which blocks to keep. Custom picks them one by one.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Extract preset:</span><select id="exPreset" class="w-combo"></select></div>
+              <div id="exCustom" style="display:none"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Options</div>
+            <div class="card-desc">Target rank: the rank the extracted LoRA keeps (its strongest directions).</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Target rank:</span>
+                <select id="exRank" class="w-combo st-small-select"><option>1</option><option>2</option><option selected>4</option>
+                  <option>8</option><option>16</option></select></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Run</span><span class="run-badge" id="exBadge"></span></div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-primary" id="exRun">Extract LoRA</button>
+                <span class="field-hint" id="exStatus"></span><span id="exDone"></span></div>
+              <div class="run-bar"><span id="exBar" style="width:0"></span></div>
+              <pre class="console-terminal" id="exLog"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-metadata" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Metadata</h1>
+            <p>View and edit the SAI ModelSpec metadata in a .safetensors file - title, author, description, trigger
+              phrase, thumbnail and anything else ComfyUI's model browser reads. Any .safetensors file, not just ones
+              Fizgig trained.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title">File</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">File:</span>
+                <input type="text" id="mdPath" class="w-path" placeholder="any .safetensors file"><span id="mdPathBtns"></span></div>
+              <div class="field-hint" id="mdStatus">No file loaded.</div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Standard Fields</div>
+            <div class="card-desc">The fields ComfyUI's model browser (and other spec-aware tools) show specially.</div>
+            <div class="card-content" id="mdStandard"></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Thumbnail</div>
+            <div class="card-desc">The picture ComfyUI shows as card art. Fizgig embeds the latest training sample when it
+              trains a LoRA - replace or clear it here for any file.</div>
+            <div class="card-content">
+              <div id="mdThumb" class="md-thumb field-hint">(no thumbnail)</div>
+              <div class="field-row"><span id="mdThumbBtns"></span><button class="btn" id="mdThumbClear">Clear</button></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Custom Fields</div>
+            <div class="card-desc">Anything else in the file - kept as it is unless you change it here, so nothing is dropped
+              on save. Add your own keys too; tools that don't know them just ignore them.</div>
+            <div class="card-content"><div id="mdCustom"></div>
+              <div class="field-row"><button class="btn btn-sm" id="mdAdd">+ Add field</button></div></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Save</div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-primary" id="mdSave">Save</button>
+                <span class="field-hint">or save a copy as</span>
+                <input type="text" id="mdDest" class="w-path" placeholder="another .safetensors path">
+                <button class="btn" id="mdSaveAs">Save as</button></div>
+              <div class="field-hint" id="mdSaveMsg"></div>
             </div>
           </div>
         </section>
