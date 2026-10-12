@@ -48,6 +48,13 @@ os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
 
 # The web UI (--web) needs no Tk and no display: it starts here, after the environment above (its runs inherit it)
 # and before the desktop's own imports, so a headless server without Tkinter installed can run it.
+# --app: the web UI in its own desktop window (pywebview), for the new look - fizgig/web/app_window.py
+if __name__ == "__main__" and "--app" in sys.argv:
+    _app_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+    if _app_src not in sys.path:
+        sys.path.insert(0, _app_src)
+    from fizgig.web.app_window import main as _app_main
+    sys.exit(_app_main())
 if __name__ == "__main__" and "--web" in sys.argv:
     _web_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
     if _web_src not in sys.path:

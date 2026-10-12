@@ -21,6 +21,10 @@ venv/bin/python lora_trainer_gui.py --web          (Linux)
 
 That copy keeps running until you close its terminal. It needs no screen and no Tkinter, so it runs on a headless server too (see [On a server](#on-a-server)).
 
+## As a desktop app window
+
+**Fizgig App (new look).bat** on Windows, `run_fizgig_app.sh` on Linux (or `python lora_trainer_gui.py --app`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv). The classic app (`run_fizgig.bat`) is unchanged; the two share settings, presets, run history and the queue.
+
 ## The queue
 
 **Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails, is stopped or pauses holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. Two queued runs can't save into the same files: give each its own LoRA name.

@@ -1272,7 +1272,12 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/", "/index.html"):
             with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
                 page = f.read().replace("__FIZGIG_TOKEN__", TOKEN)
-            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8")
+            # the Fizgig app window (fizgig/web/app_window.py) started this server: its one key logs it in, so the
+            # web password guards the network, not the window on this computer
+            key = os.environ.get("FIZGIG_APP_KEY", "")
+            extra = ([("Set-Cookie", f"fizgig_session={self._session()}; Path=/; HttpOnly; SameSite=Strict")]
+                     if key and self.password and hmac.compare_digest((qs.get("app_key") or [""])[0], key) else [])
+            return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra=extra)
         if path in ("/app.js", "/style.css"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
