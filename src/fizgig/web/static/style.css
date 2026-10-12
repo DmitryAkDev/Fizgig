@@ -1690,3 +1690,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 /* Studio: Save / Load Setup */
 .st-setups { margin-top: 8px; }
 .st-setup-name { width: 180px !important; }
+
+/* Captions: a card's size line, and a removed card */
+.caption-card-size { margin: -2px 0 4px; }
+.caption-removed { justify-content: center; min-height: 120px; }

@@ -986,6 +986,85 @@ def pair_songs(entries):
     return out
 
 
+_sizes: dict = {}             # (path, mtime) -> [width, height] or None
+
+
+def _media_size(path):
+    """[width, height] of a picture (its header only) or a clip (its first stream), None for a song or an unreadable
+    file - for the Captions cards and their size sort."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext in _AUDIO:
+        return None
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key not in _sizes:
+        wh = None
+        try:
+            if ext in _IMAGES:
+                from PIL import Image
+                with Image.open(path) as im:
+                    wh = [int(im.width), int(im.height)]
+            else:
+                import cv2
+                cap = cv2.VideoCapture(path)
+                try:
+                    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    wh = [w, h] if w and h else None
+                finally:
+                    cap.release()
+        except Exception:
+            wh = None
+        if len(_sizes) > 20000:
+            _sizes.clear()
+        _sizes[key] = wh
+    return _sizes[key]
+
+
+REMOVED_DIR = "removed_images"
+
+
+def remove_from_dataset(folder, name, ext):
+    """Take a file out of the training set without deleting it: it, its caption (and a song's waveform picture) move
+    into <folder>/removed_images/. Returns the names moved, for Undo."""
+    folder = os.path.abspath(folder)
+    src = os.path.join(folder, os.path.basename(name))
+    if not os.path.isfile(src) or os.path.dirname(src) != folder:
+        raise ValueError("That file isn't in the training folder.")
+    stem, fext = os.path.splitext(os.path.basename(name))
+    names = [os.path.basename(name)]
+    for cext in {ext or ".txt", ".txt"}:
+        if os.path.isfile(os.path.join(folder, stem + cext)):
+            names.append(stem + cext)
+    if fext.lower() in _AUDIO:
+        names += [f for f in os.listdir(folder) if os.path.splitext(f)[0] == stem and os.path.splitext(f)[1].lower() in _IMAGES]
+    dest = os.path.join(folder, REMOVED_DIR)
+    os.makedirs(dest, exist_ok=True)
+    moved = []
+    for n in names:
+        target, k = os.path.join(dest, n), 2
+        while os.path.exists(target):                # never overwrite an earlier removal
+            s, e = os.path.splitext(n)
+            target, k = os.path.join(dest, f"{s} ({k}){e}"), k + 1
+        os.replace(os.path.join(folder, n), target)
+        moved.append([n, os.path.basename(target)])
+    return moved
+
+
+def restore_to_dataset(folder, moved):
+    """Undo a removal: [[original name, name in removed_images]] back where they were (never over a file there)."""
+    folder = os.path.abspath(folder)
+    back = []
+    for orig, there in moved or ():
+        src = os.path.join(folder, REMOVED_DIR, os.path.basename(there))
+        dst = os.path.join(folder, os.path.basename(orig))
+        if os.path.isfile(src) and not os.path.exists(dst):
+            os.replace(src, dst)
+            back.append(orig)
+    return back
+
+
 _thumbs: dict = {}            # (path, mtime) -> a small JPEG; the oldest go past 600
 
 
@@ -1749,7 +1828,8 @@ class Handler(BaseHTTPRequestHandler):
                     text = f.read()
             except OSError:
                 text = None
-            out.append((n, os.path.join(folder, n), {"caption": text}))
+            p = os.path.join(folder, n)
+            out.append((n, p, {"caption": text, "size": _media_size(p)}))
         return self.json({"items": pair_songs(out)})
 
     # -- POST
@@ -2081,6 +2161,11 @@ class Handler(BaseHTTPRequestHandler):
                                                     str(b.get("text") or ""))
                 update_prefs({"caption_qwen_instructions": ovr})
                 return self.json({"ok": True})
+            if path == "/api/captions/remove":       # out of the training set, into removed_images/ (never deleted)
+                return self.json({"moved": remove_from_dataset(str(b.get("folder") or ""), str(b.get("name") or ""),
+                                                               captions.caption_ext(b.get("ext")))})
+            if path == "/api/captions/restore":
+                return self.json({"restored": restore_to_dataset(str(b.get("folder") or ""), b.get("moved") or [])})
             if path == "/api/captions/save":
                 folder, name, text = b.get("folder", ""), b.get("name", ""), b.get("text", "")
                 stem = os.path.splitext(os.path.basename(name))[0]

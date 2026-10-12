@@ -2849,7 +2849,12 @@ function renderCaptions() {
   const ext = $("captionExt").value.trim() || ".txt";
   const q = $("capSearch").value.trim().toLowerCase();
   const all = S.cap.items;
-  const items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
+  let items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
+  const sort = $("capSort").value, px = (i) => (i.size ? i.size[0] * i.size[1] : null);
+  if (sort !== "name") {                       // by pixel count; songs (no size) go last either way
+    items = [...items].sort((a, b) => (px(a) == null) - (px(b) == null) ||
+      (sort === "small" ? px(a) - px(b) : px(b) - px(a)) || a.name.localeCompare(b.name));
+  }
   const pages = Math.max(1, Math.ceil(items.length / CAP_PAGE));
   S.cap.page = Math.min(S.cap.page, pages - 1);
   const missing = all.filter((i) => i.caption === null).length;
@@ -2876,10 +2881,35 @@ function renderCaptions() {
         if (r && r.error) status.textContent = r.error;
       }});
     const media = mediaFor(it);
-    host.append(el("div", {class: "caption-card"}, media,
-      el("div", {class: "caption-card-body"}, el("div", {class: "caption-card-title", text: mediaLabel(it)}), ta,
-        el("div", {class: "field-row"}, save, recap, status))));
+    const card = el("div", {class: "caption-card"});
+    const remove = el("button", {class: "btn btn-sm", text: "Remove",
+      title: "Take it out of the training set: it and its caption move into the folder's removed_images subfolder (nothing is deleted).",
+      onclick: () => capRemove(it, card, status)});
+    const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
+    card.append(media, el("div", {class: "caption-card-body"},
+      el("div", {class: "caption-card-title", text: mediaLabel(it)}),
+      size ? el("div", {class: "field-hint caption-card-size", text: size}) : null, ta,
+      el("div", {class: "field-row"}, save, recap, remove, status)));
+    host.append(card);
   }
+}
+
+async function capRemove(it, card, status) {
+  // out of the training set (into removed_images/), with an Undo on the spot
+  const folder = S.imageFolder;
+  try {
+    const r = await api("/api/captions/remove", {folder, name: it.name, ext: $("captionExt").value.trim() || ".txt"});
+    S.cap.items = S.cap.items.filter((x) => x !== it);
+    const undo = el("button", {class: "btn btn-sm", text: "Undo", onclick: async () => {
+      try {
+        await api("/api/captions/restore", {folder, moved: r.moved});
+        S.cap.items.push(it); S.cap.items.sort((a, b) => a.name.localeCompare(b.name)); renderCaptions();
+      } catch (e) { note.textContent = e.message; }
+    }});
+    const note = el("span", {class: "field-hint", text: `${it.name} moved to removed_images.`});
+    card.replaceChildren(el("div", {class: "caption-card-body caption-removed"}, note, el("div", {class: "field-row"}, undo)));
+    $("captionsSummary").textContent = `${S.cap.items.length} files · ${it.name} removed`;
+  } catch (e) { status.textContent = e.message; }
 }
 
 async function findReplace(apply) {
@@ -2933,6 +2963,7 @@ function wireCaptions() {
   $("frPreview").addEventListener("click", () => findReplace(false));
   $("frApply").addEventListener("click", () => findReplace(true));
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
+  $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
 }
