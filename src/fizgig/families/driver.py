@@ -97,6 +97,11 @@ class FamilyDriver:
         """captions -> list of conditioning dicts (tensors on CPU)."""
         raise NotImplementedError
 
+    def text_cache_key(self) -> tuple:
+        """What else besides the prompt the encoded conditioning depends on (the workbench's prompt cache keys on
+        it): () for most families; ACE-Step's caption carries the song's length."""
+        return ()
+
     def cache_stage(self, stage: str, datasets, args, device, aux: dict) -> bool:
         """Optional: cache `stage` ("latents" / "text") over the loaded datasets in the family's own layout and return
         True. args carries the shared cache flags (model, skip_existing, keep_cache, batch_size, num_workers, slider);
