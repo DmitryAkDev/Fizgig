@@ -35,6 +35,10 @@ def _send(cmd):
         sock.sendall((json.dumps(cmd) + "\n").encode("utf-8"))
 
 
+# LoRA Royale's run on the same worker (one model on the card, as the desktop): its renders, by generation
+_R = {"state": "idle", "gen": 0, "items": [], "total": 0, "status": "", "error": "", "progress": None, "meta": {}}
+
+
 def _reader(proc):
     for line in proc.stdout:
         if not line.startswith(EV):
@@ -52,6 +56,8 @@ def _reader(proc):
     with _lock:
         if _S["proc"] is proc:
             _S.update(proc=None, state="idle", rendering=False, status="The Studio worker stopped.", progress=None)
+            if _R["state"] == "rendering":
+                _R.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.")
 
 
 def _event(ev):
@@ -64,6 +70,17 @@ def _event(ev):
             _S["status"] = ev.get("text", "")
         elif kind == "step":
             _S["progress"] = [ev.get("done", 0), ev.get("total", 0)]
+            _R["progress"] = _S["progress"]
+        elif kind == "royale_status":
+            _R["status"] = ev.get("text", "")
+        elif kind == "royale_item" and ev.get("gen") == _R["gen"]:
+            _R["items"].append({k: ev.get(k) for k in ("i", "label", "path", "png", "error")})
+        elif kind == "royale_done" and ev.get("gen") == _R["gen"]:
+            ok = [x for x in _R["items"] if x.get("png")]
+            _R.update(state="done" if ok else "failed", progress=None,
+                      error=ev.get("error") or ("" if ok else "No renders produced."),
+                      status=("Stopped." if ev.get("cancelled") else
+                              f"Rendered {len(ok)} of {_R['total']}." if ok else "No renders produced."))
         elif kind in ("loaded", "donor"):
             _S.update({k: ev.get(k) for k in ("primary_blocks", "donor_blocks", "hash", "eq")})
             if kind == "loaded":
@@ -335,6 +352,8 @@ def stop_worker():
     with _lock:                                  # ours to stop: its reader says nothing when it ends
         if _S["proc"] is p:
             _S.update(proc=None, sock=None, port=0)
+            if _R["state"] == "rendering":
+                _R.update(state="failed", error="Stopped (the GPU was wanted elsewhere).", status="Stopped.")
     try:
         p.wait(timeout=20)
     except Exception:
@@ -343,7 +362,70 @@ def stop_worker():
 
 def holding_gpu() -> bool:
     with _lock:
-        return _S["proc"] is not None and _S["proc"].poll() is None and _S["state"] in ("loading", "ready")
+        return _S["proc"] is not None and _S["proc"].poll() is None and (
+            _S["state"] in ("loading", "ready") or _R["state"] == "rendering")
+
+
+def royale_render(desc, plan, settings, items, prompt, seed, width, height, ref="", ref_strength=1.0, meta=None):
+    """Render every chosen epoch on the worker (LoRA Royale). The worker's model is Royale's from here: a Studio
+    session there ends (Start loads it again)."""
+    with _lock:
+        if _R["state"] == "rendering":
+            raise ValueError("Royale is rendering - wait, or Stop it.")
+        if _S["state"] == "loading" or _S["rendering"]:
+            raise ValueError("Studio is using the GPU - wait for it, or Unload it.")
+        _R["gen"] += 1
+        gen = _R["gen"]
+        _R.update(state="rendering", items=[], total=len(items), status="Starting the GPU worker…", error="",
+                  progress=None, meta=dict(meta or {}, prompt=prompt, seed=seed, width=width, height=height))
+        if _S["state"] == "ready":
+            _S.update(state="idle", primary="", donor="", rendering=False, pending=None, progress=None,
+                      status="LoRA Royale took the GPU worker - press Start to load Studio again.")
+        family = _S.get("family")
+
+    def go():
+        try:
+            if family and family != desc.key:
+                stop_worker()                     # another model's worker: a fresh one (Studio's rule)
+                with _lock:
+                    _R.update(state="rendering", error="", status="Starting the GPU worker…")   # (that stop was ours)
+            _ensure_worker()
+            with _lock:
+                _S["family"] = desc.key
+            _send({"cmd": "royale", "gen": gen, "family": desc.key, "plan": plan, "settings": settings,
+                   "items": items, "prompt": prompt, "seed": int(seed), "width": int(width), "height": int(height),
+                   "ref": ref or "", "ref_strength": float(ref_strength), "out_dir": OUT_DIR})
+        except Exception as e:
+            with _lock:
+                _R.update(state="failed", error=str(e), status=f"Couldn't start: {e}")
+    threading.Thread(target=go, daemon=True).start()
+    return gen
+
+
+def royale_cancel():
+    with _lock:
+        busy = _R["state"] == "rendering"
+    if busy:
+        _send({"cmd": "cancel"})
+    return busy
+
+
+def royale_status():
+    with _lock:
+        return {k: (list(_R[k]) if k == "items" else _R[k]) for k in ("state", "gen", "items", "total", "status",
+                                                                     "error", "progress", "meta")}
+
+
+def royale_png(i):
+    with _lock:
+        it = next((x for x in _R["items"] if x.get("i") == int(i) and x.get("png")), None)
+    return it["png"] if it and os.path.isfile(it["png"]) else ""
+
+
+def royale_rendered():
+    """[(label, path, png)] of the last run's renders, in order."""
+    with _lock:
+        return [(x["label"], x["path"], x["png"]) for x in sorted(_R["items"], key=lambda x: x["i"]) if x.get("png")]
 
 
 def status():

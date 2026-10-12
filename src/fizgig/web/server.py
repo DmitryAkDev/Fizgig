@@ -1595,6 +1595,27 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/extract/status":
             from fizgig.web import tools
             return self.json(tools.status("extract"))
+        if path == "/api/royale/info":              # LoRA Royale: the models that offer it, and what each takes
+            from fizgig.web import royale
+            fams = royale.families()
+            want = (qs.get("family") or [""])[0]
+            d = next((x for x in fams if x.key == want), fams[0] if fams else None)
+            out_dir = str(((load_state().get("values") or {}).get(d.key) or {}).get("LORA_OUTPUT_DIR") or "").strip()                 if d is not None else ""
+            return self.json({"families": [{"key": x.key, "name": x.display_name, "video": bool(x.video_workbench)}
+                                           for x in fams], "family": d.key if d else "",
+                              "reference_kind": (d.reference_kind or "") if d else "",
+                              "reference_strength": bool(d and d.reference_strength),
+                              "out_dir": out_dir or default_output_dir()})
+        if path == "/api/royale/scan":
+            from fizgig.web import royale
+            return self.json(royale.scan((qs.get("folder") or [""])[0]))
+        if path == "/api/royale/status":
+            return self.json(studio.royale_status())
+        if path == "/api/royale/image":             # one render (by its place in the run)
+            p = studio.royale_png((qs.get("i") or ["-1"])[0])
+            if not p:
+                return self.json({"error": "no picture"}, 404)
+            return self._stream(p, attachment=False)
         if path == "/api/profile/info":             # Profiler: the models that offer it
             from fizgig.web import tools
             return self.json({"families": [{"key": d.key, "name": d.display_name} for d in tools.families("profiler")]})
@@ -2218,6 +2239,64 @@ class Handler(BaseHTTPRequestHandler):
                                                     str(b.get("text") or ""))
                 update_prefs({"caption_qwen_instructions": ovr})
                 return self.json({"ok": True})
+            if path == "/api/royale/render":
+                from fizgig.web import royale
+                fams = {d.key: d for d in royale.families()}
+                scan = royale.scan(str(b.get("folder") or "").strip())
+                items = royale.pick(scan["items"], b.get("max") or "12")
+                if not items:
+                    raise ValueError("No checkpoints found - pick a folder with trained LoRAs.")
+                prompt = str(b.get("prompt") or "").strip()
+                if not prompt:
+                    raise ValueError("Enter a prompt (include your trigger word).")
+                key = royale.family_of([p for _l, p in items], fams) or str(b.get("family") or "")
+                desc = fams.get(key)
+                if desc is None:
+                    raise ValueError("Pick a model first.")
+                if _gpu_training():
+                    raise ValueError("A training run is using the GPU. Royale can render when it finishes.")
+                from fizgig.web import tools
+                if tools.holding_gpu():
+                    raise ValueError("The Profiler is rendering on the GPU - wait for it, or Stop it.")
+                prefs = load_prefs()
+                if desc.video_workbench:
+                    kw, _status, problems = studio.plan_video(desc, prefs, pref_path)
+                    kw["audio_vae_path"] = ""
+                    settings = None
+                else:
+                    kw, settings, _status, problems = studio.plan(desc, prefs, pref_path, fast=True,
+                                                                  samples=_studio_samples(desc))
+                if problems:
+                    raise ValueError(" ".join(problems))
+                captions.unload()
+                gen = studio.royale_render(desc, kw, settings, items, prompt, int(b.get("seed") or 42),
+                                           int(b.get("width") or 512), int(b.get("height") or 512),
+                                           ref=str(b.get("ref") or "") if desc.reference_kind else "",
+                                           ref_strength=float(b.get("ref_strength") or 1.0),
+                                           meta={"run": scan["run"], "family": desc.key, "folder": b.get("folder")})
+                return self.json({"ok": True, "gen": gen, "family": desc.key, "total": len(items)})
+            if path == "/api/royale/cancel":
+                return self.json({"ok": studio.royale_cancel()})
+            if path in ("/api/royale/score", "/api/royale/export", "/api/royale/stills", "/api/royale/promote"):
+                from fizgig.web import royale
+                st = studio.royale_status()
+                rendered = studio.royale_rendered()
+                run = (st.get("meta") or {}).get("run") or "lora"
+                if not rendered:
+                    raise ValueError("Render some epochs first.")
+                if path == "/api/royale/score":
+                    return self.json(royale.score(st["gen"], rendered, str(b.get("ref") or "")))
+                folder = str(b.get("out_dir") or "").strip() or default_output_dir()
+                if path == "/api/royale/export":
+                    return self.json(royale.export(rendered, folder, run, b.get("format") or "MP4",
+                                                   b.get("speed") or "Normal", bool(b.get("loop", True)),
+                                                   bool(b.get("ticker", True)), bool(b.get("tag", True)),
+                                                   likeness_clip=bool(b.get("likeness")), gen=st["gen"]))
+                if path == "/api/royale/stills":
+                    return self.json({"saved": royale.save_stills(rendered, folder, run)})
+                i = int(b.get("i") or 0)
+                label, lpath, _png = rendered[max(0, min(i, len(rendered) - 1))]
+                return self.json({"path": royale.promote(lpath, label, run, folder, str(b.get("name") or ""))})
             if path == "/api/profile/run":
                 from fizgig.web import tools
                 desc = next((d for d in tools.families("profiler") if d.key == b.get("family")), None)

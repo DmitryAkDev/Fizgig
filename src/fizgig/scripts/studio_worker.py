@@ -75,6 +75,7 @@ def cmd_load(c):
         if eng is None:
             eng = desc.make_workbench_engine()
         S["engine"], S["desc"] = eng, desc
+        S["plan_sig"] = json.dumps(c["plan"], sort_keys=True, default=str)
         S["nolora_out"] = S["nolora_song"] = None
         S["mix_files"] = {}
         eng.turbo_preview = bool(c.get("turbo", True))
@@ -458,6 +459,104 @@ def cmd_cancel(_c):
         eng.request_cancel()
 
 
+def _plan_for(desc, plan):
+    """A load plan as the engine takes it: the preview checkpoint's sampling, Auto block swap resolved."""
+    plan = dict(plan)
+    if plan.pop("use_checkpoint_sampling", False):
+        ck = desc.preview_checkpoint()
+        plan["preview_sampling"] = ck[1] if ck else None
+    else:
+        plan["preview_sampling"] = None
+    if str(plan.get("blocks_to_swap", "")).lower().startswith("auto"):
+        plan["blocks_to_swap"] = _auto_swap()
+    return plan
+
+
+def _engine_for(c):
+    """LoRA Royale's engine: the family's preview model loaded with this plan (the one already here when it matches -
+    a Studio session's or the last render's), no LoRA chosen yet. Under the engine lock."""
+    from fizgig.families.registry import get as get_family
+    desc = get_family(c["family"])
+    if desc is None:
+        raise ValueError(f"Unknown model: {c['family']}")
+    plan = _plan_for(desc, c["plan"])
+    sig = json.dumps(c["plan"], sort_keys=True, default=str)
+    eng = S["engine"]
+    if eng is not None and (getattr(eng.desc, "key", None) != desc.key or S.get("plan_sig") != sig):
+        eng.reset()                              # another model, or this one on another plan: load it fresh
+        eng = None
+    if eng is None:
+        eng = desc.make_workbench_engine()
+    S["engine"], S["desc"], S["plan_sig"] = eng, desc, sig
+    if getattr(desc, "video_workbench", False):
+        eng.int8_attention = True
+        eng.on_status = lambda text: emit(ev="royale_status", text=str(text))
+    if c.get("settings") is not None:
+        eng.preview_settings = c["settings"]
+    eng.on_step = lambda done, total: emit(ev="step", done=done, total=total)
+    eng.ensure_pipeline(**plan)                   # nothing to do when it is loaded already
+    return eng, desc
+
+
+def _point_at(eng, desc, path):
+    """The engine on this LoRA (the desktop's _royale_load_or_swap_primary): its weights swapped in place when the
+    shapes match (same-rank epochs), else a fresh load. Refuses a LoRA of another model first (issue #62)."""
+    from fizgig.networks.lora import assert_lora_family_matches
+    assert_lora_family_matches(path, desc.shares_prefs_with or desc.key, "Royale")
+    if eng.primary_network is None:
+        eng.load_primary(path)
+    elif eng.primary_path != path and not eng.swap_primary_weights(path):
+        eng.reset()
+        eng.ensure_pipeline(**_plan_for(desc, json.loads(S["plan_sig"])))
+        eng.load_primary(path)
+
+
+def cmd_royale(c):
+    """LoRA Royale: every chosen epoch rendered on one prompt and seed, each saved as a PNG and reported as it lands."""
+    gen = c["gen"]
+    out = c["out_dir"]
+    os.makedirs(out, exist_ok=True)
+    done, cancelled = 0, False
+    try:
+        with _engine_lock:
+            emit(ev="royale_status", text="Loading the model…")
+            eng, desc = _engine_for(c)
+            eng.clear_cancel()
+            items = c["items"]
+            for i, (label, path) in enumerate(items):
+                emit(ev="royale_status", text=f"Rendering {label if not str(label).isdigit() else 'epoch ' + str(label)} "
+                                              f"({i + 1}/{len(items)})…")
+                try:
+                    _point_at(eng, desc, path)
+                    st = eng.default_state()
+                    st.prompt, st.seed = c["prompt"], int(c["seed"])
+                    st.preview_width, st.preview_height = int(c["width"]), int(c["height"])
+                    if c.get("ref") and os.path.exists(c["ref"]):
+                        st.ref_image_path, st.ref_megapixels = c["ref"], 0.2
+                        st.ref_strength = float(c.get("ref_strength", 1.0))
+                    img = eng.generate_preview(st)
+                except Exception as e:
+                    if _aborted(e):
+                        cancelled = True
+                        break
+                    emit(ev="royale_item", gen=gen, i=i, label=label, path=path, png="",
+                         error=str(e), trace=traceback.format_exc()[-1500:])
+                    continue
+                png = os.path.join(out, f"royale_{gen}_{i}.png")
+                img.save(png)
+                done += 1
+                emit(ev="royale_item", gen=gen, i=i, label=label, path=path, png=png)
+            try:
+                from fizgig.utils.device import clean_memory_on_device
+                clean_memory_on_device(eng.pipeline.device)   # the render's working set back to the driver
+            except Exception:
+                pass
+    except Exception as e:
+        emit(ev="royale_done", gen=gen, done=done, cancelled=False, error=str(e), trace=traceback.format_exc()[-2000:])
+        return
+    emit(ev="royale_done", gen=gen, done=done, cancelled=cancelled)
+
+
 def cmd_save(c):
     with _engine_lock:
         eng = S["engine"]
@@ -483,7 +582,7 @@ def cmd_reset(_c):
 
 
 HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render,
-            "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset}
+            "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale}
 
 
 def _run(c):

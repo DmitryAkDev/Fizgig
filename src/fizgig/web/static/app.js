@@ -1206,6 +1206,191 @@ function imageLossTile(im, ymax) {
     svg);
 }
 
+// ---- LoRA Royale: every epoch on one seed, crossfaded (fizgig/web/royale.py; renders on the GPU worker) ----
+S.ry = {wired: false, info: null, items: [], gen: 0, shown: -1, scores: {}, best: null, poll: null};
+const RY_KEY = "fizgig_royale";
+const rySaved = () => { try { return JSON.parse(localStorage.getItem(RY_KEY) || "{}"); } catch (e) { return {}; } };
+function ryRemember() {
+  const v = (id) => $(id).value;
+  try { localStorage.setItem(RY_KEY, JSON.stringify({family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
+    seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
+    like: v("ryLikeRef"), out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
+}
+const ryLabel = (l) => (String(l).match(/^\d+$/) ? `Epoch ${l}` : String(l));
+
+async function royaleOpen() {
+  if (!S.ry.wired) {
+    S.ry.wired = true;
+    const sv = rySaved();
+    for (const [id, k] of [["ryFolder", "folder"], ["ryPrompt", "prompt"], ["rySeed", "seed"], ["ryRef", "ref"],
+      ["ryRefStr", "refStr"], ["ryLikeRef", "like"], ["ryOut", "out"]]) if (sv[k] != null) $(id).value = sv[k];
+    for (const [id, k] of [["ryW", "w"], ["ryH", "h"], ["ryMax", "max"], ["ryFmt", "fmt"], ["rySpeed", "speed"]])
+      if (sv[k]) $(id).value = sv[k]; else if (id === "ryW" || id === "ryH") $(id).value = "512";
+    await royaleFamily(sv.family);
+    wireRoyale();
+    royaleScan();
+  }
+  royalePoll();
+}
+
+async function royaleFamily(key) {
+  const r = await api("/api/royale/info?family=" + encodeURIComponent(key || "")).catch(() => null);
+  if (!r) return;
+  S.ry.info = r;
+  $("ryFamily").replaceChildren(...r.families.map((f) => el("option", {value: f.key, text: f.name + (f.video ? " (clip previews)" : "")})));
+  $("ryFamily").value = r.family;
+  $("ryRefRow").style.display = r.reference_kind ? "" : "none";
+  $("ryRefStrBox").style.display = r.reference_strength ? "" : "none";
+  if (!$("ryOut").value) $("ryOut").value = r.out_dir;
+}
+
+async function royaleScan() {
+  const f = $("ryFolder").value.trim();
+  if (!f) { $("ryScan").textContent = ""; return; }
+  const r = await api("/api/royale/scan?folder=" + encodeURIComponent(f)).catch(() => ({summary: ""}));
+  $("ryScan").textContent = r.summary || "";
+}
+
+async function royaleRender() {
+  try {
+    const r = await api("/api/royale/render", {family: $("ryFamily").value, folder: $("ryFolder").value.trim(),
+      prompt: $("ryPrompt").value.trim(), seed: parseInt($("rySeed").value, 10) || 42, ref: $("ryRef").value.trim(),
+      ref_strength: Number($("ryRefStr").value) || 1, width: Number($("ryW").value), height: Number($("ryH").value),
+      max: $("ryMax").value});
+    if (r.family !== $("ryFamily").value) {         // the checkpoints are another model's: follow them (as the desktop)
+      await royaleFamily(r.family);
+      $("ryStatus").textContent = `Switched to ${$("ryFamily").selectedOptions[0].text} to match the checkpoints.`;
+    }
+    S.ry.items = []; S.ry.shown = -1; S.ry.scores = {}; S.ry.best = null;
+    $("ryLikeStatus").textContent = ""; $("ryBest").disabled = true;
+    ryRemember();
+    royalePoll();
+  } catch (e) { $("ryStatus").textContent = e.message; }
+}
+
+async function royalePoll() {
+  clearTimeout(S.ry.poll);
+  let st;
+  try { st = await api("/api/royale/status"); } catch (e) { return; }
+  const running = st.state === "rendering";
+  $("ryRender").disabled = running; $("ryStop").disabled = !running;
+  $("rySBadge").textContent = running ? "Rendering" : "";
+  $("rySBadge").dataset.state = running ? "running" : "idle";
+  const done = st.items.filter((x) => x.png).length;
+  $("ryBar").style.width = running ? `${Math.round(100 * Math.max(done, 0.3) / Math.max(st.total, 1))}%` : "0";
+  if (st.status) $("ryStatus").textContent = st.status + (st.error && st.state === "failed" ? ` ${st.error}` : "");
+  const items = st.items.filter((x) => x.png).sort((a, b) => a.i - b.i);
+  if (st.gen !== S.ry.gen || items.length !== S.ry.items.length) {
+    const fresh = st.gen !== S.ry.gen;
+    S.ry.gen = st.gen; S.ry.items = items;
+    if (fresh) { S.ry.scores = {}; S.ry.best = null; }
+    royaleGrid();
+    $("ryScrub").max = Math.max(0, items.length - 1);
+    if (items.length && (fresh || S.ry.shown < 0)) { $("ryScrub").value = 0; S.ry.shown = -1; }
+    royaleScrub();
+  }
+  if (running && $("tab-royale").classList.contains("active")) S.ry.poll = setTimeout(royalePoll, 1000);
+}
+
+const ryImg = (i) => `/api/royale/image?i=${S.ry.items[i].i}&gen=${S.ry.gen}&t=${encodeURIComponent(TOKEN)}`;
+
+function royaleScrub() {
+  // the crossfade: the two epochs either side of the slider, the upper one faded in by how far along it is
+  const items = S.ry.items;
+  if (!items.length) { $("ryLabel").textContent = ""; return; }
+  const p = Number($("ryScrub").value), lo = Math.max(0, Math.min(Math.floor(p), items.length - 1));
+  const hi = Math.min(lo + 1, items.length - 1), a = p - lo;
+  if ($("ryA").dataset.i !== String(lo)) { $("ryA").src = ryImg(lo); $("ryA").dataset.i = String(lo); }
+  if ($("ryB").dataset.i !== String(hi)) { $("ryB").src = ryImg(hi); $("ryB").dataset.i = String(hi); }
+  $("ryB").style.opacity = lo === hi ? 0 : a;
+  $("ryLabel").textContent = a <= 0.01 || lo === hi ? ryLabel(items[lo].label) :
+    `${ryLabel(items[lo].label)}  →  ${ryLabel(items[hi].label)}    (${Math.round(a * 100)}%)`;
+  const at = Math.round(p);
+  document.querySelectorAll("#ryGrid .ry-cell").forEach((c, i) => c.classList.toggle("at", i === at));
+}
+
+function royaleGrid() {
+  $("ryGrid").replaceChildren(...S.ry.items.map((it, i) => {
+    const base = String(it.label).match(/^\d+$/) ? `e${it.label}` : String(it.label).slice(0, 16);
+    const sc = S.ry.scores[String(it.label)];
+    const cap = sc === undefined ? base : `${base}  ${sc == null ? "—" : sc.toFixed(2)}`;
+    return el("div", {class: "ry-cell" + (S.ry.best != null && String(it.label) === String(S.ry.best) ? " best" : ""),
+      title: it.path, onclick: () => { $("ryScrub").value = i; royaleScrub(); }},
+      el("img", {src: ryImg(i), alt: base, loading: "lazy"}), el("div", {text: cap}));
+  }));
+}
+
+function royaleCurrent() { return Math.max(0, Math.min(Math.round(Number($("ryScrub").value)), S.ry.items.length - 1)); }
+
+async function royaleScore() {
+  $("ryLikeStatus").textContent = "Scoring… (the first run loads the face model)";
+  try {
+    const r = await api("/api/royale/score", {ref: $("ryLikeRef").value.trim()});
+    S.ry.scores = r.scores; S.ry.best = r.best;
+    royaleGrid();
+    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject image."; $("ryBest").disabled = true; return; }
+    $("ryBest").disabled = false;
+    $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
+      (r.no_face ? `  (${r.no_face} no-face)` : "");
+    royaleBest();
+  } catch (e) { $("ryLikeStatus").textContent = e.message; }
+}
+
+function royaleBest() {
+  const i = S.ry.items.findIndex((it) => String(it.label) === String(S.ry.best));
+  if (i >= 0) { $("ryScrub").value = i; royaleScrub(); }
+}
+
+async function royaleExport(likeness) {
+  const say = likeness ? $("ryLikeStatus") : $("ryExportStatus");
+  say.textContent = likeness ? "Building likeness clip…" : "Building frames…";
+  try {
+    const r = await api("/api/royale/export", {likeness, format: $("ryFmt").value, speed: $("rySpeed").value,
+      loop: $("ryLoop").checked, ticker: $("ryTicker").checked, tag: $("ryTag").checked, out_dir: $("ryOut").value.trim()});
+    say.replaceChildren(el("span", {text: `Saved ${r.frames} frames → ${r.path} `}),
+      el("a", {class: "btn btn-sm", download: r.path.split(/[\\/]/).pop(), text: "Download",
+        href: `/api/media?path=${encodeURIComponent(r.path)}&t=${encodeURIComponent(TOKEN)}`}));
+  } catch (e) { say.textContent = e.message + (/codec|writer/i.test(e.message) ? " Try the GIF format instead." : ""); }
+}
+
+function wireRoyale() {
+  const remember = () => ryRemember();
+  for (const id of ["ryPrompt", "rySeed", "ryRefStr", "ryW", "ryH", "ryMax", "ryFmt", "rySpeed", "ryOut"])
+    $(id).addEventListener("change", remember);
+  $("ryFamily").addEventListener("change", () => { royaleFamily($("ryFamily").value); remember(); });
+  $("ryFolder").addEventListener("change", () => { royaleScan(); remember(); });
+  $("ryFolderPick").addEventListener("click", () => pick($("ryFolder").value || S.outputDefault, true, (p) => {
+    $("ryFolder").value = p; royaleScan(); remember(); }));
+  $("ryRefPick").addEventListener("click", () => pick($("ryRef").value || S.imageFolder, false, (p) => { $("ryRef").value = p; remember(); }));
+  $("ryRefClear").addEventListener("click", () => { $("ryRef").value = ""; remember(); });
+  $("ryLikePick").addEventListener("click", () => pick($("ryLikeRef").value || S.imageFolder, false, (p) => { $("ryLikeRef").value = p; remember(); }));
+  $("ryLikeClear").addEventListener("click", () => { $("ryLikeRef").value = ""; remember(); });
+  $("ryOutPick").addEventListener("click", () => pick($("ryOut").value, true, (p) => { $("ryOut").value = p; remember(); }));
+  $("ryRender").addEventListener("click", royaleRender);
+  $("ryStop").addEventListener("click", () => api("/api/royale/cancel", {}).then(royalePoll));
+  $("ryUnload").addEventListener("click", async () => {
+    await api("/api/studio/reset", {});            // the shared GPU worker quits (Studio's Unload)
+    $("ryStatus").textContent = "Model unloaded - the renders stay here until the next render.";
+  });
+  $("ryScrub").addEventListener("input", royaleScrub);
+  $("ryScore").addEventListener("click", royaleScore);
+  $("ryBest").addEventListener("click", royaleBest);
+  $("ryExport").addEventListener("click", () => royaleExport(false));
+  $("ryLikeExport").addEventListener("click", () => royaleExport(true));
+  $("ryStills").addEventListener("click", async () => {
+    $("ryExportStatus").textContent = "Saving stills…";
+    try { const r = await api("/api/royale/stills", {out_dir: $("ryOut").value.trim()});
+      $("ryExportStatus").textContent = `Saved ${r.saved.length} stills → ${$("ryOut").value.trim()}`; }
+    catch (e) { $("ryExportStatus").textContent = e.message; }
+  });
+  $("ryPromote").addEventListener("click", async () => {
+    try { const r = await api("/api/royale/promote", {i: royaleCurrent(), out_dir: $("ryOut").value.trim(),
+      name: $("ryPromoteName").value.trim()});
+      $("ryPromoteStatus").textContent = `Saved ${ryLabel(S.ry.items[royaleCurrent()].label).toLowerCase()} → ${r.path}`; }
+    catch (e) { $("ryPromoteStatus").textContent = e.message; }
+  });
+}
+
 // ---- Profiler: what a LoRA's blocks do (fizgig/web/tools.py runs scripts/profile_run.py, the desktop Profiler's job) ----
 S.pf = {wired: false, photos: [], poll: null, last: null};
 const PF_KEY = "fizgig_profiler";
@@ -3458,6 +3643,7 @@ function showTab(name) {
   if (name === "studio") studioOpen();
   if (name === "extract") extractOpen();
   if (name === "profiler") profilerOpen();
+  if (name === "royale") royaleOpen();
   if (name === "metadata") mdWire();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();

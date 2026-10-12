@@ -32,6 +32,7 @@
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="profiler"><i></i><span>Profiler</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
+          <button class="tab-item" data-tab="royale"><i></i><span>LoRA Royale</span></button>
           <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
           <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
@@ -697,6 +698,102 @@
                 <span class="field-hint" id="pfStatus"></span></div>
               <div class="run-bar"><span id="pfBar" style="width:0"></span></div>
               <pre class="console-terminal" id="pfLog"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-royale" class="tab-panel">
+          <div class="tab-banner">
+            <h1>LoRA Royale</h1>
+            <p>Render every epoch of a training run on one seed, then crossfade between them to find the sweet spot.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Setup</span><span class="run-badge" id="rySBadge"></span></div>
+            <div class="card-desc">Point at a training output folder. Renders use the model's preview model (its Turbo /
+              distilled checkpoint when set).</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Model:</span><select id="ryFamily" class="w-combo"></select>
+                <span class="field-hint">Follows the checkpoints' own model.</span></div>
+              <div class="field-row"><span class="field-label">Checkpoint folder:</span>
+                <input type="text" id="ryFolder" class="w-path"><button class="btn" id="ryFolderPick">Choose…</button></div>
+              <div class="field-hint" id="ryScan"></div>
+              <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="ryPrompt" class="w-path"
+                placeholder="include your trigger word"></div>
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="rySeed" class="w-num" value="42"></div>
+              <div class="field-row" id="ryRefRow"><span class="field-label">Reference:</span>
+                <input type="text" id="ryRef" class="w-path" placeholder="optional: a reference picture">
+                <button class="btn" id="ryRefPick">Choose…</button><button class="btn" id="ryRefClear">Clear</button>
+                <span class="st-inline" id="ryRefStrBox" title="How strongly the reference anchors each epoch render. 1.0 = full edit-model anchor (the reference holds the composition while each epoch's LoRA renders the prompt), lower lets the prompt vary more, 0 = off.">
+                  <span class="field-hint">Strength</span><input type="text" id="ryRefStr" class="w-num" value="1.0"></span></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Crossfade</div>
+            <div class="card-desc">Drag to blend between consecutive epochs - stop where it looks best.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Size:</span>
+                <select id="ryW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">×</span>
+                <select id="ryH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>
+                <span class="field-hint">Max renders</span>
+                <select id="ryMax" class="w-combo st-small-select"><option>All</option><option>6</option><option>8</option>
+                  <option>10</option><option selected>12</option><option>16</option><option>20</option></select>
+                <span class="field-hint">how many epochs to render, spread across the run</span></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryRender">Render epochs</button>
+                <button class="btn" id="ryStop" disabled>Stop</button>
+                <button class="btn" id="ryUnload" title="Free the GPU: the model leaves the card (the next render loads it again).">Unload model</button><span class="field-hint" id="ryStatus">Pick a folder, set a
+                  prompt, then render.</span></div>
+              <div class="run-bar"><span id="ryBar" style="width:0"></span></div>
+              <div class="ry-stage" id="ryStage"><img id="ryA" alt=""><img id="ryB" alt=""></div>
+              <div class="ry-label" id="ryLabel"></div>
+              <input type="range" id="ryScrub" min="0" max="0" step="0.01" value="0" class="ry-scrub">
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">All epochs</div>
+            <div class="card-desc">Click a thumbnail to jump the crossfade there.</div>
+            <div class="card-content"><div class="ry-grid" id="ryGrid"></div></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Likeness score</div>
+            <div class="card-desc">Pick a training image of your subject - Fizgig scores each epoch's face against it
+              (ArcFace, on the CPU) and highlights the closest match in gold.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Subject image:</span>
+                <input type="text" id="ryLikeRef" class="w-path"><button class="btn" id="ryLikePick">Choose…</button>
+                <button class="btn" id="ryLikeClear">Clear</button></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryScore">Score likeness</button>
+                <button class="btn" id="ryBest" disabled>Jump to best</button>
+                <button class="btn" id="ryLikeExport" title="Score likeness first, then export a side-by-side clip: your subject image next to each epoch with its likeness score, morphing epoch by epoch. Uses the Format / Speed / Loop / Fizgig-tag settings below.">Export likeness clip</button>
+                <span class="field-hint" id="ryLikeStatus"></span></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Export the morph</div>
+            <div class="card-desc">Save the crossfade as a looping clip - face resolving epoch by epoch, with a
+              Fizgig · LoRA Royale tag. Made to share.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Format:</span>
+                <select id="ryFmt" class="w-combo st-small-select" title="MP4 is full colour, smaller, faster to write, and autoplays on X / Reddit / Instagram. GIF embeds anywhere but is limited to 256 colours (slight banding on faces), takes longer to export, and makes a larger file."><option>MP4</option><option>GIF</option></select>
+                <span class="field-hint">Speed</span><select id="rySpeed" class="w-combo st-small-select"><option>Slow</option>
+                  <option selected>Normal</option><option>Fast</option></select>
+                <label class="checkbox-label"><input type="checkbox" id="ryLoop" checked> Loop (ping-pong)</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryTicker" checked> Epoch ticker</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryTag" checked> Fizgig tag</label></div>
+              <div class="field-row"><span class="field-label">Save to:</span><input type="text" id="ryOut" class="w-path">
+                <button class="btn" id="ryOutPick">Choose…</button></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryExport">Export clip</button>
+                <button class="btn" id="ryStills" title="Save every rendered epoch still as a full-size PNG (named by epoch so they sort in order).">Save all stills</button>
+                <span class="field-hint" id="ryExportStatus"></span></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Promote winner</div>
+            <div class="card-desc">Copy the epoch currently shown on the crossfade to a new .safetensors you can drop
+              straight into ComfyUI (into the Save to folder above).</div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-primary" id="ryPromote">Promote current epoch</button>
+                <input type="text" id="ryPromoteName" class="w-path" placeholder="name (leave empty for run-epochN-pick)">
+                <span class="field-hint" id="ryPromoteStatus"></span></div>
             </div>
           </div>
         </section>
