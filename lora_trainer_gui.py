@@ -25881,10 +25881,12 @@ class LoRATrainerGUI:
                                    bg=COLORS["bg_surface"], fg=COLORS["text_primary"], selectcolor=COLORS["bg_deep"],
                                    activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"],
                                    bd=0, highlightthickness=0, cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
-        tk.Button(row, text="\u25a0 Stop", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
-                  activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
-                  bd=0, padx=10, pady=4, cursor="hand2", command=self._repair_song_stop
-                  ).pack(side=tk.LEFT, padx=(4, 4))
+        # Pause while a song plays, Resume once paused (from the playhead, on the side last heard)
+        self._repair_song_pause_btn = tk.Button(
+            row, text="\u23f8 Pause", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
+            activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
+            bd=0, padx=10, pady=4, cursor="hand2", width=9, command=self._repair_song_pause_resume)
+        self._repair_song_pause_btn.pack(side=tk.LEFT, padx=(4, 4))
         tk.Button(row, text="💾 Save Tweaked WAV", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
                   fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
                   activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
@@ -25899,11 +25901,13 @@ class LoRATrainerGUI:
         # the song being heard (or last heard), full width: a moving playhead; click = jump, drag = the section
         bar = tk.Canvas(outer, height=72, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
         bar.pack(side=tk.TOP, fill=tk.X, expand=True, padx=(4, 8), pady=(6, 0))
-        # click = jump; drag = the section to loop; right-click = loop the whole song again
+        # click = jump; drag the playhead's handle = scrub; drag anywhere else = the section to loop;
+        # right-click = loop the whole song again
         bar.bind("<ButtonPress-1>", self._repair_song_press)
         bar.bind("<B1-Motion>", self._repair_song_drag_to)
         bar.bind("<ButtonRelease-1>", self._repair_song_release)
         bar.bind("<Button-3>", lambda e: self._repair_song_set_region(None))
+        bar.bind("<Motion>", self._repair_song_hover)
         bar.bind("<Configure>", lambda e: self._repair_song_draw())
         self._repair_song_bar = bar
         self.repair_song_time_var = tk.StringVar(value="0:00 / 0:00")
@@ -26002,7 +26006,8 @@ class LoRATrainerGUI:
         self._repair_song_t0 = None
         self._repair_song_looping = False
         self._repair_stop_wav()
-        self._repair_activity_paint()
+        self._repair_song_mark()
+        self._repair_song_draw()
         self._repair_song_mark()
         self._repair_song_draw()
 
@@ -26040,15 +26045,50 @@ class LoRATrainerGUI:
         w = max(1, self._repair_song_bar.winfo_width())
         return max(0.0, min(1.0, x / w)) * self._repair_song_duration()
 
+    _SONG_GRAB = 10              # px either side of the playhead that pick it up
+
+    def _repair_song_head_x(self):
+        dur = self._repair_song_duration()
+        w = max(1, self._repair_song_bar.winfo_width())
+        return int(w * min(self._repair_song_now(), dur) / dur) if dur else 0
+
+    def _repair_song_hover(self, event):
+        near = self._repair_song_duration() and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB
+        want = "sb_h_double_arrow" if near else "hand2"
+        if self._repair_song_bar.cget("cursor") != want:
+            self._repair_song_bar.configure(cursor=want)
+
     def _repair_song_press(self, event):
+        if self._repair_song_duration() and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB:
+            # the playhead's handle: scrub. A playing song pauses while dragged and carries on from where it is let go
+            self._repair_song_scrub = self._repair_song_t0 is not None
+            if self._repair_song_scrub:
+                self._repair_song_stop()
+            self._repair_song_drag = None
+            self._repair_song_scrubbing = True
+            return
+        self._repair_song_scrubbing = False
         self._repair_song_drag = [event.x, event.x]
 
     def _repair_song_drag_to(self, event):
+        if getattr(self, "_repair_song_scrubbing", False):
+            self._repair_song_pos = self._repair_song_x_to_t(event.x)
+            self._repair_song_draw()
+            return
         if self._repair_song_drag is not None:
             self._repair_song_drag[1] = event.x
             self._repair_song_draw()
 
     def _repair_song_release(self, event):
+        if getattr(self, "_repair_song_scrubbing", False):
+            self._repair_song_scrubbing = False
+            self._repair_song_pos = self._repair_song_x_to_t(event.x)
+            if self._repair_song_scrub:
+                self._repair_song_play(self._repair_song_side or self._repair_song_strip_side(),
+                                       at=self._repair_song_pos)
+            else:
+                self._repair_song_draw()
+            return
         d, self._repair_song_drag = self._repair_song_drag, None
         if d is None:
             return
@@ -26089,6 +26129,19 @@ class LoRATrainerGUI:
             on = playing and side == self._repair_song_side
             b.configure(bg=COLORS["accent"] if on else COLORS["bg_deep"],
                         state="normal" if side in self._repair_songs else "disabled")
+        pb = getattr(self, "_repair_song_pause_btn", None)
+        if pb is not None:
+            pb.configure(text="\u23f8 Pause" if playing or not self._repair_songs else "\u25b6 Resume",
+                         state="normal" if self._repair_songs else "disabled")
+
+    def _repair_song_pause_resume(self):
+        if self._repair_song_t0 is not None:
+            self._repair_song_stop()
+        else:
+            side = self._repair_song_side if self._repair_song_side in self._repair_songs \
+                else self._repair_song_strip_side()
+            if side:
+                self._repair_song_play(side)
 
     def _repair_song_tick(self):
         if self._repair_song_t0 is None:
@@ -26102,17 +26155,15 @@ class LoRATrainerGUI:
             self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
             self._repair_song_mark()
         self._repair_song_draw()
-        self._repair_activity_paint()
         if self._repair_song_t0 is not None:
             self.master.after(100, self._repair_song_tick)
 
     def _repair_activity_paint(self):
-        """Block activity: while a song plays, each block's name glows orange with how hard that block's LoRA pushes
-        at this moment of the song (the render's BlockMeter map, scaled to the song's own strongest pushes); no
-        glow when nothing plays or the side has no map (No LoRA)."""
-        act = None
-        if getattr(self, "_repair_song_t0", None) is not None:
-            act = self._repair_song_activity.get(self._repair_song_side)
+        """Block activity: each block's name glows orange with how hard that block's LoRA pushes at the playhead -
+        playing, paused or scrubbed - on the side heard (or shown): the render's BlockMeter map, scaled to the
+        song's own strongest pushes. No glow for a side without a map (No LoRA)."""
+        side = self._repair_song_strip_side() if hasattr(self, "_repair_songs") else None
+        act = self._repair_song_activity.get(side) if side else None
         rows = getattr(self, "repair_block_vars", {})
         if not act:
             if any(self._repair_glow.values()):
@@ -26126,7 +26177,7 @@ class LoRATrainerGUI:
         if getattr(self, "_repair_glow_key", None) != key:            # the song's scale, once per map
             allv = _np.concatenate([v.ravel() for v in act.values()])
             self._repair_glow_key, self._repair_glow_top = key, max(1e-6, float(_np.percentile(allv, 98)))
-        dur = max(1e-6, self._repair_song_duration(self._repair_song_side))
+        dur = max(1e-6, self._repair_song_duration(side))
         frac = min(0.999, max(0.0, self._repair_song_now() / dur))
         top = self._repair_glow_top
         for bid, w in rows.items():
@@ -26165,6 +26216,8 @@ class LoRATrainerGUI:
                     self._repair_song_strip_played = ImageTk.PhotoImage(bright.crop((0, 0, x, h)))
                     bar.create_image(0, 0, image=self._repair_song_strip_played, anchor=tk.NW)
             bar.create_line(x, 0, x, h, fill=COLORS["accent"], width=2)
+            for y0, dy in ((0, 1), (h, -1)):           # grab handles top and bottom: drag them to scrub
+                bar.create_polygon(x - 7, y0, x + 7, y0, x, y0 + 10 * dy, fill=COLORS["accent"], outline="")
             r = self._repair_song_region
             drag = getattr(self, "_repair_song_drag", None)
             if drag is not None and abs(drag[1] - drag[0]) >= 5:
@@ -26179,6 +26232,7 @@ class LoRATrainerGUI:
         def fmt(t):
             return f"{int(t) // 60}:{int(t) % 60:02d}"
         self.repair_song_time_var.set(f"{fmt(now)} / {fmt(dur)}")
+        self._repair_activity_paint()
 
     def _repair_song_strip_side(self):
         side = self._repair_song_side
