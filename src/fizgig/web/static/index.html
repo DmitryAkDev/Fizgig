@@ -52,6 +52,11 @@
       </aside>
 
       <div class="notebook-pane">
+        <div class="section-card warning-card pod-stop-bar" id="podStopBar" style="display:none">
+          <div class="card-content"><b>Training finished.</b> <span id="podStopText"></span>
+            <button class="btn btn-primary" id="podStopKeep">Keep the pod running</button>
+            <div class="field-hint">Your LoRA and everything else under /workspace stays on the volume for next time.</div></div>
+        </div>
         <div class="section-card warning-card" id="outdatedBanner" style="display:none">
           <div class="card-content">Fizgig was updated while this web UI kept running: restart the web UI (Preferences &gt;
             Web UI in the desktop app, or close and reopen the Fizgig window), then reload this page. Until then some

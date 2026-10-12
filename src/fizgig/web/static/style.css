@@ -1837,3 +1837,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .rv-slider { width: 100%; }
 #rvModal .rv-window { max-width: 96vw; }
 #rvModal select.st-small-select { width: auto !important; min-width: 0; }
+
+/* a pod's auto-stop countdown, over every tab */
+.pod-stop-bar { position: sticky; top: 0; z-index: 20; }
+.pod-stop-bar .btn { margin-left: 12px; }

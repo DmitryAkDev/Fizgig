@@ -51,6 +51,7 @@ async function boot() {
   S.onPod = pr.on_pod;
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
+  S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
@@ -359,6 +360,7 @@ async function renderPresets() {
 function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
+  if (S.pod) host.append(podCard());
   host.append(webPortCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
@@ -563,6 +565,35 @@ function dataFolderCard() {
           pick(input.value, true, (p) => { input.value = p; save(); })})), hint));
 }
 
+// on a rented pod: stop it once a run finishes (fizgig/web/pod_stop.py), and the account key that can
+function podCard() {
+  const P = S.pod;
+  const on = el("input", {type: "checkbox"});
+  on.checked = P.stop_when_done;
+  on.addEventListener("change", () => api("/api/prefs", {changes: {runpod_stop_when_done: on.checked}}).then(() => { P.stop_when_done = on.checked; }));
+  const key = el("input", {type: "password", class: "w-path", autocomplete: "off",
+    placeholder: P.key_saved ? "saved - type a new one to replace it" : "rpa_…"});
+  const keySay = el("span", {class: "field-hint"});
+  const sayKey = () => { keySay.textContent = P.key_saved ? "✓ key saved" : P.key_env ? "✓ using RUNPOD_STOP_API_KEY from the template" :
+    "no key yet - the pod can't stop itself without one"; };
+  const saveKey = async (v) => { await api("/api/prefs", {changes: {runpod_api_key: v}}); P.key_saved = !!v; key.value = ""; sayKey(); };
+  key.addEventListener("change", () => key.value.trim() && saveKey(key.value.trim()));
+  sayKey();
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "RunPod"})),
+    el("div", {class: "card-desc", text: "Fizgig is running on a rented GPU" + (P.pod_id ? ` (pod ${P.pod_id})` : "") + ". These settings only appear here."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Stop this pod when a training run finishes"),
+      el("div", {class: "field-hint", text: "Only after a run completes on its own - never after a pause, a stop or a failure, " +
+        "and with a queue only after its last run. A two-minute countdown you can cancel comes first, on any page. It stops " +
+        "the pod, never terminates it, so your files are still here when you start it again."}),
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "RunPod API key:"}), key,
+        el("button", {class: "btn btn-sm", text: "Clear", onclick: () => saveKey("")}), keySay),
+      el("div", {class: "field-hint", text: "Make one at RunPod > Settings > API Keys. The key RunPod gives a pod by itself " +
+        "can't stop pods. Saved in prefs.json on your volume, so it carries over to your next pod and stays out of any shared template."}),
+      el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the pod, not in your browser."})));
+}
+
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
@@ -667,6 +698,10 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  const ps = S.run.pod_stop || {};
+  $("podStopBar").style.display = ps.counting || ps.note ? "" : "none";
+  $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
+  $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
   const d = r.desktop;
   // the desktop app's run shows here whenever this page has none of its own going
@@ -4936,6 +4971,7 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  $("podStopKeep").addEventListener("click", () => api("/api/pod/keep", {}).then(pollRun).catch(() => {}));
   $("rvBtn").addEventListener("click", rvOpen);
   $("rvSlot").addEventListener("change", rvBuild);
   $("rvPlay").addEventListener("click", rvPlay);

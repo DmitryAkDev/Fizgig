@@ -967,6 +967,9 @@ def _run_stages(stages, out_dir):
     history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
     webqueue.on_run_ended("paused" if paused else "finished", _run.get("lora"), _queue_starter)
     append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
+    if not paused and not webqueue.status()["items"]:      # the last run done: a pod can stop billing
+        from fizgig.web import pod_stop
+        pod_stop.maybe_start(load_prefs(), append_log)
 
 
 def _stop():
@@ -1652,6 +1655,11 @@ class Handler(BaseHTTPRequestHandler):
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
+                              "pod": {"stop_when_done": str(p.get("runpod_stop_when_done") or "0") == "1",
+                                      "key_saved": bool(str(p.get("runpod_api_key") or "").strip()),
+                                      "key_env": bool((os.environ.get("RUNPOD_STOP_API_KEY") or "").strip()),
+                                      "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id()}
+                              if on_pod() else None,
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
             return self.json(load_state())
@@ -1909,6 +1917,8 @@ class Handler(BaseHTTPRequestHandler):
                                                    "started_at")} if d else None)
             r["queue"] = live.queue_summary() if d else []
             r["web_queue"] = webqueue.status()
+            from fizgig.web import pod_stop
+            r["pod_stop"] = pod_stop.status()
             return self.json(r)
         if path == "/api/desktop/log":
             text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0), tail=bool(qs.get("tail")))
@@ -2304,6 +2314,10 @@ class Handler(BaseHTTPRequestHandler):
                     if v and v not in {g["uuid"] for g in list_gpus()} | {str(g["index"]) for g in list_gpus()}:
                         raise ValueError("That GPU isn't in this machine.")
                     upd["cuda_device"] = v
+                if "runpod_stop_when_done" in ch:
+                    upd["runpod_stop_when_done"] = "1" if ch["runpod_stop_when_done"] in (True, "1", 1) else "0"
+                if "runpod_api_key" in ch:
+                    upd["runpod_api_key"] = str(ch["runpod_api_key"] or "").strip()
                 if "web_port" in ch:
                     port = int(ch["web_port"])
                     if not 1024 <= port <= 65535:
@@ -2344,6 +2358,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
+                from fizgig.web import pod_stop
+                return self.json({"ok": pod_stop.cancel(append_log)})
             if path == "/api/runs/caption":         # a caption fixed from the per-image loss view
                 from fizgig.web import image_loss
                 run = history.get(str(b.get("id") or ""))
