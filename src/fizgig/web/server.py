@@ -57,6 +57,11 @@ _log_event = threading.Condition(_lock)
 _stats = {"vram": [0, 0], "ram": [0, 0], "vram_peak": 0, "ram_peak": 0, "device_name": "GPU"}
 
 
+# no console window for helper commands: started from the desktop app the web UI has none, so each
+# nvidia-smi / taskkill would flash one up on Windows
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
 # ---- hardware meters (as the desktop status bar) ---------------------------------------------------------------
 def _poll_stats_loop():
     try:
@@ -85,7 +90,8 @@ def _poll_stats_loop():
         if not vt:                                   # no pynvml: nvidia-smi, as the desktop status bar falls back
             try:
                 out = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total",
-                                      "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3)
+                                      "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=3,
+                                     **_NO_WINDOW)
                 n, u, t = [x.strip() for x in out.stdout.splitlines()[0].split(",")][:3]
                 name, vu, vt = n, int(u) << 20, int(t) << 20
             except (OSError, ValueError, IndexError, subprocess.SubprocessError):
@@ -297,7 +303,7 @@ def _stop():
             return False
         _run["state"] = "stopped"
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, **_NO_WINDOW)
     else:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
@@ -372,7 +378,7 @@ def _cancel_fetch():
             return False
         _fetch["state"] = "cancelled"
     if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, **_NO_WINDOW)
     else:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
