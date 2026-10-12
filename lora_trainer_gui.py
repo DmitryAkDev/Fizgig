@@ -20456,6 +20456,7 @@ class LoRATrainerGUI:
         for child in parent.winfo_children():
             child.destroy()
         self.repair_block_vars = {}
+        self._repair_glow = {}            # new rows start unlit
         self._repair_locks = {}                  # block id -> its locked values (a new layout starts unlocked)
         # a new slider layout starts a new undo history
         self._repair_undo_stack, self._repair_redo_stack = [], []
@@ -25852,6 +25853,8 @@ class LoRATrainerGUI:
         outer, row = row, tk.Frame(row, bg=COLORS["bg_surface"])     # the buttons; the waveform strip below them
         row.pack(side=tk.TOP, fill=tk.X)
         self._repair_songs = {}              # side -> waveform (2, n) at 48 kHz
+        self._repair_song_activity = {}      # side -> {block id: push along the song} (description block_activity)
+        self._repair_glow = {}               # block id -> the glow level its label shows
         self._repair_song_side = None        # the side being heard (or paused on)
         self._repair_song_pos = 0.0          # seconds into the song where the current play started
         self._repair_song_t0 = None          # monotonic time of that start; None = not playing
@@ -25925,6 +25928,7 @@ class LoRATrainerGUI:
         else:
             self._repair_song_stop()
             self._repair_songs = {}
+            self._repair_song_activity = {}
             row.grid_remove()
             self._repair_res_label.configure(text="Res:")
             self._repair_res_combo.configure(values=["256", "384", "512", "768", "1024"])
@@ -25998,6 +26002,7 @@ class LoRATrainerGUI:
         self._repair_song_t0 = None
         self._repair_song_looping = False
         self._repair_stop_wav()
+        self._repair_activity_paint()
         self._repair_song_mark()
         self._repair_song_draw()
 
@@ -26097,8 +26102,49 @@ class LoRATrainerGUI:
             self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
             self._repair_song_mark()
         self._repair_song_draw()
+        self._repair_activity_paint()
         if self._repair_song_t0 is not None:
             self.master.after(100, self._repair_song_tick)
+
+    def _repair_activity_paint(self):
+        """Block activity: while a song plays, each block's name glows orange with how hard that block's LoRA pushes
+        at this moment of the song (the render's BlockMeter map, scaled to the song's own strongest pushes); no
+        glow when nothing plays or the side has no map (No LoRA)."""
+        act = None
+        if getattr(self, "_repair_song_t0", None) is not None:
+            act = self._repair_song_activity.get(self._repair_song_side)
+        rows = getattr(self, "repair_block_vars", {})
+        if not act:
+            if any(self._repair_glow.values()):
+                for bid, w in rows.items():
+                    if self._repair_glow.get(bid):
+                        w["block_lbl"].configure(bg=COLORS["bg_surface"])
+                self._repair_glow = {}
+            return
+        import numpy as _np
+        key = id(act)
+        if getattr(self, "_repair_glow_key", None) != key:            # the song's scale, once per map
+            allv = _np.concatenate([v.ravel() for v in act.values()])
+            self._repair_glow_key, self._repair_glow_top = key, max(1e-6, float(_np.percentile(allv, 98)))
+        dur = max(1e-6, self._repair_song_duration(self._repair_song_side))
+        frac = min(0.999, max(0.0, self._repair_song_now() / dur))
+        top = self._repair_glow_top
+        for bid, w in rows.items():
+            v = act.get(bid)
+            level = 0
+            if v is not None and len(v):
+                i = int(frac * len(v))
+                lo, hi = max(0, i - 2), min(len(v), i + 3)       # a 5-step window (~0.2 s): steady, not flickery
+                level = int(round(min(1.0, float(v[lo:hi].mean()) / top) * 8))
+            if self._repair_glow.get(bid, 0) != level:
+                self._repair_glow[bid] = level
+                w["block_lbl"].configure(bg=self._repair_glow_colour(level / 8))
+
+    @staticmethod
+    def _repair_glow_colour(k):
+        a, b = COLORS["bg_surface"].lstrip("#"), COLORS["orange"].lstrip("#")
+        k = 0.85 * k
+        return "#" + "".join(f"{round(int(a[i:i + 2], 16) * (1 - k) + int(b[i:i + 2], 16) * k):02x}" for i in (0, 2, 4))
 
     def _repair_song_draw(self):
         bar = getattr(self, "_repair_song_bar", None)
@@ -26220,6 +26266,7 @@ class LoRATrainerGUI:
         for side, song in songs.items():
             if song is not None:
                 self._repair_songs[side] = song.wave
+                self._repair_song_activity[side] = getattr(song, "activity", None)
         r = self._repair_song_region
         if r and r[0] >= self._repair_song_duration() - 0.25:
             self._repair_song_region = None             # a shorter Length: the section is past the end

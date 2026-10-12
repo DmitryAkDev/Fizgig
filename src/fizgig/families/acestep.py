@@ -98,6 +98,7 @@ ACESTEP15 = FamilyDescription(
           ("layer_25", -2.129), ("layer_26", -1.65), ("layer_27", -1.5))),
     ),
     repair_size=30,                   # an audio family's Res is the song length in seconds
+    block_activity=True,              # the block sliders glow with each layer's push as the song plays
     repair_default_strength=0.5,      # long-run LoRAs are played at about half strength (the long-run hint)
     ema_default="0.98",               # Peter, 11 Oct 2026: the 800-epoch Official run with EMA 0.98 was far better
     ema_short_run=True,

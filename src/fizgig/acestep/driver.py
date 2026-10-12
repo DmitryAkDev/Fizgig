@@ -627,6 +627,11 @@ class AceStepDriver(FamilyDriver):
             blocks.append(Block(f"layer_{i}", f"Layer {i}", mods))
         return [BlockGroup("DiT layers", blocks)]
 
+    def activity_axis(self, module_name):
+        """The song's time axis: every self-attention projection, and cross-attention's query and output (its key
+        and value project the caption and lyrics)."""
+        return ".self_attn." in module_name or module_name.endswith(("cross_attn.q_proj", "cross_attn.o_proj"))
+
     def quant_target_names(self, dit):
         """The 4-bit trunk a fine-tune trains against: both attentions and the MLP of every layer (the base is bf16
         otherwise - nothing else quantises)."""

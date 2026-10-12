@@ -785,6 +785,7 @@ class WorkbenchEngine:
                 raise RenderCancelled()
 
         from fizgig.modules import int8_attention as _i8a
+        meter = self._start_meter()
 
         def _generate():
             with _i8a.renders(self.int8_attention):
@@ -801,18 +802,21 @@ class WorkbenchEngine:
                                                if source is not None and self.source_repaint is not None else {}),
                                             **({"refer": refer} if refer is not None else {}),
                                             **({"refs": [r.to(self.device) for r in refs]} if refs else {}))
-        if act is None:
-            lat = _generate()
-        else:
-            try:
-                with act.render(self.dit, self._act_modules, key, sig):
-                    lat = _generate()
-            except torch.OutOfMemoryError:
-                # the cache's share of the card was the difference: give it back and render plainly
-                logger.warning("Turbo Preview: out of memory with the cache - rendering without it")
-                self._invalidate_activation_cache()
-                act = None
+        try:
+            if act is None:
                 lat = _generate()
+            else:
+                try:
+                    with act.render(self.dit, self._act_modules, key, sig):
+                        lat = _generate()
+                except torch.OutOfMemoryError:
+                    # the cache's share of the card was the difference: give it back and render plainly
+                    logger.warning("Turbo Preview: out of memory with the cache - rendering without it")
+                    self._invalidate_activation_cache()
+                    act = None
+                    lat = _generate()
+        finally:
+            activity = self._stop_meter(meter)
         if getattr(self.desc, "reference_strength", False):
             self._last_frame_latent = lat[0].detach().to("cpu")     # the next travel frame may edit this one
         if self.lowmem:
@@ -831,11 +835,40 @@ class WorkbenchEngine:
                 # the handler's waveform splice: outside the section, the source's own audio
                 out.wave = self.driver.splice_source(out.wave, self._source_wave_at(width), self.source_repaint,
                                                      self.repaint_strength)
+            if activity is not None:
+                try:
+                    out.activity = activity
+                except AttributeError:
+                    pass
             return out
         finally:
             if self.lowmem:
                 self.vae.to("cpu")
                 self._park_dit(self.device)
+
+    def _start_meter(self):
+        """Block activity (description block_activity): tag each wrapped Linear with its block - only those along
+        the output's sequence (driver.activity_axis) - and start a BlockMeter. None for other families."""
+        if not getattr(self.desc, "block_activity", False) or self.net is None:
+            return None
+        from fizgig.families import lora as _lora
+        for full, mod in self.net.wrapped.items():
+            mod._meter_block = self.driver.block_of(full) if self.driver.activity_axis(full) else None
+        meter = _lora.BlockMeter(skip=(SPEED,))
+        _lora.METER.on = meter
+        return meter
+
+    @staticmethod
+    def _stop_meter(meter):
+        """-> {block id: push along the sequence} (numpy), or None."""
+        if meter is None:
+            return None
+        from fizgig.families import lora as _lora
+        _lora.METER.on = None
+        try:
+            return meter.result() or None
+        except Exception:
+            return None
 
     def generate_preview(self, state, *, seed=None, prompt=None, width=None, height=None, steps=None,
                          seed_b=None, travel_t=0.0, override_ctx=None, override_neg_ctx=None,

@@ -455,6 +455,12 @@ class FamilyDriver:
         LoRA reaches layers that must stay bf16 (Krea 2's text fusion and I/O layers) narrows it."""
         return self.lora_target_names(dit)
 
+    def activity_axis(self, module_name: str) -> bool:
+        """Block activity: whether this LoRA module's sequence runs along the output (the song's time, a picture's
+        tokens), so its push can be placed along it. A family whose cross-attention projects the prompt's tokens
+        says no for those."""
+        return True
+
     def block_of(self, module_name: str) -> Optional[str]:
         """The block id a module belongs to, or None for modules outside the map (e.g. a speed LoRA's extras)."""
         idx = getattr(self, "_block_index", None)
