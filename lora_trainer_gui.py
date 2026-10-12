@@ -5559,6 +5559,19 @@ class LoRATrainerGUI:
         except Exception:
             pass
         self._queue_busy_retries = 0
+        try:
+            from fizgig.web import live as _live
+            _web = _live.read_fresh(_live.LIVE_WEB)
+            if _live.busy(_web) or (_web or {}).get("captioning"):
+                # the web UI is training (or captioning): wait for it, however long its run - no cap, no popup
+                if not getattr(self, "_queue_web_wait_said", False):
+                    self.update_console("[queue] the web UI is using the GPU - the next run starts when it's done.\n")
+                    self._queue_web_wait_said = True
+                self._schedule_queue_advance(30000)
+                return
+            self._queue_web_wait_said = False
+        except Exception:
+            pass
         head = self.training_queue[0]
         # Malformed item (hand-edited/corrupted queue file): remove it LOUDLY, then move on
         # to the next — one bad entry must not wedge the whole queue or crash the advance.

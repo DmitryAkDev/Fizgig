@@ -545,6 +545,32 @@ async function pollRun() {
     $("btnResume").style.display = !live && r.resume ? "" : "none";
   }
   renderQueue(r.queue || []);
+  renderWebQueue(r.web_queue || {items: []});
+}
+
+// the web UI's own queue: reorder, remove, start or hold
+function renderWebQueue(q) {
+  const items = q.items || [];
+  $("webQueueCard").style.display = items.length ? "" : "none";
+  const badge = $("webQueueBadge");
+  badge.textContent = !items.length ? "" : q.held ? "Held" : q.waiting ? "Waiting" : `${items.length} queued`;
+  badge.dataset.state = q.held ? "paused" : q.waiting ? "pausing" : "running";
+  $("webQueueState").textContent = q.held ? q.reason : q.waiting ? q.waiting :
+    items.length ? "The first starts as soon as nothing else is training." : "";
+  $("webQueueStart").style.display = q.held ? "" : "none";
+  $("webQueueHold").style.display = q.held || !items.length ? "none" : "";
+  const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
+  const host = $("webQueueList");
+  host.innerHTML = "";
+  items.forEach((it, i) => host.append(el("div", {class: "checkpoint-row queue-row"},
+    el("span", {class: "checkpoint-name", text: `${i + 1}. ${it.lora}`}),
+    el("span", {class: "field-hint", text: `${famName(it.family)} · ${it.image_folder} · queued ${it.queued_at}`}),
+    el("span", {class: "queue-actions"},
+      el("button", {class: "btn btn-sm", text: "↑", title: "Earlier", disabled: i === 0,
+        onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
+      el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
+        onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
+      el("button", {class: "btn btn-sm", text: "Remove", onclick: () => api("/api/queue/remove", {id: it.id}).then(pollRun)})))));
 }
 
 function renderQueue(items) {
@@ -1413,6 +1439,16 @@ function wire() {
   $("outTo").addEventListener("change", renderOutputs);
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
+  $("btnQueue").addEventListener("click", async () => {
+    try {
+      const r = await api("/api/queue/add", runBody());
+      showProblems(r.problems);
+      if (r.ok) $("runStatus").textContent = `Added to the queue (number ${r.position}).`;
+      pollRun();
+    } catch (e) { $("runStatus").textContent = e.message; }
+  });
+  $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun));
+  $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", () => start("/api/resume"));

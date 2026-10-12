@@ -240,6 +240,7 @@
               <div class="field-row">
                 <button class="btn" id="btnCheck">Check settings</button>
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
+                <button class="btn" id="btnQueue" title="Checked like Start, then lined up: it starts when the runs before it finish">Add to queue</button>
                 <button class="btn btn-warning" id="btnPause">Pause</button>
                 <button class="btn btn-primary" id="btnResume">Resume</button>
                 <button class="btn btn-danger" id="btnStop">Stop</button>
@@ -248,6 +249,17 @@
               <div class="field-hint" id="runSource"></div>
               <div id="problems" class="problems"></div>
               <pre class="console-terminal" id="console"></pre>
+            </div>
+          </div>
+          <div class="section-card" id="webQueueCard" style="display:none">
+            <div class="card-title"><span>Queue</span><span class="run-badge" id="webQueueBadge"></span></div>
+            <div class="card-desc">Runs lined up here, in order. Each starts when the one before it finishes; one that
+              fails, is stopped or pauses holds the queue until you press Start queue.</div>
+            <div class="card-content">
+              <div class="field-hint" id="webQueueState"></div>
+              <div id="webQueueList" class="checkpoint-list"></div>
+              <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
+                <button class="btn" id="webQueueHold">Hold</button></div>
             </div>
           </div>
           <div class="section-card" id="queueCard" style="display:none">

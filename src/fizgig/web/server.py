@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
 from fizgig.web import captions, history, live
+from fizgig.web import queue as webqueue
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -434,6 +435,28 @@ def _start(family_key, values, image_folder, resume=""):
     return {"ok": True, "stages": [s.name for s in plan.stages]}
 
 
+def _queue_starter(item):
+    """For webqueue.start_next: (True, "") once the item's run has started; (False, "wait: ...") while the GPU is
+    busy elsewhere (this run, the desktop app, a caption job); (False, why) when it can't start."""
+    with _lock:
+        if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
+            return False, "wait: a run is training here"
+    dk = live.desktop_state() or {}
+    if live.busy(dk):
+        return False, "wait: the desktop app is training - the next run starts when it finishes"
+    if dk.get("captioning") or captions.status()["state"] in ("loading", "running", "translating"):
+        return False, "wait: captions are being made - the next run starts when they finish"
+    try:
+        r = _start(item["family"], item["values"], item.get("image_folder") or "")
+    except Exception as e:
+        return False, str(e)
+    if r.get("ok"):
+        return True, ""
+    if r.get("error") and ("desktop app" in r["error"] or "Captions are" in r["error"]):
+        return False, "wait: " + r["error"]
+    return False, r.get("error") or "; ".join(r.get("problems") or ["it couldn't start"])
+
+
 def _popen(cmd):
     """As the desktop's run_subprocess: UTF-8, unbuffered, the chosen GPU, its own process group (and below-normal
     priority on Windows, so the desktop stays smooth)."""
@@ -475,6 +498,7 @@ def _run_stages(stages, out_dir):
         with _lock:
             if _run["state"] == "stopped":
                 history.end(_run.get("history_id"), "stopped", _run.get("progress"))
+                webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
                 return
             _run["stage"] = stage.name
         append_log(f"\n▶ {stage.name}\n")
@@ -485,6 +509,7 @@ def _run_stages(stages, out_dir):
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
             history.end(_run.get("history_id"), "failed", _run.get("progress"))
+            webqueue.on_run_ended("failed", _run.get("lora"), _queue_starter)
             return
         with _lock:
             _run["proc"] = proc
@@ -508,17 +533,20 @@ def _run_stages(stages, out_dir):
         if stopped:
             append_log(f"\n■ Stopped during {stage.name}.\n")
             history.end(_run.get("history_id"), "stopped", _run.get("progress"))
+            webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
             return
         if ret != 0:
             append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n")
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
             history.end(_run.get("history_id"), "failed", _run.get("progress"))
+            webqueue.on_run_ended("failed", _run.get("lora"), _queue_starter)
             return
     paused = os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"]
     with _lock:
         _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
     history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
+    webqueue.on_run_ended("paused" if paused else "finished", _run.get("lora"), _queue_starter)
     append_log("\n⏸ Paused. Resume continues from the saved state.\n" if paused else "\n✔ Run complete.\n")
 
 
@@ -1138,6 +1166,7 @@ class Handler(BaseHTTPRequestHandler):
                                                    "percent", "last_result", "ack", "unresponsive", "progress",
                                                    "started_at")} if d else None)
             r["queue"] = live.queue_summary() if d else []
+            r["web_queue"] = webqueue.status()
             return self.json(r)
         if path == "/api/desktop/log":
             text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0), tail=bool(qs.get("tail")))
@@ -1353,6 +1382,41 @@ class Handler(BaseHTTPRequestHandler):
                 if preset is None:
                     return self.json({"error": "unknown preset"}, 400)
                 return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})
+            if path == "/api/queue/add":                # Add to queue: checked like Start, saved for later
+                fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""
+                desc, inputs, plan = _plan(fam, vals, folder)
+                if plan.problems:
+                    return self.json({"problems": plan.problems})
+                out_dir, lora = inputs["LORA_OUTPUT_DIR"], inputs["LORA_NAME"]
+                n = webqueue.clashes(out_dir, lora)
+                with _lock:
+                    live_clash = (_run["proc"] is not None and _run["proc"].poll() is None
+                                  and os.path.normcase(os.path.abspath(_run["output_dir"] or "")) ==
+                                  os.path.normcase(os.path.abspath(out_dir)) and _run["lora"].lower() == lora.lower())
+                if n or live_clash:
+                    return self.json({"error": f"Run {n} in the queue already saves as {lora} in that folder - give this "
+                                      "one another LoRA name, or they'd overwrite each other's files." if n else
+                                      f"The run going now saves as {lora} in that folder - give this one another LoRA "
+                                      "name."}, 400)
+                item = webqueue.add(fam, vals, folder, lora, out_dir)
+                with _lock:
+                    idle = not (_run["proc"] is not None and _run["proc"].poll() is None) and \
+                        _run["state"] not in ("starting", "running")
+                if idle and not webqueue.status()["held"]:
+                    webqueue.start_next(_queue_starter)          # nothing running: it starts now (or waits, saying why)
+                return self.json({"ok": True, "id": item["id"], "position": len(webqueue.status()["items"])})
+            if path == "/api/queue/remove":
+                webqueue.remove(str(b.get("id") or ""))
+                return self.json({"ok": True})
+            if path == "/api/queue/move":
+                webqueue.move(str(b.get("id") or ""), -1 if int(b.get("delta") or 0) < 0 else 1)
+                return self.json({"ok": True})
+            if path == "/api/queue/start":
+                webqueue.release(_queue_starter)
+                return self.json({"ok": True})
+            if path == "/api/queue/hold":
+                webqueue.hold("Held by you. Press Start queue to carry on.")
+                return self.json({"ok": True})
             if path == "/api/runs/settings":            # Start again with these settings
                 rec = history.get(str(b.get("id") or ""))
                 desc = get_family(rec.get("family", "")) if rec else None
@@ -1526,6 +1590,7 @@ def run_server(host, port=None, password=None):
             logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")
         if str(load_prefs().get("web_port") or "") != str(port):
             update_prefs({"web_port": str(port)})
+    webqueue.load()                                    # held if it holds anything: a restart never launches a run
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
