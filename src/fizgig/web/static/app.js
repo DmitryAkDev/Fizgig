@@ -1600,7 +1600,7 @@ function studioRow(b) {
         btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv])),
         btn("−", "−0.1", () => studioSet(b.id, sv, Math.max(-3, Math.round((st()[sv] - 0.1) * 100) / 100))),
         btn("+", "+0.1", () => studioSet(b.id, sv, Math.min(3, Math.round((st()[sv] + 0.1) * 100) / 100))),
-        btn("⚖", "Balance: the other side gets 1 − this", () => {
+        btn("⇄", "Balance: the other side gets 1 − this (with a donor)", () => {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));

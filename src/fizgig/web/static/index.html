@@ -455,7 +455,7 @@
                 <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
               <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42">
                 <button class="btn btn-sm" id="stSeedNew" title="A random seed">↻</button>
-                <span class="field-label">Res:</span><select id="stRes" class="w-combo"></select>
+                <span class="field-label">Res:</span><select id="stRes" class="w-combo st-small-select"></select>
                 <label class="checkbox-label" id="stTurboRow"><input type="checkbox" id="stTurbo" checked> Turbo Preview
                   (late-block changes render almost at once; the same picture as a full render)</label></div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
@@ -463,9 +463,9 @@
               <div class="field-row" id="stRefRow"><span class="field-label">Reference:</span>
                 <input type="text" id="stRef" class="w-path" placeholder="optional: a reference picture">
                 <button class="btn" id="stRefPick">Choose…</button><button class="btn" id="stRefClear">Clear</button>
-                <span class="field-label">MP</span><select id="stRefMp" class="w-combo"><option>0.25</option><option>0.5</option>
+                <span class="st-inline"><span class="field-hint">MP</span><select id="stRefMp" class="w-combo st-small-select"><option>0.25</option><option>0.5</option>
                   <option selected>1.0</option><option>2.0</option></select>
-                <span class="field-label" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" class="w-num" value="1"></div>
+                  <span class="field-hint" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" value="1"></span></div>
               <div class="field-row"><button class="btn btn-primary" id="stStart">Start</button>
                 <button class="btn" id="stUnload">Unload model</button>
                 <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine
@@ -509,9 +509,9 @@
                 <button class="btn btn-sm" data-bulk="off">All off</button>
                 <button class="btn btn-sm" data-bulk="on">All on</button>
                 <button class="btn btn-sm" data-bulk="invert">Invert</button>
-                <button class="btn btn-sm" data-bulk="lucky">🎲 I'm feeling lucky</button>
-                <span class="field-label">Min</span><input type="text" id="stLuckyLo" class="w-num-sm" value="0">
-                <span class="field-label">Max</span><input type="text" id="stLuckyHi" class="w-num-sm" value="1.5">
+                <span class="st-lucky"><button class="btn btn-sm" data-bulk="lucky">🎲 I'm feeling lucky</button>
+                  <span class="st-lucky-label">Min</span><input type="text" id="stLuckyLo" value="0">
+                  <span class="st-lucky-label">Max</span><input type="text" id="stLuckyHi" value="1.5"></span>
                 <button class="btn btn-sm st-donor-only" data-bulk="donor_on">Donor: all on</button>
                 <button class="btn btn-sm st-donor-only" data-bulk="donor_off">Donor: all off</button>
               </div>
