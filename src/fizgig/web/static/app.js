@@ -1304,6 +1304,14 @@ function wire() {
   wireCaptions();
   $("outReload").addEventListener("click", loadOutputs);
   $("datasetsReload").addEventListener("click", loadDatasets);
+  $("aboutBtn").addEventListener("click", async () => {
+    $("aboutModal").classList.add("active");
+    try {
+      const a = await api("/api/about");
+      $("aboutVersion").textContent = "Version " + a.version;
+      $("aboutUpdate").textContent = a.update;
+    } catch (e) { /* the box still reads well without them */ }
+  });
   $("datasetsSearch").addEventListener("input", debounce(renderDatasets, 200));
   loadDatasets();
   $("outFizgigOnly").addEventListener("change", loadOutputs);

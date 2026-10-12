@@ -37,6 +37,7 @@
           <span class="side-run-text" id="sideRunText"></span>
         </button>
         <div class="gpu-monitor" id="statusBar"></div>
+        <button class="about-btn" id="aboutBtn" title="About Fizgig"><i></i><span>About</span></button>
         <a class="coffee-btn" href="https://buymeacoffee.com/lorasandlenses" target="_blank" rel="noopener"
           title="Fizgig is free: a coffee keeps it going"><i></i><span>Buy me a coffee</span></a>
       </aside>
@@ -313,6 +314,37 @@
         <div id="pickerList" class="picker-list"></div>
       </div>
       <div class="modal-footer"><button class="btn btn-primary" id="pickerChoose">Use this folder</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="aboutModal">
+    <div class="modal-window about-window">
+      <div class="modal-header"><span>About Fizgig</span>
+        <button class="btn" data-close="aboutModal">✕</button></div>
+      <div class="modal-body about-body">
+        <h2>Fizgig</h2>
+        <div class="about-sub">LoRA &amp; Fine-tune Studio — by Peter Neill</div>
+        <div class="about-version" id="aboutVersion"></div>
+        <div class="about-update" id="aboutUpdate"></div>
+        <p>By trade I'm a photographer and videographer — mostly live music, portraits, and a bit of teaching — and an
+          AI tinkerer by night. I build a lot of open-source tooling for ComfyUI and Klein/Flux workflows.</p>
+        <p class="about-links"><a href="https://shootthesound.com" target="_blank" rel="noopener">Photography —
+          shootthesound.com</a><br><a href="https://github.com/shootthesound" target="_blank" rel="noopener">Code &amp;
+          ComfyUI nodes — github.com/shootthesound</a></p>
+        <p class="about-muted">(Realtime-LoRA, LongLook, Angelo, mesh and a couple of dozen more — Fizgig grew out of
+          that world.)</p>
+        <hr>
+        <p class="about-note">A quiet note: a lot of this got built in the small hours. The last year has been a hard one
+          for our family — one of my children has been facing some serious health challenges — and honestly, losing
+          myself in making and obsessing over tools like this is how I carve out a little headspace. It keeps my hands
+          busy and my head somewhere steady.</p>
+        <p>Fizgig is free and always will be. If it's useful to you and you'd like to drop a coffee in the tip jar, it
+          genuinely means a lot right now — but it's in no way an obligation. Using it and enjoying it is more than
+          enough. Thank you for being here.</p>
+        <p class="about-links"><a href="https://github.com/shootthesound/Fizgig/releases/latest" target="_blank"
+          rel="noopener">📖 Release notes</a></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary" data-close="aboutModal">Close</button></div>
     </div>
   </div>
 

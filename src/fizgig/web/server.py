@@ -640,6 +640,26 @@ def _thumb(path, size=320):
     return data
 
 
+def about_info() -> dict:
+    """The About box's facts, as the desktop's: the running version and how this install updates."""
+    def git(*a):
+        try:
+            r = subprocess.run(["git", *a], cwd=BASE_DIR, capture_output=True, text=True, timeout=5, **_NO_WINDOW)
+            return r.stdout.strip() if r.returncode == 0 else ""
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    v = git("describe", "--tags", "--always")
+    if v and "v" not in v.split("-")[0]:              # a tagless checkout (a pod's shallow clone): say what it is
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        if branch and branch != "HEAD":
+            v = f"{branch} @ {v}"
+    rocm = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
+    how = ("On RunPod, Fizgig updates itself every time you restart the pod - just stop and start it to get the "
+           "latest." if on_pod() else
+           f"To update: close Fizgig and run {'update_fizgig_rocm.bat' if rocm else 'update_fizgig.bat'}.")
+    return {"version": v or "unknown", "update": how}
+
+
 def list_datasets() -> dict:
     """The folders in the training data folder (uploads_root()), newest first: what each holds (pictures, clips,
     songs, how many have a caption), when it last changed, and up to four pictures for its tile."""
@@ -1050,6 +1070,8 @@ class Handler(BaseHTTPRequestHandler):
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/captions/status":
             return self.json(captions.status())
+        if path == "/api/about":
+            return self.json(about_info())
         if path == "/api/datasets":
             return self.json(list_datasets())
         if path == "/api/upload/status":
