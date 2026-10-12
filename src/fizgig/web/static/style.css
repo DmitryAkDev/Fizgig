@@ -1116,3 +1116,71 @@ input[type="range"] {
   color: var(--text-explain); }
 .upload-drop.over { border-color: var(--accent); background: var(--accent-subtle); }
 #uploadStatus.bad { color: var(--warning); }
+
+/* ---- text wraps at every width: help lines, labels and messages never run off the side ---- */
+.field-hint, .card-desc, .tab-banner p, #runStatus, #runSource, #uploadStatus, .fetch-msg { white-space: normal;
+  overflow-wrap: anywhere; }
+.field-hint { max-width: 100%; }
+.modal-window { max-width: 94vw !important; box-sizing: border-box; }
+.checkpoint-name, .caption-card-title, .gallery-item figcaption { overflow-wrap: anywhere; }
+.problems { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- phones and narrow windows ---- */
+@media (max-width: 760px) {
+  body { height: 100dvh; font-size: 11pt; }
+  .window-titlebar { height: 40px; min-height: 40px; }
+  .window-title-text { font-size: 11pt; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .app-window-body { padding: 6px 0 0 0; }
+
+  /* tabs: a row you swipe, each big enough for a thumb; the run badge sits above them */
+  .tab-strip-row { height: auto; min-height: 0; flex-direction: column-reverse; align-items: stretch; gap: 4px; }
+  .tab-bar-scroller { padding: 0 6px; scroll-snap-type: x proximity; }
+  .tab-item { padding: 10px 14px; font-size: 10.5pt; scroll-snap-align: start; }
+  .run-badge { align-self: flex-end; margin: 0 8px; }
+  .notebook-pane { border-left: none; border-right: none; padding-bottom: 24px; }
+
+  .tab-banner { margin: 16px 14px 12px 14px; }
+  .tab-banner h1 { font-size: 17pt; }
+  .tab-banner p { font-size: 10.5pt; }
+  .section-card, .collapsible-section { margin: 0 8px 12px 8px; }
+  .card-title { padding: 14px 14px 2px 14px; }
+  .card-desc { padding: 0 14px 10px 14px; }
+  .card-content { padding: 0 14px 14px 14px; }
+  .collapsible-content { padding: 8px 12px 14px 12px; }
+  .section-card:not(.no-pad) > :not(.card-title):not(.card-desc):not(.card-content) { margin-left: 14px;
+    margin-right: 14px; }
+
+  /* a label above its box, every box the full width */
+  .field-row { flex-direction: column; align-items: stretch; gap: 6px; margin-bottom: 12px; }
+  .field-label { width: auto; min-width: 0; white-space: normal; padding-left: 0; }
+  .w-path, .w-prompt, .w-text, .w-trigger, .w-combo-lg, .w-combo, .w-combo-md, .w-combo-sm, .w-combo-xs, .w-num,
+  .w-num-sm, .w-num-xs { width: 100% !important; min-width: 0; flex: 1 1 auto; }
+  .field-row > .btn, .field-row > label.btn, .field-row > a.btn { width: 100%; justify-content: center; }
+  /* a row of buttons with no label (Check / Start / Pause / Stop): two to a line, not a tall stack */
+  .field-row:not(:has(> .field-label)) { flex-direction: row; flex-wrap: wrap; }
+  .field-row:not(:has(> .field-label)) > .btn { flex: 1 1 calc(50% - 6px); width: auto; }
+  .field-row:not(:has(> .field-label)) > .field-hint, .field-row:not(:has(> .field-label)) > span { flex: 1 1 100%; }
+  .param-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+  .form-col .field-label { white-space: normal; }
+
+  /* thumb-sized controls; 16px text so phones don't zoom in when a box is tapped */
+  input[type="text"], input[type="number"], input[type="password"], select, textarea { font-size: 16px; height: 40px; }
+  textarea { height: auto; }
+  .btn, .btn-accent { height: 42px; font-size: 11pt; }
+  .btn-sm { height: 36px; }
+  .preset-chip { padding: 8px 12px; }
+  input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+
+  .console-terminal { max-height: 300px; font-size: 11px; }
+  .gallery { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+  .captions-grid { grid-template-columns: 1fr; }
+  .checkpoint-row { grid-template-columns: 1fr; gap: 4px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .checkpoint-list { max-height: none; }
+  .upload-drop { padding: 14px 10px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+  .fetch-opt { margin-left: 0; }
+
+  /* the memory line: one compact strip, not the desktop's tall bar */
+  .bottom-status-bar { height: auto; min-height: 0; max-height: none; padding: 6px 10px; font-size: 9pt;
+    white-space: normal; }
+  .modal-window { width: 94vw !important; max-height: 90dvh; overflow: auto; }
+}
