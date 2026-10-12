@@ -1176,27 +1176,38 @@ def restore_to_dataset(folder, moved):
 _thumbs: dict = {}            # (path, mtime) -> a small JPEG; the oldest go past 600
 
 
+_thumbs_lock = threading.Lock()
+_thumb_slots = threading.BoundedSemaphore(4)   # a page of tiles decodes a few big photos at a time, not dozens at once
+
+
 def _thumb(path, size=320):
-    """A small JPEG of a picture for a tile (a phone shouldn't fetch four full photos per folder), kept in memory."""
+    """A small JPEG of a picture for a tile (a phone shouldn't fetch four full photos per folder), kept in memory.
+    The cache is shared by the request threads, so it is locked (an unlocked trim crashed requests once it was full,
+    and those tiles showed broken)."""
     try:
         key = (path, os.path.getmtime(path))
     except OSError:
         return None
-    if key in _thumbs:
-        return _thumbs[key]
+    with _thumbs_lock:
+        hit = _thumbs.get(key)
+    if hit is not None:
+        return hit
     try:
         import io
         from PIL import Image
-        with Image.open(path) as im:
-            im.thumbnail((size, size))
-            buf = io.BytesIO()
-            im.convert("RGB").save(buf, "JPEG", quality=82)
+        with _thumb_slots:
+            with Image.open(path) as im:
+                im.draft("RGB", (size * 2, size * 2))      # a JPEG decodes at a reduced size: much faster
+                im.thumbnail((size, size))
+                buf = io.BytesIO()
+                im.convert("RGB").save(buf, "JPEG", quality=82)
         data = buf.getvalue()
     except Exception:
         return None
-    _thumbs[key] = data
-    while len(_thumbs) > 600:
-        _thumbs.pop(next(iter(_thumbs)))
+    with _thumbs_lock:
+        _thumbs[key] = data
+        while len(_thumbs) > 600:
+            _thumbs.pop(next(iter(_thumbs)))
     return data
 
 
@@ -2726,6 +2737,9 @@ class _Server(ThreadingHTTPServer):
     # look free there; only POSIX needs it (a quick restart rebinding a port still in TIME_WAIT).
     allow_reuse_address = os.name != "nt"
     daemon_threads = True
+    # every request is its own connection (HTTP/1.0), and a page of thumbnails asks for dozens at once: the default
+    # backlog of 5 made Windows refuse the overflow, and those pictures showed broken
+    request_queue_size = 128
 
 
 def _bind(host, start, walk):
