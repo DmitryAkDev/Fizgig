@@ -30,6 +30,7 @@
           <button class="tab-item" data-tab="training"><i></i><span>5. Training</span></button>
           <div class="side-label">After</div>
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
+          <button class="tab-item" data-tab="profiler"><i></i><span>Profiler</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
           <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
           <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
@@ -640,6 +641,62 @@
                 <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
                 <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>
               <div id="stSaveMsg"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-profiler" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Profiler</h1>
+            <p>See what a LoRA actually does: which blocks carry the likeness, which cause bleed, and how much rank it
+              really uses. Studio shows every report inline when it loads the same LoRA.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title">LoRA File</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Model:</span><select id="pfFamily" class="w-combo"></select>
+                <span class="field-hint">Choosing a LoRA switches to its model.</span></div>
+              <div class="field-row"><span class="field-label">LoRA:</span>
+                <input type="text" id="pfLora" class="w-path" placeholder="the LoRA to profile (.safetensors)"><span id="pfLoraBtns"></span></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">What to measure</div>
+            <div class="card-desc">Find out what each block of the LoRA does: it renders the LoRA, then again with each block
+              group switched off, and reports how much each changes the picture, carries the likeness and causes bleed
+              (other people starting to look like your subject). Weights only is instant and shows how much rank the LoRA
+              really uses.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Mode:</span>
+                <label class="radio-label"><input type="radio" name="pfMode" value="weights"> Weights only (instant)</label>
+                <label class="radio-label"><input type="radio" name="pfMode" value="quick" checked> Quick (1 seed)</label>
+                <label class="radio-label"><input type="radio" name="pfMode" value="thorough"> Thorough (2 seeds, steadier)</label></div>
+              <div id="pfRender">
+                <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="pfPrompt" class="w-path"
+                  placeholder='with the trigger word, e.g. "zwxem, a portrait photo of a woman"'></div>
+                <div class="field-row"><span class="field-label">Bleed check:</span><input type="text" id="pfClass" class="w-path"
+                  placeholder="optional: the same prompt WITHOUT the trigger"></div>
+                <div class="field-hint pf-hint">With the LoRA loaded the bleed check should still look like anyone; the report
+                  shows which blocks pull it toward your subject.</div>
+                <div class="field-row"><span class="field-label">Subject photos:</span><span id="pfPhotos"></span>
+                  <span id="pfPhotoBtns"></span><button class="btn btn-sm" id="pfPhotosClear">Clear</button></div>
+                <div class="field-hint pf-hint">Optional, for a person LoRA: three photos of the subject turn on the likeness
+                  and bleed scores (face recognition). Taken from the run's sample gallery when it has them.</div>
+                <div class="field-row"><span class="field-label">Size:</span>
+                  <select id="pfSize" class="w-combo st-small-select"><option>512</option><option selected>768</option><option>1024</option></select></div>
+              </div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Run</span><span class="run-badge" id="pfBadge"></span></div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-primary" id="pfRun">Profile LoRA</button>
+                <button class="btn" id="pfStop" disabled>Stop</button>
+                <a class="btn" id="pfReport" target="_blank" rel="noopener" style="display:none">📊 Open report</a>
+                <button class="btn" id="pfStudio" style="display:none">Open in Studio</button>
+                <span class="field-hint" id="pfStatus"></span></div>
+              <div class="run-bar"><span id="pfBar" style="width:0"></span></div>
+              <pre class="console-terminal" id="pfLog"></pre>
             </div>
           </div>
         </section>

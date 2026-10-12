@@ -341,6 +341,9 @@ def _studio_post(what, b):
     if what == "load":
         if _gpu_training():
             raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
+        from fizgig.web import tools
+        if tools.holding_gpu():
+            raise ValueError("The Profiler is rendering on the GPU. Studio can load when it finishes (or Stop it).")
         desc = _studio_desc(b.get("family", ""))
         prefs = load_prefs()
         if desc.video_workbench:
@@ -1591,7 +1594,24 @@ class Handler(BaseHTTPRequestHandler):
                               **tools.info(desc, out_dir or default_output_dir())})
         if path == "/api/extract/status":
             from fizgig.web import tools
-            return self.json(tools.status())
+            return self.json(tools.status("extract"))
+        if path == "/api/profile/info":             # Profiler: the models that offer it
+            from fizgig.web import tools
+            return self.json({"families": [{"key": d.key, "name": d.display_name} for d in tools.families("profiler")]})
+        if path == "/api/profile/prefill":          # prompts from the LoRA's trigger, its run's subject photos
+            from fizgig.web import tools
+            p = (qs.get("path") or [""])[0]
+            return self.json(tools.profile_prefill(p) if os.path.isfile(p) else {})
+        if path == "/api/profile/status":
+            from fizgig.web import tools
+            return self.json(tools.status("profile"))
+        if path == "/api/profile/report":           # a Profiler report (the profiles folder's HTML)
+            p = (qs.get("path") or [""])[0]
+            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or os.path.join(OUTPUT_DEFAULT, "profiles"))
+            if not p.lower().endswith(".html") or not os.path.isfile(p) or                     os.path.commonpath([root, os.path.abspath(p)]) != root:
+                return self.json({"error": "not a report"}, 404)
+            with open(p, "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
         if path == "/api/metadata":                  # Metadata: any .safetensors file's metadata (header only)
             p = (qs.get("path") or [""])[0]
             if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
@@ -2198,6 +2218,39 @@ class Handler(BaseHTTPRequestHandler):
                                                     str(b.get("text") or ""))
                 update_prefs({"caption_qwen_instructions": ovr})
                 return self.json({"ok": True})
+            if path == "/api/profile/run":
+                from fizgig.web import tools
+                desc = next((d for d in tools.families("profiler") if d.key == b.get("family")), None)
+                if desc is None:
+                    raise ValueError("Pick a model first.")
+                mode = str(b.get("mode") or "quick")
+                prefs = load_prefs()
+                job = {"family": desc.key, "lora": str(b.get("lora") or "").strip(), "mode": mode,
+                       "prompt": str(b.get("prompt") or ""), "class_prompt": str(b.get("class_prompt") or ""),
+                       "baselines": [str(x) for x in (b.get("baselines") or [])][:3], "size": int(b.get("size") or 768),
+                       "profiles_dir": pref_path(prefs, "profiles_dir") or os.path.join(OUTPUT_DEFAULT, "profiles"),
+                       "plan": None, "settings": None}
+                if job["baselines"] and len(job["baselines"]) != 3:
+                    raise ValueError("Pick exactly 3 photos of the subject (one alone carries its own framing into every score).")
+                if mode != "weights":
+                    if _gpu_training():
+                        raise ValueError("A training run is using the GPU. Profile when it finishes.")
+                    if desc.video_workbench:
+                        kw, _status, problems = studio.plan_video(desc, prefs, pref_path)
+                        kw["audio_vae_path"] = ""            # the profile scores pictures (the desktop's audio=False)
+                    else:
+                        kw, job["settings"], _status, problems = studio.plan(desc, prefs, pref_path, fast=True,
+                                                                             samples=_studio_samples(desc))
+                    if problems:
+                        raise ValueError(" ".join(problems))
+                    job["plan"] = kw
+                    studio.stop_worker()                     # Studio's model off the card first (as a training run)
+                    captions.unload()
+                tools.run_profile(job)
+                return self.json({"ok": True})
+            if path == "/api/profile/stop":
+                from fizgig.web import tools
+                return self.json({"ok": tools.stop("profile")})
             if path == "/api/extract/run":
                 from fizgig.web import tools
                 desc = next((d for d in tools.families() if d.key == b.get("family")), None)

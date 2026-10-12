@@ -1,23 +1,33 @@
-"""The web UI's Extract tab: the desktop's Extract (exact weight SVD straight from the file, no model loaded - the
-families/extract.py path) run as its CLI in a subprocess, so the server never loads torch; its progress and log come
-back for the page. One extraction at a time."""
+"""The web UI's Extract and Profiler tabs: each the desktop tab's job, run in its own process so the server never loads
+torch - Extract the extract CLI (exact weight SVD from the file, no model loaded), Profiler scripts/profile_run.py (the
+weights report, or the measured profile through the workbench engine). Their progress and logs come back for the page.
+One run of each at a time."""
 
+import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 _lock = threading.Lock()
-_J = {"state": "idle", "log": [], "progress": None, "output": "", "error": "", "proc": None, "started": 0.0}
 
 
-def families():
-    """The models Extract offers: every family whose description lists the extract workbench (the desktop's list)."""
+def _job():
+    return {"state": "idle", "log": [], "progress": None, "text": "", "output": "", "error": "", "proc": None,
+            "started": 0.0, "result": None}
+
+
+_J = {"extract": _job(), "profile": _job()}
+
+
+def families(kind="extract"):
+    """The models a tab offers: every family whose description lists that workbench (the desktop's lists)."""
     from fizgig.families.registry import training_families
-    return [d for d in training_families() if "extract" in (d.workbench or ()) and d.training_ready]
+    return [d for d in training_families() if kind in (d.workbench or ()) and d.training_ready]
 
 
 def info(desc, out_dir):
@@ -38,10 +48,100 @@ def free_name(path):
     return f"{stem}_{n}{ext}"
 
 
-def run(desc, source, output, rank, preset="", blocks=None):
+def _start(kind, cmd, first_line, output=""):
     with _lock:
-        if _J["state"] == "running":
-            raise ValueError("An extraction is running - wait for it to finish.")
+        if _J[kind]["state"] == "running":
+            raise ValueError(f"A {'profile' if kind == 'profile' else 'extraction'} is running - wait for it to finish.")
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",
+               PYTHONPATH=os.path.join(BASE_DIR, "src") + os.pathsep + BASE_DIR)
+    kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+    proc = subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdin=subprocess.DEVNULL, **kw)
+    with _lock:
+        _J[kind] = {**_job(), "state": "running", "log": [first_line], "output": output, "proc": proc,
+                    "started": time.time()}
+    threading.Thread(target=_follow, args=(kind, proc), daemon=True).start()
+
+
+def _line(kind, line):
+    j = _J[kind]
+    m = re.match(r"^(\w+): (\d+)/(\d+)$", line)
+    if kind == "extract" and m:                  # the extract CLI's "\rSVD: i/n"
+        j["progress"] = [int(m.group(2)), int(m.group(3))]
+        return
+    if line.startswith("@@"):                    # the profile run's events
+        tag, _, body = line[2:].partition(" ")
+        try:
+            d = json.loads(body)
+        except ValueError:
+            return
+        if tag == "P":
+            j["text"] = d.get("text", j["text"])
+            if d.get("total"):
+                j["progress"] = [d.get("done", 0), d["total"]]
+        elif tag == "DONE":
+            j["result"] = d
+            j["output"] = d.get("report", "")
+        elif tag == "FAIL":
+            j["error"] = "Stopped." if d.get("stopped") else (d.get("error") or "failed")
+        return
+    j["log"] = (j["log"] + [line])[-400:]
+
+
+def _follow(kind, proc):
+    buf = b""
+    while True:
+        ch = proc.stdout.read(1)
+        if not ch:
+            break
+        if ch in (b"\r", b"\n"):
+            line = buf.decode("utf-8", "replace").strip()
+            buf = b""
+            if line:
+                with _lock:
+                    _line(kind, line)
+        else:
+            buf += ch
+    code = proc.wait()
+    with _lock:
+        j = _J[kind]
+        if j["proc"] is not proc:
+            return
+        ok = code == 0 and (kind != "extract" or os.path.isfile(j["output"]))
+        stopped = j.get("stopping")
+        j.update(state="done" if ok else "stopped" if stopped else "failed", proc=None)
+        if not ok and not j["error"]:
+            j["error"] = "Stopped." if stopped else (j["log"][-1] if j["log"] else f"exit code {code}")
+        j["log"].append(f"Done in {time.time() - j['started']:.0f} s." if ok else
+                        "Stopped." if stopped else f"The {'profile' if kind == 'profile' else 'extraction'} failed.")
+
+
+def status(kind="extract"):
+    with _lock:
+        return {k: _J[kind][k] for k in ("state", "log", "progress", "text", "output", "error", "result")}
+
+
+def holding_gpu():
+    with _lock:
+        return _J["profile"]["state"] == "running"
+
+
+def stop(kind):
+    with _lock:
+        j = _J[kind]
+        p = j["proc"]
+        if p is None:
+            return False
+        j["stopping"] = True
+    try:
+        p.kill()
+    except OSError:
+        pass
+    return True
+
+
+# ---- Extract ----------------------------------------------------------------------------------------------------
+def run(desc, source, output, rank, preset="", blocks=None):
     if not source or not os.path.isfile(source):
         raise ValueError("Choose a source LoRA (that file isn't there).")
     os.makedirs(os.path.dirname(output), exist_ok=True)
@@ -52,45 +152,44 @@ def run(desc, source, output, rank, preset="", blocks=None):
         cmd += ["--blocks", ",".join(blocks)]
     elif preset:
         cmd += ["--preset", preset]
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-    kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
-    proc = subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL, **kw)
-    with _lock:
-        _J.update(state="running", log=[f"Extracting {os.path.basename(source)} at rank {rank} -> {output}"],
-                  progress=None, output=output, error="", proc=proc, started=time.time())
-    threading.Thread(target=_follow, args=(proc,), daemon=True).start()
+    _start("extract", cmd, f"Extracting {os.path.basename(source)} at rank {rank} -> {output}", output)
     return output
 
 
-def _follow(proc):
-    buf = b""
-    while True:
-        ch = proc.stdout.read(1)
-        if not ch:
-            break
-        if ch in (b"\r", b"\n"):
-            line = buf.decode("utf-8", "replace").strip()
-            buf = b""
-            if not line:
-                continue
-            m = re.match(r"^(\w+): (\d+)/(\d+)$", line)
-            with _lock:
-                if m:                                # the CLI's "\rSVD: i/n" progress
-                    _J["progress"] = [int(m.group(2)), int(m.group(3))]
-                else:
-                    _J["log"] = (_J["log"] + [line])[-300:]
-        else:
-            buf += ch
-    code = proc.wait()
-    with _lock:
-        ok = code == 0 and os.path.isfile(_J["output"])
-        secs = time.time() - _J["started"]
-        _J.update(state="done" if ok else "failed", proc=None,
-                  error="" if ok else (_J["log"][-1] if _J["log"] else f"exit code {code}"))
-        _J["log"].append(f"Done in {secs:.0f} s." if ok else "The extraction failed.")
+# ---- Profiler ---------------------------------------------------------------------------------------------------
+def profile_prefill(lora):
+    """The desktop's _profiler_prefill_from_lora: prompts from the LoRA's trigger, and the run's likeness baselines
+    (its sample gallery's three photos) when it has them."""
+    from fizgig.utils.st_meta import read_metadata
+    try:
+        md = read_metadata(lora)
+    except Exception:
+        md = {}
+    trig = (md.get("modelspec.trigger_phrase") or md.get("ss_trigger_word") or "").strip()
+    baselines = []
+    try:
+        sdir = os.path.join(os.path.dirname(lora), "sample")
+        with open(os.path.join(sdir, "likeness.json"), encoding="utf-8") as f:
+            lk = json.load(f)
+        with open(os.path.join(sdir, "dataset.json"), encoding="utf-8") as f:
+            ds = json.load(f).get("folder", "")
+        paths = [os.path.join(ds, b) for b in lk.get("baselines", [])]
+        if len(paths) == 3 and all(os.path.isfile(p) for p in paths):
+            baselines = paths
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"prompt": f"{trig + ', ' if trig else ''}a portrait photo of a person, natural light",
+            "class_prompt": "a portrait photo of a person, natural light", "baselines": baselines}
 
 
-def status():
-    with _lock:
-        return {k: _J[k] for k in ("state", "log", "progress", "output", "error")}
+def run_profile(job):
+    lora = job.get("lora") or ""
+    if not lora or not os.path.isfile(lora):
+        raise ValueError("Choose a LoRA (that file isn't there).")
+    if job.get("mode") != "weights" and not (job.get("prompt") or "").strip():
+        raise ValueError("Enter a prompt (with the LoRA's trigger word, if it has one).")
+    fd, path = tempfile.mkstemp(prefix="fizgig_profile_", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(job, f)
+    _start("profile", [sys.executable, "-m", "fizgig.scripts.profile_run", path],
+           f"Profiling {os.path.basename(lora)} ({job.get('mode')})")

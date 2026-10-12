@@ -1206,6 +1206,131 @@ function imageLossTile(im, ymax) {
     svg);
 }
 
+// ---- Profiler: what a LoRA's blocks do (fizgig/web/tools.py runs scripts/profile_run.py, the desktop Profiler's job) ----
+S.pf = {wired: false, photos: [], poll: null, last: null};
+const PF_KEY = "fizgig_profiler";
+const pfSaved = () => { try { return JSON.parse(localStorage.getItem(PF_KEY) || "{}"); } catch (e) { return {}; } };
+function pfRemember() {
+  try { localStorage.setItem(PF_KEY, JSON.stringify({family: $("pfFamily").value, lora: $("pfLora").value, mode: pfMode(),
+    size: $("pfSize").value, prompt: $("pfPrompt").value, cls: $("pfClass").value, photos: S.pf.photos})); } catch (e) { /* private */ }
+}
+const pfMode = () => (document.querySelector('input[name="pfMode"]:checked') || {}).value || "quick";
+
+async function profilerOpen() {
+  if (!S.pf.wired) {
+    S.pf.wired = true;
+    const r = await api("/api/profile/info").catch(() => ({families: []}));
+    $("pfFamily").replaceChildren(...r.families.map((f) => el("option", {value: f.key, text: f.name})));
+    const sv = pfSaved();
+    if (sv.family && r.families.some((f) => f.key === sv.family)) $("pfFamily").value = sv.family;
+    $("pfLora").value = sv.lora || ""; $("pfPrompt").value = sv.prompt || ""; $("pfClass").value = sv.cls || "";
+    if (sv.size) $("pfSize").value = sv.size;
+    const m = document.querySelector(`input[name="pfMode"][value="${sv.mode || "quick"}"]`); if (m) m.checked = true;
+    S.pf.photos = sv.photos || [];
+    wireProfiler();
+    pfPhotosDraw(); pfModeChanged();
+  }
+  profilerPoll();
+}
+
+function pfModeChanged() { $("pfRender").classList.toggle("off", pfMode() === "weights"); pfRemember(); }
+
+function pfPhotosDraw() {
+  $("pfPhotos").replaceChildren(...S.pf.photos.map((p, i) => el("span", {class: "pf-photo", title: p},
+    el("img", {src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`, alt: ""}),
+    el("button", {class: "btn btn-sm", text: "×", onclick: () => { S.pf.photos.splice(i, 1); pfPhotosDraw(); pfRemember(); }}))));
+  if (!S.pf.photos.length) $("pfPhotos").append(el("span", {class: "field-hint", text: "None (picture change only)"}));
+  $("pfPhotoBtns").style.display = S.pf.photos.length >= 3 ? "none" : "";
+}
+
+async function pfLora(p, fresh) {
+  // a LoRA chosen: its model, then (a new one) its trigger prompts and its run's subject photos, as the desktop does
+  $("pfLora").value = p;
+  try {
+    const f = await api(`/api/studio/lorafamily?path=${encodeURIComponent(p)}`);
+    if (f.key && [...$("pfFamily").options].some((o) => o.value === f.key)) $("pfFamily").value = f.key;
+  } catch (e) { /* unreadable: the run says so */ }
+  if (fresh) {
+    const r = await api(`/api/profile/prefill?path=${encodeURIComponent(p)}`).catch(() => ({}));
+    $("pfPrompt").value = r.prompt || ""; $("pfClass").value = r.class_prompt || "";
+    S.pf.photos = r.baselines || []; pfPhotosDraw();
+  }
+  pfRemember();
+}
+
+async function profilerRun() {
+  try {
+    await api("/api/profile/run", {family: $("pfFamily").value, lora: $("pfLora").value.trim(), mode: pfMode(),
+      prompt: $("pfPrompt").value.trim(), class_prompt: $("pfClass").value.trim(), baselines: S.pf.photos,
+      size: Number($("pfSize").value)});
+    $("pfReport").style.display = $("pfStudio").style.display = "none";
+    profilerPoll();
+  } catch (e) { $("pfStatus").textContent = e.message; }
+}
+
+async function profilerPoll() {
+  clearTimeout(S.pf.poll);
+  let st;
+  try { st = await api("/api/profile/status"); } catch (e) { return; }
+  const running = st.state === "running";
+  $("pfRun").disabled = running; $("pfStop").disabled = !running;
+  $("pfBadge").textContent = {running: "Running", done: "Done", failed: "Failed", stopped: "Stopped"}[st.state] || "";
+  $("pfBadge").dataset.state = running ? "running" : st.state === "done" ? "completed" : st.state === "idle" ? "idle" : "failed";
+  const p = st.progress;
+  $("pfBar").style.width = running ? (p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : "100%") : st.state === "done" ? "100%" : "0";
+  $("pfBar").parentElement.classList.toggle("indeterminate", running && !(p && p[1]));
+  const res = st.result;
+  $("pfStatus").textContent = running ? st.text : st.state === "done" ? "Done." : st.state === "stopped" ? "Stopped." :
+    st.state === "failed" ? "Error - see below." : "";
+  $("pfLog").textContent = [...st.log.filter((l) => !/^INFO:/.test(l)), ...(res ? ["", ...res.lines] : []), ...(st.state === "failed" ? ["", st.error] : [])].join("\n");
+  if (res && res.report) {
+    $("pfReport").href = `/api/profile/report?path=${encodeURIComponent(res.report)}&t=${encodeURIComponent(TOKEN)}`;
+    $("pfReport").style.display = "";
+  }
+  S.pf.last = res && res.studio;
+  $("pfStudio").style.display = S.pf.last ? "" : "none";
+  if (running && $("tab-profiler").classList.contains("active")) S.pf.poll = setTimeout(profilerPoll, 800);
+}
+
+async function profilerToStudio() {
+  // the desktop's "Open in Repair Studio": the LoRA on the same prompt, seed and size, the profile's suggestions on the
+  // sliders (bleed-heavy groups turned down, quiet ones off), so the change shows side by side and saves as a new file
+  const h = S.pf.last;
+  if (!h) return;
+  showTab("studio");                                 // opens Studio; wait for its model list and layout
+  for (let i = 0; i < 100 && !(S.st.familiesLoaded && S.st.layout); i++) await new Promise((r) => setTimeout(r, 100));
+  if ($("stFamily").value !== h.family) { $("stFamily").value = h.family; await studioFamily(); }
+  $("stPrimary").value = h.lora; $("stPrompt").value = h.prompt; $("stSeed").value = String(h.seed);
+  if ([...$("stRes").options].some((o) => o.value === String(h.size))) $("stRes").value = String(h.size);
+  for (const [id, b] of Object.entries(S.st.blocks)) {
+    const [on, strength] = h.blocks[id] || [true, 1.0];
+    b.pe = !!on; b.ps = Number(strength);
+  }
+  studioSync(); studioCommit(); stRemember();
+  let msg = h.notes.length ? "From the profile: " + h.notes.join("; ") + "." :
+    "The profile found no group to turn down or switch off: the likeness and any bleed sit in the same blocks, so the sliders stay as trained.";
+  if (h.class_prompt) msg += ` To see the bleed, set the prompt to "${h.class_prompt}".`;
+  $("stSetupMsg").textContent = msg;                // stays put while the status line follows the load
+  await studioStart();
+}
+
+function wireProfiler() {
+  document.querySelectorAll('input[name="pfMode"]').forEach((r) => r.addEventListener("change", pfModeChanged));
+  for (const id of ["pfFamily", "pfSize", "pfPrompt", "pfClass"]) $(id).addEventListener("change", pfRemember);
+  $("pfLora").addEventListener("change", () => pfLora($("pfLora").value.trim(), true));
+  const up = uploadButton({kind: "path", key: "PROFILER_LORA"}, $("pfLora"), (p) => pfLora(p, true));
+  $("pfLoraBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
+    pick($("pfLora").value || S.outputDefault, false, (p) => pfLora(p, true))}), up.btn, up.status);
+  const addPhoto = (p) => { if (S.pf.photos.length < 3 && !S.pf.photos.includes(p)) S.pf.photos.push(p); pfPhotosDraw(); pfRemember(); };
+  const pup = uploadButton({kind: "path", key: "PROFILER_PHOTO"}, el("input", {type: "text"}), addPhoto);
+  $("pfPhotoBtns").replaceChildren(el("button", {class: "btn btn-sm", text: "Add photo…", onclick: () => pick(S.imageFolder, false, addPhoto)}),
+    pup.btn, pup.status);
+  $("pfPhotosClear").addEventListener("click", () => { S.pf.photos = []; pfPhotosDraw(); pfRemember(); });
+  $("pfRun").addEventListener("click", profilerRun);
+  $("pfStop").addEventListener("click", () => api("/api/profile/stop", {}).then(profilerPoll));
+  $("pfStudio").addEventListener("click", profilerToStudio);
+}
+
 // ---- Extract: a LoRA reduced to a lower rank (exact weight SVD from the file; fizgig/web/tools.py runs it) ----
 S.ex = {info: null, poll: null, wired: false};
 const EX_KEY = "fizgig_extract";
@@ -3332,6 +3457,7 @@ function showTab(name) {
   if (name === "prep") loadPrep();
   if (name === "studio") studioOpen();
   if (name === "extract") extractOpen();
+  if (name === "profiler") profilerOpen();
   if (name === "metadata") mdWire();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
