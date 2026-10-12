@@ -1214,3 +1214,7 @@ input[type="range"] {
   .captions-grid { margin: 8px; }
   .checkpoint-row .btn, .section-card .card-content > .btn-sm { width: 100%; justify-content: center; }
 }
+
+/* full-width buttons include their padding, so they never stick out past the card */
+.btn { box-sizing: border-box; max-width: 100%; }
+.card-title, .card-title > span { overflow-wrap: anywhere; min-width: 0; }
