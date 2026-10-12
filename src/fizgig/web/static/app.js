@@ -3816,10 +3816,10 @@ function wireStudio() {
     $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
-  $("stPlayBothBtn").addEventListener("click", () => {
+  playTogether($("stPlayBothBtn"), () => {
     const v = S.st.layout.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
-    for (const id of ids) { const m = $(id); m.currentTime = 0; m.play().catch(() => {}); }
+    return ids;
   });
   $("stStart").addEventListener("click", studioStart);
   wireStudioAce();
@@ -4532,9 +4532,7 @@ function rmWire() {
     await api("/api/studio/reset", {}).catch(() => {});   // the shared GPU worker quits (Studio's Unload)
     $("rmStatus").textContent = "Model unloaded - the next Render loads it again.";
   });
-  $("rmPlayBothBtn").addEventListener("click", () => {
-    for (const v of ["rmTweakVid", "rmBaseVid"]) { $(v).currentTime = 0; $(v).play().catch(() => {}); }
-  });
+  playTogether($("rmPlayBothBtn"), () => ["rmTweakVid", "rmBaseVid"]);
   // curve presets and the pack's graph presets
   $("rmCurvePreset").addEventListener("change", async () => {
     const name = $("rmCurvePreset").value;
@@ -4612,6 +4610,24 @@ function rmWire() {
     const r = await rmAct("/api/refmod/reflora", {state: rmState(), name: $("rmRflName").value.trim()}, (x) => x.message);
     if (r) rmRescan(true);
   });
+}
+
+// Play together / Pause together: one button for the panes' players (ids() names the ones in use). Play starts
+// them from the top unless they were paused together (then they carry on, still in step); the label follows the
+// players, so pausing one by its own controls turns the button back to Play.
+function playTogether(btn, ids) {
+  const media = () => ids().map((id) => $(id)).filter((m) => m && m.getAttribute("src"));
+  const label = () => { btn.textContent = media().some((m) => !m.paused) ? "⏸ Pause together" : "▶ Play together"; };
+  btn.addEventListener("click", () => {
+    const ms = media();
+    if (ms.some((m) => !m.paused)) { ms.forEach((m) => m.pause()); return label(); }
+    const t = ms.map((m) => m.currentTime);
+    const inStep = t.length && Math.max(...t) - Math.min(...t) < 0.1;
+    for (const m of ms) { if (!inStep) m.currentTime = 0; m.play().catch(() => {}); }
+    label();
+  });
+  // every player that could be in the set: the button follows them
+  for (const m of document.querySelectorAll("video, audio")) for (const ev of ["play", "pause", "emptied"]) m.addEventListener(ev, label);
 }
 
 // ---- file picker -------------------------------------------------------------------------------------------
