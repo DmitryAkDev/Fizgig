@@ -30,6 +30,7 @@
           <button class="tab-item" data-tab="training"><i></i><span>5. Training</span></button>
           <div class="side-label">After</div>
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
+          <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
@@ -419,6 +420,108 @@
             <div class="card-title">Previews</div>
             <div class="card-desc">The previews this run makes, epoch by epoch, are on the Samples tab.</div>
             <div class="card-content"><button class="btn btn-primary" id="btnViewPreviews">View the previews →</button></div>
+          </div>
+        </section>
+
+        <section id="tab-studio" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Studio</h1>
+            <p>Tweak a finished LoRA block by block and see it live: the baseline beside your change, rendered on the
+              Fizgig machine. Save the result as a new LoRA.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Setup</span><span class="run-badge" id="stBadge"></span></div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Model:</span><select id="stFamily" class="w-combo"></select>
+                <span class="field-hint" id="stDitNote"></span></div>
+              <div class="field-row" id="stDitRow"><span class="field-label">Preview with:</span>
+                <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
+                <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
+              <div class="field-row"><span class="field-label">Primary LoRA:</span>
+                <input type="text" id="stPrimary" class="w-path" placeholder="the LoRA to repair (.safetensors)">
+                <button class="btn" id="stPrimaryPick">Choose…</button>
+                <span class="field-label">at strength</span><input type="text" id="stPScale" class="w-num" value="1"></div>
+              <div class="field-row"><span class="field-label">Donor LoRA:</span>
+                <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
+                <button class="btn" id="stDonorPick">Choose…</button>
+                <button class="btn" id="stDonorUnload">Unload donor</button>
+                <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1"></div>
+              <div class="field-row"><span class="field-label">Prompt:</span>
+                <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42">
+                <button class="btn btn-sm" id="stSeedNew" title="A random seed">↻</button>
+                <span class="field-label">Res:</span><select id="stRes" class="w-combo"></select>
+                <label class="checkbox-label" id="stTurboRow"><input type="checkbox" id="stTurbo" checked> Turbo Preview
+                  (late-block changes render almost at once; the same picture as a full render)</label></div>
+              <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
+                <textarea id="stNeg" rows="2"></textarea></div>
+              <div class="field-row" id="stRefRow"><span class="field-label">Reference:</span>
+                <input type="text" id="stRef" class="w-path" placeholder="optional: a reference picture">
+                <button class="btn" id="stRefPick">Choose…</button><button class="btn" id="stRefClear">Clear</button>
+                <span class="field-label">MP</span><select id="stRefMp" class="w-combo"><option>0.25</option><option>0.5</option>
+                  <option selected>1.0</option><option>2.0</option></select>
+                <span class="field-label" id="stRefStrLabel">Strength</span><input type="text" id="stRefStr" class="w-num" value="1"></div>
+              <div class="field-row"><button class="btn btn-primary" id="stStart">Start</button>
+                <button class="btn" id="stUnload">Unload model</button>
+                <span class="field-hint" id="stStatus">Choose a LoRA and press Start: the model loads on the Fizgig machine
+                  (the first time takes a minute).</span></div>
+              <div class="run-bar"><span id="stBar" style="width:0"></span></div>
+            </div>
+          </div>
+          <div class="section-card" id="stProfile" style="display:none">
+            <div class="card-title">Profile found for this LoRA</div>
+            <div class="card-content"><div class="field-hint" id="stProfileLine"></div><div class="st-pills" id="stPills"></div>
+              <a class="btn btn-sm" id="stReport" target="_blank" rel="noopener">📊 Open full report</a></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Preview</div>
+            <div class="card-content">
+              <div class="st-preview">
+                <figure class="gallery-item st-pane"><img id="stBase" alt=""><figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
+                <figure class="gallery-item st-pane"><img id="stTweak" alt=""><figcaption>Tweaked (current sliders)</figcaption></figure>
+              </div>
+              <div class="field-hint">Click either picture to see both full size (← → switches between them).</div>
+            </div>
+          </div>
+          <div class="section-card" id="stMasters" style="display:none">
+            <div class="card-title">Master controls</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Masters affect:</span>
+                <label class="radio-label"><input type="radio" name="stTarget" value="primary" checked> Primary</label>
+                <label class="radio-label"><input type="radio" name="stTarget" value="donor" id="stTargetDonor" disabled> Donor</label></div>
+              <div id="stMasterRows"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Blocks</span>
+              <span><button class="btn btn-sm" id="stUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
+                <button class="btn btn-sm" id="stRedo" title="Redo (Ctrl+Y)">↷ Redo</button></span></div>
+            <div class="card-content">
+              <div class="field-row st-bulk">
+                <select id="stPreset" class="w-combo preset-select"></select>
+                <button class="btn btn-sm" id="stPresetSave">Save preset…</button>
+                <button class="btn btn-sm" data-bulk="reset">Reset all</button>
+                <button class="btn btn-sm" data-bulk="off">All off</button>
+                <button class="btn btn-sm" data-bulk="on">All on</button>
+                <button class="btn btn-sm" data-bulk="invert">Invert</button>
+                <button class="btn btn-sm" data-bulk="lucky">🎲 I'm feeling lucky</button>
+                <span class="field-label">Min</span><input type="text" id="stLuckyLo" class="w-num-sm" value="0">
+                <span class="field-label">Max</span><input type="text" id="stLuckyHi" class="w-num-sm" value="1.5">
+                <button class="btn btn-sm st-donor-only" data-bulk="donor_on">Donor: all on</button>
+                <button class="btn btn-sm st-donor-only" data-bulk="donor_off">Donor: all off</button>
+              </div>
+              <div id="stPresetSaveRow"></div>
+              <div id="stBlocks"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Save</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Save as:</span>
+                <input type="text" id="stOut" class="w-path" placeholder="the repaired LoRA's file (.safetensors)">
+                <button class="btn btn-primary" id="stSave">Save repaired LoRA</button></div>
+              <div id="stSaveMsg"></div>
+            </div>
           </div>
         </section>
 

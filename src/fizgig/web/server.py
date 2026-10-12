@@ -35,6 +35,7 @@ from fizgig.web import captions, history, live
 from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
+from fizgig.web import studio
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -238,6 +239,91 @@ def save_state(changes: dict):
 
 
 # ---- runs -------------------------------------------------------------------------------------------------------
+STUDIO_PRESETS = os.path.join(BASE_DIR, "presets", "repair_studio")
+
+
+def _studio_desc(key):
+    d = get_family(key)
+    if d is None or d not in studio.families():
+        raise ValueError("Repair Studio doesn't offer that model here yet.")
+    return d
+
+
+def _studio_samples(desc):
+    """The web UI's Samples settings for this model (a workbench that follows the Samples tab previews with them)."""
+    v = (load_state().get("values") or {}).get(desc.key) or {}
+    return {"steps": v.get("SAMPLE_STEPS"), "cfg": v.get("SAMPLE_CFG_SCALE"), "turbo": v.get("FAMILY_TURBO_STRENGTH"),
+            "negative": v.get("SAMPLE_NEGATIVE")}
+
+
+def _gpu_training():
+    """A training run (here or in the desktop app) is using the GPU: Repair Studio waits for it."""
+    with _lock:
+        web = _run["proc"] is not None and _run["proc"].poll() is None
+    return web or live.busy(live.desktop_state())
+
+
+def _studio_post(what, b):
+    """Repair Studio's actions (fizgig/web/studio.py runs them in its worker)."""
+    if what == "load":
+        if _gpu_training():
+            raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
+        desc = _studio_desc(b.get("family", ""))
+        prefs = load_prefs()
+        kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
+                                                     samples=_studio_samples(desc), negative=b.get("negative"))
+        if problems:
+            raise ValueError(" ".join(problems))
+        captions.unload()                       # the caption model leaves the GPU too
+        studio.load(desc, str(b.get("primary") or "").strip(), str(b.get("donor") or "").strip(), kw, settings,
+                    status, b.get("turbo", True))
+        return {"ok": True}
+    if what == "render":
+        return studio.render(b.get("state") or {})
+    if what == "cancel":
+        studio._send({"cmd": "cancel"})
+        return {"ok": True}
+    if what == "donor":
+        studio.donor(str(b.get("path") or "").strip())
+        return {"ok": True}
+    if what == "settings":
+        desc = _studio_desc(b.get("family", ""))
+        ps = None
+        if desc.workbench_follows_samples and "negative" in b:
+            ps = studio.plan(desc, load_prefs(), pref_path, samples=_studio_samples(desc), negative=b.get("negative"))[1]
+        studio.settings(turbo=b.get("turbo"), preview_settings=ps)
+        return {"ok": True}
+    if what == "save":
+        out = str(b.get("out") or "").strip()
+        if not out.lower().endswith(".safetensors"):
+            raise ValueError("Give the file a name ending in .safetensors.")
+        if not os.path.isdir(os.path.dirname(os.path.abspath(out))):
+            raise ValueError("That folder isn't there.")
+        if os.path.exists(out) and not b.get("overwrite"):
+            return {"exists": True}
+        studio.save(out, b.get("state") or {}, b.get("include_donor"))
+        return {"ok": True}
+    if what == "reset":
+        studio.reset()
+        return {"ok": True}
+    if what in ("preset_save", "preset_load"):
+        key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(b.get("family") or ""))
+        name = re.sub(r"[^A-Za-z0-9 _-]+", "", str(b.get("name") or "")).strip()
+        if not name or name.startswith("✨"):
+            raise ValueError("Give the preset a name (letters, numbers, spaces, _ and -).")
+        path_ = os.path.join(STUDIO_PRESETS, key, name + ".json")
+        if what == "preset_load":
+            with open(path_, encoding="utf-8") as f:
+                return {"blocks": (json.load(f) or {}).get("blocks") or {}}
+        if os.path.exists(path_) and not b.get("overwrite"):
+            return {"exists": True}
+        os.makedirs(os.path.dirname(path_), exist_ok=True)
+        with open(path_, "w", encoding="utf-8") as f:     # the desktop's format: {"blocks": {...}, "family": ...}
+            json.dump({"blocks": b.get("blocks") or {}, "family": b.get("family")}, f, indent=2)
+        return {"ok": True}
+    raise ValueError("unknown action")
+
+
 def _files_family(key):
     """The family whose files a model runs on: RefMod runs on MiniMax H3's."""
     return get_family("minimax" if key == refmod.KEY else key)
@@ -535,6 +621,9 @@ def latest_state(out_dir, name) -> str:
 
 
 def _start(family_key, values, image_folder, resume=""):
+    if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
+        append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
+        studio.stop_worker()
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
@@ -1315,6 +1404,36 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "unknown family"}, 400)
             built = [n for n, _ in (desc.presets or ())]
             return self.json({"builtin": built, "user": [n for n in user_presets(desc) if n not in built]})
+        if path == "/api/studio/families":
+            return self.json({"families": [{"key": d.key, "name": d.display_name} for d in studio.families()]})
+        if path == "/api/studio/layout":
+            try:
+                desc = _studio_desc((qs.get("family") or [""])[0])
+            except ValueError as e:
+                return self.json({"error": str(e)}, 400)
+            return self.json(studio.layout(desc, load_prefs(), pref_path))
+        if path == "/api/studio/status":
+            return self.json(studio.status())
+        if path == "/api/studio/image":
+            p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
+            if not p:
+                return self.json({"error": "no picture yet"}, 404)
+            return self._stream(p, attachment=False)
+        if path == "/api/studio/report":             # the Profiler's HTML report for the loaded LoRA
+            st = studio.status()
+            rep = (st.get("profile") or {}).get("report") or ""
+            if not rep or not os.path.isfile(rep):
+                return self.json({"error": "no report"}, 404)
+            with open(rep, "rb") as f:
+                return self._send(200, f.read(), "text/html; charset=utf-8")
+        if path == "/api/studio/presets":            # your saved slider presets for this model
+            key = (qs.get("family") or [""])[0]
+            d = os.path.join(STUDIO_PRESETS, re.sub(r"[^A-Za-z0-9_.-]+", "_", key))
+            try:
+                names = sorted(f[:-5] for f in os.listdir(d) if f.lower().endswith(".json"))
+            except OSError:
+                names = []
+            return self.json({"user": names})
         if path == "/api/prep/options":            # Image Prep: its choices, and whether face tools are here
             from fizgig.dataset import prep as _prep
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
@@ -1795,6 +1914,11 @@ class Handler(BaseHTTPRequestHandler):
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
                     bool(b.get("overwrite")), clips, only=only or None, photos=photos,
                     ext=captions.caption_ext(b.get("ext"))))
+            if path.startswith("/api/studio/"):
+                try:
+                    return self.json(_studio_post(path[len("/api/studio/"):], b))
+                except (ValueError, RuntimeError) as e:
+                    return self.json({"error": str(e)}, 400)
             if path in ("/api/prep/run", "/api/look/scan", "/api/look/move"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))

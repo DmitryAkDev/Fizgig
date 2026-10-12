@@ -119,3 +119,4 @@ uploads/
 .fizgig_runs.json*
 .fizgig_web_queue.json*
 .fizgig_app_profile/
+.fizgig_web_studio/

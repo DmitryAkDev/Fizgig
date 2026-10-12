@@ -1484,6 +1484,425 @@ function wirePrep() {
   $("lookNext").addEventListener("click", () => { S.prep.page++; lookRender(); });
 }
 
+// ---- Repair Studio (fizgig/web/studio.py runs the desktop's engine in a worker that keeps the model loaded) -----
+// The page holds the sliders; every change renders after a short pause, a newer change replacing the render going
+S.st = {layout: null, blocks: {}, locks: new Set(), primaryBlocks: new Set(), donorBlocks: new Set(), donor: false,
+  shown: 0, hist: [], redo: [], loadedKey: "", timer: null, poll: null, ready: false};
+const ST_KEY = "fizgig_studio";
+const stSaved = () => { try { return JSON.parse(localStorage.getItem(ST_KEY) || "{}"); } catch (e) { return {}; } };
+const stRemember = debounce(() => {
+  const d = {family: $("stFamily").value, primary: $("stPrimary").value, donor: $("stDonor").value,
+    prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value, turbo: $("stTurbo").checked,
+    ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
+    luckyHi: $("stLuckyHi").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
+    scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]}};
+  try { localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
+}, 500);
+
+async function studioOpen() {
+  if (!S.st.familiesLoaded) {
+    const r = await api("/api/studio/families");
+    const sel = $("stFamily");
+    sel.innerHTML = "";
+    for (const f of r.families) sel.append(el("option", {value: f.key, text: f.name}));
+    const sv = stSaved();
+    if (sv.family && r.families.some((f) => f.key === sv.family)) sel.value = sv.family;
+    for (const [id, k] of [["stPrimary", "primary"], ["stDonor", "donor"], ["stPrompt", "prompt"], ["stSeed", "seed"],
+      ["stRef", "ref"], ["stRefMp", "refMp"], ["stRefStr", "refStr"], ["stLuckyLo", "luckyLo"], ["stLuckyHi", "luckyHi"]])
+      if (sv[k] != null && sv[k] !== "") $(id).value = sv[k];
+    if (sv.turbo != null) $("stTurbo").checked = sv.turbo;
+    S.st.familiesLoaded = true;
+    await studioFamily(sv.res);
+  }
+  studioPoll();
+}
+
+async function studioFamily(res) {
+  const key = $("stFamily").value;
+  const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
+  const sv = stSaved();
+  $("stRes").innerHTML = "";
+  for (const s of L.sizes) $("stRes").append(el("option", {value: s, text: s}));
+  $("stRes").value = L.sizes.includes(String(res)) ? String(res) : L.size;
+  const sc = (sv.scales || {})[key];
+  $("stPScale").value = sc ? sc[0] : L.default_strength;
+  $("stDScale").value = sc ? sc[1] : 1;
+  $("stNeg").value = (sv.neg || {})[key] ?? (L.negative_default || "");
+  $("stTurboRow").style.display = L.turbo_preview ? "" : "none";
+  $("stRefRow").style.display = L.reference_kind ? "" : "none";
+  $("stRefMp").disabled = L.reference_kind === "edit";
+  $("stRefStr").style.display = $("stRefStrLabel").style.display = L.reference_strength ? "" : "none";
+  // which model previews: the follows-the-Samples-tab families say so; others pick fast or full
+  $("stDitRow").style.display = L.follows_samples || !L.dit_fast ? "none" : "";
+  $("stDitFast").textContent = L.dit_fast; $("stDitFull").textContent = L.dit_full;
+  $("stDitNote").textContent = L.follows_samples ? "Steps, CFG and Turbo strength come from this model's Samples tab." :
+    !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
+  studioNegRow();
+  S.st.blocks = {};
+  for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
+  S.st.locks = new Set(); S.st.hist = []; S.st.redo = [];
+  studioMasters();
+  studioPresets();
+  studioRows();
+}
+
+function studioNegRow() {
+  const L = S.st.layout;
+  if (!L) return;
+  const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+  const cfg = L.follows_samples ? 2 : fast && L.dit_fast ? L.cfg_fast : L.cfg_full;   // Samples-tab models: their own
+  $("stNegRow").style.display = L.negative_default != null && cfg > 1 ? "" : "none";
+}
+
+// ---- the sliders ----
+const stFmt = (v) => Math.abs(v - 1) < 1e-9 ? "1.00" : (v >= 0 ? "+" : "") + v.toFixed(2);
+function studioRows() {
+  const host = $("stBlocks");
+  host.innerHTML = "";
+  for (const g of S.st.layout.groups) {
+    const half = Math.ceil(g.blocks.length / 2);
+    const cols = el("div", {class: "st-cols"}, el("div", {}, ...g.blocks.slice(0, half).map(studioRow)),
+      el("div", {}, ...g.blocks.slice(half).map(studioRow)));
+    host.append(el("div", {class: "st-group"}, el("h3", {text: g.label}), cols));
+  }
+  studioActivity();
+}
+
+function studioRow(b) {
+  const box = el("div", {class: "st-block", "data-id": b.id});
+  const mk = (side) => {
+    const st = () => S.st.blocks[b.id];
+    const en = side === "p" ? "pe" : "de", sv = side === "p" ? "ps" : "ds";
+    const tick = el("input", {type: "checkbox", title: side === "p" ? "This block on" : "The donor's block on",
+      onchange: (e) => studioSet(b.id, en, e.target.checked)});
+    const range = el("input", {type: "range", min: "-3", max: "3", step: "0.05",
+      oninput: (e) => studioSet(b.id, sv, Number(e.target.value), true), onchange: () => studioCommit()});
+    const val = el("span", {class: "st-val"});
+    const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
+    const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
+      b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
+    const lock = side === "p" ? el("button", {class: "st-lock", title: "Lock this block (presets, Lucky and bulk leave it alone)",
+      text: "🔓", onclick: (e) => { S.st.locks.has(b.id) ? S.st.locks.delete(b.id) : S.st.locks.add(b.id);
+        e.currentTarget.textContent = S.st.locks.has(b.id) ? "🔒" : "🔓"; e.currentTarget.classList.toggle("on"); }}) :
+      el("span", {});
+    const row = el("div", {class: "st-row" + (side === "d" ? " donor" : "")}, lock, tick, label, range, val,
+      el("span", {class: "st-btns"},
+        btn("0", "Set to 0", () => studioSet(b.id, sv, 0)), btn("1", "Set to 1", () => studioSet(b.id, sv, 1)),
+        btn("±", "Flip the sign", () => studioSet(b.id, sv, -st()[sv])),
+        btn("−", "−0.1", () => studioSet(b.id, sv, Math.max(-3, Math.round((st()[sv] - 0.1) * 100) / 100))),
+        btn("+", "+0.1", () => studioSet(b.id, sv, Math.min(3, Math.round((st()[sv] + 0.1) * 100) / 100))),
+        btn("⚖", "Balance: the other side gets 1 − this", () => {
+          const o = side === "p" ? "ds" : "ps", v = st()[sv];
+          if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
+        })));
+    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]); };
+    row._sync();
+    return row;
+  };
+  const p = mk("p"), d = mk("d");
+  d.style.display = S.st.donor ? "" : "none";
+  box.append(p, d);
+  box._rows = [p, d];
+  return box;
+}
+
+function studioSync(ids) {
+  document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
+    if (!ids || ids.includes(box.dataset.id)) box._rows.forEach((r) => r._sync());
+  });
+}
+
+function studioActivity() {
+  // a block the LoRA doesn't touch is greyed; the donor's rows show only with a donor
+  document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
+    const id = box.dataset.id;
+    box._rows[0].classList.toggle("absent", S.st.ready && !S.st.primaryBlocks.has(id));
+    box._rows[1].style.display = S.st.donor ? "" : "none";
+    box._rows[1].classList.toggle("absent", S.st.donor && !S.st.donorBlocks.has(id));
+  });
+  document.querySelectorAll(".st-donor-only").forEach((x) => { x.style.display = S.st.donor ? "" : "none"; });
+  $("stTargetDonor").disabled = !S.st.donor;
+}
+
+function studioSet(id, k, v, live) {
+  if (S.st.locks.has(id)) { studioSync([id]); return; }
+  S.st.blocks[id][k] = v;
+  studioSync([id]);
+  studioSchedule(live);
+}
+
+// undo / redo: a snapshot after each change settles
+function studioSnap() { return JSON.stringify(S.st.blocks); }
+function studioCommit() {
+  const now = studioSnap();
+  if (S.st.hist[S.st.hist.length - 1] !== now) { S.st.hist.push(now); if (S.st.hist.length > 200) S.st.hist.shift(); S.st.redo = []; }
+}
+function studioUndo(redo) {
+  const from = redo ? S.st.redo : S.st.hist, to = redo ? S.st.hist : S.st.redo;
+  if (!redo && from.length < 2) { $("stStatus").textContent = "Nothing to undo."; return; }
+  if (redo && !from.length) { $("stStatus").textContent = "Nothing to redo."; return; }
+  if (redo) { const s = from.pop(); to.push(s); S.st.blocks = JSON.parse(s); }
+  else { to.push(from.pop()); S.st.blocks = JSON.parse(from[from.length - 1]); }
+  studioSync(); studioSchedule();
+  $("stStatus").textContent = `${redo ? "Redone" : "Undone"} (${Math.max(0, S.st.hist.length - 1)} steps to undo, ${S.st.redo.length} to redo).`;
+}
+
+// ---- masters (Klein): one slider per category, on the primary or the donor ----
+function studioMasters() {
+  const L = S.st.layout;
+  $("stMasters").style.display = L.masters.length ? "" : "none";
+  const host = $("stMasterRows");
+  host.innerHTML = "";
+  for (const m of L.masters) {
+    const range = el("input", {type: "range", min: "-3", max: "3", step: "0.05", value: "1"});
+    const val = el("span", {class: "st-val", text: "1.00"});
+    const apply = (v) => {
+      const donor = (document.querySelector('input[name="stTarget"]:checked') || {}).value === "donor";
+      const has = donor ? S.st.donorBlocks : S.st.primaryBlocks;
+      for (const [id, c] of Object.entries(L.category_of))
+        if (c === m.cat && (!S.st.ready || has.has(id)) && !S.st.locks.has(id)) S.st.blocks[id][donor ? "ds" : "ps"] = v;
+      range.value = v; val.textContent = stFmt(v);
+      studioSync(); studioSchedule(true);
+    };
+    range.addEventListener("input", () => apply(Number(range.value)));
+    range.addEventListener("change", studioCommit);
+    const b = (t, f) => el("button", {class: "btn btn-sm", text: t, onclick: () => { f(); studioCommit(); }});
+    host.append(el("div", {class: "st-row"}, el("span", {}), el("span", {}),
+      el("span", {class: "st-label", style: `color:${m.color}`, text: m.label}), range, val,
+      el("span", {class: "st-btns"}, b("0", () => apply(0)), b("1", () => apply(1)), b("±", () => apply(-Number(range.value))))));
+    host.lastChild._cat = m.cat; host.lastChild._range = range; host.lastChild._val = val;
+  }
+}
+
+function studioMastersFollow() {
+  // flipping the target shows each category's average on that side
+  const donor = (document.querySelector('input[name="stTarget"]:checked') || {}).value === "donor";
+  for (const row of $("stMasterRows").children) {
+    const ids = Object.entries(S.st.layout.category_of).filter(([, c]) => c === row._cat).map(([id]) => id);
+    const vals = ids.map((id) => S.st.blocks[id][donor ? "ds" : "ps"]);
+    const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 1;
+    row._range.value = avg; row._val.textContent = stFmt(avg);
+  }
+}
+
+// ---- presets and bulk ----
+async function studioPresets() {
+  const L = S.st.layout, sel = $("stPreset");
+  const user = (await api("/api/studio/presets?family=" + encodeURIComponent(L.key)).catch(() => ({user: []}))).user;
+  sel.innerHTML = "";
+  sel.append(el("option", {value: "", text: "Presets…"}));
+  for (const p of L.presets) sel.append(el("option", {value: "b:" + p.name, text: p.name}));
+  if (user.length) sel.append(el("optgroup", {label: "Your presets"}, ...user.map((n) => el("option", {value: "u:" + n, text: n}))));
+}
+
+async function studioPresetApply(v) {
+  const L = S.st.layout;
+  if (v.startsWith("b:")) {
+    const p = L.presets.find((x) => x.name === v.slice(2));
+    for (const [id, b] of Object.entries(S.st.blocks)) {
+      if (S.st.locks.has(id)) continue;
+      Object.assign(b, {pe: true, ps: 1, de: true, ds: 1});
+      if (p.keep) b.pe = p.keep.includes(L.category_of[id]);
+      if (p.blocks && id in p.blocks) { b.pe = true; b.ps = Number(p.blocks[id]); }
+    }
+  } else {
+    const r = await api("/api/studio/preset_load", {family: L.key, name: v.slice(2)});
+    for (const [id, bs] of Object.entries(r.blocks || {})) if (S.st.blocks[id] && !S.st.locks.has(id))
+      S.st.blocks[id] = {pe: !!bs.primary_enabled, ps: Number(bs.primary_strength), de: !!bs.donor_enabled, ds: Number(bs.donor_strength)};
+  }
+  studioSync(); studioCommit(); studioSchedule();
+  $("stPreset").value = "";
+}
+
+function studioBulk(kind) {
+  const L = S.st.layout;
+  const lo = Number($("stLuckyLo").value) || 0, hi = Number($("stLuckyHi").value) || 1.5;
+  let rolled = 0;
+  for (const [id, b] of Object.entries(S.st.blocks)) {
+    if (S.st.locks.has(id)) continue;
+    if (kind === "reset") Object.assign(b, {pe: true, ps: 1, de: true, ds: 1});
+    else if (kind === "off") b.pe = false;
+    else if (kind === "on") b.pe = true;
+    else if (kind === "invert") b.pe = !b.pe;
+    else if (kind === "donor_on") Object.assign(b, {de: true, ds: 1});
+    else if (kind === "donor_off") b.ds = 0;
+    else if (kind === "lucky") {
+      if ((S.st.ready && !S.st.primaryBlocks.has(id)) || !b.pe) continue;
+      let a = lo, z = hi;
+      for (const zone of L.lucky_zones || []) if (zone[0] && zone[0].includes && zone[0].includes(id)) { a = Math.max(a, zone[1]); z = Math.min(z, zone[2]); }
+      b.ps = Math.round((a + Math.random() * (z - a)) * 20) / 20; rolled++;
+    }
+  }
+  studioSync(); studioCommit(); studioSchedule();
+  if (kind === "lucky") $("stStatus").textContent = `Lucky mix: ${rolled} block(s) rolled, ${lo} to ${hi} (Undo for the mix before; Save preset… to keep it).`;
+  stRemember();
+}
+
+function studioPresetSaveOpen() {
+  const host = $("stPresetSaveRow");
+  if (host.childNodes.length) { host.innerHTML = ""; return; }
+  const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these block settings"});
+  const msg = el("span", {class: "field-hint"});
+  const save = async (overwrite) => {
+    const blocks = {};
+    for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
+    try {
+      const r = await api("/api/studio/preset_save", {family: S.st.layout.key, name: name.value, blocks, overwrite: !!overwrite});
+      if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
+      host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved (the desktop's Repair Studio lists it too).";
+    } catch (e) { msg.textContent = e.message; }
+  };
+  host.append(el("div", {class: "field-row"}, name, el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
+    el("button", {class: "btn", text: "Cancel", onclick: () => { host.innerHTML = ""; }}), msg));
+  name.focus();
+}
+
+// ---- rendering ----
+function studioState() {
+  const blocks = {};
+  for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
+  const res = Number($("stRes").value) || 768;
+  const num = (id, d) => { const v = Number($(id).value); return isFinite(v) ? v : d; };
+  return {blocks, seed: parseInt($("stSeed").value, 10) || 42, prompt: $("stPrompt").value.trim(), preview_width: res,
+    preview_height: res, ref_image_path: $("stRefRow").style.display === "none" ? "" : $("stRef").value.trim(),
+    ref_megapixels: num("stRefMp", 1), ref_strength: num("stRefStr", 1), primary_scale: num("stPScale", 1),
+    donor_scale: num("stDScale", 1)};
+}
+
+function studioSchedule(live) {
+  if (!S.st.ready) return;
+  clearTimeout(S.st.timer);
+  S.st.timer = setTimeout(studioRender, live ? ($("stTurbo").checked ? 150 : 400) : 100);
+}
+
+async function studioRender() {
+  if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
+  try { await api("/api/studio/render", {state: studioState()}); studioPoll(); }
+  catch (e) { $("stStatus").textContent = e.message; }
+}
+
+async function studioStart() {
+  stRemember();
+  const L = S.st.layout;
+  try {
+    const st = await api("/api/studio/status");
+    const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
+    const key = [L.key, $("stPrimary").value.trim(), fast].join("|");
+    if (st.state === "ready" && S.st.loadedKey === key) {     // the same LoRA: the donor may change, then a render
+      if ($("stDonor").value.trim() !== (st.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
+      studioRender();
+      return;
+    }
+    S.st.ready = false;
+    await api("/api/studio/load", {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
+      fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim()});
+    S.st.loadedKey = key;
+    S.st.pendingFirst = true;
+    studioPoll();
+  } catch (e) { $("stStatus").textContent = e.message; }
+}
+
+async function studioPoll() {
+  clearTimeout(S.st.poll);
+  let st;
+  try { st = await api("/api/studio/status"); } catch (e) { return; }
+  const wasReady = S.st.ready;
+  S.st.ready = st.state === "ready";
+  S.st.donor = !!st.donor;
+  S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
+  $("stStatus").textContent = st.status || $("stStatus").textContent;
+  $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
+  $("stBadge").dataset.state = st.state === "loading" || st.rendering ? "running" : st.state === "ready" ? "completed" : "idle";
+  const p = st.progress;
+  $("stBar").style.width = p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : st.rendering || st.state === "loading" ? "100%" : "0";
+  $("stBar").parentElement.classList.toggle("indeterminate", !(p && p[1]) && (st.rendering || st.state === "loading"));
+  $("stStart").textContent = S.st.ready ? "Update" : "Start";
+  if (S.st.ready && !wasReady) {
+    studioActivity();
+    if (!$("stOut").value) { const pth = st.primary; $("stOut").value = pth.replace(/\.safetensors$/i, "") + "_repaired.safetensors"; }
+    if (S.st.pendingFirst) { S.st.pendingFirst = false; studioCommit(); studioRender(); }
+  }
+  if (st.shown && st.shown !== S.st.shown) {
+    S.st.shown = st.shown;
+    const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
+    $("stBase").src = q("baseline"); $("stTweak").src = q("tweaked");
+    const ps = Number($("stPScale").value) || 1;
+    $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
+  }
+  const pr = st.profile;
+  $("stProfile").style.display = pr ? "" : "none";
+  if (pr) {
+    $("stProfileLine").textContent = `${pr.lora_name} · profiled ${pr.created} · most active blocks:`;
+    const col = {"Style+Comp": "#5B9BD5", "Style/ID": "#5BB3A6", Identity: "#70AD47", "ID/Detail": "#B8A547", Details: "#ED7D31"};
+    $("stPills").replaceChildren(...pr.blocks.map((b) => el("span", {class: "st-pill",
+      style: `background:${({style_composition: "#5B9BD5", style_ident_overlap: "#5BB3A6", identity: "#70AD47", ident_details_overlap: "#B8A547", details: "#ED7D31"})[b.category] || col[b.category] || "#8A96A8"}`,
+      text: `${b.name}  ${Number(b.pct).toFixed(1)}%`})));
+    $("stReport").style.display = pr.report ? "" : "none";
+    $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
+  }
+  if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
+  const active = st.state === "loading" || st.rendering || st.pending;
+  if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+}
+
+function studioSavedSay(sv) {
+  const s = sv.summary || {};
+  const lines = [`Saved: ${sv.out}`];
+  if (s.keys_in != null) lines.push(`Keys: ${s.keys_in} → ${s.keys_out}`);
+  for (const [k, t] of [["dropped_blocks", "Dropped blocks"], ["rescaled_blocks", "Rescaled blocks"], ["blended_blocks", "Donor-blended blocks"]])
+    if (s[k] && s[k].length) lines.push(`${t} (${s[k].length}): ${s[k].join(", ")}`);
+  if (s.use_at != null) lines.push(`Use it at strength ${s.use_at}.`);
+  $("stSaveMsg").replaceChildren(el("pre", {class: "field-hint st-saved", text: lines.join("\n")}));
+}
+
+async function studioSave(overwrite) {
+  const st = studioState();
+  const includeDonor = S.st.donor && Object.values(S.st.blocks).some((b) => b.de);
+  try {
+    const r = await api("/api/studio/save", {out: $("stOut").value.trim(), state: st, include_donor: includeDonor, overwrite: !!overwrite});
+    if (r.exists) {
+      $("stSaveMsg").replaceChildren(el("div", {class: "field-row"}, el("span", {class: "field-hint", text: "That file is there already."}),
+        el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => studioSave(true)})));
+      return;
+    }
+    $("stSaveMsg").replaceChildren(el("div", {class: "field-hint", text: "Saving…"}));
+    studioPoll();
+  } catch (e) { $("stSaveMsg").replaceChildren(el("div", {class: "problems", text: e.message})); }
+}
+
+function wireStudio() {
+  $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
+  $("stStart").addEventListener("click", studioStart);
+  $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
+  $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));
+  $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
+    if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
+  $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember();
+    if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioSchedule(); }); });
+  $("stRefPick").addEventListener("click", () => pick($("stRef").value || S.imageFolder, false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
+  $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioSchedule(); });
+  $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioSchedule(); });
+  for (const id of ["stSeed", "stRes", "stRefMp", "stRefStr", "stPScale", "stDScale"])
+    $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
+  for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
+  $("stNeg").addEventListener("change", () => { stRemember();
+    if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(() => studioSchedule()); });
+  $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
+  document.querySelectorAll('input[name="stDit"]').forEach((r) => r.addEventListener("change", studioNegRow));
+  document.querySelectorAll('input[name="stTarget"]').forEach((r) => r.addEventListener("change", studioMastersFollow));
+  document.querySelectorAll("[data-bulk]").forEach((b) => b.addEventListener("click", () => studioBulk(b.dataset.bulk)));
+  $("stPreset").addEventListener("change", () => { if ($("stPreset").value) studioPresetApply($("stPreset").value); });
+  $("stPresetSave").addEventListener("click", studioPresetSaveOpen);
+  $("stUndo").addEventListener("click", () => studioUndo(false));
+  $("stRedo").addEventListener("click", () => studioUndo(true));
+  $("stSave").addEventListener("click", () => studioSave(false));
+  document.addEventListener("keydown", (e) => {
+    if (!$("tab-studio").classList.contains("active") || /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || "")) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); studioUndo(e.shiftKey); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") { e.preventDefault(); studioUndo(true); }
+  });
+}
+
 // ---- Captions tab ----------------------------------------------------------------------------------------
 // The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
 let CAP_PAGE = 12;                         // Per page (the desktop's sizes), remembered with the tab's settings
@@ -1768,6 +2187,7 @@ function showTab(name) {
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "captions") loadCaptions();
   if (name === "prep") loadPrep();
+  if (name === "studio") studioOpen();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
@@ -1957,7 +2377,7 @@ function uploadButton(r, input, set) {
 
 let wired = false;
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
-const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";
+const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
 S.lb = {list: [], at: 0};
 function lightboxShow(i) {
   const pic = S.lb.list[i];
@@ -1974,7 +2394,7 @@ function wireLightbox() {
   document.addEventListener("click", (e) => {
     const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
     if (!img) return;
-    const host = img.closest(".gallery, .captions-grid") || document;   // step through the pictures beside it
+    const host = img.closest(".gallery, .captions-grid, .st-preview") || document;   // step through the pictures beside it
     const imgs = [...host.querySelectorAll(LIGHTBOX_PICS)];
     S.lb.list = imgs.map((i) => {
       const fig = i.closest(".gallery-item, .caption-card");
@@ -2018,6 +2438,7 @@ function wire() {
   document.addEventListener("visibilitychange", catchUp);
   window.addEventListener("focus", catchUp);
   wireLightbox();
+  wireStudio();
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
