@@ -46,6 +46,7 @@ async function boot() {
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
+  S.portFixed = pr.port_fixed;
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -334,6 +335,7 @@ function gpuPickCard() {
     g.list.map((c) => el("option", {value: c.uuid, text: `${c.index}: ${c.name} (${Math.round(c.total_gb)} GB)`})));
   const known = g.list.find((c) => c.uuid === g.chosen || String(c.index) === g.chosen);
   sel.value = known ? known.uuid : "";
+  sel.disabled = !!g.envLocked;
   const hint = el("div", {class: "field-hint", text: g.envLocked ?
     "CUDA_VISIBLE_DEVICES is set where Fizgig was started, and it wins over this setting." :
     "The card every run started from here trains on, and the one the memory meter shows. The desktop app uses " +
@@ -352,9 +354,11 @@ function gpuPickCard() {
 function webPortCard() {
   const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
   const hint = el("div", {class: "field-hint"});
-  if (S.onPod) {
+  if (S.onPod || S.portFixed) {
     input.disabled = true;
-    hint.textContent = "A pod always uses 8081, the port its proxy forwards.";
+    input.value = S.portNow;
+    hint.textContent = S.onPod ? "A pod always uses 8081, the port its proxy forwards." :
+      `Set by --port where Fizgig was started (${S.portNow}). Change it there.`;
     return el("div", {class: "section-card"},
       el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
       el("div", {class: "card-content"},
@@ -411,6 +415,7 @@ async function start(path) {
   if (S.mode === "desktop") {                     // the desktop app's run: its own buttons do the work
     const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
     if (!cmd) return;
+    S.cmdSentAt = Date.now() / 1000;
     try { await api("/api/desktop", {cmd}); $("runStatus").textContent = "Sent to the desktop app…"; }
     catch (e) { $("runStatus").textContent = e.message; }
     return setTimeout(pollRun, 1200);
@@ -431,17 +436,30 @@ async function pollRun() {
   const r = S.run, live = r.running || r.state === "starting";
   const d = r.desktop;
   // the desktop app's run shows here whenever this page has none of its own going
-  const mode = !live && d && (d.running || ["running", "pausing", "paused"].includes(d.state)) ? "desktop" : "web";
+  const deskBusy = d && (d.running || ["running", "pausing", "paused"].includes(d.state));
+  // ...and a run it just finished stays on show (Finished / Failed / Stopped) until either side starts another
+  const deskDone = d && !deskBusy && d.last_result && !r.lora;
+  const mode = !live && (deskBusy || deskDone) ? "desktop" : "web";
   if (mode !== S.mode) switchConsole(mode);
   if (mode === "desktop") {
-    const label = RUN_LABELS[d.state] || d.state;
+    const res = deskDone ? {finished: "completed", failed: "failed", stopped: "stopped"}[d.last_result.result] : null;
+    const state = res || d.state;
+    const label = RUN_LABELS[state] || state;
     S.run.output_dir = d.output_dir;          // previews and checkpoints follow the desktop's run
-    $("runStatus").textContent = `${label}: ${d.lora || "(unnamed)"}${d.stage ? " · " + d.stage : ""}`;
-    $("runSource").textContent = `This run was started in the desktop app (${d.family}). Pause, Stop and Resume ` +
-      "here work on it. Start is off until it finishes, so the two don't share the GPU.";
+    const when = deskDone ? " · " + new Date(d.last_result.at * 1000).toLocaleTimeString() : "";
+    $("runStatus").textContent = `${label}: ${(deskDone ? d.last_result.lora : d.lora) || "(unnamed)"}` +
+      (deskDone ? when : d.stage ? " · " + d.stage : "");
+    const ack = d.ack && S.cmdSentAt && d.ack.at >= S.cmdSentAt - 1 ? " " + d.ack.note : "";
+    $("runSource").textContent = (deskDone ?
+      `The last run started in the desktop app (${d.family}) ended. Its previews and checkpoints are below; ` +
+      "Start begins a new run here." :
+      `This run was started in the desktop app (${d.family}). Pause, Stop and Resume here work on it. Start is ` +
+      "off until it finishes, so the two don't share the GPU." +
+      (d.unresponsive ? " The desktop app isn't answering right now (busy for a moment?), so Pause, Stop and " +
+        "Resume wait until it does." : "")) + ack;
     $("runBadge").textContent = label;
-    $("runBadge").dataset.state = d.state;
-    $("btnStart").disabled = true;
+    $("runBadge").dataset.state = state;
+    $("btnStart").disabled = !deskDone;
     $("btnPause").disabled = !(d.running && d.state === "running");
     $("btnStop").disabled = !d.running;
     $("btnResume").style.display = !d.running && d.state === "paused" ? "" : "none";
@@ -487,7 +505,8 @@ function switchConsole(mode) {
 async function pollDesktopLog() {
   if (S.mode !== "desktop") return;
   try {
-    const r = await api("/api/desktop/log?offset=" + (S.deskOffset || 0));
+    const first = !S.deskOffset;
+    const r = await api("/api/desktop/log?offset=" + (S.deskOffset || 0) + (first ? "&tail=1" : ""));
     const out = $("console");
     if (r.offset < (S.deskOffset || 0)) out.textContent = "";        // a new run started the copy again
     if (r.text) {
@@ -654,11 +673,23 @@ function collect(entry, out) {
 }
 // skip what no family trains on and the system's own files, so a folder upload doesn't list them as failures
 const UPLOAD_OK = /\.(png|jpe?g|webp|bmp|avif|mp4|wav|mp3|flac|m4a|txt|caption|json|zip)$/i;
-const wanted = (f) => !f.name.startsWith(".") && f.name !== "Thumbs.db" && f.name !== "desktop.ini" && UPLOAD_OK.test(f.name);
+const SYSTEM_FILE = (n) => n.startsWith(".") || ["thumbs.db", "desktop.ini"].includes(n.toLowerCase());
+const OTHER_VIDEO = /\.(mov|webm|mkv|avi|m4v|wmv)$/i;
+// what goes up: the system's own files are skipped quietly; other files are skipped and named, with a convert-to
+// hint for video Fizgig doesn't read
+function sortUpload(files) {
+  const keep = [], video = [], other = [];
+  for (const f of files) {
+    if (SYSTEM_FILE(f.name)) continue;
+    if (UPLOAD_OK.test(f.name)) keep.push(f);
+    else (OTHER_VIDEO.test(f.name) ? video : other).push(f.name);
+  }
+  return {keep, video, other};
+}
 // a dropped folder names the new one, unless a name is typed already
 function nameFromFolder(name) {
   const box = $("uploadName");
-  if (name && !box.value.trim()) box.value = name.replace(/[^\w .()-]/g, "_");
+  if (name && !box.value.trim()) box.value = name.replace(/[\/\\<>:"|?*]/g, "_").replace(/^[.\s]+|[.\s]+$/g, "");
 }
 
 // one file as the request body, reporting bytes sent (fetch can't report upload progress)
@@ -676,11 +707,23 @@ function sendFile(url, file, onProgress) {
 }
 
 // ---- upload a training folder from this computer ------------------------------------------------------------
-async function uploadFiles(files) {
+async function uploadFiles(picked) {
+  const {keep: files, video, other} = sortUpload(picked);
+  const notes = [];
+  if (video.length) notes.push(`Left out ${video.length} video file${video.length === 1 ? "" : "s"} Fizgig can't ` +
+    `train on (${video.slice(0, 3).join(", ")}${video.length > 3 ? ", …" : ""}): convert them to .mp4 first.`);
+  if (other.length) notes.push(`Left out (not pictures, clips, songs, captions or zips): ` +
+    `${other.slice(0, 5).join(", ")}${other.length > 5 ? ", …" : ""}.`);
+  const seen = new Map();
+  for (const f of files) seen.set(f.name, (seen.get(f.name) || 0) + 1);
+  const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
+  if (dupes.length) notes.push(`More than one file is named ${dupes.slice(0, 3).join(", ")}` +
+    `${dupes.length > 3 ? ", …" : ""} (from different subfolders); they all go into one folder, so the last one is kept.`);
   const name = $("uploadName").value.trim();
   const say = (t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); };
   if (!name) return say("Type a name for the new folder first.", true);
-  if (!files.length) return say("Nothing to upload: no pictures, clips, songs, captions or zips in there.", true);
+  if (!files.length) return say(["Nothing to upload: no pictures, .mp4 clips, songs, captions or zips in there."]
+    .concat(notes).join(" "), true);
   let folder = "", saved = 0;
   const skipped = [], failed = [], replaced = [];
   for (const [i, f] of [...files].entries()) {
@@ -697,7 +740,9 @@ async function uploadFiles(files) {
   }
   let msg = saved ? `${saved} file${saved === 1 ? "" : "s"} in ${folder}. That is now the training folder.` : "Nothing was saved.";
   if (skipped.length) msg += ` Left out (not pictures, clips, songs or captions): ${skipped.join(", ")}.`;
-  if (replaced.length) msg += ` The zip had more than one file named ${replaced.join(", ")}; the last one was kept.`;
+  if (replaced.length) msg += ` Replaced files that were already there with the same name: ` +
+    `${replaced.slice(0, 5).join(", ")}${replaced.length > 5 ? ", …" : ""}.`;
+  if (notes.length) msg += " " + notes.join(" ");
   if (failed.length) msg += ` Not uploaded: ${failed.join("; ")}`;
   say(msg, !saved || failed.length);
   if (saved) {
@@ -722,7 +767,7 @@ function wire() {
   $("uploadDir").addEventListener("change", (e) => {
     const files = [...e.target.files];
     nameFromFolder(files.length ? (files[0].webkitRelativePath || "").split("/")[0] : "");
-    uploadFiles(files.filter(wanted));
+    uploadFiles(files);
     e.target.value = "";
   });
   const drop = $("uploadDrop");
@@ -738,7 +783,7 @@ function wire() {
     $("uploadStatus").textContent = "Reading the folder…";
     const files = [];
     for (const en of entries) await collect(en, files);
-    uploadFiles(files.filter(wanted));
+    uploadFiles(files);
   });
   api("/api/upload/root").then((d) => {
     $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +

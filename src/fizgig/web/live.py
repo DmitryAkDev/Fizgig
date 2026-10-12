@@ -48,6 +48,32 @@ def remove(path):
         pass
 
 
+def _pid_alive(pid) -> bool:
+    try:
+        import psutil
+        return bool(pid) and psutil.pid_exists(int(pid))
+    except Exception:
+        return False
+
+
+def desktop_state():
+    """The desktop app's run, or None when the app is closed. A heartbeat gone quiet while its trainer is still
+    running (the desktop busy for a moment - a model load) still counts, marked unresponsive, so the web UI keeps
+    showing the run and never starts a second one on the GPU."""
+    try:
+        with open(LIVE_DESKTOP, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    if time.time() - float(d.get("heartbeat", 0) or 0) < FRESH_S:
+        return d
+    if _pid_alive(d.get("trainer_pid")):
+        return dict(d, unresponsive=True)
+    return None
+
+
 def busy(d) -> bool:
     """That side has a run going (training, caching, or pausing at the end of its epoch)."""
     return bool(d and (d.get("running") or d.get("state") in ("running", "pausing", "starting")))
@@ -100,12 +126,15 @@ def queue_summary():
     return out
 
 
-def read_log(offset, limit=256 * 1024):
+def read_log(offset, limit=256 * 1024, tail=False):
     """New text in the desktop's console copy since byte `offset`: (text, next offset). A shorter file than the
-    offset = a new run started it again, so reading starts from the top."""
+    offset = a new run started it again, so reading starts from the top. `tail`: only the last 200 KB, for a page
+    catching up (a phone should not read a whole day's log to see the current line)."""
     try:
         size = os.path.getsize(DESKTOP_LOG)
-        if offset > size:
+        if tail:
+            offset = max(0, size - 200 * 1024)
+        elif offset > size:
             offset = 0
         with open(DESKTOP_LOG, "rb") as f:
             f.seek(offset)

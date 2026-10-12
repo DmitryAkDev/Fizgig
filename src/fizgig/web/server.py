@@ -52,7 +52,7 @@ TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in
 
 _lock = threading.Lock()
 _login_lock = threading.Lock()
-_login_fails = [0]
+_login_fails: dict = {}    # client address -> (wrong guesses, locked until, last miss)
 _run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": "", "family": "", "values": {},
         "image_folder": "", "pause": False}
 _log: list[tuple[int, str]] = []        # (line number, text), the last 5000
@@ -107,7 +107,7 @@ def _poll_stats_loop():
     while True:
         vu = vt = 0
         name = "GPU"
-        want = str(load_prefs().get("cuda_device") or os.environ.get("CUDA_VISIBLE_DEVICES") or "").split(",")[0]
+        want = str(os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device") or "").split(",")[0]
         want = want.strip()
         try:
             if nvml is not None:
@@ -245,7 +245,7 @@ def _start(family_key, values, image_folder, resume=""):
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
-    if live.busy(live.read_fresh(live.LIVE_DESKTOP)):
+    if live.busy(live.desktop_state()):
         return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
     desc, inputs, plan = _plan(family_key, values, image_folder, resume)
     if plan.problems:
@@ -277,8 +277,9 @@ def _popen(cmd):
     priority on Windows, so the desktop stays smooth)."""
     env = os.environ.copy()
     env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")     # a GPU number means the same card as in nvidia-smi
     want = str(load_prefs().get("cuda_device") or "").strip()
-    if want:
+    if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):  # one set where Fizgig was started wins, as the desktop
         env["CUDA_VISIBLE_DEVICES"] = want
     kw = {}
     if os.name == "nt":
@@ -358,11 +359,19 @@ def uploads_root() -> str:
 
 
 def _upload_name(name, what) -> str:
-    """One plain name (no folders, no '..'): every upload stays inside uploads_root()."""
+    """One plain name, kept as it is ("Don't Stop (Live) #1.wav" is fine): no folders, no '..', nothing hidden, and
+    nothing Windows can't store, so every upload stays inside uploads_root()."""
     name = str(name or "").strip()
-    if not name or "/" in name or "\\" in name or name.startswith(".") or not re.fullmatch(r"[\w .()\-]+", name):
-        raise ValueError(f"{what} {name!r}: use letters, numbers, spaces, dots, dashes and underscores.")
+    bad = (not name or name.startswith(".") or name.endswith((".", " "))
+           or re.search(r'[/\\<>:"|?*\x00-\x1f]', name)
+           or os.path.splitext(name)[0].upper() in _WIN_RESERVED)
+    if bad:
+        raise ValueError(f"{what} {name!r}: names can't contain / \\ < > : \" | ? *, start with a dot, or end "
+                         f"with a dot or space.")
     return name
+
+
+_WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
 
 
 def _save_upload(folder, name, rfile, length) -> dict:
@@ -403,7 +412,12 @@ def _save_upload(folder, name, rfile, length) -> dict:
                     if os.path.splitext(base)[1].lower() not in UPLOAD_EXTS - {".zip"}:
                         skipped.append(base)
                         continue
-                    if base in saved:
+                    try:
+                        base = _upload_name(base, "File name")
+                    except ValueError:
+                        skipped.append(base)
+                        continue
+                    if base in saved or os.path.exists(os.path.join(dest, base)):
                         replaced.append(base)
                     with z.open(info) as src, open(os.path.join(dest, base), "wb") as out:
                         while chunk := src.read(1 << 20):
@@ -414,6 +428,8 @@ def _save_upload(folder, name, rfile, length) -> dict:
         finally:
             os.remove(tmp)
     else:
+        if os.path.exists(os.path.join(dest, name)):
+            replaced.append(name)
         os.replace(tmp, os.path.join(dest, name))
         saved.append(name)
     return {"folder": dest, "saved": sorted(set(saved)), "skipped": skipped, "replaced": replaced}
@@ -630,10 +646,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
-                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(),
+                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
-                              "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))
-                              and not str(p.get("cuda_device") or "")})
+                              "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
             return self.json(load_state())
         if path == "/api/fetch":
@@ -648,13 +663,13 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
             r["resume"] = latest_state(r["output_dir"], r["lora"]) if r["lora"] else ""
-            d = live.read_fresh(live.LIVE_DESKTOP)
+            d = live.desktop_state()
             r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
-                                                   "percent")} if d else None)
+                                                   "percent", "last_result", "ack", "unresponsive")} if d else None)
             r["queue"] = live.queue_summary() if d else []
             return self.json(r)
         if path == "/api/desktop/log":
-            text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0))
+            text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0), tail=bool(qs.get("tail")))
             return self.json({"text": text, "offset": nxt})
         if path == "/api/log":
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
@@ -769,14 +784,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "Reload the page."}, 403)
             pwd = str(self._body().get("password") or "")
             if self.password:
-                # one guess at a time, slower after repeated misses (a threaded server would otherwise let
-                # parallel guesses all wait out the same second); bytes so a non-ASCII password compares
+                # wrong guesses lock out only the device making them, for longer each time (1 s, 2 s, ... 60 s),
+                # forgotten after 15 minutes; nothing waits while holding the lock, so the owner's own login on
+                # another device is never held up. Bytes, so a non-ASCII password compares.
+                ip, now = self.client_address[0], time.time()
                 with _login_lock:
+                    n, until, last = _login_fails.get(ip, (0, 0.0, 0.0))
+                    if now - last > 900:
+                        n, until = 0, 0.0
+                    if now < until:
+                        return self.json({"error": f"Too many wrong passwords. Try again in {int(until - now) + 1} s."},
+                                         429)
                     if not hmac.compare_digest(pwd.encode("utf-8"), self.password.encode("utf-8")):
-                        _login_fails[0] += 1
-                        time.sleep(min(10.0, 1.0 + _login_fails[0] // 5))
+                        n += 1
+                        _login_fails[ip] = (n, now + min(60.0, float(n)), now)
+                        if len(_login_fails) > 1000:                  # many addresses: keep the recent ones
+                            for k in sorted(_login_fails, key=lambda k: _login_fails[k][2])[:500]:
+                                _login_fails.pop(k, None)
                         return self.json({"error": "Wrong password."}, 401)
-                    _login_fails[0] = 0
+                    _login_fails.pop(ip, None)
             return self.json({"ok": True}, extra=[("Set-Cookie", f"fizgig_session={self._session()}; Path=/; "
                                                                  "HttpOnly; SameSite=Strict")])
         if not self._api_ok():
@@ -842,7 +868,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/stop":
                 return self.json({"ok": _stop()})
             if path == "/api/desktop":
-                if not live.read_fresh(live.LIVE_DESKTOP):
+                if not live.read_fresh(live.LIVE_DESKTOP):          # commands need the app itself answering
                     return self.json({"error": "The desktop app isn't open."}, 400)
                 live.send_desktop(str(b.get("cmd") or ""))
                 return self.json({"ok": True})
@@ -909,6 +935,7 @@ def run_server(host, port=None, password=None):
     8081: it is the port its proxy forwards."""
     Handler.password = password or None
     Handler.local_only = not password
+    Handler.port_fixed = port is not None
     if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
     else:
@@ -953,7 +980,9 @@ def main(argv=None):
     saved = str(load_prefs().get("web_password") or "").strip()
     pwd = (a.password or os.environ.get("FIZGIG_PASSWORD")
            or ((os.environ.get("VNC_PASSWORD") or saved) if on_pod() else saved))
-    if pwd and len(pwd) < 8:
+    pod_pwd = on_pod() and not a.password and not os.environ.get("FIZGIG_PASSWORD") and pwd == os.environ.get(
+        "VNC_PASSWORD")
+    if pwd and len(pwd) < 8 and not pod_pwd:          # a pod's own VNC password is taken at any length
         sys.exit("The web UI password needs at least 8 characters (Preferences > Web UI, web_password in "
                  "prefs.json, FIZGIG_PASSWORD or --password).")
     host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")

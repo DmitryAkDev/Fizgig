@@ -17494,7 +17494,7 @@ class LoRATrainerGUI:
         _port_entry.grid(row=0, column=1, sticky=tk.W, pady=4)
         _on_pod = bool(os.environ.get("RUNPOD_POD_ID"))
         _PORT_HINT = ("A pod always uses 8081, the port its proxy forwards." if _on_pod else
-                      "If the web UI is running, it restarts on the new port.")
+                      "If the web UI is running, it restarts on the new port when you press Enter or leave the box.")
         if _on_pod:
             _port_entry.configure(state="disabled")
         _port_hint = tk.Label(web_card, text=_PORT_HINT,
@@ -17516,7 +17516,7 @@ class LoRATrainerGUI:
         _PW_HINT = ("Empty: the web UI opens on this machine only. Set (8 characters or more): other devices can "
                     "open it too, after logging in with it. Whoever has it can use Fizgig and open files on this "
                     "machine, so treat it like a remote-desktop password. Saved in prefs.json as plain text. If the "
-                    "web UI is running, it restarts with the new password.")
+                    "web UI is running, it restarts with the new password when you press Enter or leave the box.")
         if _on_pod:
             tk.Label(web_card, text="This pod's VNC password (the remote desktop's). Set VNC_PASSWORD in the "
                                     "template to choose it.",
@@ -17587,9 +17587,11 @@ class LoRATrainerGUI:
             _paint_links()
         self.prefs_vars["web_port"].trace_add("write", _on_port_pref)
         self.prefs_vars["web_password"].trace_add("write", lambda *a: (_paint_links(), _pw_check()))
-        # a running web UI picks up a new port or password by restarting (once typing stops)
-        for _k in ("web_port", "web_password"):
-            self.prefs_vars[_k].trace_add("write", lambda *a: self._web_ui_restart_soon())
+        # a running web UI picks up a new port or password by restarting, once the box is left or Enter pressed
+        self.prefs_vars["web_port"].trace_add("write", lambda *a: self._web_ui_restart_soon())
+        if not _on_pod:
+            _pw_entry.bind("<FocusOut>", lambda e: self._web_ui_restart_soon(), add="+")
+            _pw_entry.bind("<Return>", lambda e: self._web_ui_restart_soon(), add="+")
 
         _run_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
         _run_row.grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 2))
@@ -33523,6 +33525,10 @@ class LoRATrainerGUI:
                 f = self._live_log_f = open(_live.DESKTOP_LOG, "a", encoding="utf-8", newline="")
             f.write(line)
             f.flush()
+            if f.tell() > 20 * 1024 * 1024:                   # a long session: start the copy again, not grow forever
+                f.close()
+                from fizgig.web import live as _live
+                self._live_log_f = open(_live.DESKTOP_LOG, "w", encoding="utf-8", newline="")
         except Exception:
             self._live_log_f = False if f is None else f      # unwritable: stop trying (False is falsy but not None)
 
@@ -33546,11 +33552,29 @@ class LoRATrainerGUI:
             if _persist_disabled():
                 raise RuntimeError("headless test")
             from fizgig.web import live as _live
+            import time as _time
             proc = getattr(self, "current_process", None)
             running = proc is not None and proc.poll() is None
             state = getattr(self, "training_state", "idle")
+            if running:
+                self._live_last_proc = proc
+            # a run that just ended (busy -> idle): how it ended, for the web UI to show until the next one starts
+            was_busy = getattr(self, "_live_was_busy", False)
+            busy_now = running or state in ("running", "pausing")
+            if busy_now and not was_busy:
+                self._live_result = None
+                self._live_stopped = False
+            elif was_busy and not busy_now and state != "paused":
+                lp = getattr(self, "_live_last_proc", None)
+                code = lp.poll() if lp is not None else None
+                self._live_result = {
+                    "result": "stopped" if getattr(self, "_live_stopped", False) else
+                              "finished" if code == 0 else "failed",
+                    "lora": str(self.settings.get("LORA_NAME", "") or ""), "at": _time.time()}
+            self._live_was_busy = busy_now
             _live.write(_live.LIVE_DESKTOP, {
-                "running": running, "state": state,
+                "running": running, "state": state, "trainer_pid": proc.pid if running else None,
+                "last_result": getattr(self, "_live_result", None), "ack": getattr(self, "_live_ack", None),
                 "lora": str(self.settings.get("LORA_NAME", "") or ""),
                 "output_dir": str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
                 "family": self.architecture_var.get() if hasattr(self, "architecture_var") else "",
@@ -33558,15 +33582,31 @@ class LoRATrainerGUI:
                 "percent": float(self.training_progress_var.get()) if hasattr(self, "training_progress_var") else 0.0,
             })
             cmd = _live.take_desktop_cmd()
-            if cmd == "pause" and running and state == "running":
-                self.update_console("[web UI] Pause requested from the web UI\n")
-                self._pause_training()
-            elif cmd == "stop" and running:
-                self.update_console("[web UI] Stop requested from the web UI\n")
-                self.stop_training()
-            elif cmd == "resume" and not running and state == "paused":
-                self.update_console("[web UI] Resume requested from the web UI\n")
-                self._resume_training()
+            note = None
+            if cmd == "pause":
+                if running and state == "running":
+                    self.update_console("[web UI] Pause requested from the web UI\n")
+                    self._pause_training()
+                    note = "Pause requested: the run saves and stops at the end of this epoch."
+                else:
+                    note = "Nothing to pause: the run isn't training right now."
+            elif cmd == "stop":
+                if running:
+                    self.update_console("[web UI] Stop requested from the web UI\n")
+                    self._live_stopped = True
+                    self.stop_training()
+                    note = "Stopped."
+                else:
+                    note = "Nothing to stop: no run is going."
+            elif cmd == "resume":
+                if not running and state == "paused":
+                    self.update_console("[web UI] Resume requested from the web UI\n")
+                    self._resume_training()
+                    note = "Resuming."
+                else:
+                    note = "Nothing to resume: no run is paused."
+            if note:
+                self._live_ack = {"cmd": cmd, "note": note, "at": _time.time()}
         except Exception:
             pass
         try:
@@ -33625,6 +33665,8 @@ class LoRATrainerGUI:
             self._web_ui_say(f"Could not start: {e}", "warning")
             return
         self._web_ui_say("Starting…")
+        self._web_ui_started_with = (self.prefs_vars["web_port"].get().strip(),
+                                     self.prefs_vars["web_password"].get().strip())
         proc = self._web_ui_proc
 
         def watch():
@@ -33658,13 +33700,16 @@ class LoRATrainerGUI:
     def _web_ui_restart_soon(self):
         if not self._web_ui_running():
             return
+        now = (self.prefs_vars["web_port"].get().strip(), self.prefs_vars["web_password"].get().strip())
+        if now == getattr(self, "_web_ui_started_with", now):
+            return                                        # nothing it uses has changed
         job = getattr(self, "_web_ui_restart_job", None)
         if job:
             try:
                 self.master.after_cancel(job)
             except Exception:
                 pass
-        self._web_ui_restart_job = self.master.after(2500, self._web_ui_restart)
+        self._web_ui_restart_job = self.master.after(300, self._web_ui_restart)
 
     def _web_ui_restart(self):
         """Stop and start the web UI this app started, on the new port / password. A password too short to use
@@ -33770,6 +33815,7 @@ class LoRATrainerGUI:
 
     def stop_training(self):
         """Stop the current running process"""
+        self._live_stopped = True                  # the web UI shows this run as stopped, not failed
         # Stop samples watcher
         self.stop_samples_watcher()
         # A user Stop invalidates any armed queue-advance/retry timer immediately — the

@@ -29,9 +29,9 @@ A run started in the web UI shows only in the web UI. One run trains at a time: 
 
 ## The password
 
-Without a password the web UI only opens on the machine it runs on. With one (8 characters or more), it listens on every address and asks for it, so a phone, tablet or another computer on your network can open it.
+Without a password the web UI only opens on the machine it runs on. With one (8 characters or more; a pod's own VNC password works at any length), it listens on every address and asks for it, so a phone, tablet or another computer on your network can open it.
 
-- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only. If the web UI is running, it restarts with the new password, and anyone logged in logs in again.
+- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only. If the web UI is running, it restarts with the new password when you press Enter or leave the box, and anyone logged in logs in again.
 - **By hand:** set `"web_password"` in `prefs.json` (see the example below).
 - **For one launch:** the `FIZGIG_PASSWORD` environment variable, or `--password` (an environment variable keeps it out of the process list).
 
@@ -45,7 +45,7 @@ The web UI uses port **8081** unless that port is taken. When another program al
 
 To change the port:
 
-- **Desktop app:** Preferences → Web UI → Web UI port. A running web UI restarts on the new port.
+- **Desktop app:** Preferences → Web UI → Web UI port. A running web UI restarts on the new port when you press Enter or leave the box.
 - **Web UI:** Preferences → Web UI → Port. The new port is used the next time the web UI starts.
 - **By hand:** set `"web_port"` in `prefs.json` (see the example below), then start the web UI again.
 - **For one launch:** `--port 8090`. This uses that port only, stops with a message if it is taken, and does not change the saved one.
@@ -91,7 +91,9 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-with `/opt/Fizgig/fizgig-web.env` holding `FIZGIG_PASSWORD=your-password` (readable only by that user). Then `sudo systemctl enable --now fizgig-web`. A fixed `--port` suits a service: it never moves to another port, and stopping the service stops any run it started.
+with `/opt/Fizgig/fizgig-web.env` holding `FIZGIG_PASSWORD=your-password` (readable only by that user; it wins over a `web_password` in `prefs.json`, so a service needs only this one). Then `sudo systemctl enable --now fizgig-web`. A fixed `--port` suits a service: it never moves to another port, and the web UI's Preferences show it as set by `--port`.
+
+**Stopping the service stops any run it started, without saving**: everything since the run's last saved epoch is lost. Before `systemctl stop`, a restart or a reboot, press **Pause** in the web UI and wait for the run to save and stop; **Resume** carries on from there.
 
 ## prefs.json
 
@@ -108,7 +110,7 @@ All of these settings live in `prefs.json` in the Fizgig folder (next to `lora_t
 
 - `web_port`: the web UI's port.
 - `web_password`: its password (8 characters or more); leave it out to keep the web UI on this machine only.
-- `cuda_device`: the GPU, by its number in `nvidia-smi` (`"0"`, `"1"`, …); leave it out for the machine's default.
+- `cuda_device`: the GPU, by its number in `nvidia-smi` (`"0"`, `"1"`, …) or its UUID (`"GPU-…"`, what the GPU pickers save, which never changes meaning); leave it out for the machine's default.
 - `input_dataset_dir`: where uploads go.
 
 Model paths are added by the downloads in Preferences, so you don't need to type them.
