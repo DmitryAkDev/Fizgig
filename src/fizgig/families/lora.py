@@ -79,12 +79,43 @@ class LoHa(nn.Module):
         return x @ w.to(x.dtype).transpose(-1, -2)
 
 
+class BlockMeter:
+    """Block activity for one render (Repair Studio, a family with block_activity): per block, per position along
+    the sequence, how hard the adapters push the block's output - ||sum of adapter terms|| / ||base output||,
+    averaged over the block's metered Linears, the batch and the render's steps. A LoRALinear with a `_meter_block`
+    reports while METER.on is this meter; adapters named in `skip` (a speed LoRA) are not counted."""
+
+    def __init__(self, skip=()):
+        self.skip = set(skip)
+        self.sum, self.n = {}, {}
+
+    def add(self, block, ratio):
+        s = self.sum.get(block)
+        if s is None:
+            self.sum[block], self.n[block] = ratio.detach().float().clone(), 1
+        elif s.shape == ratio.shape:
+            s.add_(ratio.detach().float())
+            self.n[block] += 1
+
+    def result(self):
+        """{block id: numpy array over the sequence} (the mean of what was recorded)."""
+        return {b: (s / self.n[b]).cpu().numpy() for b, s in self.sum.items()}
+
+
+class _MeterSlot:
+    on = None            # the BlockMeter recording, or None
+
+
+METER = _MeterSlot()
+
+
 class LoRALinear(nn.Module):
     def __init__(self, base: nn.Linear):
         super().__init__()
         self.base = base
         self.adapters = nn.ModuleDict()
         self.scales = {}
+        self._meter_block = None         # set by the workbench for block activity (BlockMeter)
 
     def _base_device(self):
         """Where the base weight lives, read off its storage: a ConvRot int8 Linear's .weight decodes the whole
@@ -124,6 +155,9 @@ class LoRALinear(nn.Module):
 
     def forward(self, x):
         out = self.base(x)
+        m = METER.on
+        if m is not None and self._meter_block is not None and out.dim() >= 2:
+            return self._forward_metered(x, out, m)
         for n, ad in self.adapters.items():
             s = self.scales.get(n, 0.0)
             if s:
@@ -137,6 +171,28 @@ class LoRALinear(nn.Module):
                     out = torch.add(out, lx, alpha=float(s))
                 else:                                # the fp32 trainable adapter: as before
                     out = out + (s * lx).to(out.dtype)
+        return out
+
+    def _forward_metered(self, x, out, m):
+        """forward() for a render being metered: the same sum, plus the adapters' share for BlockMeter."""
+        base_n = out.float().norm(dim=-1)
+        push = None
+        for n, ad in self.adapters.items():
+            s = self.scales.get(n, 0.0)
+            if not s:
+                continue
+            if isinstance(ad, (LoKR, LoHa)):
+                term = (s * ad(x)).to(out.dtype)
+                out = out + term
+            else:
+                lx = ad(x.to(ad[0].weight.dtype))
+                term = (s * lx).to(out.dtype)
+                out = torch.add(out, lx, alpha=float(s)) if lx.dtype == out.dtype else out + term
+            if n not in m.skip:
+                push = term.float() if push is None else push + term.float()
+        if push is not None:
+            r = push.norm(dim=-1) / (base_n + 1e-6)
+            m.add(self._meter_block, r.reshape(-1, r.shape[-1]).mean(0))
         return out
 
 

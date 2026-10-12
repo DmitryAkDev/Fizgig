@@ -348,10 +348,17 @@ class FamilyDescription:
     # Training tab shows the fine-tune card and the launch sends --finetune. Optional - most families never need it
     finetune: bool = False
     ft_learning_rate: float = 1e-5    # the learning rate choosing Fine-tune sets (H3's tested rate is 3e-5)
+    ft_regularisation: bool = True    # the fine-tune card offers a regularisation set (photos of the broad class)
     # the Training tab's large-dataset hint: (rate, steps per epoch) - a standard LoRA whose learning rate (or
     # adaptive Min LR) is at least `rate`, on more than `steps` steps an epoch, gets a tip suggesting a cooler rate,
     # so the best point doesn't fall between two saved epochs. None turns the hint off for the family
     lr_hint: tuple = (2e-4, 125)
+    # the Training tab's long-run hint: (epochs, title, text) - a standard LoRA set to at least `epochs` epochs gets a
+    # tip card beside Max Epochs (a playback tip: no button). () = none
+    long_run_hint: tuple = ()
+    # the Captions tab's "Caption Every Song" card: every audio file gets "<trigger>, <common words>", no AI. The
+    # string is the greyed example shown in the empty Common words box. "" = no card
+    song_captions: str = ""
     # training previews may render on the preview checkpoint (the preview_dit file, sampled with
     # preview_checkpoint_sampling) instead of the training model - Klein's Distilled previews. The driver brings the
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)
@@ -397,6 +404,13 @@ class FamilyDescription:
     slider_training: bool = False     # Slider LoRAs (strength is a dial between two looks); the driver needs
     #                                   training_loss(diff_ref=, diff_weight=) and noise_latents / predict
     slider_guidance: float = 2.0      # a prompt slider's default push strength (the Training tab box when empty)
+    slider_sources: tuple = ("pairs", "prompts")   # where a slider's two ends come from (one = no chooser shown)
+    # the Kind of training row in the family's own words: ((kind, radio label, hint), ...) for "standard" / "edit" /
+    # "slider" / "finetune"; "" keeps the shared text (which speaks of photos and looks). () = all shared
+    kind_notes: tuple = ()
+    # the Slider card's prompt rows in the family's own words: ((key, heading, help), ...) for FAMILY_SLIDER_BASE /
+    # _POS / _NEG; () = the shared picture wording
+    slider_prompt_notes: tuple = ()
     slider_ultra_blocks: tuple = ()   # block ids (driver.block_map) an "Ultra mode" slider trains, () = no Ultra mode:
     #                                   the composition blocks only, so the slider holds up at far higher strengths
 
@@ -404,6 +418,10 @@ class FamilyDescription:
     sampling: tuple = ()              # SamplingSettings without any speed LoRA (first = default)
     speed_loras: tuple = ()           # SpeedLoRA entries
     preview_steps: int = 20
+    preview_every: int = 1           # Samples: a preview every N epochs (kept per family once edited)
+    # Samples: the LoRA strengths each training preview is also rendered at, beside 1.0 (a tick on the Samples tab,
+    # on by default; a standard LoRA only). () = none - the tick is not shown
+    preview_strengths: tuple = ()
     preview_cfg_note: str = ""         # the Samples tab's line under CFG Scale ("" = a plain default line)
     # the Samples tab's default negative prompt for the family (each family keeps the user's own edit); None = its
     # previews take no negative, so the box greys out
@@ -420,6 +438,8 @@ class FamilyDescription:
     preview_width: int = 1024
     preview_height: int = 1024
     repair_size: int = 768            # Repair Studio's starting preview size (its Res dropdown) for the family
+    block_activity: bool = False      # Repair Studio lights each block's slider as the song plays (BlockMeter)
+    repair_default_strength: float = 1.0   # Repair Studio's primary / donor "at strength" on a family switch (ACE-Step 0.5)
     preview_speed_lora: str = ""      # name of the SpeedLoRA previews use when its file is set in Preferences
     preview_speed_steps: int = 0      # preview steps with it (0 = the SpeedLoRA's own)
     preview_speed_strength: Optional[float] = None   # preview strength for it (None = the SpeedLoRA's own; 0 = off
@@ -444,6 +464,11 @@ class FamilyDescription:
     clip_regimes: tuple = ()
     # Repair Studio built-ins beyond Reset All: (name, ((block id, strength), ...)) - every other block at 1.0
     repair_presets: tuple = ()
+    # Repair Studio's "I'm feeling lucky" (a random slider mix): every block rolls evenly between the Min / Max boxes
+    # beside the button, except the bands held here while "Hold" is ticked: ((first, last, low, high), ...) over
+    # block positions in the block map, each held block rolled within [low, high] instead. The dice never untick a
+    # block. () = nothing held
+    lucky_zones: tuple = ()
     # what each block carries, measured with the Profiler: ((block id, category), ...), category one of
     # "identity" / "look" / "style_ident_overlap" (Repair Studio's colours). Unlisted blocks stay uncoloured.
     block_categories: tuple = ()
@@ -516,6 +541,12 @@ class FamilyDescription:
     def video_workbench(self) -> bool:
         """The workbench tabs' clip features apply (a family whose media include clips)."""
         return "clip" in self.media
+
+    @property
+    def audio_workbench(self) -> bool:
+        """A sound-only family (music): the workbench renders songs - its previews are heard, the pictures are their
+        waveforms, and the Res setting is the song length in seconds."""
+        return set(self.media) == {"voice"}
 
     def lora_prefix(self, block: int, module: str) -> str:
         """Key stem of one wrapped module, e.g. 'transformer.transformer_blocks.3.attn.to_q'."""
@@ -596,6 +627,7 @@ class FamilyDescription:
             "sample_steps_default": self.preview_steps if self.preview_steps else (s.steps if s else 20),
             "sample_width_default": self.preview_width,
             "sample_height_default": self.preview_height,
+            "sample_every_default": self.preview_every,
             "lora_name_suffix": self.lora_name_suffix,
         }
 

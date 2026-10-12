@@ -79,7 +79,9 @@ def slider_on(desc, inputs, source=None):
     """Slider mode for a family that offers it; source "pairs" / "prompts" narrows it to one kind."""
     on = bool(desc.slider_training and inputs.get("FAMILY_SLIDER"))
     if on and source:
-        on = (inputs.get("FAMILY_SLIDER_SOURCE") or "pairs") == source
+        offered = tuple(getattr(desc, "slider_sources", ("pairs", "prompts"))) or ("pairs", "prompts")
+        have = inputs.get("FAMILY_SLIDER_SOURCE") or "pairs"
+        on = (have if have in offered else offered[0]) == source      # a family with one source always uses it
     return on
 
 
@@ -90,7 +92,7 @@ def ft_on(desc, inputs):
 
 def ft_reg_dir(desc, inputs):
     """A fine-tune's regularisation folder, when fine-tune is on and one is set (else "")."""
-    return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) else ""
+    return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) and getattr(desc, "ft_regularisation", True)         else ""
 
 
 def _ft_reg_mult(inputs):
@@ -642,6 +644,13 @@ def _preview_flags(desc, st, plan, cmd):
             prompts = os.path.join(samples_dir, f"{desc.key}_prompts.txt")
             plan.files.append((prompts, "\n".join(lines) + "\n"))
     every = str(sm.get("every") or "").strip()
+    if every.isdigit() and int(every) > 0 and slider_on(desc, st):
+        # a slider's preview is the dial itself: one at least with every checkpoint (a family's long-run preview
+        # cadence - ACE-Step's 40 - would leave a 20-epoch slider with only its epoch-0 preview)
+        try:
+            every = str(min(int(every), max(1, int(float(st.get("SAVE_EVERY_N_EPOCHS"))))))
+        except (TypeError, ValueError):
+            pass
     if prompts and every.isdigit() and int(every) > 0:
         out += ["--sample_prompts", prompts, "--sample_every_n_epochs", every,
                 "--vae", _model(st, desc, "vae"),
@@ -666,6 +675,10 @@ def _preview_flags(desc, st, plan, cmd):
             pass
         if sm.get("at_first"):
             out.append("--sample_at_first")
+        strengths = [float(x) for x in (sm.get("strengths") or ()) if 0 < float(x) != 1.0]
+        if strengths and not ft_on(desc, st) and not slider_on(desc, st) and not edit_on(desc, st):
+            # each preview again at these LoRA strengths (a standard LoRA: a fine-tune has no strength to turn down)
+            out += ["--sample_strengths", ",".join(f"{x:g}" for x in strengths)]
         if not edit_on(desc, st) and not slider_on(desc, st) and _sample_image(desc, sm):
             # the Samples tab's picture: seen through the vision path, or edited by every preview prompt
             out += ["--sample_image" if desc.reference_kind == "vision" else "--sample_reference",
@@ -761,7 +774,7 @@ def start_problems(desc, inputs):
     from fizgig.families import checks
     v = inputs
     out = checks.learning_rate(v)
-    out += checks.network(v, lokr=str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
+    out += checks.network(v, lokr="lokr" in desc.network_types and str(v.get("NETWORK_TYPE", "")).startswith("LoKR"))
     out += checks.numbers(v)
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
@@ -794,10 +807,12 @@ def start_problems(desc, inputs):
                 parse_block_spec(spec, opt.counts_blocks)
             except ValueError as e:
                 out.append(f"{opt.label}: {e}")
-    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     exts = {e.lower() for e in IMAGE_EXTENSIONS}
     if "clip" in desc.media:
         exts |= {e.lower() for e in VIDEO_EXTENSIONS}       # the clip formats the dataset layer reads
+    if "voice" in desc.media:
+        exts |= {e.lower() for e in AUDIO_EXTENSIONS}
     out += checks.training_folder(_s(v.get("image_folder")), _s(v.get("caption_ext", ".txt")),
                                   check_captions=not slider_on(desc, inputs, "prompts"), media_exts=exts)
     out += clip_problems(desc, _s(v.get("image_folder")))
@@ -811,11 +826,11 @@ def clip_problems(desc, folder):
     """Every clip in the training folder that is off the family's ClipSpec, with the reason - before anything
     caches, so a wrong frame rate or frame count is refused at Start, not found an hour into caching. Plus the
     driver's own media checks (media_problem) for anything the spec cannot say."""
-    if "clip" not in desc.media or not desc.clip_spec or not folder or not os.path.isdir(folder):
+    if not ({"clip", "voice"} & set(desc.media)) or not folder or not os.path.isdir(folder):
         return []
     from fizgig.families import clips
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
-    vid = {e.lower() for e in VIDEO_EXTENSIONS}
+    vid = {e.lower() for e in VIDEO_EXTENSIONS} if "clip" in desc.media else set()
     aud = {e.lower() for e in AUDIO_EXTENSIONS} if "voice" in desc.media else set()
     driver, out = None, []
     for name in sorted(os.listdir(folder)):
@@ -826,7 +841,7 @@ def clip_problems(desc, folder):
         st = os.stat(path)
         key = (path, st.st_mtime, st.st_size)
         if key not in _CLIP_CHECKED:
-            why = clips.problem(path, desc.clip_spec, desc.display_name) if ext in vid else ""
+            why = clips.problem(path, desc.clip_spec, desc.display_name) if ext in vid and desc.clip_spec else ""
             if not why and desc.driver:
                 if driver is None:
                     driver = desc.load_driver()

@@ -28,6 +28,7 @@ Run: venv/Scripts/pythonw.exe gizmo.pyw    (or the Launch Gizmo .bat, or from Fi
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -90,9 +91,17 @@ MUTE_SUFFIX = "_mute"
 # EXACTLY latents x 800 samples, so the trainer's strict duration check always passes with no
 # tolerance spent. The 5-frame slot (0.2 s) is deliberately absent — fifty milliseconds of voice
 # trains nothing worth a file.
-AUDIO_EXTS = (".wav", ".mp3", ".flac", ".m4a")
+AUDIO_EXTS = (".wav", ".mp3", ".flac", ".m4a", ".ogg")
 AUDIO_HOP = 800                                # the audio VAE's samples-per-latent
 AUDIO_GRID_FRAMES = (22, 39, 56, 73, 90, 107, 124)
+
+# --- music mode (ACE-Step) ---------------------------------------------------------------------
+# ACE-Step has no length grid: a song section of any length trains, and the trainer cuts anything
+# over four minutes to its first four. Sections export at ACE-Step's own 48 kHz stereo.
+MUSIC_SAMPLE_RATE = 48000
+MUSIC_MAX_S = 240.0
+MUSIC_MIN_S = 10.0
+MUSIC_WORDS_EXAMPLE = "chiptune, 8-bit, instrumental, square wave lead, arpeggios"
 
 
 def audio_latents_for(frames):
@@ -641,7 +650,9 @@ def pick_sentence(frames, rng=None):
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gizmo_settings.json")
 SETTINGS_DEFAULTS = {"microphone": "", "whisper_language": "Auto detect",
                      "random_delivery": True, "trim_takes": True, "free_speech": False,
-                     "trigger_word": "", "clip_out_dir": "", "voice_out_dir": ""}
+                     "trigger_word": "", "clip_out_dir": "", "voice_out_dir": "",
+                     "music_trigger_word": "", "music_words": "", "music_out_dir": "",
+                     "music_fade_in": "0.1", "music_fade_out": "1.5"}
 
 
 def load_settings():
@@ -1112,7 +1123,8 @@ def audio_playback_backend():
 _PLAYBACK = None            # resolved once, on first use
 
 
-def _play_wav(path):
+def _play_wav(path, loop=False):
+    """loop: repeat seamlessly until stopped (winsound only; returns whether it loops)."""
     global _PLAYBACK
     if _PLAYBACK is None:
         _PLAYBACK = audio_playback_backend() or ""
@@ -1120,10 +1132,11 @@ def _play_wav(path):
         raise RuntimeError("no way to play audio on this machine")
     if _PLAYBACK == "winsound":
         import winsound
-        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-    else:
-        subprocess.Popen([_PLAYBACK, path], stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL)
+        winsound.PlaySound(path, winsound.SND_FILENAME | winsound.SND_ASYNC | (winsound.SND_LOOP if loop else 0))
+        return bool(loop)
+    subprocess.Popen([_PLAYBACK, path], stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL)
+    return False
 
 
 def _stop_wav():
@@ -1279,7 +1292,7 @@ class ToolTip:
 class Gizmo:
     def __init__(self, root):
         self.root = root
-        root.title("Gizmo — clip and voice prep for Fizgig")
+        root.title("Gizmo — clip, voice and music prep for Fizgig")
         root.configure(bg=COLORS["bg_deep"])
         # Wide enough that the vertical scrollbar never eats into the content (which measures
         # ~985 px), tall enough for two cards at a time. The rest scrolls.
@@ -1339,7 +1352,11 @@ class Gizmo:
         self._audio_peak_scale = 1.0  # one normalisation for the whole file, so zoom keeps scale
         self.audio_view = None        # (start_s, dur_s) window, None = the whole file
         self._audio_peaks_key = None  # cache key so refresh doesn't re-slice unchanged views
-        self.audio_queue = []
+        # The Voice and Music tabs share one editor (waveform, player, queue card); what
+        # differs is the kind of item it cuts. Each kind keeps its own queue.
+        self._audio_kind = "voice"
+        self._audio_queues = {"voice": [], "music": []}
+        self.music_len = MUSIC_MAX_S  # music section length, seconds (no grid)
         self._audio_playing = False
         self._audio_play_mode = None  # "file" (listen through) or "segment" (the export span)
         self._audio_play_from = 0.0   # where the current playback started, for the cursor
@@ -1377,6 +1394,17 @@ class Gizmo:
                 "Gizmo — no ffmpeg",
                 "Gizmo needs ffmpeg, which normally arrives with Fizgig's install.\n\n"
                 "Run install_fizgig.bat to restore it, or put ffmpeg on your PATH.")
+
+    @property
+    def audio_queue(self):
+        return self._audio_queues[self._audio_kind]
+
+    @audio_queue.setter
+    def audio_queue(self, jobs):
+        self._audio_queues[self._audio_kind] = jobs
+
+    def _music_mode(self):
+        return self._audio_kind == "music"
 
     # -- chrome ---------------------------------------------------------------------------------
     def _style(self):
@@ -1510,8 +1538,8 @@ class Gizmo:
                          "Saved beside gizmo.py, kept between sessions.").pack(side=tk.RIGHT)
         tk.Label(head, text="Gizmo", font=(FONT_FAMILY, 22, "bold"),
                  bg=COLORS["bg_deep"], fg=COLORS["text_primary"]).pack(anchor="w")
-        tk.Label(head, text="Cut training clips and voice segments Fizgig will accept — on the "
-                            "grid, sized, captioned, with the sound sorted out.",
+        tk.Label(head, text="Cut training clips, voice segments and song sections Fizgig will "
+                            "accept — sized, with the sound sorted out, and voice and music captioned.",
                  font=(FONT_FAMILY, 11), bg=COLORS["bg_deep"],
                  fg=COLORS["text_secondary"]).pack(anchor="w")
 
@@ -1522,9 +1550,11 @@ class Gizmo:
         self.notebook.pack(fill=tk.BOTH, expand=True)
         video_tab = tk.Frame(self.notebook, bg=COLORS["bg_deep"])
         audio_tab = tk.Frame(self.notebook, bg=COLORS["bg_deep"])
+        music_tab = tk.Frame(self.notebook, bg=COLORS["bg_deep"])
         self.notebook.add(video_tab, text="Video clips")
         self.notebook.add(audio_tab, text="Voice / audio")
-        self._video_tab, self._audio_tab = video_tab, audio_tab
+        self.notebook.add(music_tab, text="Music (ACE-Step)")
+        self._video_tab, self._audio_tab, self._music_tab = video_tab, audio_tab, music_tab
 
         # Settings come BEFORE finding the moment, because the last-frame preview is only
         # meaningful once the length and the motion are settled — scrub first and it shows the
@@ -1535,8 +1565,14 @@ class Gizmo:
         self._build_scrub_card(video_tab)
         self._build_queue_card(video_tab)
 
-        tk.Frame(audio_tab, bg=COLORS["bg_deep"], height=10).pack()
-        self._build_audio_tab(audio_tab)
+        # The voice and music tabs share ONE editor, a child of the notebook packed into
+        # whichever of the two is showing (pack's in_ allows any descendant of its parent).
+        for t in (audio_tab, music_tab):
+            tk.Frame(t, bg=COLORS["bg_deep"], height=10).pack()
+        self._audio_editor = tk.Frame(self.notebook, bg=COLORS["bg_deep"])
+        self._audio_editor.pack(in_=audio_tab, fill=tk.BOTH, expand=True)
+        self._build_audio_tab(self._audio_editor)
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed, add="+")
 
         self._bind_keys()
         self._set_enabled(False)
@@ -1571,7 +1607,8 @@ class Gizmo:
         self.root.focus_set()
 
     def _build_source_card(self, body):
-        c = self._card(body, "1. Source video", "Any format, any frame rate, any size.")
+        c = self._card(body, "1. Source video", "Any format, any frame rate, any size. Opening "
+                       "another video keeps your queue, so one export can hold clips from many.")
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
         self._button(row, "Open video…", self.open_video, "accent",
@@ -1896,8 +1933,10 @@ class Gizmo:
     def _build_queue_card(self, body):
         c = self._card(body, "4. Mark it, then move on",
                        "Marking is fast and encoding is slow, so they are separate. Add every "
-                       "section you want from this video, then export the lot in one go — and "
-                       "keep scrubbing while it runs.")
+                       "section you want, then open the next video and keep adding: the queue "
+                       "keeps them all, and Export writes the lot in one go — keep scrubbing "
+                       "while it runs. Gizmo doesn't caption video clips: export them into "
+                       "your training folder, then caption them on Fizgig's Captions tab.")
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
         self.add_btn = self._button(
@@ -2052,9 +2091,61 @@ class Gizmo:
 
     def _audio_tab_active(self):
         try:
-            return self.notebook.select() == str(self._audio_tab)
+            return self.notebook.select() in (str(self._audio_tab), str(self._music_tab))
         except Exception:
             return False
+
+    def _audio_host_tab(self):
+        """The tab an opened recording belongs on: Music when it is showing, else Voice."""
+        return self._music_tab if self._music_mode() else self._audio_tab
+
+    def _on_tab_changed(self, _e=None):
+        """Move the shared audio editor to the Voice or Music tab and switch what it cuts."""
+        sel = self.notebook.select()
+        if sel == str(self._music_tab):
+            kind, host = "music", self._music_tab
+        elif sel == str(self._audio_tab):
+            kind, host = "voice", self._audio_tab
+        else:
+            return
+        if kind == self._audio_kind:
+            return
+        self._audio_stop()
+        self._audio_resume = None
+        rec = getattr(self, "_recorder", None)
+        if kind == "music" and rec is not None and rec.active:
+            rec.close()
+        self._audio_editor.pack_forget()
+        self._audio_editor.pack(in_=host, fill=tk.BOTH, expand=True)
+        self._audio_kind = kind
+        music = kind == "music"
+        # The parts that differ: the record button, the caption card, the save folder.
+        if music:
+            self._audio_record_btn.pack_forget()
+            self._voice_caption_outer.pack_forget()
+            self._music_caption_outer.pack(fill=tk.X, padx=16, pady=(0, 12),
+                                           before=self._audio_wave_outer)
+        else:
+            self._audio_record_btn.pack(side=tk.LEFT, padx=(8, 0), after=self._audio_open_btn)
+            self._music_caption_outer.pack_forget()
+            self._voice_caption_outer.pack(fill=tk.X, padx=16, pady=(0, 12),
+                                           before=self._audio_wave_outer)
+        self._audio_source_desc.configure(text=self._MUSIC_SOURCE_DESC if music
+                                          else self._VOICE_SOURCE_DESC)
+        self.audio_out_var = self._music_out_var if music else self._voice_out_var
+        self._audio_out_entry.configure(textvariable=self.audio_out_var)
+        if music and self.audio_src:
+            if not self.music_lyrics.get("1.0", tk.END).strip():
+                lyrics = self._music_song_lyrics(self.audio_src)
+                self.music_lyrics.insert("1.0", lyrics)
+                self._music_lyrics_from_song = bool(lyrics)
+            self._music_set_len(self.music_len)
+            if not self.audio_out_var.get():
+                self.audio_out_var.set(os.path.join(os.path.dirname(self.audio_src),
+                                                    "fizgig_music"))
+        self.audio_status.configure(text="")
+        self._audio_refresh_queue_box()
+        self._audio_refresh()
 
     @staticmethod
     def _shield_from_hotkeys(widget):
@@ -2134,7 +2225,7 @@ class Gizmo:
         # on: dropped while the Voice tab is up, it is an audio source (you asked for its sound
         # by being here) — anywhere else it opens as footage, as before.
         if is_audio_file(path) or self._audio_tab_active():
-            self.notebook.select(self._audio_tab)
+            self.notebook.select(self._audio_host_tab())
             try:
                 self.load_audio(path)
             except Exception as exc:
@@ -2880,22 +2971,23 @@ class Gizmo:
         # to build into, and the source card's OUTER frame to hide and restore in place.
         self._audio_tab_body = body
         # 1. source
-        c = self._card(body, "1. Source recording",
-                       "A voice memo, a podcast, an interview — any wav, mp3, flac or m4a. Or a "
-                       "VIDEO file, to use just its audio track: nothing is shown, you scrub the "
-                       "sound itself.")
+        c = self._card(body, "1. Source recording", self._VOICE_SOURCE_DESC)
         self._audio_source_outer = c.master.master      # body -> inner -> outer (see _card)
+        self._audio_source_desc = c.master.winfo_children()[1]
         row = tk.Frame(c, bg=COLORS["bg_surface"])
         row.pack(fill=tk.X)
-        self._button(row, "Open audio…", self.open_audio, "accent",
-                     tip="Open a recording — or a video whose SOUND you want.\n\nAny format or "
-                         "sample rate; Gizmo converts on export. The original is never "
-                         "modified.").pack(side=tk.LEFT)
-        self._button(row, "🎙 Record…", self.open_recorder,
-                     tip="Record a voice dataset right here — no files needed. Gizmo prompts "
-                         "sentences to read (hold to record, release when done), writes the "
-                         "caption for you, and each take drops straight into the editor "
-                         "ready to queue.").pack(side=tk.LEFT, padx=(8, 0))
+        self._audio_open_btn = self._button(
+            row, "Open audio…", self.open_audio, "accent",
+            tip="Open a recording — or a video whose SOUND you want.\n\nAny format or "
+                "sample rate; Gizmo converts on export. The original is never modified.")
+        self._audio_open_btn.pack(side=tk.LEFT)
+        self._audio_record_btn = self._button(
+            row, "🎙 Record…", self.open_recorder,
+            tip="Record a voice dataset right here — no files needed. Gizmo prompts "
+                "sentences to read (hold to record, release when done), writes the "
+                "caption for you, and each take drops straight into the editor "
+                "ready to queue.")
+        self._audio_record_btn.pack(side=tk.LEFT, padx=(8, 0))
         self.audio_src_label = tk.Label(row, text="No recording open", font=(FONT_FAMILY, 10),
                                         bg=COLORS["bg_surface"], fg=COLORS["text_muted"])
         self.audio_src_label.pack(side=tk.LEFT, padx=12)
@@ -2909,6 +3001,7 @@ class Gizmo:
                        "The caption teaches the voice, so describe only the sound — tone, pace, "
                        "accent, mood. No visual claims: there is no picture for them to be true "
                        "of. Transcribe appends the spoken words, which helps the voice bind.")
+        self._voice_caption_outer = c.master.master
         trow = tk.Frame(c, bg=COLORS["bg_surface"])
         trow.pack(fill=tk.X)
         tk.Label(trow, text="Trigger word:", font=(FONT_FAMILY, 10),
@@ -2972,6 +3065,8 @@ class Gizmo:
                         f"trains on, the same clock as video clips. Longer segments carry more "
                         f"of the voice per item; 5.2 s is the ceiling the model packs.")
 
+        self._build_music_caption_card(body)
+
         # 3. the waveform
         c = self._card(body, "3. Find the moment",
                        "Play from here and just listen — click anywhere on the waveform and "
@@ -2981,6 +3076,7 @@ class Gizmo:
                        "check it. Space is play / pause / resume, J-K-L shuttles like an edit "
                        "suite (tap J or L again for 1.5/2/3x), ←/→ nudge 50 ms, Shift 500 ms, "
                        "Home for the start.")
+        self._audio_wave_outer = c.master.master
         self.audio_canvas = tk.Canvas(c, width=self.AUDIO_WAVE_W, height=self.AUDIO_WAVE_H,
                                       bg=COLORS["bg_deep"], highlightthickness=1,
                                       highlightbackground=COLORS["border"], cursor="crosshair")
@@ -3054,18 +3150,21 @@ class Gizmo:
 
         # 4. queue + export
         c = self._card(body, "4. Mark it, then move on",
-                       "Add every segment you want from this recording, then export the lot — "
-                       "each wav lands with its caption .txt beside it, ready for the training "
-                       "folder.")
+                       "Add every section you want, then open the next file and keep adding: the "
+                       "queue keeps them all, and Export writes the lot in one go — each wav "
+                       "lands with its caption .txt beside it, ready for the training folder.")
         orow = tk.Frame(c, bg=COLORS["bg_surface"])
         orow.pack(fill=tk.X)
         tk.Label(orow, text="Save to:", font=(FONT_FAMILY, 10),
                  bg=COLORS["bg_surface"], fg=COLORS["text_primary"]).pack(side=tk.LEFT)
-        self.audio_out_var = tk.StringVar(value=self.settings.get("voice_out_dir", ""))
-        self._persist_var(self.audio_out_var, "voice_out_dir")
-        oe = tk.Entry(orow, textvariable=self.audio_out_var, bg=COLORS["bg_hover"],
-                      fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"],
-                      relief=tk.FLAT)
+        self._voice_out_var = tk.StringVar(value=self.settings.get("voice_out_dir", ""))
+        self._persist_var(self._voice_out_var, "voice_out_dir")
+        self._music_out_var = tk.StringVar(value=self.settings.get("music_out_dir", ""))
+        self._persist_var(self._music_out_var, "music_out_dir")
+        self.audio_out_var = self._voice_out_var
+        oe = self._audio_out_entry = tk.Entry(
+            orow, textvariable=self.audio_out_var, bg=COLORS["bg_hover"],
+            fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"], relief=tk.FLAT)
         oe.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 8), ipady=4)
         self._shield_from_hotkeys(oe)
         ToolTip(oe, "Where the segments and their caption .txt files land — point it at your "
@@ -3111,6 +3210,179 @@ class Gizmo:
 
         self._audio_set_enabled(False)
 
+    _VOICE_SOURCE_DESC = ("A voice memo, a podcast, an interview — any wav, mp3, flac or m4a. Or "
+                          "a VIDEO file, to use just its audio track: nothing is shown, you "
+                          "scrub the sound itself. Opening another file keeps your queue.")
+    _MUSIC_SOURCE_DESC = ("A song — any wav, mp3, flac, ogg or m4a. Cut it into sections for "
+                          "ACE-Step training, or keep it whole: songs of any length mix fine "
+                          "in one dataset, and longer sections (2 to 4 minutes) carry more of "
+                          "the song. Opening another song keeps your queue.")
+
+    def _build_music_caption_card(self, body):
+        """Music mode's card 2: caption, lyrics, section length and the fades at the cuts.
+        Built hidden; the tab switch swaps it in for the voice caption card."""
+        c = self._card(body, "2. Caption, lyrics and length",
+                       "Every section's caption is the trigger word, then words describing the "
+                       "music — the same words on every song of one sound. Lyrics are the "
+                       "lines sung in THIS section; leave them empty for an instrumental.")
+        self._music_caption_outer = c.master.master
+        self._music_caption_outer.pack_forget()
+
+        def entry(parent, var, width=None):
+            e = tk.Entry(parent, textvariable=var, bg=COLORS["bg_hover"],
+                         fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"],
+                         relief=tk.FLAT, **({"width": width} if width else {}))
+            self._shield_from_hotkeys(e)
+            return e
+
+        def label(parent, text, **kw):
+            return tk.Label(parent, text=text, font=(FONT_FAMILY, 10), bg=COLORS["bg_surface"],
+                            fg=COLORS["text_primary"], **kw)
+
+        trow = tk.Frame(c, bg=COLORS["bg_surface"])
+        trow.pack(fill=tk.X)
+        label(trow, "Trigger word:").pack(side=tk.LEFT)
+        self.music_trigger_var = tk.StringVar(value=self.settings.get("music_trigger_word", ""))
+        self._persist_var(self.music_trigger_var, "music_trigger_word")
+        te = entry(trow, self.music_trigger_var, 18)
+        te.pack(side=tk.LEFT, padx=(8, 16), ipady=4)
+        ToolTip(te, "Leads every caption, e.g. fzgchip. Use the same word in your sample "
+                    "prompts. Remembered between sessions.")
+        label(trow, "Describe the music:").pack(side=tk.LEFT)
+        self.music_words_var = tk.StringVar(value=self.settings.get("music_words", ""))
+        self._persist_var(self.music_words_var, "music_words")
+        we = entry(trow, self.music_words_var)
+        we.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(8, 0), ipady=4)
+        ToolTip(we, "Genre, instruments, mood, vocals — the words you will prompt with. "
+                    f"For example: {MUSIC_WORDS_EXAMPLE}")
+        # A greyed example while the box is empty — never saved, gone on focus.
+        hint = tk.Label(we, text=MUSIC_WORDS_EXAMPLE, font=(FONT_FAMILY, 10),
+                        bg=COLORS["bg_hover"], fg=COLORS["text_muted"], cursor="xterm")
+
+        def _hint(*_a):
+            if self.music_words_var.get() or self.root.focus_get() is we:
+                hint.place_forget()
+            else:
+                hint.place(x=2, rely=0.5, anchor="w")
+        hint.bind("<Button-1>", lambda _e: we.focus_set())
+        we.bind("<FocusIn>", _hint, add="+")
+        we.bind("<FocusOut>", _hint, add="+")
+        self.music_words_var.trace_add("write", _hint)
+        self.root.after(200, _hint)
+
+        lrow = tk.Frame(c, bg=COLORS["bg_surface"])
+        lrow.pack(fill=tk.X, pady=(10, 0))
+        label(lrow, "Lyrics in this section (optional):").pack(side=tk.LEFT)
+        self.music_lyrics_note = tk.Label(lrow, text="", font=(FONT_FAMILY, 9),
+                                          bg=COLORS["bg_surface"], fg=COLORS["warning"])
+        self.music_lyrics_note.pack(side=tk.LEFT, padx=(10, 0))
+        self.music_lyrics = tk.Text(c, height=4, wrap=tk.WORD, bg=COLORS["bg_hover"],
+                                    fg=COLORS["text_primary"], relief=tk.FLAT,
+                                    insertbackground=COLORS["text_primary"],
+                                    font=(FONT_FAMILY, 10))
+        self.music_lyrics.pack(fill=tk.X, pady=(4, 0))
+        self._shield_from_hotkeys(self.music_lyrics)
+
+        def _edited(_e):
+            # Edited by hand: the warning about the song's own lyrics has been heard.
+            if getattr(self, "_music_lyrics_from_song", False):
+                self._music_lyrics_from_song = False
+                self._music_refresh_lyrics_note()
+        self.music_lyrics.bind("<KeyRelease>", _edited, add="+")
+        ToolTip(self.music_lyrics,
+                "Saved as a .lyrics.txt beside the section. When the song has a .lyrics.txt "
+                "of its own it is filled in here — trim it to the lines sung in the section, "
+                "or the model learns words that aren't there.")
+
+        srow = tk.Frame(c, bg=COLORS["bg_surface"])
+        srow.pack(fill=tk.X, pady=(10, 0))
+        label(srow, "Section length:").pack(side=tk.LEFT)
+        self.music_len_var = tk.StringVar(value=f"{self.music_len:.1f}")
+        le = entry(srow, self.music_len_var, 7)
+        le.pack(side=tk.LEFT, padx=(8, 4), ipady=4)
+        le.bind("<Return>", lambda _e: self._music_len_typed())
+        le.bind("<FocusOut>", lambda _e: self._music_len_typed(), add="+")
+        ToolTip(le, f"Seconds, {MUSIC_MIN_S:.0f} to {MUSIC_MAX_S:.0f}. Or drag either end of "
+                    "the shaded span on the waveform.")
+        label(srow, "s").pack(side=tk.LEFT)
+        self._button(srow, "Whole song", self._music_whole, pad=10,
+                     tip="The whole song in one section — or its first four minutes, "
+                         "the most ACE-Step trains on.").pack(side=tk.LEFT, padx=(10, 0))
+
+        frow = tk.Frame(c, bg=COLORS["bg_surface"])
+        frow.pack(fill=tk.X, pady=(10, 0))
+        label(frow, "Fade at a cut — in:").pack(side=tk.LEFT)
+        self.music_fade_in_var = tk.StringVar(value=self.settings.get("music_fade_in", "0.1"))
+        self._persist_var(self.music_fade_in_var, "music_fade_in")
+        fi = entry(frow, self.music_fade_in_var, 5)
+        fi.pack(side=tk.LEFT, padx=(8, 4), ipady=4)
+        label(frow, "s    out:").pack(side=tk.LEFT)
+        self.music_fade_out_var = tk.StringVar(value=self.settings.get("music_fade_out", "1.5"))
+        self._persist_var(self.music_fade_out_var, "music_fade_out")
+        fo = entry(frow, self.music_fade_out_var, 5)
+        fo.pack(side=tk.LEFT, padx=(8, 4), ipady=4)
+        label(frow, "s").pack(side=tk.LEFT)
+        tk.Label(frow, text="Only where a section cuts into the song — its own start and end "
+                            "stay as they are. 0 turns a fade off.",
+                 font=(FONT_FAMILY, 9), bg=COLORS["bg_surface"],
+                 fg=COLORS["text_explain"]).pack(side=tk.LEFT, padx=(12, 0))
+        for w in (fi, fo):
+            ToolTip(w, "A short fade-in stops a click where the section starts mid-song; a "
+                       "fade-out of a second or two ends it like a song instead of a cut-off.")
+
+    # -- music: section length ------------------------------------------------------------------
+    def _music_set_len(self, seconds):
+        """Clamp a section length to what ACE-Step trains on and what is left of the song."""
+        room = max(0.0, self.audio_dur - self.audio_pos) if self.audio_src else MUSIC_MAX_S
+        top = min(MUSIC_MAX_S, room) if self.audio_src else MUSIC_MAX_S
+        # Tenths of a second: a drag lands on 99.9 s rather than 99.8825 s.
+        self.music_len = int(max(min(MUSIC_MIN_S, top), min(float(seconds), top)) * 10) / 10
+        self.music_len_var.set(f"{self.music_len:.1f}")
+        self._music_refresh_lyrics_note()
+
+    def _music_len_typed(self):
+        try:
+            secs = float(self.music_len_var.get())
+        except ValueError:
+            self.music_len_var.set(f"{self.music_len:.1f}")
+            return
+        if abs(secs - self.music_len) > 1e-3:
+            self._music_set_len(secs)
+            self._audio_refresh()
+            self._audio_arm_rescrub()
+
+    def _music_whole(self):
+        if not self.audio_src:
+            return
+        self.audio_pos = 0.0
+        self._music_set_len(MUSIC_MAX_S)
+        self._audio_seek(0.0)
+
+    def _music_song_lyrics(self, path):
+        """The song's own lyrics file (<stem>.lyrics.txt), or ""."""
+        side = os.path.splitext(path)[0] + ".lyrics.txt"
+        try:
+            with open(side, encoding="utf-8") as f:
+                return f.read().strip()
+        except OSError:
+            return ""
+
+    def _music_refresh_lyrics_note(self):
+        """Warn when the song's own lyrics sit in the box but the section is only part of it."""
+        if not hasattr(self, "music_lyrics_note"):
+            return
+        whole = (self.audio_src and self.audio_pos < 0.05
+                 and self.audio_pos + self.music_len > self.audio_dur - 0.05)
+        from_song = getattr(self, "_music_lyrics_from_song", False)
+        self.music_lyrics_note.configure(
+            text="" if whole or not from_song else
+            "⚠ from the song's .lyrics.txt — trim to the lines sung in this section")
+
+    def _music_caption_text(self):
+        words = " ".join(self.music_words_var.get().split()).strip(", ")
+        trig = self.music_trigger_var.get().strip().rstrip(",")
+        return ", ".join(p for p in (trig, words) if p)
+
     # -- audio: opening -----------------------------------------------------------------------------
     def open_audio(self):
         path = filedialog.askopenfilename(
@@ -3120,7 +3392,7 @@ class Gizmo:
                        ("All files", "*.*")])
         if not path:
             return
-        self.notebook.select(self._audio_tab)
+        self.notebook.select(self._audio_host_tab())
         try:
             self.load_audio(path)
         except Exception as exc:
@@ -3143,10 +3415,12 @@ class Gizmo:
                                + (" — it has a picture but no sound"
                                   if not is_audio_file(path) else ""))
         dur = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
-        min_dur = hop_exact_samples(AUDIO_GRID_FRAMES[0]) / AUDIO_SAMPLE_RATE
+        music = self._music_mode()
+        min_dur = MUSIC_MIN_S if music else             hop_exact_samples(AUDIO_GRID_FRAMES[0]) / AUDIO_SAMPLE_RATE
         if dur < min_dur:
             raise RuntimeError(f"{os.path.basename(path)}: {dur:.2f} s of audio — the shortest "
-                               f"segment H3 trains on is {min_dur:.1f} s.")
+                               f"{'section ACE-Step' if music else 'segment H3'} trains on "
+                               f"here is {min_dur:.1f} s.")
         self.audio_src = path
         self.audio_dur = dur
         self.audio_from_video = not is_audio_file(path)
@@ -3160,7 +3434,14 @@ class Gizmo:
                  + ("  (a video's audio track)" if self.audio_from_video else ""),
             fg=COLORS["text_primary"])
         if not self.audio_out_var.get():
-            self.audio_out_var.set(os.path.join(os.path.dirname(path), "fizgig_voice"))
+            self.audio_out_var.set(os.path.join(os.path.dirname(path),
+                                                "fizgig_music" if music else "fizgig_voice"))
+        if music:
+            lyrics = self._music_song_lyrics(path)
+            self.music_lyrics.delete("1.0", tk.END)
+            self.music_lyrics.insert("1.0", lyrics)
+            self._music_lyrics_from_song = bool(lyrics)
+            self._music_set_len(MUSIC_MAX_S)
         self._audio_set_enabled(True)
         self._audio_refresh()
         self.audio_status.configure(text="reading the waveform…", fg=COLORS["text_secondary"])
@@ -3344,6 +3625,20 @@ class Gizmo:
         x = max(0, min(event.x, self.AUDIO_WAVE_W))
         t = v0 + x / self.AUDIO_WAVE_W * vd
         edge = getattr(self, "_audio_edge", None)
+        if edge and self._music_mode():
+            # Music has no grid: an edge goes where the hand puts it, within ACE-Step's
+            # 10 s to 4 min and the song's own ends.
+            if edge == "right":
+                self._music_set_len(t - self.audio_pos)
+                self._audio_refresh()
+                self._audio_arm_rescrub()
+            else:
+                end = self._audio_edge_end
+                start = max(0.0, end - MUSIC_MAX_S, min(t, end - MUSIC_MIN_S))
+                self.music_len = end - start
+                self._audio_seek(start)
+                self._music_set_len(end - start)
+            return
         if edge == "right":
             frames = self._nearest_grid_frames(t - self.audio_pos,
                                                self.audio_dur - self.audio_pos)
@@ -3471,6 +3766,8 @@ class Gizmo:
         self._audio_refresh()
 
     def _audio_span(self):
+        if self._music_mode():
+            return self.music_len
         return hop_exact_samples(self.audio_frames_var.get()) / AUDIO_SAMPLE_RATE
 
     def _audio_refresh(self):
@@ -3873,7 +4170,9 @@ class Gizmo:
         return {os.path.basename(j["dst"]) for j in self.audio_queue}
 
     def _audio_refresh_planned_name(self):
-        pass                                    # reserved: the queue card shows names on Add
+        # (the queue card shows names on Add) — the music lyrics warning follows the span
+        if self._music_mode():
+            self._music_refresh_lyrics_note()
 
     def audio_add_to_queue(self):
         if not self.audio_src:
@@ -3881,6 +4180,9 @@ class Gizmo:
         out_dir = self.audio_out_var.get().strip()
         if not out_dir:
             messagebox.showwarning("Gizmo", "Pick a save folder first.")
+            return
+        if self._music_mode():
+            self._music_add_to_queue(out_dir)
             return
         if not self._audio_caption_text():
             # A voice item with no caption is dropped by Fizgig's caption filter — refusing at
@@ -3906,7 +4208,7 @@ class Gizmo:
     def _audio_refresh_queue_box(self):
         self.audio_queue_box.delete(0, tk.END)
         for j in self.audio_queue:
-            secs = hop_exact_samples(j["frames"]) / AUDIO_SAMPLE_RATE
+            secs = j["len"] if "len" in j else hop_exact_samples(j["frames"]) / AUDIO_SAMPLE_RATE
             mark = "✓" if j["done"] else "·"
             cap = j["caption"][:46] + ("…" if len(j["caption"]) > 46 else "")
             self.audio_queue_box.insert(
@@ -3919,6 +4221,14 @@ class Gizmo:
             return
         j = self.audio_queue[sel[0]]
         if j["done"]:
+            return
+        if "len" in j:                          # a music section
+            self.music_lyrics.delete("1.0", tk.END)
+            self.music_lyrics.insert("1.0", j["lyrics"])
+            self._music_lyrics_from_song = False
+            self.audio_pos = j["start"]
+            self._music_set_len(j["len"])
+            self._audio_seek(j["start"])
             return
         self.audio_frames_var.set(j["frames"])
         self.audio_caption.delete("1.0", tk.END)
@@ -3947,11 +4257,74 @@ class Gizmo:
         self.audio_export_btn.configure(state=tk.DISABLED)
         threading.Thread(target=self._audio_export_worker, args=(jobs,), daemon=True).start()
 
+    def _music_add_to_queue(self, out_dir):
+        cap = self._music_caption_text()
+        if not cap:
+            messagebox.showwarning("Gizmo — caption first",
+                                   "Write a trigger word or describe the music before marking "
+                                   "— every section needs its caption .txt to train.")
+            return
+        span = self.music_len
+        if self.audio_pos + span > self.audio_dur + 0.01:
+            messagebox.showwarning("Gizmo", "That section runs past the end of the song.")
+            return
+
+        def secs(var):
+            try:
+                return max(0.0, float(var.get()))
+            except ValueError:
+                return 0.0
+        dst = voice_output_name(self.audio_src, out_dir, self._audio_claimed())
+        lyrics = self.music_lyrics.get("1.0", tk.END).strip()
+        self.audio_queue.append({
+            "src": self.audio_src, "dst": dst, "start": self.audio_pos, "len": span,
+            "caption": cap, "lyrics": lyrics, "done": False,
+            # Fades only where the section cuts into the song.
+            "fade_in": secs(self.music_fade_in_var) if self.audio_pos > 0.05 else 0.0,
+            "fade_out": (secs(self.music_fade_out_var)
+                         if self.audio_pos + span < self.audio_dur - 0.05 else 0.0),
+        })
+        self._audio_refresh_queue_box()
+        self.audio_status.configure(text=f"marked {os.path.basename(dst)}",
+                                    fg=COLORS["text_secondary"])
+
+    def _music_export_one(self, j):
+        """A section as 48 kHz stereo wav, its caption .txt, its lyrics, and the song's
+        bpm/key .json when it has one."""
+        span = j["len"]
+        fades = []
+        if j["fade_in"] > 0:
+            fades.append(f"afade=t=in:st=0:d={min(j['fade_in'], span / 4):.3f}")
+        if j["fade_out"] > 0:
+            d = min(j["fade_out"], span / 4)
+            fades.append(f"afade=t=out:st={span - d:.3f}:d={d:.3f}")
+        p = _run([self.ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
+                  "-ss", f'{j["start"]:.3f}', "-t", f"{span:.3f}", "-i", j["src"], "-vn",
+                  *(["-af", ",".join(fades)] if fades else []),
+                  "-ac", "2", "-ar", str(MUSIC_SAMPLE_RATE), "-c:a", "pcm_s16le", j["dst"]])
+        if p.returncode != 0 or not os.path.exists(j["dst"]):
+            raise RuntimeError((p.stderr or b"").decode("utf-8", "replace")[-200:])
+        stem = os.path.splitext(j["dst"])[0]
+        with open(stem + ".txt", "w", encoding="utf-8") as f:
+            f.write(j["caption"])
+        if j["lyrics"]:
+            with open(stem + ".lyrics.txt", "w", encoding="utf-8") as f:
+                f.write(j["lyrics"] + "\n")
+        meta = os.path.splitext(j["src"])[0] + ".json"
+        if os.path.isfile(meta):
+            shutil.copyfile(meta, stem + ".json")
+
     def _audio_export_worker(self, jobs):
         wrote, failed = 0, []
         for j in jobs:
             try:
                 os.makedirs(os.path.dirname(j["dst"]), exist_ok=True)
+                if "len" in j:
+                    self._music_export_one(j)
+                    j["done"] = True
+                    wrote += 1
+                    self.root.after(0, self._audio_refresh_queue_box)
+                    continue
                 n = hop_exact_samples(j["frames"])
                 # aresample first, then trim BY SAMPLE COUNT at the target rate — the exact
                 # length Fizgig's cache validation demands, no tolerance spent.
@@ -3978,11 +4351,14 @@ class Gizmo:
                 messagebox.showerror("Gizmo — some segments failed", "\n".join(failed[:6]))
             else:
                 self.audio_status.configure(
-                    text=f"wrote {wrote} segment(s) + captions", fg=COLORS["success"])
+                    text=f"wrote {wrote} {'section' if 'len' in jobs[0] else 'segment'}(s) "
+                         f"+ captions", fg=COLORS["success"])
         self.root.after(0, done)
 
     def _audio_pick_output(self):
-        d = filedialog.askdirectory(title="Where should the voice segments go?",
+        d = filedialog.askdirectory(title="Where should the song sections go?"
+                                    if self._music_mode() else
+                                    "Where should the voice segments go?",
                                     initialdir=self.audio_out_var.get() or os.path.expanduser("~"))
         if d:
             self.audio_out_var.set(d)

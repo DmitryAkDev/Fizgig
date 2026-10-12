@@ -12,7 +12,7 @@ import webbrowser
 import glob
 import time
 import socket
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from PIL import Image, ImageTk
 
 # CUDA allocator policy, set before ANYTHING imports torch — the backend is fixed at CUDA init,
@@ -98,6 +98,7 @@ COLORS = {
 
     "success": "#10B981",        # Success states
     "warning": "#F59E0B",        # Warnings
+    "orange": "#F97316",         # Repair Studio's ring round a strength box whose default is not 1
     "error": "#EF4444",          # Errors
 }
 
@@ -441,7 +442,8 @@ _ARCH_ALIASES = {"MiniMax H3 (experimental)": "MiniMax H3",
                  "Qwen Image 2.1 (experimental)": "Qwen Image 2.1",
                  "SDXL (any checkpoint, experimental)": "SDXL (any checkpoint)",
                  "Anima (experimental)": "Anima",
-                 "Z-Image Turbo (experimental)": "Z-Image Turbo"}
+                 "Z-Image Turbo (experimental)": "Z-Image Turbo",
+                 "ACE-Step 1.5 XL (music, experimental)": "ACE-Step 1.5 XL (music)"}
 for _old, _new in _ARCH_ALIASES.items():
     if _new in ARCHITECTURES:           # "Krea 2" is a described family: absent if the families failed to load
         ARCHITECTURES[_old] = ARCHITECTURES[_new]
@@ -2037,8 +2039,7 @@ class LoRATrainerGUI:
     _WORKBENCH_REMEMBER = [
         ("repair_primary_var", "repair_primary"),
         ("repair_donor_var", "repair_donor"),
-        ("repair_primary_scale_var", "repair_primary_scale"),
-        ("repair_donor_scale_var", "repair_donor_scale"),
+        # (the primary / donor strengths are remembered per family: last_used["repair_strengths"])
         ("repair_prompt_var", "repair_prompt"),
         ("repair_seed_var", "repair_seed"),
         ("repair_res_var", "repair_res"),
@@ -2118,7 +2119,8 @@ class LoRATrainerGUI:
         # vs Qwen3-VL), losing it silently would be a real annoyance.
         for _attr, _key in (("caption_model_var", "caption_model"),
                             ("caption_task_var", "caption_task"),
-                            ("caption_max_tokens_var", "caption_max_tokens")):
+                            ("caption_max_tokens_var", "caption_max_tokens"),
+                            ("song_caption_words_var", "song_caption_words")):
             _v = getattr(self, _attr, None)
             if _v is not None:
                 try:
@@ -2577,6 +2579,8 @@ class LoRATrainerGUI:
 
         # Surface style for cards/panels
         style.configure("Surface.TFrame", background=COLORS["bg_surface"])
+        style.configure("Surface.TLabel", background=COLORS["bg_surface"], foreground=COLORS["text_primary"],
+                        font=(FONT_FAMILY, 10))
 
         # Green render-progress bar (Repair Studio) — matches the Start button's green.
         style.configure("Green.Horizontal.TProgressbar",
@@ -3191,10 +3195,13 @@ class LoRATrainerGUI:
             if pref_key and pref_key in self.prefs_vars:
                 self.entries[key] = ttk.Entry(parent, width=40, textvariable=self.prefs_vars[pref_key])
             else:
-                self.entries[key] = ttk.Entry(parent, width=40)
+                # a number box is short and keeps its width: stretched across the row, Learning Rate down to Seed
+                # sat under the hint cards beside them (Peter, 11 Oct)
+                self.entries[key] = ttk.Entry(parent, width=20 if input_type in ("int", "float") else 40)
                 self.entries[key].insert(0, str(self.settings.get(key, "")))
 
-        self.entries[key].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=4)
+        self.entries[key].grid(row=row, column=1, sticky=tk.W if input_type in ("int", "float") else tk.EW,
+                               padx=5, pady=4)
 
         # Create browse button if needed
         browse_btn = None
@@ -3931,6 +3938,16 @@ class LoRATrainerGUI:
         self._lr_hint_btn = ttk.Button(_lh_body, text="", command=self._apply_lr_hint)
         self._lr_hint_btn.pack(anchor=tk.W, padx=12, pady=(6, 9))
         self._lr_hint_count_cache = (None, None, 0)       # (folder, folder mtime, image count)
+        # Long-run hint (Peter, 11 Oct): the family's long_run_hint, beside Max Epochs - a playback tip, no button
+        self._long_hint = tk.Frame(training_content, bg=COLORS["accent"])
+        _lg_body = tk.Frame(self._long_hint, bg=COLORS["accent_subtle"])
+        _lg_body.pack(fill=tk.BOTH, expand=True, padx=(3, 0))
+        self._long_hint_title = tk.Label(_lg_body, text="", font=(FONT_FAMILY, 10, "bold"),
+                                         fg=COLORS["text_primary"], bg=COLORS["accent_subtle"])
+        self._long_hint_title.pack(anchor=tk.W, padx=12, pady=(8, 2))
+        self._long_hint_text = tk.Label(_lg_body, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_explain"],
+                                        bg=COLORS["accent_subtle"], wraplength=480, justify=tk.LEFT)
+        self._long_hint_text.pack(anchor=tk.W, padx=12, pady=(0, 9))
         self.master.after(1500, self._lr_hint_tick)
         self._on_adaptive_lr_toggle()  # sync initial enabled/disabled state
 
@@ -4038,8 +4055,10 @@ class LoRATrainerGUI:
         self._contextlora_desc_label.grid(row=14, column=0, columnspan=2, sticky=tk.W, padx=5)
 
         # Target Megapixels (training resolution) — moved here from Other Options
-        ttk.Label(training_content, text="Target Megapixels:").grid(row=16, column=0, sticky=tk.W, padx=5, pady=(8, 2))
+        self._mp_label = ttk.Label(training_content, text="Target Megapixels:")
+        self._mp_label.grid(row=16, column=0, sticky=tk.W, padx=5, pady=(8, 2))
         mp_frame = ttk.Frame(training_content)
+        self._mp_frame = mp_frame
         mp_frame.grid(row=16, column=1, sticky=tk.W, padx=5, pady=(8, 2))
         self._mp_combo = ttk.Combobox(
             mp_frame, textvariable=self.dataset_megapixels_var,
@@ -4061,6 +4080,7 @@ class LoRATrainerGUI:
         # in the dataset only; rows 18/19 are Network Type's).
         _mp_block = ttk.Frame(training_content)
         _mp_block.grid(row=17, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(0, 4))
+        self._mp_block = _mp_block
         ttk.Label(_mp_block,
                   text="Images are resized to this area. Any aspect ratio, no additional prep needed "
                        "beyond the Image Prep tab. Higher = more detail, more VRAM per step; 4.2 MP "
@@ -4246,9 +4266,7 @@ class LoRATrainerGUI:
         self._family_edit_cb = ttk.Frame(training_content)          # the Kind of training row
         ttk.Label(self._family_edit_cb, text="Kind of training:").pack(side=tk.LEFT, padx=(0, 10))
         self._family_kind_buttons = {}
-        for _k, _lab in (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
-                         ("slider", "Slider (a dial between two looks)"),
-                         ("finetune", "Fine-tune the whole model")):
+        for _k, _lab in self._KIND_LABELS.items():
             self._family_kind_buttons[_k] = ttk.Radiobutton(self._family_edit_cb, text=_lab, value=_k,
                                                             variable=self._family_kind_var,
                                                             command=self._family_kind_chosen)
@@ -4325,6 +4343,7 @@ class LoRATrainerGUI:
         self._family_slider_frame.grid(row=57, column=0, columnspan=2, sticky=tk.W, padx=(26, 5), pady=(2, 4))
         _f = self._family_slider_frame
         _r[0] = 0
+        _src_from = _r[0]
         _block("Where the two ends come from",
                "Photo pairs: two folders of the same shots, one folder for each end of the dial (e.g. the same "
                "person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about "
@@ -4340,6 +4359,8 @@ class LoRATrainerGUI:
         for _k, _lab in (("pairs", "Photo pairs"), ("prompts", "Prompts")):
             ttk.Radiobutton(_src, text=_lab, value=_k, variable=self.entries["FAMILY_SLIDER_SOURCE"],
                             command=self._family_edit_rows).pack(side=tk.LEFT, padx=(0, 14))
+        # the chooser and its explanation: hidden for a family offering one source (description slider_sources)
+        self._family_slider_source_widgets = [w for w in _f.grid_slaves() if int(w.grid_info()["row"]) >= _src_from]
         self._family_slider_pairs = ttk.Frame(_f)
         self._family_slider_pairs.grid(row=_r[0], column=0, sticky=tk.W)
         self._family_slider_prompts = ttk.Frame(_f)
@@ -4410,6 +4431,10 @@ class LoRATrainerGUI:
                  "How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
                  "thing you asked for (a frown can turn into a different, older man).", "2")):
             _lab = _block(_head, _text)
+            # (heading, help) widgets and the shared wording, so a family can say it its own way (slider_prompt_notes)
+            self._family_slider_prompt_rows = getattr(self, "_family_slider_prompt_rows", {})
+            self._family_slider_prompt_rows[_key] = (
+                _f.grid_slaves(row=int(_lab.grid_info()["row"]) - 1, column=0)[0], _lab, _head, _text)
             if _key == "FAMILY_SLIDER_GUIDANCE":
                 self._family_slider_push_hint, self._family_slider_push_text = _lab, _text
             _er = _row()
@@ -4473,6 +4498,7 @@ class LoRATrainerGUI:
         self._family_options_frame_ft = ttk.Frame(_f)
         self._family_options_frame_ft.grid(row=_r[0], column=0, sticky=tk.W)
         _r[0] += 1
+        _reg_from = _r[0]
         _block("Regularisation images (optional)",
                "A folder of ordinary photos of the broader class (men, women, people) with normal detailed captions. "
                "They train at a reduced LR (the multiplier beside the folder) so they hold the model's sense of that "
@@ -4490,6 +4516,8 @@ class LoRATrainerGUI:
             _regr, values=["0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0"], state="normal", width=5)
         self.entries["FAMILY_FT_REG_MULT"].set(str(self.settings.get("FAMILY_FT_REG_MULT", "0.2") or "0.2"))
         self.entries["FAMILY_FT_REG_MULT"].pack(side=tk.LEFT)
+        # the rows above, hidden for a family that declares no regularisation set (description ft_regularisation)
+        self._ft_reg_widgets = [w for w in _f.grid_slaves() if _reg_from <= int(w.grid_info()["row"]) < _r[0]]
         self._family_ft_plan = ttk.Label(_f, text="", foreground=COLORS["text_secondary"], font=HINT_FONT,
                                          justify=tk.LEFT, wraplength=690)
         self._family_ft_plan.grid(row=_r[0], column=0, sticky=tk.W, pady=(6, 2))
@@ -6017,6 +6045,8 @@ class LoRATrainerGUI:
             self.entries["FAMILY_SLIDER_DIR"].delete(0, tk.END)
             self.entries["FAMILY_SLIDER_DIR"].insert(0, path)
 
+    _KIND_LABELS = {"standard": "Standard LoRA", "edit": "Edit (original + edited photo pairs)",
+                    "slider": "Slider (a dial between two looks)", "finetune": "Fine-tune the whole model"}
     _KIND_HINTS = {
         "finetune": "The whole model learns your photos, not a LoRA on top of it. The result is a full model file "
                     "(large), loaded in place of the base. Needs plenty of system memory (the Log says how much).",
@@ -6053,7 +6083,11 @@ class LoRATrainerGUI:
                 kind = "standard"
             if self._family_kind_var.get() != kind:
                 self._family_kind_var.set(kind)
-            self._family_edit_hint.configure(text=self._KIND_HINTS[kind])
+            # a family may word a kind its own way (description kind_notes: ACE-Step's songs, not photos)
+            _kn = {k: (lab, hint) for k, lab, hint in (getattr(desc, "kind_notes", ()) or ())}
+            for _k, _b in self._family_kind_buttons.items():
+                _b.configure(text=(_kn.get(_k, (None,))[0] or self._KIND_LABELS[_k]))
+            self._family_edit_hint.configure(text=(_kn.get(kind, (None, None))[1] or self._KIND_HINTS[kind]))
             slider_on = kind == "slider"
             _idb = tuple(desc.identity_blocks) if desc is not None else ()
             self._set_widget_visible(self._family_fastid, kind == "standard" and bool(_idb))
@@ -6069,6 +6103,17 @@ class LoRATrainerGUI:
                 self._family_slider_push_hint.configure(       # the open family's own start
                     text=f"{self._family_slider_push_text} Start on {desc.slider_guidance:g} "
                          "(values 2 to 9 tested).")
+            _offered = tuple(getattr(desc, "slider_sources", ("pairs", "prompts")) or ("pairs", "prompts"))
+            if self.entries["FAMILY_SLIDER_SOURCE"].get() not in _offered:
+                self.entries["FAMILY_SLIDER_SOURCE"].set(_offered[0])     # the family's only kind (its trace returns here)
+                return
+            for _w in getattr(self, "_family_slider_source_widgets", ()):
+                self._set_widget_visible(_w, len(_offered) > 1)
+            _notes = {k: (h, t) for k, h, t in (getattr(desc, "slider_prompt_notes", ()) or ())}
+            for _k, (_hw, _tw, _h0, _t0) in getattr(self, "_family_slider_prompt_rows", {}).items():
+                _h, _t = _notes.get(_k, (_h0, _t0))
+                _hw.configure(text=_h)
+                _tw.configure(text=_t)
             prompts = self.entries["FAMILY_SLIDER_SOURCE"].get() == "prompts"
             self._set_widget_visible(self._family_slider_pairs, slider_on and not prompts)
             _clips = "clip" in getattr(desc, "media", ())
@@ -6217,6 +6262,8 @@ class LoRATrainerGUI:
                      "prompts": self.sample_prompt_text.get("1.0", tk.END).splitlines(),
                      "reference": (self.sample_ref_image_var.get().strip()
                                    if getattr(self, "sample_ref_image_var", None) else ""),
+                     "strengths": (list(desc.preview_strengths) if desc.preview_strengths and getattr(
+                         self, "sample_strengths_var", None) is not None and self.sample_strengths_var.get() else []),
                      **({"checkpoint": bool(self.use_distilled_samples_var.get()),
                          "checkpoint_cache": self.cache_sample_model_var.get(),
                          "int8": bool(self._get_inference_int8())} if desc.train_preview_checkpoint else {})},
@@ -6422,6 +6469,10 @@ class LoRATrainerGUI:
 
     def update_ui_for_architecture(self):
         """Update UI elements based on selected architecture"""
+        try:
+            self._refresh_song_caption_card()
+        except Exception:
+            pass
         arch = self.architecture_var.get()
         config = ARCHITECTURES.get(arch, ARCHITECTURES["Flux 2 Klein Base 9B"])
 
@@ -7117,6 +7168,14 @@ class LoRATrainerGUI:
         has_adapter = bool(desc is not None and desc.training_adapter)
         for w in (self._family_adapter_cb, self._family_adapter_hint):
             self._set_widget_visible(w, has_adapter)
+        # Target Megapixels sizes pictures: a family that trains no photos or clips (ACE-Step's songs) has no row
+        pictures = desc is None or bool({"photo", "clip"} & set(desc.media))
+        for w in (getattr(self, "_mp_label", None), getattr(self, "_mp_frame", None), getattr(self, "_mp_block", None)):
+            if w is not None:
+                self._set_widget_visible(w, pictures)
+        # the fine-tune card's regularisation set, for a family that declares one
+        for w in getattr(self, "_ft_reg_widgets", ()):
+            self._set_widget_visible(w, desc is None or bool(getattr(desc, "ft_regularisation", True)))
         if has_adapter:
             self._family_adapter_hint.config(text=desc.training_adapter_note)
         has_ema = bool(desc is not None and desc.ema_default)
@@ -7976,6 +8035,7 @@ class LoRATrainerGUI:
                 "can fall between two saves. 1e-4 suits a dataset this size."))
             self._lr_hint_btn.configure(text="Use 1e-4")
         card.grid(row=2, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+        card.lift()
 
     def _apply_lr_hint(self):
         """The hint's one-click change: adaptive Min 1e-4 / Max 2e-4, or a learning rate of 1e-4."""
@@ -7988,11 +8048,41 @@ class LoRATrainerGUI:
             e.insert(0, "1e-4")
         self._refresh_lr_hint()
 
+    def _refresh_long_hint(self):
+        """The family's long-run hint (description long_run_hint) beside Max Epochs: a standard LoRA set to at least
+        its epochs."""
+        card = getattr(self, "_long_hint", None)
+        if card is None:
+            return
+        desc = self._family_desc()
+        hint = getattr(desc, "long_run_hint", ()) if desc is not None else ()
+        show = None
+        if hint and getattr(self, "_family_kind_var", None) is not None and self._family_kind_var.get() == "standard":
+            try:
+                if int(float(self.entries["MAX_TRAIN_EPOCHS"].get())) >= hint[0]:
+                    show = hint
+            except (ValueError, KeyError, tk.TclError):
+                pass
+        if show == getattr(self, "_long_hint_shown", "unset"):
+            return
+        self._long_hint_shown = show
+        if show is None:
+            card.grid_remove()
+            return
+        self._long_hint_title.configure(text=f"💡  Hint: {show[1]}")
+        self._long_hint_text.configure(text=show[2])
+        card.grid(row=7, column=1, rowspan=3, sticky=tk.NE, padx=(12, 8), pady=(4, 6))
+        card.lift()                 # the Max Epochs / Seed boxes stretch across the column and were drawn over it
+
     def _lr_hint_tick(self):
         """Presets, the Start folder, batch size and kind all change the hint, many of them programmatically (a
         Combobox.set fires no event), so it re-checks itself every second; the image count is cached."""
         try:
             self._refresh_lr_hint()
+        except Exception:
+            pass
+        try:
+            self._refresh_long_hint()
         except Exception:
             pass
         self.master.after(1000, self._lr_hint_tick)
@@ -8526,8 +8616,42 @@ class LoRATrainerGUI:
                  bg=COLORS["bg_surface"], wraplength=680, justify=tk.LEFT).grid(
             row=7, column=0, columnspan=3, sticky=tk.W, pady=(0, 2))
 
+        # Song captions (description song_captions): one shared caption for every song, no AI
+        song_card = self._start_section_card(
+            outer, "Caption Every Song",
+            "Every song gets the same caption: the trigger word above, then the words that describe "
+            "the whole set - genre, instruments, mood, vocals. Use the same words in your sample prompts. "
+            "The Overwrite tick above decides whether songs that already have a caption are rewritten.")
+        self._song_caption_outer = song_card.master.master
+        _srow = tk.Frame(song_card, bg=COLORS["bg_surface"])
+        _srow.pack(fill=tk.X)
+        tk.Label(_srow, text="Common words:", font=(FONT_FAMILY, 10), fg=COLORS["text_primary"],
+                 bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(0, 10))
+        self.song_caption_words_var = tk.StringVar(value=self.last_used.get("song_caption_words", ""))
+        self.song_caption_words_var.trace_add("write", lambda *_: self._save_last_used_paths())
+        _words = ttk.Entry(_srow, textvariable=self.song_caption_words_var, width=60)
+        _words.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # the greyed example while the box is empty (never saved)
+        self._song_caption_example = tk.Label(_words, text="", font=(FONT_FAMILY, 10),
+                                              fg=COLORS["text_muted"], bg=COLORS["bg_surface"], cursor="xterm")
+        self._song_caption_example.bind("<Button-1>", lambda _e: _words.focus_set())
+
+        def _example(*_):
+            if self.song_caption_words_var.get() or self.master.focus_get() is _words:
+                self._song_caption_example.place_forget()
+            else:
+                self._song_caption_example.place(x=4, rely=0.5, anchor="w")
+        self._song_caption_example_refresh = _example
+        _words.bind("<FocusIn>", _example, add="+")
+        _words.bind("<FocusOut>", _example, add="+")
+        self.song_caption_words_var.trace_add("write", _example)
+        ttk.Button(_srow, text="Caption every song", command=self._caption_every_song).pack(
+            side=tk.LEFT, padx=(10, 0))
+        self.master.after(0, self._refresh_song_caption_card)
+
         # Card 2: Generate Captions
         actions_card = self._start_section_card(outer, "Generate Captions", None)
+        self._caption_actions_outer = actions_card.master.master
         action_row = tk.Frame(actions_card, bg=COLORS["bg_surface"])
         action_row.pack(anchor=tk.W)
         # Kept on self so a running job can grey them out — clicking Caption All twice used to
@@ -8892,7 +9016,14 @@ class LoRATrainerGUI:
         # Audio never enters the grid; count it so the tab explains itself rather than showing
         # fewer items than the folder holds. Wordings per Peter: all-audio vs mixed.
         _n_audio = self._count_training_audio_files()
-        if _n_audio and not total_images:
+        _d = self._family_desc()
+        if _n_audio and getattr(_d, "song_captions", ""):
+            self._caption_audio_banner.config(
+                text=f"🎵 {_n_audio} song(s) in this training set — caption them all at once with Caption "
+                     f"Every Song above, or cut and caption sections in Gizmo's Music tab.")
+            self._caption_audio_banner.pack(anchor=tk.W, pady=(0, 8),
+                                            before=self.caption_grid_frame)
+        elif _n_audio and not total_images:
             self._caption_audio_banner.config(
                 text="🎙 Audio-only training set — captions are written in Gizmo's audio tab.")
             self._caption_audio_banner.pack(anchor=tk.W, pady=(0, 8),
@@ -10424,6 +10555,60 @@ class LoRATrainerGUI:
         if folder:
             self.image_folder_var.set(folder)
 
+    def _refresh_song_caption_card(self):
+        """Show the Caption Every Song card when the family declares song_captions (its example words)."""
+        outer = getattr(self, "_song_caption_outer", None)
+        if outer is None:
+            return
+        d = self._family_desc()
+        example = getattr(d, "song_captions", "") if d is not None else ""
+        if example:
+            self._song_caption_example.configure(text=example)
+            if not outer.winfo_manager():
+                outer.pack(fill=tk.X, padx=36, pady=(0, 16), before=self._caption_actions_outer)
+            self.master.after(50, self._song_caption_example_refresh)
+        else:
+            outer.pack_forget()
+
+    def _caption_every_song(self):
+        """Write "<trigger>, <common words>" beside every song in the training folder - only songs without a
+        caption unless Overwrite is ticked."""
+        folder = self.image_folder_var.get()
+        if not folder or not os.path.isdir(folder):
+            messagebox.showerror("Caption Every Song", "Pick the song folder on the Start tab first.")
+            return
+        trigger = self.caption_trigger_var.get().strip().rstrip(",")
+        words = " ".join(self.song_caption_words_var.get().split()).strip(", ")
+        caption = ", ".join(p for p in (trigger, words) if p)
+        if not caption:
+            messagebox.showerror("Caption Every Song", "Enter a trigger word or the common words first.")
+            return
+        overwrite = self.overwrite_captions_var.get()
+        songs = sorted(f for f in os.listdir(folder)
+                       if os.path.splitext(f)[1].lower() in self.TRAINING_AUDIO_EXTENSIONS
+                       and os.path.isfile(os.path.join(folder, f)))
+        if not songs:
+            messagebox.showinfo("Caption Every Song", "No songs (wav, mp3, flac, m4a) in the training folder.")
+            return
+        self.caption_log.configure(state="normal")
+        self.caption_log.delete(1.0, tk.END)
+        written = skipped = 0
+        for name in songs:
+            path = os.path.join(folder, os.path.splitext(name)[0] + ".txt")
+            if os.path.exists(path) and not overwrite:
+                self.caption_log.insert(tk.END, f"⊘ Skipped (has a caption): {name}\n")
+                skipped += 1
+                continue
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(caption)
+                self.caption_log.insert(tk.END, f"✓ {os.path.basename(path)}: {caption}\n")
+                written += 1
+            except OSError as e:
+                self.caption_log.insert(tk.END, f"✗ {name}: {e}\n")
+        self.caption_log.insert(tk.END, f"\n{written} written, {skipped} skipped\n")
+        self.caption_log.see(tk.END)
+
     def generate_captions(self):
         """Generate caption files for all images in the selected folder"""
         folder = self.image_folder_var.get()
@@ -10620,6 +10805,7 @@ class LoRATrainerGUI:
             "Output size, steps and seed apply to all of them.",
         )
         prompt_card.grid_columnconfigure(1, weight=1)
+        self._samples_prompt_card = prompt_card       # a family's own Samples rows (_samples_family_option_rows)
 
         ttk.Label(prompt_card, text="Prompt:").grid(row=0, column=0, sticky=tk.NW, padx=(0, 10), pady=4)
         self.sample_prompt_text = tk.Text(
@@ -10828,6 +11014,26 @@ class LoRATrainerGUI:
         ttk.Checkbutton(
             freq_card, text="Sample at Start", variable=self.sample_at_first_var
         ).grid(row=2, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
+
+        # the family's preview_strengths: each preview again at a lower LoRA strength (ACE-Step: 0.5, how a long run is
+        # played). Kept per family in last_used["sample_strengths"]; shown only for a family that declares it
+        self.sample_strengths_var = tk.BooleanVar(value=True)
+        self.sample_strengths_check = ttk.Checkbutton(freq_card, text="", variable=self.sample_strengths_var)
+        self.sample_strengths_check.grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(8, 0))
+        self.sample_strengths_note = ttk.Label(
+            freq_card, text="Each preview is rendered again at that strength (same prompt and seed), beside the "
+                            "full-strength one: how the LoRA sounds the way you'll use it.",
+            font=HINT_FONT, foreground=COLORS["text_explain"], wraplength=640, justify=tk.LEFT)
+        self.sample_strengths_note.grid(row=7, column=0, columnspan=3, sticky=tk.W, pady=(0, 4))
+        self.sample_strengths_check.grid_remove()
+        self.sample_strengths_note.grid_remove()
+
+        def _keep_strengths(*_):
+            _f = getattr(self, "_sample_strengths_family", None)
+            if _f:
+                self.last_used.setdefault("sample_strengths", {})[_f] = bool(self.sample_strengths_var.get())
+                self._save_last_used_paths()
+        self.sample_strengths_var.trace_add("write", _keep_strengths)
 
         self.use_distilled_samples_var = tk.BooleanVar(value=True)
         self.use_distilled_check = ttk.Checkbutton(
@@ -11245,7 +11451,7 @@ class LoRATrainerGUI:
                         if _a and not getattr(self, "_sample_settings_loading", False):
                             self.last_used.setdefault("sample_settings", {})[_a] = self._sample_box_values()
                     for _v in (self.sample_cfg_scale_var, self.sample_flow_shift_var, self.sample_steps_var,
-                               self.sample_width_var, self.sample_height_var):
+                               self.sample_width_var, self.sample_height_var, self.sample_every_n_epochs_var):
                         _v.trace_add("write", _keep_settings)
                     self._sample_settings_traced = True
                 self._sample_defaults_arch = arch
@@ -11297,6 +11503,11 @@ class LoRATrainerGUI:
             # A described family greys / relabels the sample controls itself (RefMod has no samples).
             if self._family_desc() is not None:
                 self._generic_samples_ui(self._family_desc())
+            elif hasattr(self, "sample_strengths_check"):
+                self._sample_strengths_family = None
+                self.sample_strengths_check.grid_remove()
+                self.sample_strengths_note.grid_remove()
+            self._samples_family_option_rows(self._family_desc())
             # ...then let MiniMax override the wording that is still Klein's. Runs AFTER, so the
             # Klein path above is untouched.
             self._apply_samples_minimax(bool(config.get("is_minimax")))
@@ -11464,10 +11675,63 @@ class LoRATrainerGUI:
         else:
             self._show_turbo_strength(desc)
 
+    def _samples_family_option_rows(self, desc):
+        """The Samples tab's rows for a family's own sample options (description.options, tab "samples", e.g.
+        ACE-Step's song length), in the Sample length slot. An option tied to an old Samples control (H3's
+        SAMPLE_FRAMES) uses that control instead. Kept per option key in last_used["sample_options"], so per family."""
+        card = getattr(self, "_samples_prompt_card", None)
+        if card is None:
+            return
+        for w in getattr(self, "_samples_family_opt_widgets", ()):
+            w.destroy()
+        self._samples_family_opt_widgets = []
+        kept = self.last_used.setdefault("sample_options", {})
+        r = 8
+        for opt in [o for o in (desc.options if desc is not None else ())
+                    if o.tab == "samples" and not o.setting and o.kind == "choice"]:
+            labels = opt.choice_labels()
+            val = kept.get(opt.key)
+            val = val if val in labels else opt.pick(opt.default)
+            self.settings[opt.key] = val
+            lab = ttk.Label(card, text=f"{opt.label}:")
+            lab.grid(row=r, column=0, sticky=tk.W, padx=(0, 10), pady=4)
+            var = tk.StringVar(value=val)
+            box = ttk.Combobox(card, textvariable=var, state="readonly", values=labels,
+                               width=max(24, max(len(x) for x in labels) + 2))
+            box.grid(row=r, column=1, columnspan=2, sticky=tk.W, pady=4)
+            self._samples_family_opt_widgets += [lab, box]
+            if opt.hint:
+                h = tk.Label(card, text=opt.hint, font=(FONT_FAMILY, 9, "italic"), fg=COLORS["text_explain"],
+                             bg=COLORS["bg_surface"], wraplength=560, justify=tk.LEFT)
+                h.grid(row=r + 1, column=1, columnspan=2, sticky=tk.W, pady=(0, 4))
+                self._samples_family_opt_widgets.append(h)
+
+            def _store(*_a, o=opt, v=var):
+                self._family_option_store(o, v.get())
+                self.last_used.setdefault("sample_options", {})[o.key] = v.get()
+                self._save_last_used_paths()
+            var.trace_add("write", _store)
+            box._fizgig_var = var                 # the var lives as long as its box
+            r += 2
+
     def _generic_samples_ui(self, desc):
         """Standard layer: the Samples tab for a described family. Previews render on the live training model at
         the family's settings, so Klein's sample-model choices don't apply."""
         muted = COLORS["text_muted"]
+        if hasattr(self, "sample_strengths_check"):
+            if desc.preview_strengths:
+                self.sample_strengths_check.configure(
+                    text="Also preview at strength " + ", ".join(f"{s:g}" for s in desc.preview_strengths))
+                if getattr(self, "_sample_strengths_family", None) != desc.key:
+                    self._sample_strengths_family = None          # a load, not an edit: nothing to remember
+                    self.sample_strengths_var.set(bool(self.last_used.get("sample_strengths", {}).get(desc.key, True)))
+                    self._sample_strengths_family = desc.key
+                self.sample_strengths_check.grid()
+                self.sample_strengths_note.grid()
+            else:
+                self._sample_strengths_family = None
+                self.sample_strengths_check.grid_remove()
+                self.sample_strengths_note.grid_remove()
         if hasattr(self, "use_distilled_check"):
             if desc.train_preview_checkpoint:       # Klein's Distilled, Qwen's Turbo: the family's own tick
                 # live only when its file is set: without it (an update before the download) samples stay as they were
@@ -11577,7 +11841,7 @@ class LoRATrainerGUI:
         """The Samples tab's per-family boxes (CFG, flow shift, steps, size) as last_used["sample_settings"] keeps them."""
         return {"cfg": self.sample_cfg_scale_var.get(), "shift": self.sample_flow_shift_var.get(),
                 "steps": self.sample_steps_var.get(), "w": self.sample_width_var.get(),
-                "h": self.sample_height_var.get()}
+                "h": self.sample_height_var.get(), "every": self.sample_every_n_epochs_var.get()}
 
     def _apply_sample_defaults(self, arch, config, stash):
         """Fill the per-family boxes: the family's kept values (stash), else its defaults."""
@@ -11585,7 +11849,8 @@ class LoRATrainerGUI:
                                (self.sample_flow_shift_var, "shift", "sample_flow_shift_default"),
                                (self.sample_steps_var, "steps", "sample_steps_default"),
                                (self.sample_width_var, "w", "sample_width_default"),
-                               (self.sample_height_var, "h", "sample_height_default")):
+                               (self.sample_height_var, "h", "sample_height_default"),
+                               (self.sample_every_n_epochs_var, "every", "sample_every_default")):
             v = (stash or {}).get(key)
             if v in (None, "") and config.get(dkey) is not None:
                 v = str(config[dkey])
@@ -11673,11 +11938,60 @@ class LoRATrainerGUI:
                 handler_self.end_headers()
                 handler_self.wfile.write(body)
 
+            # Byte ranges (Peter, 11 Oct: songs could not be dragged along): a browser seeks a song or clip by asking
+            # for "Range: bytes=N-", and the stock handler always sent the whole file from the start, so the player
+            # could only play from the top. A range is answered with 206 and just those bytes.
+            def send_head(handler_self):
+                handler_self._range = None
+                rng = handler_self.headers.get("Range", "")
+                path = handler_self.translate_path(handler_self.path)
+                m = re.match(r"bytes=(\d*)-(\d*)$", rng.strip()) if rng else None
+                if not m or not os.path.isfile(path) or not (m.group(1) or m.group(2)):
+                    return super().send_head()
+                size = os.path.getsize(path)
+                if m.group(1):
+                    start = int(m.group(1))
+                    end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+                else:                                   # "bytes=-N": the last N bytes
+                    start, end = max(0, size - int(m.group(2))), size - 1
+                if start >= size or start > end:
+                    handler_self.send_response(416)
+                    handler_self.send_header("Content-Range", f"bytes */{size}")
+                    handler_self.end_headers()
+                    return None
+                f = open(path, "rb")
+                f.seek(start)
+                handler_self._range = end - start + 1
+                handler_self.send_response(206)
+                handler_self.send_header("Content-Type", handler_self.guess_type(path))
+                handler_self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+                handler_self.send_header("Content-Length", str(end - start + 1))
+                handler_self.end_headers()
+                return f
+
+            def copyfile(handler_self, source, outputfile):
+                left = getattr(handler_self, "_range", None)
+                if left is None:
+                    return super().copyfile(source, outputfile)
+                while left > 0:
+                    chunk = source.read(min(left, 1 << 16))
+                    if not chunk:
+                        break
+                    outputfile.write(chunk)
+                    left -= len(chunk)
+
+            def end_headers(handler_self):
+                handler_self.send_header("Accept-Ranges", "bytes")    # tells the player it may seek
+                super().end_headers()
+
             def log_message(handler_self, format, *args):
                 pass  # Suppress logging
 
         try:
-            self.gallery_server = HTTPServer(('127.0.0.1', self.gallery_server_port), SamplesHandler)
+            # one thread per request: a paused song leaves its download half-read, and a one-at-a-time server then
+            # waited on it - every other song, picture and refresh hung until the page was closed (Peter, 11 Oct)
+            self.gallery_server = ThreadingHTTPServer(('127.0.0.1', self.gallery_server_port), SamplesHandler)
+            self.gallery_server.daemon_threads = True
 
             # Run server in background thread
             def serve_forever():
@@ -11777,8 +12091,12 @@ class LoRATrainerGUI:
         .badge { position: absolute; top: 10px; left: 10px; padding: 6px 12px; border-radius: 4px; font-weight: bold; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
         .epoch-badge { background-color: #27AE60; color: white; }
         .clip-badge { background-color: #8E44AD; color: white; right: 8px; left: auto; }
+        .strength-badge { background-color: #D68910; color: white; top: 52px; }
         /* below the clip badge with clear air — the two overlapped at 34px (Peter) */
         .sound-badge { background-color: #16A085; color: white; right: 8px; left: auto; top: 40px; }
+        /* a sound-only sample (music): its player sits on the tile, so epochs compare by ear without opening each */
+        .tile-audio { width: 100%; height: 32px; margin-top: 8px; }
+        .audio-item img { height: 140px; }
         #lightbox-vid { display: none; max-width: 90vw; max-height: 72vh; border-radius: 4px; }
         #lb-scrub-wrap { display: none; width: min(80vw, 640px); margin-top: 10px; text-align: center; }
         #lb-scrub-wrap.active { display: block; }
@@ -11874,7 +12192,7 @@ class LoRATrainerGUI:
                 <option value="30">30 sec</option>
                 <option value="0">Off</option>
             </select></label>
-            <button onclick="loadImages()">Refresh Now</button>
+            <button onclick="loadImages(true)">Refresh Now</button>
             <button onclick="openBaselinePicker()">🎯 Likeness scoring…</button>
             <button onclick="openRunViz()">🎞 Training Run Visualiser</button>
             <a id="final-lora-btn" class="final-lora-btn" href="#" download style="display:none">⬇ Download Final LoRA</a>
@@ -12015,23 +12333,52 @@ class LoRATrainerGUI:
             // Seed segment is OPTIONAL: samples generated with a random/unspecified seed are named
             // without a trailing _<seed> (the trainer omits it when seed is None). Requiring it made
             // those files fall back to epoch 0 / no timestamp — breaking order + epoch labels.
-            const match = filename.match(/^(.+)_e(\\d{6})_(\\d{2})_(\\d{14})(?:_(\\d+))?\\.png$/i);
+            // An optional _s<strength x100> after the seed: the same preview at a lower LoRA strength (_s050 = 0.5).
+            const match = filename.match(/^(.+)_e(\\d{6})_(\\d{2})_(\\d{14})(?:_(\\d+))?(?:_s(\\d{3}))?\\.png$/i);
             if (match) {
                 const ts = match[4];
+                const strength = match[6] ? parseInt(match[6]) / 100 : 1;
                 return {
                     filename,
                     loraName: match[1],
                     epoch: parseInt(match[2]),
                     idx: parseInt(match[3]),
+                    strength,
+                    slot: strength === 1 ? String(parseInt(match[3])) : `${parseInt(match[3])} × ${strength}`,
                     timestamp: ts,
                     seed: match[5] || '',
                     time: `${ts.slice(8,10)}:${ts.slice(10,12)}:${ts.slice(12,14)}`
                 };
             }
-            return { filename, loraName: 'Unknown', epoch: 0, idx: 0, timestamp: '', seed: '', time: '' };
+            return { filename, loraName: 'Unknown', epoch: 0, idx: 0, strength: 1, slot: '0', timestamp: '', seed: '', time: '' };
         }
 
-        async function loadImages() {
+        // The auto-refresh rebuilt every card each tick, even with nothing new: a song or clip playing was cut off,
+        // and a click landing mid-rebuild hit a player that no longer existed (Peter, 11 Oct). Now the cards are
+        // rebuilt only when something on them changed, and never while anything plays - a pause or the end of the
+        // song lets a waiting rebuild through.
+        let lastGallerySig = '';
+        let galleryRenderWaiting = false;
+        function galleryMediaPlaying() {
+            return [...document.querySelectorAll('#gallery audio, #gallery video')].some(m => !m.paused && !m.ended);
+        }
+        function renderIfChanged(force) {
+            const scores = (likeness && likeness.scores) || {};
+            const sig = JSON.stringify(images.map(im => [im.filename, im.lora || '', im.sound || '', im.video || '',
+                                                         im.clip ? im.clip.length : 0, scores[im.filename] ?? '']));
+            if (!force && sig === lastGallerySig) return;
+            // only a song or clip actually PLAYING holds the rebuild back; Refresh Now always rebuilds
+            if (!force && galleryMediaPlaying()) { galleryRenderWaiting = true; return; }
+            galleryRenderWaiting = false;
+            lastGallerySig = sig;
+            renderGallery();
+        }
+        // a pause (or the end of the song) lets the page catch up at once: a fresh look for new previews
+        ['pause', 'ended'].forEach(ev => document.addEventListener(ev, () => {
+            setTimeout(() => { if (!galleryMediaPlaying()) loadImages(); }, 300);
+        }, true));
+
+        async function loadImages(force) {
             document.getElementById('status').textContent = 'Loading...';
 
             // Try fetch first (works with HTTP server), fallback to embedded
@@ -12071,7 +12418,7 @@ class LoRATrainerGUI:
                         if (vj.ok) { const vm = await vj.json(); images.forEach(im => { if (vm[im.filename]) im.video = vm[im.filename]; }); }
                     } catch (e) {}
                     await loadLikeness();
-                    renderGallery();
+                    renderIfChanged(force === true);
                     renderLikenessChart();
                     document.getElementById('stats').textContent = `${images.length} image${images.length !== 1 ? 's' : ''}`;
                     document.getElementById('status').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
@@ -12120,10 +12467,11 @@ class LoRATrainerGUI:
             }
 
             gallery.innerHTML = sorted.map(img => `
-                <div class="gallery-item" onclick="openLightbox('${img.filename}')">
+                <div class="gallery-item${img.sound && !img.video && !img.clip ? ' audio-item' : ''}" onclick="openLightbox('${img.filename}')">
                     <div class="image-container">
                         <img src="${img.filename}" alt="${img.filename}" loading="lazy">
                         <span class="badge epoch-badge">Epoch ${img.epoch}</span>
+                        ${img.strength !== 1 ? `<span class="badge strength-badge">× ${img.strength}</span>` : ''}
                         ${likBadge(img)}
                         ${img.video ? `<span class="badge clip-badge">🎬 video</span>` : ''}
                         ${!img.video && img.clip ? `<span class="badge clip-badge">🎞 scrub</span>` : ''}
@@ -12135,6 +12483,7 @@ class LoRATrainerGUI:
                             <span class="meta-item seed">Seed: ${img.seed || '—'}</span>
                             <span class="meta-item time">${img.time}</span>
                         </div>
+                        ${img.sound && !img.video && !img.clip ? `<audio class="tile-audio" controls preload="none" src="${img.sound}" onclick="event.stopPropagation()"></audio>` : ''}
                         ${img.lora ? `<a class="lora-download" href="${img.lora}" download onclick="event.stopPropagation()">⬇ Download LoRA (epoch ${img.epoch})</a>` : ''}
                     </div>
                 </div>`).join('');
@@ -12315,7 +12664,7 @@ class LoRATrainerGUI:
         function openRunViz() {
             const runImgs = rvCurrentRunImages();
             if (!runImgs.length) { alert('No samples yet — start a run with previews enabled.'); return; }
-            const slots = [...new Set(runImgs.map(im => im.idx))].sort((a, b) => a - b);
+            const slots = [...new Set(runImgs.map(im => im.slot))].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
             const sel = document.getElementById('rv-slot');
             const keep = sel.value;
             sel.innerHTML = slots.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -12326,10 +12675,10 @@ class LoRATrainerGUI:
         }
 
         function rvBuild() {
-            const slot = parseInt(document.getElementById('rv-slot').value || '0');
+            const slot = document.getElementById('rv-slot').value || '0';
             const byEpoch = {};
             rvCurrentRunImages().forEach(im => {
-                if (im.idx !== slot) return;
+                if (im.slot !== slot) return;
                 // Same epoch rendered twice (e.g. after a resume) -> keep the newest.
                 if (!byEpoch[im.epoch] || im.timestamp > byEpoch[im.epoch].timestamp) byEpoch[im.epoch] = im;
             });
@@ -12563,6 +12912,10 @@ class LoRATrainerGUI:
             showLightbox(images[currentLightboxIndex]);
         }
 
+        // one sound at a time: starting a tile's (or the lightbox's) player pauses the others
+        document.addEventListener('play', (e) => {
+            document.querySelectorAll('audio, video').forEach(a => { if (a !== e.target) a.pause(); });
+        }, true);
         document.addEventListener('keydown', (e) => {
             // Arrows on the clip scrub slider step the slider natively; without this guard the
             // same keydown bubbles here and ALSO jumps to the next image — two actions per key.
@@ -17116,6 +17469,9 @@ class LoRATrainerGUI:
         in_row = self._add_pref_row(in_card, in_row, "Training images:", "input_dataset_dir",
                                     "Default folder the Start tab's Browse opens in", is_dir=True)
 
+        if not _running_on_pod():
+            self._build_mic_card(outer)
+
         self._add_runpod_card(outer)
 
 
@@ -17140,6 +17496,81 @@ class LoRATrainerGUI:
     RUNPOD_DEPLOY_URL = ("https://console.runpod.io/deploy"
                          "?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um")
     RUNPOD_REFERRAL = "vkb387ep"
+
+    def _build_mic_card(self, outer):
+        """The microphone Repair Studio's 🎙 Record buttons use. It is Gizmo's setting (gizmo_settings.json), so
+        changing it here or in Gizmo's ⚙ settings changes both."""
+        card = self._start_section_card(
+            outer, "Microphone",
+            "The microphone Repair Studio's 🎙 Record buttons use (ACE-Step's source song and Sound like "
+            "reference). It is the same setting as Gizmo's ⚙ settings: change it in either and both follow.",
+        )
+        card.columnconfigure(1, weight=1)
+        ttk.Label(card, text="Microphone:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10), pady=4)
+        self._mic_var = tk.StringVar()
+        row = tk.Frame(card, bg=COLORS["bg_surface"])
+        row.grid(row=0, column=1, sticky=tk.W, pady=4)
+        combo = ttk.Combobox(row, textvariable=self._mic_var, width=48, state="readonly")
+        combo.pack(side=tk.LEFT)
+        scan_btn = ttk.Button(row, text="Scan")
+        scan_btn.pack(side=tk.LEFT, padx=(8, 0))
+        note = tk.Label(card, text="", font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"])
+        note.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
+        def _saved():
+            try:
+                import gizmo as _gz
+                return (_gz.load_settings() or {}).get("microphone", "")
+            except Exception:
+                return ""
+
+        def _show_saved(*_):
+            cur = _saved()
+            self._mic_var.set(cur)
+            if cur and cur not in combo.cget("values"):
+                combo.configure(values=[cur, *combo.cget("values")])
+            note.configure(text="" if cur else "None picked: recording uses the first microphone found. "
+                                               "Press Scan to choose one.")
+
+        def _pick(*_):
+            dev = self._mic_var.get().strip()
+            try:
+                import gizmo as _gz
+                st = _gz.load_settings()
+                st["microphone"] = dev
+                _gz.save_settings(st)
+            except Exception as e:
+                note.configure(text=f"Could not save: {e}")
+                return
+            note.configure(text="")
+
+        def _scan():
+            scan_btn.configure(state=tk.DISABLED, text="Scanning…")
+
+            def worker():
+                try:
+                    import gizmo as _gz
+                    from fizgig.families.clips import ffmpeg
+                    devices = _gz.list_capture_devices(ffmpeg())
+                except Exception:
+                    devices = []
+
+                def done():
+                    scan_btn.configure(state=tk.NORMAL, text="Scan")
+                    combo.configure(values=devices)
+                    if not devices:
+                        note.configure(text="No microphones found.")
+                        return
+                    _show_saved()
+                    if not self._mic_var.get():
+                        note.configure(text=f"{len(devices)} found: pick one.")
+                self.master.after(0, done)
+            threading.Thread(target=worker, daemon=True).start()
+
+        scan_btn.configure(command=_scan)
+        combo.bind("<<ComboboxSelected>>", _pick)
+        card.bind("<Map>", _show_saved)          # picks up a change made in Gizmo meanwhile
+        _show_saved()
 
     def _runpod_deploy_url(self) -> str:
         u = self.RUNPOD_DEPLOY_URL
@@ -18299,6 +18730,12 @@ class LoRATrainerGUI:
         # mousewheel hand-off is handled by <Enter>/<Leave> bind_all swapping
         # on each scrollable canvas independently.
         frame = self._build_repair_outer_scroll(self.repair_studio_tab)
+        # Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z): the block sliders' undo history (_repair_undo)
+        self._repair_undo_stack, self._repair_redo_stack = [], []
+        self._repair_undo_committed = None
+        self._repair_undo_after = None
+        for seq, redo in (("<Control-z>", False), ("<Control-y>", True), ("<Control-Z>", True)):
+            self.master.bind_all(seq, lambda e, r=redo: self._repair_undo_key(e, r), add="+")
 
         # Bg_deep container — all cards pack into this.
         outer = tk.Frame(frame, bg=COLORS["bg_deep"])
@@ -18342,6 +18779,8 @@ class LoRATrainerGUI:
         )
         setup_card.columnconfigure(1, weight=1)
         self._build_repair_top_controls(setup_card)
+        self._repair_setup_card = setup_card
+        self._surface_children(setup_card)
 
         # Profile-match info panel (populated when a matching Profiler sidecar
         # exists for the primary's content hash). Packs directly into outer so
@@ -18406,6 +18845,8 @@ class LoRATrainerGUI:
                  "Tick every block's primary enable (strengths kept)."),
                 (self._repair_bulk_row, "Invert", lambda: self._repair_bulk_primary("invert"),
                  "Flip every block's primary enable: on becomes off, off becomes on."),
+                (self._repair_bulk_row, "\U0001f3b2 I'm feeling lucky", self._repair_feeling_lucky,
+                 "A random slider mix between Min and Max; Ctrl+Z goes back to the mix before."),
                 (self._repair_bulk_h3, "Alternate", lambda: self._repair_bulk_primary("alternate"),
                  "Block 0 on, 1 off, 2 on ... through 49 (even blocks on, odd off); "
                  "refiners untouched. Invert for the other half."),
@@ -18414,6 +18855,28 @@ class LoRATrainerGUI:
             _b = ttk.Button(_parent, text=_txt, command=_cmd, width=max(9, len(_txt) + 1))
             _b.pack(side=tk.LEFT, padx=(0, 6))
             ToolTip(_b, _tip + " Primary rows only; one render for the lot.")
+            if _cmd == self._repair_feeling_lucky:
+                # the roll's bounds, right beside the button (remembered per family)
+                _lb = tk.Frame(self._repair_bulk_row, bg=COLORS["bg_surface"])
+                _lb.pack(side=tk.LEFT, padx=(0, 10))
+                self.repair_lucky_min_var = tk.StringVar(value=str(self._LUCKY_BOUNDS[0]))
+                self.repair_lucky_max_var = tk.StringVar(value=str(self._LUCKY_BOUNDS[1]))
+                for _t, _v in (("Min", self.repair_lucky_min_var), ("Max", self.repair_lucky_max_var)):
+                    tk.Label(_lb, text=_t, bg=COLORS["bg_surface"], fg=COLORS["text_secondary"],
+                             font=(FONT_FAMILY, 9)).pack(side=tk.LEFT, padx=(0, 3))
+                    # a plain themed Entry: ttk.Spinbox has no dark style here (its text vanishes unfocused)
+                    _sp = ttk.Entry(_lb, textvariable=_v, width=5)
+                    _sp.pack(side=tk.LEFT, padx=(0, 6))
+                    _sp.bind("<FocusOut>", lambda e: self._repair_lucky_bounds_changed())
+                    _sp.bind("<Return>", lambda e: self._repair_lucky_bounds_changed())
+                self.repair_lucky_hold_var = tk.BooleanVar(value=True)
+                self._repair_lucky_hold_chk = ttk.Checkbutton(_lb, text="Hold structure + tidy-up",
+                                                              variable=self.repair_lucky_hold_var,
+                                                              style="Surface.TCheckbutton")
+                self._repair_lucky_hold_chk.pack(side=tk.LEFT, padx=(4, 0))
+                ToolTip(_lb, "A lucky roll gives every block a strength anywhere between Min and Max, evenly (a "
+                             "negative Min allows inverted blocks). Hold (shown for a model whose block map marks them) keeps "
+                             "its structure and tidy-up bands near 1; untick it to roll every block across Min-Max.")
         # The block library's bank chips (H3 only, shown with the bulk row): one per bank of
         # five blocks — ● built (hover for the thumb, click to restore that state and see
         # it), ○ still to build.
@@ -18438,6 +18901,20 @@ class LoRATrainerGUI:
         self._build_repair_slider_panel(_host)
         self._repair_sliders_container = sliders_card.master.master
 
+        # Card 4b: Presets - slider presets, under the sliders they set
+        presets_card = self._start_section_card(outer, "Presets", None)
+        presets_card.columnconfigure(1, weight=1)
+        ttk.Label(presets_card, text="Preset:", style="Surface.TLabel").grid(row=0, column=0, sticky=tk.W,
+                                                                           padx=(0, 8), pady=2)
+        self.repair_preset_var = tk.StringVar()
+        self.repair_preset_combo = ttk.Combobox(presets_card, textvariable=self.repair_preset_var,
+                                                values=self._repair_preset_list(), state="readonly")
+        self.repair_preset_combo.grid(row=0, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_preset_combo.bind("<<ComboboxSelected>>",
+                                      lambda e: self._load_repair_preset(self.repair_preset_var.get()))
+        ttk.Button(presets_card, text="Save Preset…", command=self._save_repair_preset).grid(
+            row=0, column=2, sticky=tk.W, padx=(8, 0), pady=2)
+
         # Card 5: Actions
         actions_card = self._start_section_card(outer, "Actions", None)
         action_row = tk.Frame(actions_card, bg=COLORS["bg_surface"])
@@ -18448,11 +18925,16 @@ class LoRATrainerGUI:
                    command=self._reset_repair_sliders).pack(side=tk.LEFT, padx=(0, 12))
         ttk.Button(action_row, text="Reset Session (unload models)",
                    command=self._reset_repair_session).pack(side=tk.LEFT)
-        tk.Button(action_row, text="Explore this in LoRA the Explorer \u2192",
+        # only for a family LoRA the Explorer offers (description workbench) - not ACE-Step
+        self._repair_explore_btn = tk.Button(action_row, text="Explore this in LoRA the Explorer \u2192",
                   font=(FONT_FAMILY, 10, "bold"),
                   fg="#FFFFFF", bg="#2E8B57", activeforeground="#FFFFFF", activebackground="#256F46",
                   relief="flat", bd=0, padx=16, pady=6, cursor="hand2",
-                  command=self._repair_explore_in_explorer).pack(side=tk.RIGHT)
+                  command=self._repair_explore_in_explorer)
+        self._repair_explore_btn.pack(side=tk.RIGHT)
+        ToolTip(self._repair_explore_btn, "Sends this LoRA and your sliders to LoRA the Explorer. Using a Mix (epochs "
+                                          "or LoRA mix) or the donor's epoch blend? Save Repaired LoRA first to bake "
+                                          "it into one file, then load that file in the Explorer.")
 
         self._add_youtube_help_button(outer, "repair_studio")
         # Sync DiT-radio labels + Master Controls visibility for the restored family.
@@ -18460,12 +18942,19 @@ class LoRATrainerGUI:
 
     def _repair_cfg_for(self, desc):
         """The CFG Repair Studio renders this family at: the Samples tab's for a family whose workbench follows it,
-        else its default sampling's."""
+        else that of the preview the DiT radio picks - the fast one (Krea 2's CFG-free Turbo checkpoint or speed LoRA,
+        when set) or the default sampling."""
         if desc.workbench_follows_samples:
             try:
                 return float(self._samples_settings_for(desc).get("cfg") or 1.0)
             except (TypeError, ValueError):
                 return 1.0
+        if self.repair_dit_choice_var.get() != "base":
+            _dit, speed, ck = self._workbench_preview_model(desc, True)
+            if ck is not None:
+                return float(ck.cfg)
+            if speed:
+                return float(desc.preview_speed().settings.cfg)
         return float(desc.default_sampling().cfg)
 
     def _refresh_repair_negative_row(self):
@@ -18493,7 +18982,18 @@ class LoRATrainerGUI:
         fam = self.repair_family_var.get()
         desc = self._repair_desc(fam)
         self._refresh_repair_negative_row()
+        self._repair_strength_defaults(desc)
+        _xb = getattr(self, "_repair_explore_btn", None)
+        if _xb is not None:
+            if desc is None or "explorer" in desc.workbench:
+                if not _xb.winfo_manager():
+                    _xb.pack(side=tk.RIGHT)
+            else:
+                _xb.pack_forget()
+        if getattr(self, "_repair_setup_card", None) is not None:      # rows a family builds later
+            self.master.after_idle(lambda: self._surface_children(self._repair_setup_card))
         video = self._wb_video(fam)
+        self._repair_audio_ui(desc)
         krea2 = desc is not None and not desc.category_masters
         if desc is not None and not video:
             # Standard-layer family: previews with its speed LoRA (when set in Preferences) or its default
@@ -18505,7 +19005,17 @@ class LoRATrainerGUI:
                 self.repair_dit_choice_var.set("distilled")
                 self._repair_dit_radio_a.configure(text=self._workbench_samples_note(desc), state="disabled")
                 self._repair_dit_radio_b.pack_forget()
+            elif not (sp or _ck):
+                # no faster preview path (ACE-Step's training model is already Turbo): one line naming what renders,
+                # not a greyed "Default" beside a "slow" choice that loads the same model at the same steps
+                self.repair_dit_choice_var.set("base")
+                self._repair_dit_radio_a.configure(text=f"{ds.name} ({ds.steps}-step)", state="disabled")
+                self._repair_dit_radio_b.pack_forget()
+                self._repair_dit_single = True
             else:
+                if getattr(self, "_repair_dit_single", False):     # back from a one-line family: the fast default
+                    self.repair_dit_choice_var.set("distilled")
+                    self._repair_dit_single = False
                 self._repair_dit_radio_a.configure(
                     text=(f"{_ck[1].name} ({_ck[1].steps}-step, default)" if _ck else
                           f"{sp.name.split(' (')[0]} ({sp.settings.steps}-step, default)" if sp else "Default"),
@@ -18591,6 +19101,9 @@ class LoRATrainerGUI:
         _modes = bool(getattr(_cls, "supports_base_modes", False))
         _banks = bool(getattr(_cls, "supports_banks", False))
         try:
+            if not (desc is not None and getattr(desc, "audio_workbench", False))                     and not self._repair_cmp_btn.winfo_manager():
+                # a song family hides the compare button (below); every other family has it
+                self._repair_cmp_btn.pack(side=tk.RIGHT, padx=(0, 12), before=self._repair_status_label)
             if video:
                 self._repair_cmp_btn.configure(text="▶ Play clips + Metrics")
                 self._repair_preview_hint.configure(
@@ -18607,9 +19120,14 @@ class LoRATrainerGUI:
                 self._repair_history_row.grid_remove()
                 self._repair_kf_container.pack_forget()
                 self._repair_cmp_btn.configure(text="⧉ Compare + Metrics")
-                self._repair_preview_hint.configure(
-                    text="🔍 Click either image for the full-size side-by-side compare with "
-                         "likeness + quality metrics")
+                if desc is not None and getattr(desc, "audio_workbench", False):
+                    # songs: no picture compare or picture metrics; the Preview card's hint is the players'
+                    # (_repair_audio_ui)
+                    self._repair_cmp_btn.pack_forget()
+                else:
+                    self._repair_preview_hint.configure(
+                        text="🔍 Click either image for the full-size side-by-side compare with "
+                             "likeness + quality metrics")
                 self._repair_cache_row.grid_remove()
         except Exception:
             pass
@@ -18617,6 +19135,12 @@ class LoRATrainerGUI:
             if video:
                 self._repair_res_label.pack_forget()
                 self._repair_res_combo.pack_forget()
+                self._repair_blend_show(False)        # H3 has its own engine: no mix
+                self._repair_lucky_load_bounds()
+                self._repair_model_eq_buttons()
+                for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows + \
+                        (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_sound_rows:
+                    _w.grid_remove()
                 self._repair_h3_label.grid()
                 self._repair_h3_row.grid()
                 self._repair_scale_controls(True)
@@ -18638,6 +19162,11 @@ class LoRATrainerGUI:
                                                      before=self._repair_sliders_host)
                 self._refresh_repair_h3_sound_state()
             else:
+                self._repair_blend_show(True)
+                self._repair_lucky_load_bounds()
+                self._repair_pb_layout()
+                self._repair_src_layout()
+                self._repair_model_eq_buttons()
                 self._repair_h3_label.grid_remove()
                 self._repair_h3_row.grid_remove()
                 self._repair_scale_controls(True)          # every family's load-strength boxes (16 Sep 2026)
@@ -18984,6 +19513,20 @@ class LoRATrainerGUI:
         self.repair_thumbnails[which] = photo  # keep ref so Tk doesn't GC it
         label.configure(image=photo, text="")
 
+    def _surface_children(self, root):
+        """Give every plain ttk Frame / Label inside a card the card's surface colour: the default styles paint
+        bg_deep, which showed as dark patches round radio rows, button rows and empty spacer rows."""
+        for w in root.winfo_children():
+            try:
+                cls = w.winfo_class()
+                if cls == "TFrame" and not str(w.cget("style")):
+                    w.configure(style="Surface.TFrame")
+                elif cls == "TLabel" and not str(w.cget("style")):
+                    w.configure(style="Surface.TLabel")
+            except tk.TclError:
+                pass
+            self._surface_children(w)
+
     def _build_repair_top_controls(self, parent):
         r = 0
         # Model family selector (Klein 9B / Krea 2). Krea 2 swaps the engine + model paths,
@@ -19010,39 +19553,72 @@ class LoRATrainerGUI:
                         variable=self.repair_dit_choice_var, value="base",
                         style="Surface.TRadiobutton")
         self._repair_dit_radio_b.pack(side=tk.LEFT)
+        # the negative box follows the CFG of the preview picked here (Krea 2: none on Turbo, shown on Full)
+        self.repair_dit_choice_var.trace_add("write", lambda *_: self._refresh_repair_negative_row())
         r += 1
 
         # Primary LoRA
         ttk.Label(parent, text="Primary LoRA:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_primary_var = tk.StringVar()
-        ttk.Entry(parent, textvariable=self.repair_primary_var).grid(
-            row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self._repair_lora_entry = {"primary": ttk.Entry(parent, textvariable=self.repair_primary_var)}
+        self._repair_lora_entry["primary"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         primary_btn_frame = ttk.Frame(parent)
         primary_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        ttk.Button(primary_btn_frame, text="Browse",
-                   command=self._browse_and_load_primary).pack(side=tk.LEFT)
+        # both rows' buttons sit on one 4-column grid - Browse | at strength | Unload Donor | Model EQ Mode - with
+        # matching column widths (_repair_align_lora_rows), so the strength boxes and Model EQ buttons line up
+        self._repair_lora_btn_frame = {"primary": primary_btn_frame}
+        self._repair_lora_browse = {"primary": ttk.Button(primary_btn_frame, text="Browse",
+                                                          command=self._browse_and_load_primary)}
+        self._repair_lora_browse["primary"].grid(row=0, column=0, sticky=tk.W)
+        # Model EQ Mode: a toggle, not a third way to browse - on, the row holds the Model EQ LoRA (Preferences) at
+        # strength 1 and its path, Browse and strength lock; off, the row is the user's own LoRA again
+        self._repair_eq_mode = {"primary": False, "donor": False}
+        self._repair_eq_saved = {}
+        self._repair_eq_setting = False
+        self._repair_eq_btn_p = ttk.Button(primary_btn_frame, text="Model EQ Mode",
+                                           command=lambda: self._repair_toggle_eq_mode("primary"))
+        ToolTip(self._repair_eq_btn_p, "Model EQ Mode: the primary becomes the model's own weights (the Model EQ LoRA "
+                                       "set in Preferences), so the block sliders EQ the stock model - 1.0 = unchanged. "
+                                       "Click again to go back to your own LoRA.")
         self.repair_primary_scale_var = tk.StringVar(value="1.0")
         self._repair_scale_widgets = []
-        self._build_repair_scale_control(primary_btn_frame, self.repair_primary_scale_var,
-                                         "the primary")
+        self._repair_lora_scale = {"primary": self._build_repair_scale_control(
+            primary_btn_frame, self.repair_primary_scale_var, "the primary")}
         r += 1
+
+        # Epoch blend (standard-layer families): the primary's whole run mixed as an EMA, chosen by ear
+        self._repair_blend = {}
+        r = self._build_repair_blend_row(parent, r, "primary")
 
         # Donor LoRA
         ttk.Label(parent, text="Donor LoRA (optional):").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
         self.repair_donor_var = tk.StringVar()
         self.repair_donor_var.trace_add("write", self._on_repair_donor_path_edited)
-        ttk.Entry(parent, textvariable=self.repair_donor_var).grid(
-            row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self._repair_lora_entry["donor"] = ttk.Entry(parent, textvariable=self.repair_donor_var)
+        self._repair_lora_entry["donor"].grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
         donor_btn_frame = ttk.Frame(parent)
         donor_btn_frame.grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        ttk.Button(donor_btn_frame, text="Browse",
-                   command=self._browse_and_load_donor).pack(side=tk.LEFT, padx=(0, 4))
-        ttk.Button(donor_btn_frame, text="Unload Donor",
-                   command=self._unload_repair_donor).pack(side=tk.LEFT)
+        self._repair_lora_btn_frame["donor"] = donor_btn_frame
+        self._repair_lora_browse["donor"] = ttk.Button(donor_btn_frame, text="Browse",
+                                                       command=self._browse_and_load_donor)
+        self._repair_lora_browse["donor"].grid(row=0, column=0, sticky=tk.W)
+        self._repair_eq_btn_d = ttk.Button(donor_btn_frame, text="Model EQ Mode",
+                                           command=lambda: self._repair_toggle_eq_mode("donor"))
+        ToolTip(self._repair_eq_btn_d, "Model EQ Mode: the donor becomes the model's own weights (the Model EQ LoRA set "
+                                       "in Preferences), so the donor sliders EQ the model under your primary LoRA - "
+                                       "1.0 = the stock model. Click again to drop it.")
+        self._repair_unload_donor_btn = ttk.Button(donor_btn_frame, text="Unload Donor",
+                                                   command=self._repair_unload_donor_clicked)
+        self._repair_unload_donor_btn.grid(row=0, column=2, sticky=tk.W, padx=(12, 0))
         self.repair_donor_scale_var = tk.StringVar(value="1.0")
-        self._build_repair_scale_control(donor_btn_frame, self.repair_donor_scale_var,
-                                         "the donor")
+        self._repair_lora_scale["donor"] = self._build_repair_scale_control(
+            donor_btn_frame, self.repair_donor_scale_var, "the donor")
+        self._repair_align_lora_rows()
+        # a path set from anywhere else (Browse is locked, but Load Setup, Royale, typing) leaves Model EQ Mode
+        for _role, _v in (("primary", self.repair_primary_var), ("donor", self.repair_donor_var)):
+            _v.trace_add("write", lambda *_a, _r=_role: self._repair_eq_mode_path_changed(_r))
         r += 1
+        r = self._build_repair_blend_row(parent, r, "donor")     # the donor's own run, from its own folder
 
         # MiniMax H3 only (shown / hidden with the family): which H3 checkpoint the studio
         # runs — fl2va (first / last frame) or ref2va (reference images, <Picture N> in the
@@ -19141,6 +19717,150 @@ class LoRATrainerGUI:
                                      variable=self.repair_turbo_var,
                                      command=self._on_turbo_toggled)
         self._repair_turbo_chk.pack(side=tk.RIGHT)
+        r += 1
+
+        # Prompt B (a family whose driver blends two prompts, supports_prompt_blend): hidden behind its tick
+        self._repair_pb_tick_frame = ttk.Frame(parent)
+        self._repair_pb_tick_frame.grid(row=r, column=1, sticky=tk.W, padx=4, pady=(0, 2))
+        self.repair_pb_on_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self._repair_pb_tick_frame, text="Blend in a Prompt B", variable=self.repair_pb_on_var,
+                        command=self._repair_pb_toggled, style="Surface.TCheckbutton").pack(side=tk.LEFT)
+        r += 1
+        self._repair_pb_label = ttk.Label(parent, text="Prompt B:")
+        self._repair_pb_label.grid(row=r, column=0, sticky=tk.NW, padx=4, pady=2)
+        self.repair_prompt_b_var = tk.StringVar(value="")
+        self._repair_pb_text = TextEntry(
+            parent, self.repair_prompt_b_var, height=2, wrap="word", bg=COLORS["bg_surface"],
+            fg=COLORS["text_primary"], insertbackground=COLORS["text_primary"], font=(FONT_FAMILY, 10),
+            relief="flat", highlightthickness=1, highlightbackground=COLORS["border"],
+            highlightcolor=COLORS["border_focus"])
+        self._repair_pb_text.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        # the ghost example: shown while the box is empty, a click goes through to the box
+        self._repair_pb_ghost = tk.Label(self._repair_pb_text, text="", bg=COLORS["bg_surface"],
+                                         fg=COLORS["text_muted"], font=(FONT_FAMILY, 10), anchor=tk.W,
+                                         justify=tk.LEFT, cursor="xterm")
+        self._repair_pb_ghost.bind("<Button-1>", lambda e: self._repair_pb_text.focus_set())
+        self._repair_pb_text.bind("<Configure>", lambda e: (self._repair_pb_ghost.configure(
+            wraplength=max(200, e.width - 12)), self._repair_pb_grow()))
+        self.repair_prompt_b_var.trace_add("write", lambda *_: self._repair_pb_changed(text=True))
+        pb_ctl = ttk.Frame(parent)
+        pb_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
+        self._repair_pb_ctl = pb_ctl
+        ttk.Label(pb_ctl, text="A").pack(side=tk.LEFT)
+        self.repair_pb_blend_var = tk.DoubleVar(value=0.5)
+        ttk.Scale(pb_ctl, from_=0.0, to=1.0, orient=tk.HORIZONTAL, length=150, variable=self.repair_pb_blend_var,
+                  command=lambda v: self._repair_pb_changed()).pack(side=tk.LEFT, padx=4)
+        ttk.Label(pb_ctl, text="B").pack(side=tk.LEFT)
+        self.repair_pb_readout = tk.StringVar(value="")
+        ttk.Label(pb_ctl, textvariable=self.repair_pb_readout, width=14).pack(side=tk.LEFT, padx=(6, 8))
+        self.repair_pb_keep_lyrics_var = tk.BooleanVar(value=True)
+        self._repair_pb_keep_chk = ttk.Checkbutton(pb_ctl, text="Keep Prompt A's lyrics",
+                                                   variable=self.repair_pb_keep_lyrics_var,
+                                                   command=lambda: self._repair_pb_changed(),
+                                                   style="Surface.TCheckbutton")
+        self._repair_pb_keep_chk.pack(side=tk.LEFT)
+        ToolTip(pb_ctl, "Every step runs the model with both prompts and mixes the two: 0 = Prompt A alone, 1 = "
+                        "Prompt B alone. Baseline gets the same blend, so Baseline vs Tweaked still shows only the "
+                        "sliders. Keep Prompt A's lyrics: Prompt B changes the style while A's words are sung.")
+        self._repair_pb_rows = (self._repair_pb_label, self._repair_pb_text, pb_ctl)
+        for _w in (self._repair_pb_tick_frame,) + self._repair_pb_rows:
+            _w.grid_remove()                              # hidden until a family that blends prompts is picked
+        r += 1
+
+        # Audio to audio (a family whose driver starts from a source, supports_audio_source): hidden behind its tick
+        self._repair_src_tick_frame = ttk.Frame(parent)
+        self._repair_src_tick_frame.grid(row=r, column=1, sticky=tk.W, padx=4, pady=(0, 2))
+        self.repair_src_on_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self._repair_src_tick_frame, text="Start from a song (audio to audio)",
+                        variable=self.repair_src_on_var, command=self._repair_src_toggled,
+                        style="Surface.TCheckbutton").pack(side=tk.LEFT)
+        self.repair_sound_on_var = tk.BooleanVar(value=False)
+        _rt = ttk.Checkbutton(self._repair_src_tick_frame, text="Sound like a recording (reference)",
+                              variable=self.repair_sound_on_var, command=self._repair_src_toggled,
+                              style="Surface.TCheckbutton")
+        _rt.pack(side=tk.LEFT, padx=(16, 0))
+        ToolTip(_rt, "The model hears a recording (30 s of it: a piece from the start, middle and end) and makes the "
+                     "song sound like it - the voice, the instruments, the mix. Works with or without a song to "
+                     "start from.")
+        r += 1
+        self._repair_src_label = ttk.Label(parent, text="Source:")
+        self._repair_src_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        self.repair_src_path_var = tk.StringVar(value="")
+        self._repair_src_entry = ttk.Entry(parent, textvariable=self.repair_src_path_var)
+        self._repair_src_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_src_path_var.trace_add("write", lambda *_: self._repair_src_changed(path=True))
+        src_ctl = ttk.Frame(parent)
+        src_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
+        ttk.Button(src_ctl, text="Browse", command=self._repair_src_browse).pack(side=tk.LEFT)
+        self._repair_src_rec_btn = ttk.Button(src_ctl, text="\U0001f399 Record", command=self._repair_src_record)
+        self._repair_src_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
+        ToolTip(self._repair_src_rec_btn, "Record from your microphone (the one picked in Preferences or Gizmo's settings) for the "
+                                          "Length setting, then use the take as the source.")
+        ttk.Label(src_ctl, text="Use:").pack(side=tk.LEFT)
+        self.repair_src_mode_var = tk.StringVar(value=self._SRC_MODES[0][1])
+        _mode = ttk.Combobox(src_ctl, textvariable=self.repair_src_mode_var, state="readonly", width=24,
+                             values=[l for _, l in self._SRC_MODES])
+        _mode.pack(side=tk.LEFT, padx=(4, 0))
+        _mode.bind("<<ComboboxSelected>>", lambda e: self._repair_src_toggled())
+        ToolTip(_mode, "Whole song: the render follows the song and/or starts from its sound (Follow, Denoise).\n"
+                       "Repaint the loop section: only the section you drag across the waveform is made new - "
+                       "the rest of the song stays exactly as it is.\n"
+                       "Extend to the Length: the song carries on past its end, up to the Length setting.")
+        r += 1
+        src_amt = ttk.Frame(parent)
+        src_amt.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+        ttk.Label(src_amt, text="Follow").pack(side=tk.LEFT)
+        self.repair_src_follow_var = tk.DoubleVar(value=1.0)
+        ttk.Scale(src_amt, from_=0.0, to=1.0, orient=tk.HORIZONTAL, length=120,
+                  variable=self.repair_src_follow_var, command=lambda v: self._repair_src_changed()).pack(
+            side=tk.LEFT, padx=4)
+        self.repair_src_follow_readout = tk.StringVar(value="")
+        ttk.Label(src_amt, textvariable=self.repair_src_follow_readout, width=24).pack(side=tk.LEFT)
+        ttk.Label(src_amt, text="Denoise").pack(side=tk.LEFT, padx=(10, 0))
+        self.repair_src_denoise_var = tk.DoubleVar(value=1.0)
+        ttk.Scale(src_amt, from_=0.05, to=1.0, orient=tk.HORIZONTAL, length=120,
+                  variable=self.repair_src_denoise_var, command=lambda v: self._repair_src_changed()).pack(
+            side=tk.LEFT, padx=4)
+        self.repair_src_readout = tk.StringVar(value="")
+        ttk.Label(src_amt, textvariable=self.repair_src_readout, width=30).pack(side=tk.LEFT)
+        ToolTip(src_amt, "Follow: how much of the render follows the song's melody, timing and structure - but not "
+                         "its sound, so the prompt and LoRA choose the voice and instruments (ACE-Step's cover mode). "
+                         "0 = off; lower lets the song wander in the last steps.\n"
+                         "Denoise: start from the song's actual sound with noise added, running only the rest of "
+                         "the steps. Lower keeps more of the real recording; 1.0 = start from noise.\n"
+                         "They work together or alone. Any audio or video file works.")
+        rep_amt = ttk.Frame(parent)
+        rep_amt.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+        ttk.Label(rep_amt, text="Strength").pack(side=tk.LEFT)
+        self.repair_src_strength_var = tk.DoubleVar(value=0.5)
+        ttk.Scale(rep_amt, from_=0.0, to=1.0, orient=tk.HORIZONTAL, length=120,
+                  variable=self.repair_src_strength_var, command=lambda v: self._repair_src_changed()).pack(
+            side=tk.LEFT, padx=4)
+        self.repair_src_rep_readout = tk.StringVar(value="")
+        ttk.Label(rep_amt, textvariable=self.repair_src_rep_readout).pack(side=tk.LEFT)
+        ToolTip(rep_amt, "How freely the new section is made. Lower holds it closer to the song around it and blends "
+                         "the joins more gently; higher lets it go its own way, with shorter joins. 0.5 is "
+                         "ACE-Step's default. Outside the section you always hear the song exactly as it was.")
+        self._repair_src_amt, self._repair_src_rep_amt = src_amt, rep_amt
+        self._repair_src_rows = (self._repair_src_label, self._repair_src_entry, src_ctl, src_amt, rep_amt)
+        r += 1
+        self._repair_sound_label = ttk.Label(parent, text="Sound like:")
+        self._repair_sound_label.grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        self.repair_sound_path_var = tk.StringVar(value="")
+        self._repair_sound_entry = ttk.Entry(parent, textvariable=self.repair_sound_path_var)
+        self._repair_sound_entry.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
+        self.repair_sound_path_var.trace_add("write", lambda *_: self._repair_src_changed(path=True))
+        ref_ctl = ttk.Frame(parent)
+        ref_ctl.grid(row=r, column=2, columnspan=2, sticky=tk.W, padx=4, pady=2)
+        ttk.Button(ref_ctl, text="Browse", command=lambda: self._repair_src_browse("ref")).pack(side=tk.LEFT)
+        self._repair_sound_rec_btn = ttk.Button(ref_ctl, text="\U0001f399 Record",
+                                              command=lambda: self._repair_src_record("ref"))
+        self._repair_sound_rec_btn.pack(side=tk.LEFT, padx=(4, 10))
+        ToolTip(self._repair_sound_rec_btn, "Record from your microphone for the Length setting, then use the take "
+                                          "as the reference.")
+        self._repair_sound_rows = (self._repair_sound_label, self._repair_sound_entry, ref_ctl)
+        for _w in (self._repair_src_tick_frame,) + self._repair_src_rows + self._repair_sound_rows:
+            _w.grid_remove()
         r += 1
 
         # Negative prompt row: shown for a family whose Repair Studio renders use CFG above 1 and that takes a negative
@@ -19304,18 +20024,6 @@ class LoRATrainerGUI:
         self.repair_ref_strength_var.trace_add("write", lambda *_: self._on_repair_ref_changed())
         r += 1
 
-        # Preset row
-        ttk.Label(parent, text="Preset:").grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
-        self.repair_preset_var = tk.StringVar()
-        self.repair_preset_combo = ttk.Combobox(parent, textvariable=self.repair_preset_var,
-                                                values=self._repair_preset_list(), state="readonly")
-        self.repair_preset_combo.grid(row=r, column=1, sticky=tk.EW, padx=4, pady=2)
-        self.repair_preset_combo.bind("<<ComboboxSelected>>",
-                                      lambda e: self._load_repair_preset(self.repair_preset_var.get()))
-        ttk.Button(parent, text="Save Preset…",
-                   command=self._save_repair_preset).grid(row=r, column=2, columnspan=2, padx=4, pady=2, sticky=tk.W)
-        r += 1
-
         # Status + Start button row
         status_row = tk.Frame(parent, bg=COLORS["bg_surface"])
         status_row.grid(row=r, column=0, columnspan=4, sticky=tk.EW, pady=(6, 0))
@@ -19332,10 +20040,15 @@ class LoRATrainerGUI:
             relief="flat", bd=0, padx=24, pady=6, cursor="hand2",
             command=self._repair_start)
         self._repair_start_btn.pack(side=tk.RIGHT)
-        # Reset All up here too — the Actions card has one, but it sits below the full slider
-        # panel, which on a 50-block family is a long scroll away from where you tweak.
-        ttk.Button(status_row, text="Reset All Sliders",
-                   command=self._reset_repair_sliders).pack(side=tk.RIGHT, padx=(0, 12))
+        # Save / Load Setup beside Start: the whole session in one file (Peter, 11 Oct) - every control, every
+        # slider, the LoRAs, the prompt. (Reset All Sliders is in the Actions card.)
+        _lb = ttk.Button(status_row, text="Load Setup…", command=self._load_repair_setup)
+        _lb.pack(side=tk.RIGHT, padx=(0, 16))
+        ToolTip(_lb, "Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.")
+        _sb = ttk.Button(status_row, text="Save Setup…", command=self._save_repair_setup)
+        _sb.pack(side=tk.RIGHT, padx=(0, 6))
+        ToolTip(_sb, "Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length "
+                     "and source - to one file you can load back later or share.")
         # The pop-out also opens by clicking either preview image, but nothing on screen SAYS
         # that — a named, coloured button plus the caption under the previews is how anyone
         # finds the compare view and its metrics (Peter, 22 Aug: plain ttk wasn't enough).
@@ -19404,6 +20117,7 @@ class LoRATrainerGUI:
         self._repair_preview_hint.grid(row=2, column=0, columnspan=2, pady=(0, 4))
         self.repair_base_holder = base_holder
         self.repair_tweaked_holder = tweaked_holder
+        self._build_repair_audio_row(parent)
         self._repair_popout_window = None
         self._repair_popout_label = None
         self._repair_popout_tk_img = None
@@ -19742,6 +20456,12 @@ class LoRATrainerGUI:
         for child in parent.winfo_children():
             child.destroy()
         self.repair_block_vars = {}
+        self._repair_glow = {}            # new rows start unlit
+        self._repair_locks = {}                  # block id -> its locked values (a new layout starts unlocked)
+        # a new slider layout starts a new undo history
+        self._repair_undo_stack, self._repair_redo_stack = [], []
+        self._repair_undo_committed = None
+        self.master.after_idle(self._repair_undo_mark_clean)
         if self._repair_is_video():
             self._build_repair_slider_panel_h3(parent)
             return
@@ -19863,9 +20583,18 @@ class LoRATrainerGUI:
         donor_enabled = tk.BooleanVar(value=True)
         donor_strength = tk.DoubleVar(value=1.0)
 
-        chk_p = ttk.Checkbutton(rowf, variable=primary_enabled,
+        _head = tk.Frame(rowf, bg=COLORS["bg_surface"])
+        _head.grid(row=0, column=0, padx=(2, 4))
+        # the block's lock: a locked block keeps its values against every control (the guard traces below)
+        lock_lbl = tk.Label(_head, text="\U0001f513", bg=COLORS["bg_surface"], fg=COLORS["text_muted"],
+                            cursor="hand2", font=(FONT_FAMILY, self._REPAIR_SMALL_FONT))
+        lock_lbl.pack(side=tk.LEFT, padx=(0, 2))
+        lock_lbl.bind("<Button-1>", lambda e, b=block_id: self._repair_toggle_lock(b))
+        ToolTip(lock_lbl, "Lock this block: its sliders and ticks (primary and donor) can't change - not by hand, "
+                          "the bulk buttons, master sliders, presets, I'm feeling lucky or undo - until you unlock it.")
+        chk_p = ttk.Checkbutton(_head, variable=primary_enabled,
                                 command=lambda b=block_id: self._on_block_changed(b))
-        chk_p.grid(row=0, column=0, padx=(2, 4))
+        chk_p.pack(side=tk.LEFT)
         # Block label (category-coloured for Klein; neutral for Krea 2)
         lbl = tk.Label(rowf, text=lbl_text, fg=color, bg=COLORS["bg_surface"],
                        width=max(10, len(lbl_text) + 1), anchor=tk.W,
@@ -19939,6 +20668,11 @@ class LoRATrainerGUI:
         donor_strength.trace_add("write", _mk_strength_trace(donor_strength, val_lbl_d, block_id, "donor"))
         primary_enabled.trace_add("write", _mk_enabled_trace(primary_enabled, block_id, "primary"))
         donor_enabled.trace_add("write", _mk_enabled_trace(donor_enabled, block_id, "donor"))
+        # The lock guard, added LAST so Tk runs it FIRST (traces fire newest first): a write to a locked block is put
+        # straight back, so the traces above only ever see the locked value - whatever made the write
+        for _key, _var in (("primary_enabled", primary_enabled), ("primary_strength", primary_strength),
+                           ("donor_enabled", donor_enabled), ("donor_strength", donor_strength)):
+            _var.trace_add("write", lambda *_a, k=_key, vv=_var, b=block_id: self._repair_lock_guard(b, k, vv))
 
         self.repair_block_vars[block_id] = {
             # StringVars / BooleanVars
@@ -19951,6 +20685,7 @@ class LoRATrainerGUI:
             "donor_lbl": val_lbl_d,
             # row frames
             "donor_rowf": donor_rowf,
+            "lock_lbl": lock_lbl,
             # widget handles (for _refresh_block_slider_activity greying)
             "chk_p": chk_p,
             "scale_p": scale_p,
@@ -20032,10 +20767,17 @@ class LoRATrainerGUI:
         """'at strength' box after a LoRA's Browse (MiniMax H3 and Krea 2 — shown / hidden by
         _apply_repair_family_ui). The strength the LoRA is meant to be used at; every block
         slider stays relative to it."""
-        lbl = ttk.Label(parent, text="at strength")
+        # the label and box sit in one frame: a family whose LoRAs default below strength 1 (description
+        # repair_default_strength, ACE-Step's 0.5) gets a thin orange ring round it (_repair_strength_defaults)
+        box = tk.Frame(parent, bg=COLORS["bg_surface"])            # its 1 px edge is the ring
+        inner = tk.Frame(box, bg=COLORS["bg_surface"])
+        inner.pack(padx=1, pady=1)
+        lbl = ttk.Label(inner, text="at strength", style="Surface.TLabel")
+        lbl.pack(side=tk.LEFT, padx=(6, 4), pady=2)
         # a plain themed Entry, like the Steps / Turbo boxes — ttk.Spinbox has no dark style
         # in this app (white on white, Peter 4 Sep)
-        spin = ttk.Entry(parent, textvariable=var, width=5)
+        spin = ttk.Entry(inner, textvariable=var, width=5)
+        spin.pack(side=tk.LEFT, padx=(0, 6), pady=2)
         spin.bind("<Return>", lambda e: self._on_repair_scale_changed())
         spin.bind("<FocusOut>", lambda e: self._on_repair_scale_changed())
         # Typing applies too, after a short pause: Enter / focus-out alone meant a new strength did nothing until
@@ -20046,7 +20788,8 @@ class LoRATrainerGUI:
                       "1.0 is that block at this strength, 0.5 is half of it. The saved file "
                       "keeps its original scale — use it at this strength, and it looks exactly "
                       "like the preview.")
-        self._repair_scale_widgets.append((lbl, spin))
+        self._repair_scale_widgets.append((box, spin))
+        return spin
 
     def _repair_state_for_explorer(self):
         """The Repair state handed to the Explorer: the block sliders plus the primary's load
@@ -20078,14 +20821,65 @@ class LoRATrainerGUI:
             pass
 
     def _repair_scale_controls(self, show):
-        for lbl, spin in getattr(self, "_repair_scale_widgets", ()):
+        for box, _spin in getattr(self, "_repair_scale_widgets", ()):
             if show:
-                if not lbl.winfo_manager():
-                    lbl.pack(side=tk.LEFT, padx=(10, 4))
-                    spin.pack(side=tk.LEFT)
+                box.grid(row=0, column=1, sticky=tk.W, padx=(12, 0))
             else:
-                lbl.pack_forget()
-                spin.pack_forget()
+                box.grid_remove()
+
+    def _repair_strength_defaults(self, desc):
+        """On a family switch: the primary and donor strengths start at the family's default (description
+        repair_default_strength - ACE-Step 0.5), and a default other than 1 rings both boxes in thin orange."""
+        d = float(getattr(desc, "repair_default_strength", 1.0) if desc is not None else 1.0)
+        ring = 1 if abs(d - 1.0) > 1e-9 else 0
+        for box, _spin in getattr(self, "_repair_scale_widgets", ()):
+            box.configure(bg=COLORS["orange"] if ring else COLORS["bg_surface"])
+        key = desc.key if desc is not None else ""
+        if getattr(self, "_repair_strength_family", None) == key:
+            return
+        self._repair_strength_family = key
+        saved = (self.last_used.get("repair_strengths", {}) or {}).get(key) or (d, d)
+        self._repair_strength_loading = True
+        try:
+            for i, (role, var) in enumerate((("primary", self.repair_primary_scale_var),
+                                             ("donor", self.repair_donor_scale_var))):
+                if not getattr(self, "_repair_eq_mode", {}).get(role):
+                    try:
+                        var.set(f"{float(saved[i]):g}")
+                    except (TypeError, ValueError, IndexError):
+                        var.set(f"{d:g}")
+        finally:
+            self._repair_strength_loading = False
+        if not getattr(self, "_repair_strength_traced", False):
+            self._repair_strength_traced = True
+            for i, var in enumerate((self.repair_primary_scale_var, self.repair_donor_scale_var)):
+                var.trace_add("write", lambda *_a, _i=i: self._repair_remember_strength(_i))
+
+    def _repair_remember_strength(self, i):
+        """A strength typed into the primary (0) or donor (1) box is remembered for this family (not while a family
+        switch fills them, nor the locked 1 of Model EQ Mode)."""
+        role = ("primary", "donor")[i]
+        if getattr(self, "_repair_strength_loading", False) or getattr(self, "_repair_eq_mode", {}).get(role):
+            return
+        fam = getattr(self, "_repair_strength_family", None)
+        if not fam:
+            return
+        var = (self.repair_primary_scale_var, self.repair_donor_scale_var)[i]
+        try:
+            v = float(var.get())
+        except (TypeError, ValueError):
+            return
+        d = float(getattr(self._repair_desc(fam), "repair_default_strength", 1.0) or 1.0)
+        pair = list((self.last_used.setdefault("repair_strengths", {}) or {}).get(fam) or (d, d))
+        pair[i] = v
+        self.last_used["repair_strengths"][fam] = pair
+        pending = getattr(self, "_repair_strength_save_after", None)
+        if pending is not None:
+            try:
+                self.master.after_cancel(pending)
+            except Exception:
+                pass
+        self._repair_strength_save_after = self.master.after(600, self._save_last_used_paths)
 
     def _schedule_repair_scale_change(self):
         """Debounced strength-box typing: apply 0.6 s after the last keystroke, skipping a half-typed value."""
@@ -23244,6 +24038,7 @@ class LoRATrainerGUI:
                     self.repair_status_var.set("Error loading primary.")
                 return
             self._refresh_block_slider_activity()
+            self._repair_blend_reset_ui()
             n_active = len(engine.primary_block_ids)
             # LyCORIS loads and saves natively — no popup on open; the save dialog
             # states the format (and the donor-blend SVD case warns at donor load).
@@ -23252,7 +24047,8 @@ class LoRATrainerGUI:
             self._find_repair_profile_match()
             self.repair_status_var.set(
                 f"Primary loaded: {os.path.basename(path)} "
-                f"({n_active}/{len(self.repair_state.blocks)} blocks). Generating preview…")
+                f"({n_active}/{len(self.repair_state.blocks)} blocks).{self._repair_eq_note('primary')} "
+                "Generating preview\u2026")
             if on_done is not None:
                 on_done()          # a chained donor load schedules the preview itself
             else:
@@ -23314,10 +24110,23 @@ class LoRATrainerGUI:
             for cat in self.repair_donor_category_vars:
                 self.repair_donor_category_vars[cat].set(False)
             self._refresh_block_slider_activity()
+            self._repair_blend_reset_ui(role="donor")
             n_donor = len(engine.donor_block_ids)
+            eq_note = self._repair_eq_note("donor")
+            if eq_note:                                   # a Model EQ donor starts at the stock model
+                self._repair_master_mutating = True
+                try:
+                    for bid in engine.donor_block_ids:
+                        v = self.repair_block_vars.get(bid)
+                        if v is not None:
+                            v["donor_enabled"].set(True)
+                            v["donor_strength"].set(1.0)
+                finally:
+                    self._repair_master_mutating = False
             self.repair_status_var.set(
                 f"Donor loaded: {os.path.basename(path)} "
-                f"({n_donor}/{len(self.repair_state.blocks)} blocks). Enable per-block to mix in.")
+                f"({n_donor}/{len(self.repair_state.blocks)} blocks)."
+                + (eq_note if eq_note else " Enable per-block to mix in."))
             if on_done is not None:
                 on_done()
 
@@ -23466,6 +24275,325 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+    # ----- Prompt B ------------------------------------------------------------------------
+    _PB_GHOST_MUSIC = "Style words to blend in, no lyrics.\ne.g. dark synthwave, gothic choir, analog arpeggios, cathedral reverb"
+    _PB_GHOST = "A second prompt to blend in.\ne.g. the same scene as an oil painting, golden hour"
+
+    def _repair_pb_supported(self):
+        desc = self._repair_desc()
+        if desc is None or not getattr(desc, "driver", ""):
+            return False
+        try:
+            import importlib
+            mod, _, cls = desc.driver.partition(":")
+            return bool(getattr(getattr(importlib.import_module(mod), cls), "supports_prompt_blend", False))
+        except Exception:
+            return False
+
+    def _repair_pb_layout(self):
+        """The tick for a family that blends prompts; the box, slider and lyrics tick only while it is ticked."""
+        if getattr(self, "_repair_pb_tick_frame", None) is None:
+            return
+        ok = self._repair_pb_supported()
+        self._repair_pb_tick_frame.grid() if ok else self._repair_pb_tick_frame.grid_remove()
+        show = ok and self.repair_pb_on_var.get()
+        for w in self._repair_pb_rows:
+            w.grid() if show else w.grid_remove()
+        audio = self._repair_is_audio()
+        self._repair_pb_keep_chk.pack(side=tk.LEFT) if audio else self._repair_pb_keep_chk.pack_forget()
+        self._repair_pb_ghost.configure(text=self._PB_GHOST_MUSIC if audio else self._PB_GHOST)
+        self._repair_pb_ghost_update()
+
+    def _repair_pb_ghost_update(self):
+        if self.repair_prompt_b_var.get().strip():
+            self._repair_pb_ghost.place_forget()
+        else:
+            self._repair_pb_ghost.place(x=4, y=2, relwidth=1.0, width=-12)
+        self._repair_pb_grow()
+
+    def _repair_pb_grow(self):
+        """The box grows to fit what it shows - the grey example while empty, else the text (2 to 8 lines)."""
+        w = getattr(self, "_repair_pb_text", None)
+        if w is None:
+            return
+        try:
+            import tkinter.font as tkfont
+            line = max(1, tkfont.Font(font=w.cget("font")).metrics("linespace"))
+            txt = self.repair_prompt_b_var.get()
+            if txt.strip():
+                per_line = max(40, int(w.winfo_width() or 0) // 7)
+                lines = 1 + len(txt) // per_line
+            else:
+                self._repair_pb_ghost.update_idletasks()
+                lines = -(-int(self._repair_pb_ghost.winfo_reqheight()) // line)
+            lines = max(2, min(8, lines))
+            if int(w.cget("height")) != lines:
+                w.configure(height=lines)
+        except Exception:
+            pass
+
+    def _repair_pb_effective(self):
+        """The Prompt B the engine renders, or None: B as typed, or (Keep Prompt A's lyrics, music) B's style part
+        with A's lyrics."""
+        if not (self._repair_pb_supported() and self.repair_pb_on_var.get()):
+            return None
+        b = self.repair_prompt_b_var.get().strip()
+        if not b:
+            return None
+        if self._repair_is_audio() and self.repair_pb_keep_lyrics_var.get():
+            a = self.repair_prompt_var.get()
+            lyrics = a.split("|", 1)[1].strip() if "|" in a else ""
+            style = b.split("|", 1)[0].strip()
+            return f"{style} | {lyrics}" if lyrics else style
+        return b
+
+    def _repair_pb_push(self):
+        """Prompt B into the engine (each render reads it)."""
+        eng = self.repair_engine
+        w = round(float(self.repair_pb_blend_var.get()) / 0.05) * 0.05
+        self.repair_pb_readout.set(f"{(1 - w) * 100:.0f}% A \u00b7 {w * 100:.0f}% B")
+        if eng is not None and hasattr(eng, "prompt_b"):
+            eff = self._repair_pb_effective()
+            eng.prompt_b, eng.prompt_blend = eff, (w if eff else 0.0)
+
+    def _repair_pb_toggled(self):
+        self._repair_pb_layout()
+        self._repair_pb_changed()
+
+    def _repair_pb_changed(self, text=False):
+        if text:
+            self._repair_pb_ghost_update()
+        key = (self._repair_pb_effective(), round(float(self.repair_pb_blend_var.get()) / 0.05) * 0.05)
+        if key == getattr(self, "_repair_pb_last", None):
+            self._repair_pb_push()                     # the readout follows the slider
+            return
+        self._repair_pb_last = key
+        self._repair_pb_push()
+        if text:
+            self._repair_mark_update_needed()          # typing: Update renders it, as for Prompt A
+        else:
+            self._schedule_preview()
+
+    # ----- audio to audio ----------------------------------------------------------------
+    _SRC_TYPES = [("Audio or video", "*.wav *.mp3 *.flac *.m4a *.aac *.ogg *.opus *.wma *.aif *.aiff *.mp4 *.mov "
+                                      "*.mkv *.webm"), ("All files", "*.*")]
+
+    def _repair_src_supported(self):
+        desc = self._repair_desc()
+        if desc is None or not getattr(desc, "driver", ""):
+            return False
+        try:
+            import importlib
+            mod, _, cls = desc.driver.partition(":")
+            return bool(getattr(getattr(importlib.import_module(mod), cls), "supports_audio_source", False))
+        except Exception:
+            return False
+
+    def _repair_src_layout(self):
+        if getattr(self, "_repair_src_tick_frame", None) is None:
+            return
+        ok = self._repair_src_supported()
+        self._repair_src_tick_frame.grid() if ok else self._repair_src_tick_frame.grid_remove()
+        whole = self._repair_src_mode() == "song"
+        for rows, var in ((self._repair_src_rows, self.repair_src_on_var),
+                          (self._repair_sound_rows, self.repair_sound_on_var)):
+            show = ok and var.get()
+            for w in rows:
+                if w is self._repair_src_amt and not whole or w is self._repair_src_rep_amt and whole:
+                    w.grid_remove()
+                    continue
+                w.grid() if show else w.grid_remove()
+        self._repair_src_push()
+
+    def _repair_src_toggled(self):
+        self._repair_src_layout()
+        self._repair_src_changed()
+
+    def _repair_src_browse(self, which="src"):
+        from tkinter import filedialog
+        var = self.repair_sound_path_var if which == "ref" else self.repair_src_path_var
+        cur = var.get().strip()
+        p = filedialog.askopenfilename(parent=self.master, title="Reference recording" if which == "ref"
+                                       else "Source song", filetypes=self._SRC_TYPES,
+                                       initialdir=os.path.dirname(cur) if cur else None)
+        if p:
+            var.set(p)
+
+    @staticmethod
+    def _repair_snap(v):
+        return round(float(v) / 0.05) * 0.05
+
+    _SRC_MODES = (("song", "Whole song"), ("repaint", "Repaint the loop section"), ("extend", "Extend to the Length"))
+
+    def _repair_src_mode(self):
+        var = getattr(self, "repair_src_mode_var", None)
+        label = var.get() if var is not None else ""
+        return next((k for k, l in self._SRC_MODES if l == label), "song")
+
+    def _repair_src_seconds(self, path):
+        """The source song's length in seconds (cached per file), or None when it cannot be read."""
+        try:
+            stamp = (path, os.path.getsize(path), int(os.path.getmtime(path)))
+        except OSError:
+            return None
+        c = getattr(self, "_repair_src_len_cache", None)
+        if c is None or c[0] != stamp:
+            try:
+                from fizgig.acestep.driver import audio_seconds
+                c = (stamp, float(audio_seconds(path)))
+            except Exception:
+                c = (stamp, None)
+            self._repair_src_len_cache = c
+        return c[1]
+
+    def _repair_src_length(self):
+        try:
+            return float(self.repair_res_var.get() or 30)
+        except (TypeError, ValueError):
+            return 30.0
+
+    def _repair_src_effective(self):
+        """(source path, denoise, follow, reference path, repaint section (start, end) s, repaint strength) the
+        engine renders with; None for a path or section not in use."""
+        ok = self._repair_src_supported()
+        path = self.repair_src_path_var.get().strip()
+        d, f = self._repair_snap(self.repair_src_denoise_var.get()), self._repair_snap(self.repair_src_follow_var.get())
+        mode, rp = self._repair_src_mode(), None
+        s = self._repair_snap(self.repair_src_strength_var.get())
+        live = bool(ok and self.repair_src_on_var.get() and path and os.path.isfile(path))
+        if live and mode == "repaint":
+            r = getattr(self, "_repair_song_region", None)
+            rp = (round(r[0], 2), round(r[1], 2)) if r else None
+        elif live and mode == "extend":
+            dur, length = self._repair_src_seconds(path), self._repair_src_length()
+            rp = (round(dur, 2), length) if dur is not None and dur < length - 0.25 else None
+        if mode != "song":
+            d, f = 1.0, 0.0
+            live = live and rp is not None
+        elif d >= 1.0 and f <= 0.0:
+            live = False
+        if not live:
+            path, d, f, rp = None, 1.0, 0.0, None
+        ref = self.repair_sound_path_var.get().strip()
+        if not (ok and self.repair_sound_on_var.get() and ref and os.path.isfile(ref)):
+            ref = None
+        return path, d, f, ref, rp, s
+
+    def _repair_src_push(self):
+        path, d, f, ref, rp, rs = self._repair_src_effective()
+        mode = self._repair_src_mode()
+        rtxt = f"{rs:.2f}"
+        if rp is not None:
+            rtxt += f" - remakes {rp[0]:.1f}\u2013{rp[1]:.1f} s, keeps the rest"
+        elif mode == "repaint":
+            rtxt += " - drag across the waveform to choose the section"
+        elif mode == "extend":
+            dur = self._repair_src_seconds(self.repair_src_path_var.get().strip())
+            rtxt += (" - pick a song" if dur is None else
+                     f" - set Length above the song's {dur:.0f} s to extend it")
+        self.repair_src_rep_readout.set(rtxt)
+        shown, fshown = self._repair_snap(self.repair_src_denoise_var.get()), self._repair_snap(
+            self.repair_src_follow_var.get())
+        txt, ftxt = f"{shown:.2f}", f"{fshown:.2f}"
+        eng = self.repair_engine
+        drv = getattr(eng, "driver", None)
+        if drv is not None and hasattr(drv, "schedule") and hasattr(drv, "source_start"):
+            try:
+                ts = drv.schedule(drv.description.preview_steps)
+                t0 = drv.source_start(ts, shown) if shown < 1.0 else ts[0]
+                n = sum(1 for t in ts if t0 is not None and t <= t0 + 1e-9)
+                if shown < 1.0:
+                    txt += (" - the source as it is" if t0 is None else
+                            f" - starts at {t0:.2f}, {n} of {len(ts)} steps")
+                else:
+                    txt += " - starts from noise"
+                ftxt += (" - off" if fshown <= 0.0 else f" - {int(n * fshown)} of {n} steps follow")
+            except Exception:
+                pass
+        self.repair_src_readout.set(txt)
+        self.repair_src_follow_readout.set(ftxt)
+        if eng is not None and hasattr(eng, "source_path"):
+            eng.source_path, eng.source_denoise, eng.source_follow = path, d, f
+            eng.source_repaint, eng.repaint_strength = rp, rs
+            eng.reference_path = ref
+
+    def _repair_src_changed(self, path=False):
+        key = self._repair_src_effective()
+        self._repair_src_push()
+        if key == getattr(self, "_repair_src_last", None):
+            return
+        self._repair_src_last = key
+        if path:
+            self._repair_mark_update_needed()          # a new file renders on Update, like the prompt
+        else:
+            self._schedule_preview()
+
+    def _repair_src_record(self, which="src"):
+        """A take from the microphone (Gizmo's capture, its chosen device) for the Length setting, as the source
+        song (or, which "ref", the reference)."""
+        if getattr(self, "_repair_src_recording", False):
+            return
+        btn = self._repair_sound_rec_btn if which == "ref" else self._repair_src_rec_btn
+        var = self.repair_sound_path_var if which == "ref" else self.repair_src_path_var
+        try:
+            import gizmo as _gz
+            from fizgig.families.clips import ffmpeg
+            ff = ffmpeg()
+            dev = (_gz.load_settings() or {}).get("microphone", "") or next(iter(_gz.list_capture_devices(ff)), "")
+            seconds = max(1, int(float(self.repair_res_var.get() or 30)))
+        except Exception as e:
+            self.repair_status_var.set(f"Could not start the microphone: {e}")
+            return
+        import tempfile
+        raw = os.path.join(tempfile.gettempdir(), "fizgig_take.raw")
+        cmd = _gz.build_capture_command(ff, dev, raw)
+        if not cmd:
+            self.repair_status_var.set("No microphone to record from (pick one in Preferences > Microphone).")
+            return
+        cmd = cmd[:-2] + ["-t", str(seconds)] + cmd[-2:]         # the take is the Length setting long
+        self._repair_src_recording = True
+        btn.configure(text="\u23fa Recording\u2026", state="disabled")
+        t_end = time.time() + seconds
+
+        def tick():
+            if getattr(self, "_repair_src_recording", False):
+                self.repair_status_var.set(f"Recording from {dev or 'the microphone'}: "
+                                           f"{max(0, t_end - time.time()):.0f} s left\u2026")
+                self.master.after(250, tick)
+
+        def work():
+            import subprocess
+            import wave
+            err = None
+            out = os.path.join(os.path.dirname(raw), f"fizgig_take_{int(time.time())}.wav")
+            try:
+                subprocess.run(cmd, capture_output=True, timeout=seconds + 15)
+                with open(raw, "rb") as f:
+                    data = f.read()
+                if not data:
+                    raise RuntimeError("the microphone gave no sound")
+                with wave.open(out, "wb") as w:
+                    w.setnchannels(_gz.CAPTURE_CHANNELS)
+                    w.setsampwidth(2)
+                    w.setframerate(_gz.CAPTURE_RATE)
+                    w.writeframes(data)
+            except Exception as e:
+                err = e
+            self.master.after(0, lambda: done(out, err))
+
+        def done(out, err):
+            self._repair_src_recording = False
+            btn.configure(text="\U0001f399 Record", state="normal")
+            if err is not None:
+                self.repair_status_var.set(f"Recording failed: {err}")
+                return
+            var.set(out)
+            self.repair_status_var.set(f"Recorded {seconds} s - press Update to render from it.")
+
+        import threading
+        tick()
+        threading.Thread(target=work, daemon=True).start()
+
     def _repair_mark_update_needed(self):
         """Prompt or seed changed — show 'Update' on the Start button instead of auto-regenerating."""
         if self.repair_engine is not None and self.repair_engine.primary_network is not None:
@@ -23503,12 +24631,141 @@ class LoRATrainerGUI:
         """Reset the Start button text back to 'Start'."""
         self._repair_start_btn.configure(text="Start")
 
-    def _browse_and_load_primary(self):
+    # ----- Model EQ (a LoRA of the model's own weights; families/workbench.py model_eq_gain) -----
+    def _repair_model_eq_path(self):
+        desc = self._repair_desc()
+        key = desc.pref_for("model_eq") if desc is not None else ""
+        p = self.prefs_vars[key].get().strip() if key and key in getattr(self, "prefs_vars", {}) else ""
+        return p if p and os.path.isfile(p) else ""
+
+    def _repair_model_eq_buttons(self):
+        """The Model EQ buttons beside Browse, for a family whose Model EQ LoRA is set in Preferences."""
+        on = bool(self._repair_model_eq_path()) and not self._repair_is_video()
+        if not on:
+            for role in ("primary", "donor"):
+                if getattr(self, "_repair_eq_mode", {}).get(role):
+                    self._repair_set_eq_mode(role, False, restore=False)
+        # a gap before the button and a little space after the donor's: the path boxes give up about a Browse
+        # button's width, the buttons move left into it, and Model EQ Mode sits apart from them
+        for b in (getattr(self, "_repair_eq_btn_p", None), getattr(self, "_repair_eq_btn_d", None)):
+            if b is None:
+                continue
+            if on:
+                b.grid(row=0, column=3, sticky=tk.W, padx=(12, 0))
+            else:
+                b.grid_remove()
+
+    def _repair_align_lora_rows(self):
+        """The primary and donor button rows share column widths, so their strength boxes and Model EQ Mode buttons
+        line up (the primary's Unload column stays empty)."""
+        frames = getattr(self, "_repair_lora_btn_frame", {})
+        if len(frames) < 2:
+            return
+        cols = {}
+        for f in frames.values():
+            for w in f.grid_slaves():
+                c = int(w.grid_info().get("column", 0))
+                cols[c] = max(cols.get(c, 0), w.winfo_reqwidth() + (12 if c else 0))
+        for c, wpx in ((1, self._repair_lora_scale["donor"].master.master.winfo_reqwidth() + 12),
+                       (2, self._repair_unload_donor_btn.winfo_reqwidth() + 12),
+                       (3, self._repair_eq_btn_d.winfo_reqwidth() + 12)):
+            cols[c] = max(cols.get(c, 0), wpx)
+        for f in frames.values():
+            for c, wpx in cols.items():
+                f.columnconfigure(c, minsize=wpx)
+
+    def _repair_toggle_eq_mode(self, role):
+        self._repair_set_eq_mode(role, not self._repair_eq_mode.get(role, False))
+
+    def _repair_set_eq_mode(self, role, on, restore=True):
+        """Model EQ Mode on: the row loads the Model EQ LoRA at strength 1 and locks its path, Browse and strength
+        (the button highlighted). Off: unlocked, and (restore) the LoRA and strength the row had before come back -
+        the donor row simply drops the Model EQ."""
+        var = self.repair_primary_var if role == "primary" else self.repair_donor_var
+        svar = self.repair_primary_scale_var if role == "primary" else self.repair_donor_scale_var
+        btn = self._repair_eq_btn_p if role == "primary" else self._repair_eq_btn_d
+        if on:
+            if not self._repair_model_eq_path():
+                self.repair_status_var.set("Set the Model EQ LoRA in Preferences first.")
+                return
+            self._repair_eq_saved[role] = (var.get(), svar.get())
+            self._repair_eq_mode[role] = True
+            self._repair_eq_setting = True
+            try:
+                svar.set("1")
+                self._repair_use_model_eq(role)
+            finally:
+                self._repair_eq_setting = False
+        else:
+            self._repair_eq_mode[role] = False
+        for w in (self._repair_lora_entry[role], self._repair_lora_browse[role], self._repair_lora_scale[role]):
+            w.state(["disabled"] if on else ["!disabled"])
+        btn.configure(style="Primary.TButton" if on else "TButton")
+        if on or not restore:
+            return
+        _d = f"{float(getattr(self._repair_desc(), 'repair_default_strength', 1.0)):g}"
+        prev, prev_scale = self._repair_eq_saved.pop(role, ("", _d))
+        self._repair_eq_setting = True
+        try:
+            svar.set(prev_scale or _d)
+            if role == "primary":
+                if prev and os.path.exists(prev):
+                    self._browse_and_load_primary(path=prev)
+                else:
+                    var.set("")
+                self.repair_status_var.set("Model EQ Mode off: the primary is your own LoRA again.")
+            else:
+                self._unload_repair_donor()
+                var.set("")
+                if prev and os.path.exists(prev):
+                    self._browse_and_load_donor(path=prev)
+        finally:
+            self._repair_eq_setting = False
+
+    def _repair_eq_mode_path_changed(self, role):
+        """A row in Model EQ Mode whose path is set to anything but the Model EQ LoRA (Load Setup, Royale) leaves the
+        mode: unlocked, the new path kept."""
+        if self._repair_eq_setting or not getattr(self, "_repair_eq_mode", {}).get(role):
+            return
+        var = self.repair_primary_var if role == "primary" else self.repair_donor_var
+        eq = self._repair_model_eq_path()
+        if eq and os.path.normcase(os.path.abspath(var.get().strip() or ".")) == os.path.normcase(os.path.abspath(eq)):
+            return
+        self._repair_eq_saved.pop(role, None)
+        self._repair_set_eq_mode(role, False, restore=False)
+
+    def _repair_use_model_eq(self, role):
+        path = self._repair_model_eq_path()
+        if not path:
+            self.repair_status_var.set("Set the Model EQ LoRA in Preferences first.")
+            return
+        if role == "primary":
+            self._browse_and_load_primary(path=path)
+            self.repair_status_var.set("Model EQ as the primary: press Start / Update to load it (1.0 = the stock model).")
+        else:
+            self._browse_and_load_donor(path=path)
+
+    def _repair_eq_note(self, role):
+        eng = self.repair_engine
+        if eng is None or not hasattr(eng, "is_model_eq"):
+            return ""
+        from fizgig.families.workbench import DONOR, PRIMARY
+        key = PRIMARY if role == "primary" else DONOR
+        if not eng.is_model_eq(key):
+            return ""
+        g = eng._eq[key]
+        return (f" Model EQ: 1.0 = the stock model, 0 / 2 = -{g * 100:.0f}% / +{g * 100:.0f}% of each block's main "
+                "directions.")
+
+    def _browse_and_load_primary(self, path=None):
         """Browse for a primary LoRA. Picking a file changes NOTHING — no reload, no render
         (Peter, 22 Aug: the user may want to set the prompt/seed/sliders first). The Start
         button arms as Update; its click does the swap-and-render (_repair_start already
         handles a changed primary with a full reset + reload)."""
-        self._browse_repair_lora(self.repair_primary_var)
+        if path is None:
+            self._browse_repair_lora(self.repair_primary_var)
+        else:
+            self.repair_primary_var.set(path)
         path = self.repair_primary_var.get().strip()
         if not path or not os.path.exists(path):
             return
@@ -23516,12 +24773,15 @@ class LoRATrainerGUI:
                 and self.repair_engine.primary_path != path:
             self._repair_mark_update_needed()
 
-    def _browse_and_load_donor(self):
+    def _browse_and_load_donor(self, path=None):
         """Browse for a donor LoRA. With a primary loaded and the engine idle, the donor
         loads right away so its sliders appear on the pick (Peter, 5 Sep: it used to need
         an Update click first); mid-render, or before a primary, the pick arms Update and
         Start / Update does the load."""
-        self._browse_repair_lora(self.repair_donor_var)
+        if path is None:
+            self._browse_repair_lora(self.repair_donor_var)
+        else:
+            self.repair_donor_var.set(path)
         path = self.repair_donor_var.get().strip()
         if not path or not os.path.exists(path):
             return
@@ -23538,9 +24798,19 @@ class LoRATrainerGUI:
             self._unload_repair_donor()
         self._load_repair_donor(on_done=self._force_regenerate_preview)
 
+    def _repair_unload_donor_clicked(self):
+        """Unload Donor also clears the donor path, so Update / Start can't load it back by accident (a swap inside
+        _browse_and_load_donor still unloads with the new path in place)."""
+        if getattr(self, "_repair_eq_mode", {}).get("donor"):
+            self._repair_eq_saved.pop("donor", None)
+            self._repair_set_eq_mode("donor", False, restore=False)
+        self._unload_repair_donor()
+        self.repair_donor_var.set("")
+
     def _unload_repair_donor(self):
         if self.repair_engine is None or self.repair_engine.donor_network is None:
             return
+        self._repair_blend_reset_ui(role="donor")
         lock = getattr(self.repair_engine, "_wire_lock", None)
         if lock is not None:
             # a render holds the engine (H3: renders and LoRA wiring share a lock) - stop it and come back, rather
@@ -23571,6 +24841,7 @@ class LoRATrainerGUI:
         self._schedule_preview(force=True)
 
     def _on_block_changed(self, block_id: str):
+        self._repair_undo_note()
         if self.repair_engine is None or self.repair_engine.primary_network is None:
             return
         # During a master-slider bulk update, skip the per-block preview schedule;
@@ -23580,6 +24851,263 @@ class LoRATrainerGUI:
         # v2 hook
         self.repair_engine.mark_blocks_changed([block_id])
         self._schedule_preview()
+
+    # ----- I'm feeling lucky -------------------------------------------------------------
+    _LUCKY_BOUNDS = (0.0, 1.5)
+
+    def _repair_lucky_bounds(self):
+        """(min, max) from the boxes beside the button, within the sliders' -3..3 (defaults when unreadable)."""
+        out = []
+        for var, dflt in ((getattr(self, "repair_lucky_min_var", None), self._LUCKY_BOUNDS[0]),
+                          (getattr(self, "repair_lucky_max_var", None), self._LUCKY_BOUNDS[1])):
+            try:
+                out.append(max(-3.0, min(3.0, float(var.get()))))
+            except (AttributeError, ValueError, tk.TclError):
+                out.append(dflt)
+        return tuple(sorted(out))
+
+    def _repair_lucky_bounds_changed(self):
+        lo, hi = self._repair_lucky_bounds()
+        try:
+            self.last_used.setdefault("repair_lucky_bounds", {})[self.repair_family_var.get()] = [lo, hi]
+            self._save_last_used_paths()
+        except Exception:
+            pass
+
+    def _repair_lucky_load_bounds(self):
+        """The selected family's remembered bounds into the boxes (the defaults when it has none)."""
+        if getattr(self, "repair_lucky_min_var", None) is None:
+            return
+        lo, hi = (self.last_used.get("repair_lucky_bounds", {}) or {}).get(self.repair_family_var.get(),
+                                                                         self._LUCKY_BOUNDS)
+        self.repair_lucky_min_var.set(f"{float(lo):g}")
+        self.repair_lucky_max_var.set(f"{float(hi):g}")
+        # Hold structure only for a family whose description marks the bands (lucky_zones); off and hidden otherwise
+        desc = self._repair_desc()
+        zoned = bool(desc is not None and getattr(desc, "lucky_zones", ()))
+        chk = getattr(self, "_repair_lucky_hold_chk", None)
+        if chk is not None:
+            self.repair_lucky_hold_var.set(zoned)
+            if zoned:
+                chk.pack(side=tk.LEFT, padx=(4, 0))
+            else:
+                chk.pack_forget()
+
+    def _repair_feeling_lucky(self):
+        """A random slider mix for the primary: every block evenly between Min and Max, the held bands
+        (description.lucky_zones, while Hold is ticked) within their own range. One undo step."""
+        import random
+        V = getattr(self, "repair_block_vars", {})
+        if not V:
+            return
+        desc = self._repair_desc()
+        hold = getattr(self, "repair_lucky_hold_var", None)
+        zones = (getattr(desc, "lucky_zones", ()) if desc is not None else ()) if (hold is None or hold.get()) else ()
+        eng = self.repair_engine
+        live = set(getattr(eng, "primary_block_ids", ()) or ()) if eng is not None else set()
+        order = list(V)
+        b_lo, b_hi = self._repair_lucky_bounds()
+        kept_off = inverted = held = 0
+        changed = []
+        self._repair_master_mutating = True            # one preview at the end
+        try:
+            for i, bid in enumerate(order):
+                if (live and bid not in live) or bid in getattr(self, "_repair_locks", {}):
+                    continue                           # untouched by the LoRA, or locked: stays as it is
+                if not V[bid]["primary_enabled"].get():
+                    kept_off += 1
+                    continue                           # ticked off: the dice never touch a tick
+                z = next((z for z in zones if z[0] <= i <= z[1]), None)
+                lo, hi = (z[2], z[3]) if z is not None else (b_lo, b_hi)
+                lo, hi = max(lo, b_lo), min(hi, b_hi)          # Min / Max bound the held bands too
+                if lo > hi:
+                    lo = hi = min(max(1.0, b_lo), b_hi)
+                held += z is not None
+                # evenly over the range: no value (0 included) more likely than another; the tick is never touched
+                x = round(random.uniform(lo, hi) / 0.05) * 0.05
+                inverted += x < 0
+                V[bid]["primary_strength"].set(round(x, 2))
+                changed.append(bid)
+        finally:
+            self._repair_master_mutating = False
+        try:
+            self._on_master_target_changed()
+        except Exception:
+            pass
+        self.repair_status_var.set(f"Lucky mix: {len(changed)} block(s) rolled, {b_lo:g} to {b_hi:g}"
+                                   + (f" ({held} held near 1)" if held else "") + f", {inverted} inverted"
+                                   + (f", {kept_off} ticked off left alone" if kept_off else "")
+                                   + " (Ctrl+Z for the mix before; Save Preset\u2026 to keep it).")
+        if changed and eng is not None and getattr(eng, "primary_network", None) is not None:
+            eng.mark_blocks_changed(changed)
+            self._schedule_preview(force=True)
+
+    # ----- block locks ---------------------------------------------------------------------
+    # A locked block keeps the values it had when locked. The guard sits on the block's tk variables (the one place
+    # every control writes), so a hand drag, a tick, the quick-set / bulk buttons, a master slider, a preset, a lucky
+    # roll or an undo cannot move it; its widgets grey out as a sign.
+
+    @staticmethod
+    def _repair_lock_norm(key, value):
+        return bool(value) if key.endswith("enabled") else round(float(value), 4)
+
+    def _repair_lock_values(self, bid):
+        v = self.repair_block_vars[bid]
+        return {k: self._repair_lock_norm(k, v[k].get())
+                for k in ("primary_enabled", "primary_strength", "donor_enabled", "donor_strength")}
+
+    def _repair_lock_guard(self, bid, key, var):
+        lk = getattr(self, "_repair_locks", {}).get(bid)
+        if lk is None or getattr(self, "_repair_lock_reverting", False):
+            return
+        try:
+            cur = self._repair_lock_norm(key, var.get())
+        except (tk.TclError, ValueError):
+            cur = None
+        if cur != lk[key]:
+            self._repair_lock_reverting = True
+            try:
+                var.set(lk[key])
+            finally:
+                self._repair_lock_reverting = False
+
+    def _repair_toggle_lock(self, bid):
+        if bid not in self.repair_block_vars:
+            return
+        locks = self.__dict__.setdefault("_repair_locks", {})
+        if bid in locks:
+            del locks[bid]
+        else:
+            locks[bid] = self._repair_lock_values(bid)
+        self._repair_lock_widgets(bid)
+        n = len(locks)
+        self.repair_status_var.set((f"{self._repair_block_display(bid)[0]} locked" if bid in locks else
+                                    f"{self._repair_block_display(bid)[0]} unlocked")
+                                   + (f" ({n} block{'s' if n != 1 else ''} locked)." if n else "."))
+
+    def _repair_lock_widgets(self, bid):
+        """The row's look: 🔒 + greyed controls while locked; unlocking hands the row back to the LoRA-aware greying."""
+        v = self.repair_block_vars.get(bid)
+        if v is None:
+            return
+        locked = bid in getattr(self, "_repair_locks", {})
+        v["lock_lbl"].configure(text="\U0001f512" if locked else "\U0001f513",
+                                fg=COLORS["queue_blue"] if locked else COLORS["text_muted"])
+        if locked:
+            for w in (v["chk_p"], v["scale_p"], v["chk_d"], v["scale_d"]):
+                try:
+                    w.state(["disabled"])
+                except Exception:
+                    pass
+            for btn in v.get("btns_p", []) + v.get("btns_d", []):
+                btn.configure(state="disabled")
+        else:
+            self._refresh_block_slider_activity()
+
+    # ----- undo (block sliders) -----------------------------------------------------------
+    # One step per settled change: a drag, a quick-set button, a master slider move or a preset load each record the
+    # sliders once they have been still for _UNDO_SETTLE_MS. Ctrl+Z steps back, Ctrl+Y / Ctrl+Shift+Z forward, while
+    # Repair Studio is the tab on screen and the keyboard is not in a text box.
+    _UNDO_SETTLE_MS = 400
+    _UNDO_DEPTH = 200
+
+    def _repair_undo_snapshot(self):
+        out = {}
+        for bid, v in getattr(self, "repair_block_vars", {}).items():
+            try:
+                out[bid] = (bool(v["primary_enabled"].get()), round(float(v["primary_strength"].get()), 4),
+                            bool(v["donor_enabled"].get()), round(float(v["donor_strength"].get()), 4))
+            except (KeyError, tk.TclError, ValueError):
+                continue
+        return out
+
+    def _repair_undo_mark_clean(self):
+        self._repair_undo_committed = self._repair_undo_snapshot()
+
+    def _repair_undo_note(self):
+        if getattr(self, "_repair_undo_restoring", False):
+            return
+        if self._repair_undo_after is not None:
+            try:
+                self.master.after_cancel(self._repair_undo_after)
+            except Exception:
+                pass
+        self._repair_undo_after = self.master.after(self._UNDO_SETTLE_MS, self._repair_undo_commit)
+
+    def _repair_undo_commit(self):
+        self._repair_undo_after = None
+        cur, prev = self._repair_undo_snapshot(), self._repair_undo_committed
+        if prev is None or set(prev) != set(cur):
+            self._repair_undo_committed = cur          # no history for this layout yet
+            return
+        if cur == prev:
+            return
+        self._repair_undo_stack.append(prev)
+        del self._repair_undo_stack[:-self._UNDO_DEPTH]
+        self._repair_redo_stack.clear()
+        self._repair_undo_committed = cur
+
+    def _repair_undo_key(self, event, redo=False):
+        try:
+            if self.notebook.tab(self.notebook.select(), "text") != "Repair Studio":
+                return None
+            focus = self.master.focus_get()
+        except Exception:
+            return None
+        if focus is not None and focus.winfo_class() in ("Entry", "TEntry", "Text", "TCombobox", "Spinbox",
+                                                         "TSpinbox"):
+            return None                                # typing: the box's own keys
+        self._repair_undo(redo=redo)
+        return "break"
+
+    def _repair_undo(self, redo=False):
+        if self._repair_undo_after is not None:        # a change still settling counts as a step first
+            try:
+                self.master.after_cancel(self._repair_undo_after)
+            except Exception:
+                pass
+            self._repair_undo_commit()
+        src, dst = ((self._repair_redo_stack, self._repair_undo_stack) if redo else
+                    (self._repair_undo_stack, self._repair_redo_stack))
+        if not src:
+            self.repair_status_var.set("Nothing to redo." if redo else "Nothing to undo.")
+            return
+        snap = src.pop()
+        if self._repair_undo_committed is not None:
+            dst.append(self._repair_undo_committed)
+        self._repair_undo_restore(snap)
+        self._repair_undo_committed = snap
+        n = len(self._repair_undo_stack)
+        self.repair_status_var.set(("Redone" if redo else "Undone") + f" ({n} step{'s' if n != 1 else ''} to undo, "
+                                   f"{len(self._repair_redo_stack)} to redo).")
+
+    def _repair_undo_restore(self, snap):
+        changed = []
+        self._repair_undo_restoring = True
+        self._repair_master_mutating = True            # one preview at the end, not one per slider
+        try:
+            for bid, (pe, ps, de, ds) in snap.items():
+                v = self.repair_block_vars.get(bid)
+                if v is None or bid in getattr(self, "_repair_locks", {}):
+                    continue
+                if (bool(v["primary_enabled"].get()), round(float(v["primary_strength"].get()), 4),
+                        bool(v["donor_enabled"].get()), round(float(v["donor_strength"].get()), 4)) == (pe, ps, de, ds):
+                    continue
+                v["primary_enabled"].set(pe)
+                v["primary_strength"].set(ps)
+                v["donor_enabled"].set(de)
+                v["donor_strength"].set(ds)
+                changed.append(bid)
+        finally:
+            self._repair_master_mutating = False
+            self._repair_undo_restoring = False
+        try:
+            self._on_master_target_changed()           # the master sliders show the restored averages
+        except Exception:
+            pass
+        if changed and self.repair_engine is not None and self.repair_engine.primary_network is not None:
+            self.repair_engine.mark_blocks_changed(changed)
+            self._schedule_preview()
 
     def _on_preview_param_changed(self):
         # seed/prompt/resolution change → invalidate baseline cache and regen.
@@ -23681,6 +25209,8 @@ class LoRATrainerGUI:
             # let it go; the new render's worker brings that clip back.
             self.repair_engine.request_cancel()
         # Sync state from UI to repair_state (prompt/seed/res live in entries, not bound)
+        self._repair_pb_push()
+        self._repair_src_push()
         prompt_text = self.repair_prompt_var.get().strip()
         if not prompt_text:
             # Distilled with empty conditioning → 4 steps of unguided denoising =
@@ -23941,6 +25471,9 @@ class LoRATrainerGUI:
             # Fresh render cycle — clear any pending cancel from a previous aborted pass.
             if hasattr(self.repair_engine, "clear_cancel"):
                 self.repair_engine.clear_cancel()
+            if self._repair_is_audio():
+                self._repair_song_worker(snapshot)
+                return
             print(f"[repair] worker: generating baseline at "
                   f"{snapshot.preview_width}x{snapshot.preview_height}")
             baseline = self.repair_engine.generate_baseline(snapshot)
@@ -24006,6 +25539,847 @@ class LoRATrainerGUI:
                 self._repair_preview_dirty = False
                 print("[repair] dirty flag set during preview — refiring")
                 self._schedule_preview(force=True)
+
+    # ----- epoch blend ---------------------------------------------------------------------
+    # A LoRA's run mixed as an EMA (families/workbench.py: find_epochs / set_blend), one row per LoRA: the primary's
+    # and the donor's, each from its own folder. The dials only change strengths; the engine loads each epoch the
+    # first time a blend needs it.
+
+    def _build_repair_blend_row(self, parent, r, role):
+        """The mix row for role "primary" / "donor"; returns the next grid row. The primary chooses Off / Epochs of
+        this run / LoRA mix; the donor ticks its epoch blend."""
+        B = {"epochs": [], "last": None, "mix": [], "mix_paths": None}
+        self._repair_blend[role] = B
+        B["label"] = ttk.Label(parent, text="Mix:" if role == "primary" else "Donor epoch blend:")
+        B["label"].grid(row=r, column=0, sticky=tk.W, padx=4, pady=2)
+        head = ttk.Frame(parent)
+        head.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=2)
+        B["frame"] = head
+        B["var"] = tk.BooleanVar(value=False)              # the epoch blend is on
+        B["subs"] = []
+        if role == "primary":
+            B["mode"] = tk.StringVar(value="off")
+            for val, txt, tip in (
+                    ("off", "Off", "The primary file alone."),
+                    ("epochs", "Epochs of this run", "The saved epochs beside the primary, mixed as a moving "
+                                                     "average: Up to = the newest epoch in it, History = how much "
+                                                     "of the earlier ones comes with it."),
+                    ("mix", "LoRA mix", "The primary plus any LoRAs of this model, each at its own amount - "
+                                        "e.g. funk 1.0 + synthwave 0.5 - then shaped with the block sliders.")):
+                rb = ttk.Radiobutton(head, text=txt, value=val, variable=B["mode"], style="Surface.TRadiobutton",
+                                     command=self._repair_mix_mode_changed)
+                rb.pack(side=tk.LEFT, padx=(0, 14))
+                ToolTip(rb, tip + " Block sliders apply to the whole mix; Save bakes it into one LoRA.")
+            r += 1
+            dials = ttk.Frame(parent)
+            dials.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+            mixbox = ttk.Frame(parent)
+            mixbox.grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+            B["dials"], B["mixbox"], B["subs"] = dials, mixbox, [dials, mixbox]
+            B["mix_list"] = ttk.Frame(mixbox)
+            B["mix_list"].pack(side=tk.TOP, anchor=tk.W)
+            ttk.Button(mixbox, text="+ Add LoRA\u2026", command=self._repair_mix_add).pack(side=tk.TOP, anchor=tk.W,
+                                                                                         pady=(2, 0))
+            dials.grid_remove()
+            mixbox.grid_remove()
+        else:
+            ttk.Checkbutton(head, text=f"Blend the {role}'s epochs", variable=B["var"],
+                            command=lambda: self._repair_blend_toggled(role), style="Surface.TCheckbutton"
+                            ).pack(side=tk.LEFT, padx=(0, 14))
+            dials = head
+        ttk.Label(dials, text="Up to").pack(side=tk.LEFT, padx=(0, 4))
+        B["upto"] = ttk.Scale(dials, from_=0, to=1, orient=tk.HORIZONTAL, length=170,
+                              command=lambda v: self._repair_blend_moved(role))
+        B["upto"].pack(side=tk.LEFT)
+        B["upto_text"] = tk.StringVar(value="")
+        ttk.Label(dials, textvariable=B["upto_text"], width=9).pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Label(dials, text="History").pack(side=tk.LEFT, padx=(0, 4))
+        B["hist"] = ttk.Scale(dials, from_=0.0, to=0.95, orient=tk.HORIZONTAL, length=150,
+                              command=lambda v: self._repair_blend_moved(role))
+        B["hist"].set(0.5)
+        B["hist"].pack(side=tk.LEFT)
+        B["hist_text"] = tk.StringVar(value="")
+        ttk.Label(dials, textvariable=B["hist_text"], width=22).pack(side=tk.LEFT, padx=(4, 0))
+        ToolTip(dials, f"Mixes the saved epochs of the {role}'s run (the files beside it) as an exponential moving "
+                       "average, live. Up to: the newest epoch in the mix. History: how much of the earlier epochs "
+                       f"comes with it (0 = that epoch alone). The {role}'s block sliders apply to the whole mix, and "
+                       "Save bakes it into the LoRA.")
+        r += 1
+        B["info_var"] = tk.StringVar(value="")
+        B["info"] = ttk.Label(parent, textvariable=B["info_var"], foreground=COLORS["text_explain"])
+        B["info"].grid(row=r, column=1, columnspan=3, sticky=tk.W, padx=4, pady=(0, 2))
+        self._repair_blend_controls(role, False)
+        return r + 1
+
+    def _repair_blend_show(self, on):
+        """The mix rows with the family (H3 has its own engine: none); the primary's sub-row follows its mode."""
+        for role, B in self._repair_blend.items():
+            for w in (B["label"], B["frame"], B["info"]):
+                w.grid() if on else w.grid_remove()
+            for w in B["subs"]:
+                w.grid_remove()
+            if on and role == "primary":
+                mode = B["mode"].get()
+                if mode in ("epochs", "mix"):
+                    (B["dials"] if mode == "epochs" else B["mixbox"]).grid()
+
+    def _repair_blend_controls(self, role, on):
+        for w in (self._repair_blend[role]["upto"], self._repair_blend[role]["hist"]):
+            w.state(["!disabled"] if on else ["disabled"])
+
+    def _repair_blend_reset_ui(self, note="", role=None):
+        """Back to off and clear (a new primary or donor, a reset session, another family)."""
+        for rl in ((role,) if role else tuple(self._repair_blend)):
+            B = self._repair_blend[rl]
+            B["var"].set(False)
+            B["epochs"], B["last"] = [], None
+            self._repair_blend_controls(rl, False)
+            B["upto_text"].set("")
+            B["hist_text"].set("")
+            B["info_var"].set(note)
+            if rl == "primary":
+                B["mode"].set("off")
+                for row in B["mix"]:
+                    row["frame"].destroy()
+                B["mix"], B["mix_paths"] = [], None
+                for w in B["subs"]:
+                    w.grid_remove()
+
+    # the primary's mode: Off / Epochs of this run / LoRA mix
+    def _repair_mix_mode_changed(self):
+        from fizgig.families.workbench import PRIMARY
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        mode = B["mode"].get()
+        if mode != "off" and (eng is None or getattr(eng, "primary_network", None) is None
+                              or not hasattr(eng, "set_blend")):
+            B["mode"].set("off")
+            self.repair_status_var.set("Load the primary LoRA first, then pick a mix.")
+            return
+        B["dials"].grid() if mode == "epochs" else B["dials"].grid_remove()
+        B["mixbox"].grid() if mode == "mix" else B["mixbox"].grid_remove()
+        B["last"] = None
+        if mode == "epochs":
+            B["var"].set(True)
+            self._repair_blend_toggled("primary")
+            if not B["var"].get():                        # no run to blend: back to off, the note kept
+                B["mode"].set("off")
+                B["dials"].grid_remove()
+            return
+        B["var"].set(False)
+        self._repair_blend_controls("primary", False)
+        if mode == "off":
+            eng.set_blend(None, role=PRIMARY)
+            B["info_var"].set("Off: the primary file alone.")
+            self._schedule_preview(force=True)
+            return
+        if not B["mix"] or B["mix"][0]["path"] != eng.primary_path:
+            for row in B["mix"]:
+                row["frame"].destroy()
+            B["mix"] = []
+            self._repair_mix_row(eng.primary_path, 1.0, primary=True)
+        B["mix_paths"] = None                              # the sources go to the engine again
+        self._repair_mix_push()
+
+    def _repair_mix_row(self, path, amount, primary=False):
+        B = self._repair_blend["primary"]
+        f = ttk.Frame(B["mix_list"])
+        f.pack(side=tk.TOP, anchor=tk.W, pady=1)
+        name = os.path.splitext(os.path.basename(path))[0]
+        ttk.Label(f, text=("\u2605 " if primary else "") + (name if len(name) <= 38 else name[:36] + "\u2026"),
+                  width=40).pack(side=tk.LEFT)
+        var = tk.DoubleVar(value=amount)
+        txt = tk.StringVar(value=f"{amount:.2f}")
+        row = {"path": path, "var": var, "frame": f, "primary": primary}
+
+        def moved(v, _row=row, _t=txt):
+            x = round(float(v) / 0.05) * 0.05
+            _t.set(f"{x:.2f}")
+            self._repair_mix_push()
+        ttk.Scale(f, from_=-1.0, to=2.0, orient=tk.HORIZONTAL, length=200, variable=var,
+                  command=moved).pack(side=tk.LEFT, padx=(6, 4))
+        ttk.Label(f, textvariable=txt, width=5).pack(side=tk.LEFT)
+        if not primary:
+            ttk.Button(f, text="\u2715", width=3, command=lambda: self._repair_mix_remove(row)).pack(side=tk.LEFT,
+                                                                                                 padx=(6, 0))
+        else:
+            ttk.Label(f, text="(the primary)", foreground=COLORS["text_secondary"]).pack(side=tk.LEFT, padx=(6, 0))
+        B["mix"].append(row)
+        return row
+
+    def _repair_mix_add(self):
+        from tkinter import filedialog
+        from fizgig.families.registry import family_of_lora
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        if eng is None or getattr(eng, "primary_network", None) is None:
+            self.repair_status_var.set("Load the primary LoRA first.")
+            return
+        paths = filedialog.askopenfilenames(
+            parent=self.master, title="Add LoRAs to the mix", filetypes=[("LoRA", "*.safetensors")],
+            initialdir=os.path.dirname(eng.primary_path or "") or None)
+        fam = self.repair_family_var.get()
+        have = {os.path.normcase(os.path.abspath(r["path"])) for r in B["mix"]}
+        added, refused = 0, []
+        for p in paths or ():
+            if os.path.normcase(os.path.abspath(p)) in have:
+                continue
+            d = family_of_lora(p)
+            if d is not None and d.key != fam:
+                refused.append(f"{os.path.basename(p)} ({d.display_name})")
+                continue
+            self._repair_mix_row(p, 0.5)
+            have.add(os.path.normcase(os.path.abspath(p)))
+            added += 1
+        if refused:
+            messagebox.showwarning("Not added", "These are LoRAs for another model:\n\n" + "\n".join(refused))
+        if added:
+            self._repair_mix_push()
+
+    def _repair_mix_remove(self, row):
+        B = self._repair_blend["primary"]
+        row["frame"].destroy()
+        B["mix"] = [r for r in B["mix"] if r is not row]
+        self._repair_mix_push()
+
+    def _repair_mix_push(self):
+        """The mix rows to the engine: the files (when the list changed) and each amount; one render."""
+        from fizgig.families.workbench import PRIMARY
+        B, eng = self._repair_blend["primary"], self.repair_engine
+        if B["mode"].get() != "mix" or eng is None or not hasattr(eng, "set_sources") or not B["mix"]:
+            return
+        paths = tuple(r["path"] for r in B["mix"])
+        amounts = {i: round(float(r["var"].get()) / 0.05) * 0.05 for i, r in enumerate(B["mix"])}
+        shown = " \u00b7 ".join(f"{os.path.splitext(os.path.basename(r['path']))[0][:24]} {amounts[i]:.2f}"
+                                 for i, r in enumerate(B["mix"]))
+        B["info_var"].set(f"Mix: {shown}  (total {sum(amounts.values()):.2f})" if len(paths) > 1 else
+                          "Add LoRAs to mix with the primary; each gets its own amount.")
+        key = (paths, tuple(sorted(amounts.items())))
+        if key == B["last"]:
+            return
+        B["last"] = key
+        try:
+            if paths != B["mix_paths"]:
+                eng.set_sources(dict(enumerate(paths)), role=PRIMARY)
+                B["mix_paths"] = paths
+            eng.set_blend({i: w for i, w in amounts.items() if w}, role=PRIMARY)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not set the mix: {e}")
+            return
+        self._schedule_preview()
+
+    def _repair_blend_toggled(self, role):
+        from fizgig.families.workbench import DONOR, PRIMARY
+        B, eng = self._repair_blend[role], self.repair_engine
+        key = PRIMARY if role == "primary" else DONOR
+        if not B["var"].get():
+            if eng is not None and hasattr(eng, "set_blend"):
+                eng.set_blend(None, role=key)
+            B["last"] = None
+            self._repair_blend_controls(role, False)
+            B["info_var"].set(f"Off: the {role} file alone.")
+            self._schedule_preview(force=True)
+            return
+        loaded = eng is not None and hasattr(eng, "find_epochs") and getattr(
+            eng, "primary_network" if role == "primary" else "donor_network", None) is not None
+        if not loaded:
+            B["var"].set(False)
+            self.repair_status_var.set(f"Load the {role} LoRA first, then tick its epoch blend.")
+            return
+        try:
+            epochs = eng.find_epochs(role=key)
+        except Exception as e:
+            self._repair_blend_reset_ui(role=role)
+            self.repair_status_var.set(f"Could not read the {role}'s epochs: {e}")
+            return
+        if len(epochs) < 2:
+            self._repair_blend_reset_ui(f"Only one epoch of the {role}'s run is beside its file, so there is "
+                                        "nothing to blend.", role=role)
+            return
+        B["epochs"] = epochs
+        self._repair_blend_controls(role, True)       # first: a disabled dial ignores set()
+        B["upto"].configure(from_=0, to=len(epochs) - 1)
+        own = eng.epoch_of(key)
+        B["upto"].set(epochs.index(own) if own in epochs else len(epochs) - 1)
+        self._repair_blend_moved(role)
+
+    def _repair_blend_values(self, role):
+        """(up-to epoch, history) from the dials, Up to snapped to a saved epoch."""
+        B = self._repair_blend[role]
+        eps = B["epochs"]
+        i = max(0, min(len(eps) - 1, int(round(float(B["upto"].get())))))
+        return eps[i], round(float(B["hist"].get()) / 0.05) * 0.05
+
+    def _repair_blend_moved(self, role):
+        B = self._repair_blend.get(role)
+        if not B or not B["epochs"]:
+            return
+        from fizgig.families.workbench import DONOR, PRIMARY, ema_weights
+        up_to, hist = self._repair_blend_values(role)
+        B["upto_text"].set(f"epoch {up_to}")
+        B["hist_text"].set("0 (that epoch alone)" if hist < 0.025 else
+                           f"{hist:.2f} (about {1 / (1 - hist):.0f} epochs)")
+        if not B["var"].get():
+            return
+        w = ema_weights(B["epochs"], up_to, hist)
+        top = sorted(w.items(), key=lambda kv: -kv[0])
+        shown = " \u00b7 ".join(f"e{e} {v * 100:.0f}%" for e, v in top[:6])
+        B["info_var"].set(f"Mix: {shown}" + (f" \u00b7 +{len(top) - 6} more" if len(top) > 6 else ""))
+        key = tuple(sorted((e, round(v, 5)) for e, v in w.items()))
+        if key == B["last"]:
+            return
+        B["last"] = key
+        eng = self.repair_engine
+        if eng is not None and hasattr(eng, "set_blend"):
+            eng.set_blend(w, role=PRIMARY if role == "primary" else DONOR)
+            self._schedule_preview()
+
+    # ----- music (sound-only families: ACE-Step) ------------------------------------------
+    # Each render is a song. The panes show the waveforms; the player row plays Baseline, Tweaked or the
+    # base model with No LoRA, and switching side keeps the moment in the song, so a slider's effect is heard
+    # at the same bar. A finished render on the side being heard takes over at that moment too.
+    # winsound cannot seek, so a play from mid-song writes the rest of the song to a temp wav.
+
+    _SONG_RATE = 48000
+    _SONG_SIDES = (("baseline", "Baseline"), ("tweaked", "Tweaked"), ("nolora", "No LoRA"))
+
+    def _repair_is_audio(self):
+        d = self._repair_desc()
+        return d is not None and getattr(d, "audio_workbench", False)
+
+    def _build_repair_audio_row(self, parent):
+        row = tk.Frame(parent, bg=COLORS["bg_surface"])
+        row.grid(row=10, column=0, columnspan=2, sticky=tk.EW, pady=(2, 8))
+        row.grid_remove()
+        self._repair_audio_row = row
+        outer, row = row, tk.Frame(row, bg=COLORS["bg_surface"])     # the buttons; the waveform strip below them
+        row.pack(side=tk.TOP, fill=tk.X)
+        self._repair_songs = {}              # side -> waveform (2, n) at 48 kHz
+        self._repair_song_activity = {}      # side -> {block id: push along the song} (description block_activity)
+        self._repair_glow = {}               # block id -> the glow level its label shows
+        self._repair_song_side = None        # the side being heard (or paused on)
+        self._repair_song_pos = 0.0          # seconds into the song where the current play started
+        self._repair_song_t0 = None          # monotonic time of that start; None = not playing
+        self._repair_song_file = 0
+        self._repair_song_looping = False    # the player itself is looping (the whole song, or the section)
+        self._repair_song_region = None      # (start, end) seconds: the section Loop repeats; None = the whole song
+        self._repair_song_drag = None        # the bar press: x, then the drag's end x
+        self.repair_song_loop_var = tk.BooleanVar(value=False)
+        self.repair_song_restart_var = tk.BooleanVar(value=False)
+        self._repair_song_buttons = {}
+        for side, label in self._SONG_SIDES:
+            b = tk.Button(row, text=f"\u25b6 {label}", font=(FONT_FAMILY, 10, "bold"), bg=COLORS["bg_deep"],
+                          fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                          activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4,
+                          cursor="hand2", command=lambda s=side: self._repair_song_play(s))
+            b.pack(side=tk.LEFT, padx=(4, 4))
+            self._repair_song_buttons[side] = b
+            if side == "tweaked":
+                # Loop: the song repeats. Restart on tweak: each new Tweaked render plays from the top (off: the
+                # side being heard carries on at the same moment in its new version)
+                for text, var, cmd in (("🔁 Loop", self.repair_song_loop_var, self._repair_song_loop_toggled),
+                                       ("⏮ Restart on tweak", self.repair_song_restart_var, None)):
+                    tk.Checkbutton(row, text=text, variable=var, command=cmd, font=(FONT_FAMILY, 9),
+                                   bg=COLORS["bg_surface"], fg=COLORS["text_primary"], selectcolor=COLORS["bg_deep"],
+                                   activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"],
+                                   bd=0, highlightthickness=0, cursor="hand2").pack(side=tk.LEFT, padx=(0, 8))
+        # Pause while a song plays, Resume once paused (from the playhead, on the side last heard)
+        self._repair_song_pause_btn = tk.Button(
+            row, text="\u23f8 Pause", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"], fg=COLORS["text_primary"],
+            activebackground=COLORS["bg_surface"], activeforeground=COLORS["text_primary"], relief="flat",
+            bd=0, padx=10, pady=4, cursor="hand2", width=9, command=self._repair_song_pause_resume)
+        self._repair_song_pause_btn.pack(side=tk.LEFT, padx=(4, 4))
+        tk.Button(row, text="💾 Save Tweaked WAV", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
+                  fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                  activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4, cursor="hand2",
+                  command=self._repair_song_save).pack(side=tk.LEFT, padx=(4, 4))
+        keep = tk.Button(row, text="\u2935 Use as source", font=(FONT_FAMILY, 10), bg=COLORS["bg_deep"],
+                         fg=COLORS["text_primary"], activebackground=COLORS["bg_surface"],
+                         activeforeground=COLORS["text_primary"], relief="flat", bd=0, padx=10, pady=4,
+                         cursor="hand2", command=self._repair_song_keep)
+        keep.pack(side=tk.LEFT, padx=(4, 12))
+        ToolTip(keep, "Make the Tweaked song the song to start from, set to Repaint: drag across the waveform to "
+                      "choose a section to make new (the rest stays exactly as it is), or switch Use to Extend.")
+        # the song being heard (or last heard), full width: a moving playhead; click = jump, drag = the section
+        bar = tk.Canvas(outer, height=72, bg=COLORS["bg_deep"], highlightthickness=0, cursor="hand2")
+        bar.pack(side=tk.TOP, fill=tk.X, expand=True, padx=(4, 8), pady=(6, 0))
+        # click = jump; drag the playhead's handle = scrub; drag anywhere else = the section to loop;
+        # right-click = loop the whole song again
+        bar.bind("<ButtonPress-1>", self._repair_song_press)
+        bar.bind("<B1-Motion>", self._repair_song_drag_to)
+        bar.bind("<ButtonRelease-1>", self._repair_song_release)
+        bar.bind("<Button-3>", lambda e: self._repair_song_set_region(None))
+        bar.bind("<Motion>", self._repair_song_hover)
+        bar.bind("<Configure>", lambda e: self._repair_song_draw())
+        self._repair_song_bar = bar
+        self.repair_song_time_var = tk.StringVar(value="0:00 / 0:00")
+        tk.Label(row, textvariable=self.repair_song_time_var, font=(FONT_FAMILY, 9), fg=COLORS["text_secondary"],
+                 bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(0, 4))
+
+    def _repair_audio_ui(self, desc):
+        """Switch the Preview card between pictures and songs for the selected family."""
+        audio = desc is not None and getattr(desc, "audio_workbench", False)
+        row = getattr(self, "_repair_audio_row", None)
+        if row is None:
+            return
+        if audio:
+            row.grid()
+            self._repair_res_label.configure(text="Length (s):")
+            self._repair_res_combo.configure(values=["10", "20", "30", "60", "120"])
+            self._repair_preview_hint.configure(text="\u25b6 Play either side; switching keeps your place in the song. "
+                                                     "Click the waveform to jump; drag across it to loop a "
+                                                     "section (right-click: the whole song).")
+            for h in (self.repair_base_holder, self.repair_tweaked_holder):
+                h.configure(height=200)
+        else:
+            self._repair_song_stop()
+            self._repair_songs = {}
+            self._repair_song_activity = {}
+            row.grid_remove()
+            self._repair_res_label.configure(text="Res:")
+            self._repair_res_combo.configure(values=["256", "384", "512", "768", "1024"])
+            self._repair_preview_hint.configure(text="\U0001f50d Click either image for the full-size side-by-side "
+                                                     "compare with likeness + quality metrics")
+            for h in (self.repair_base_holder, self.repair_tweaked_holder):
+                h.configure(height=512)
+        self._repair_song_mark()
+        self._repair_song_draw()
+
+    def _repair_song_duration(self, side=None):
+        wav = self._repair_songs.get(side or self._repair_song_strip_side() or "baseline")
+        return 0.0 if wav is None else wav.shape[1] / self._SONG_RATE
+
+    def _repair_song_span(self):
+        """(start, end) seconds Loop repeats: the section when one is set and Loop is on, else the whole song."""
+        dur = self._repair_song_duration()
+        r = self._repair_song_region
+        if r and self.repair_song_loop_var.get() and r[0] < dur:
+            return r[0], min(r[1], dur)
+        return 0.0, dur
+
+    def _repair_song_now(self):
+        """Seconds into the song now (the paused position when nothing plays)."""
+        if self._repair_song_t0 is None:
+            return self._repair_song_pos
+        import time as _t
+        now = self._repair_song_pos + (_t.monotonic() - self._repair_song_t0)
+        if self._repair_song_looping:
+            a, b = self._repair_song_span()
+            return a + (now - a) % (b - a) if b > a else a
+        return now
+
+    def _repair_song_play(self, side, at=None):
+        import tempfile
+        import time as _t
+        wav = self._repair_songs.get(side)
+        if wav is None:
+            self.repair_status_var.set("That song is not rendered yet." if side != "nolora" else
+                                       "The No LoRA song renders after the first preview.")
+            return
+        pos = self._repair_song_now() if at is None else float(at)
+        dur = wav.shape[1] / self._SONG_RATE
+        a, b = self._repair_song_span()
+        if self.repair_song_loop_var.get() and self._repair_song_region and not (a <= pos < b - 0.05):
+            pos = a                              # outside the section: start at its beginning
+        if pos >= dur - 0.05 or pos < 0:
+            pos = 0.0
+        try:
+            from fizgig.minimax.common import write_wav
+            self._repair_stop_wav()
+            self._repair_song_file ^= 1          # alternate files: the one just stopped may still be held
+            path = os.path.join(tempfile.gettempdir(), f"fizgig_song_{self._repair_song_file}.wav")
+            loop = self.repair_song_loop_var.get()
+            end = b if loop else dur
+            write_wav(path, wav[:, int(pos * self._SONG_RATE):int(end * self._SONG_RATE)], sample_rate=self._SONG_RATE)
+            # from the loop's start the player loops the file itself (no gap); from mid-way it plays to the loop's
+            # end and the tick restarts it at the start
+            self._repair_song_looping = self._repair_play_wav(path, loop=loop and abs(pos - a) < 1e-6)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not play the song: {e}")
+            return
+        self._repair_song_side, self._repair_song_pos, self._repair_song_t0 = side, pos, _t.monotonic()
+        self._repair_song_mark()
+        self._repair_song_tick()
+
+    def _repair_song_stop(self):
+        if getattr(self, "_repair_song_t0", None) is None:
+            return
+        self._repair_song_pos = min(self._repair_song_now(), self._repair_song_duration())
+        self._repair_song_t0 = None
+        self._repair_song_looping = False
+        self._repair_stop_wav()
+        self._repair_song_mark()
+        self._repair_song_draw()
+        self._repair_song_mark()
+        self._repair_song_draw()
+
+    def _repair_song_save(self):
+        """The whole Tweaked song as rendered, 48 kHz 16-bit stereo WAV. Named <LoRA>_tweaked_seed<N>.wav in the
+        LoRA's folder by default."""
+        wav = self._repair_songs.get("tweaked")
+        if wav is None:
+            self.repair_status_var.set("Nothing to save yet: the Tweaked song renders after the first preview.")
+            return
+        from tkinter import filedialog
+        lora = self.repair_primary_var.get().strip()
+        stem = os.path.splitext(os.path.basename(lora))[0] if lora else "song"
+        seed = self.repair_seed_var.get().strip()
+        path = filedialog.asksaveasfilename(
+            parent=self.master, title="Save the Tweaked song", defaultextension=".wav",
+            filetypes=[("WAV audio", "*.wav")], initialdir=os.path.dirname(lora) if lora else None,
+            initialfile=f"{stem}_tweaked" + (f"_seed{seed}" if seed else "") + ".wav")
+        if not path:
+            return
+        try:
+            from fizgig.minimax.common import write_wav
+            write_wav(path, wav, sample_rate=self._SONG_RATE)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not save the song: {e}")
+            return
+        self.repair_status_var.set(f"Saved {os.path.basename(path)} ({wav.shape[1] / self._SONG_RATE:.0f} s)")
+
+    def _repair_song_loop_toggled(self):
+        """Loop switched while a song plays: carry on from the same moment, looping or not."""
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side)
+
+    def _repair_song_x_to_t(self, x):
+        w = max(1, self._repair_song_bar.winfo_width())
+        return max(0.0, min(1.0, x / w)) * self._repair_song_duration()
+
+    _SONG_GRAB = 10              # px either side of the playhead that pick it up
+
+    def _repair_song_head_x(self):
+        dur = self._repair_song_duration()
+        w = max(1, self._repair_song_bar.winfo_width())
+        return int(w * min(self._repair_song_now(), dur) / dur) if dur else 0
+
+    def _repair_song_edge_at(self, event):
+        """0 / 1 when the press is on the section's start / end tab (the middle of the bar's height), else None."""
+        r, dur = self._repair_song_region, self._repair_song_duration()
+        h = max(1, self._repair_song_bar.winfo_height())
+        if not r or not dur or not (h * .25 <= event.y <= h * .75):
+            return None
+        w = max(1, self._repair_song_bar.winfo_width())
+        xs = [int(w * r[0] / dur), int(w * min(r[1], dur) / dur)]
+        best = min((0, 1), key=lambda i: abs(event.x - xs[i]))
+        return best if abs(event.x - xs[best]) <= self._SONG_GRAB else None
+
+    def _repair_song_on_head(self, event):
+        return bool(self._repair_song_duration()) and abs(event.x - self._repair_song_head_x()) <= self._SONG_GRAB
+
+    def _repair_song_hover(self, event):
+        near = self._repair_song_edge_at(event) is not None or self._repair_song_on_head(event)
+        want = "sb_h_double_arrow" if near else "hand2"
+        if self._repair_song_bar.cget("cursor") != want:
+            self._repair_song_bar.configure(cursor=want)
+
+    def _repair_song_press(self, event):
+        edge = self._repair_song_edge_at(event)
+        if edge is not None:
+            # a section tab: drag it to refine the section; out to both ends of the song = the whole song again
+            self._repair_song_edge = edge
+            self._repair_song_drag = None
+            self._repair_song_scrubbing = False
+            return
+        self._repair_song_edge = None
+        if self._repair_song_on_head(event):
+            # the playhead's handle: scrub. A playing song pauses while dragged and carries on from where it is let go
+            self._repair_song_scrub = self._repair_song_t0 is not None
+            if self._repair_song_scrub:
+                self._repair_song_stop()
+            self._repair_song_drag = None
+            self._repair_song_scrubbing = True
+            return
+        self._repair_song_scrubbing = False
+        self._repair_song_drag = [event.x, event.x]
+
+    def _repair_song_drag_to(self, event):
+        if getattr(self, "_repair_song_edge", None) is not None and self._repair_song_region:
+            r = list(self._repair_song_region)
+            r[self._repair_song_edge] = self._repair_song_x_to_t(event.x)
+            self._repair_song_edge_live = (min(r), max(r))
+            self._repair_song_draw()
+            return
+        if getattr(self, "_repair_song_scrubbing", False):
+            self._repair_song_pos = self._repair_song_x_to_t(event.x)
+            self._repair_song_draw()
+            return
+        if self._repair_song_drag is not None:
+            self._repair_song_drag[1] = event.x
+            self._repair_song_draw()
+
+    def _repair_song_release(self, event):
+        if getattr(self, "_repair_song_edge", None) is not None:
+            live, self._repair_song_edge, self._repair_song_edge_live = \
+                getattr(self, "_repair_song_edge_live", None), None, None
+            if live is None:
+                self._repair_song_draw()
+                return
+            dur = self._repair_song_duration()
+            if live[0] <= 0.15 and live[1] >= dur - 0.15:
+                self._repair_song_set_region(None)          # dragged out to both ends: the whole song
+            elif live[1] - live[0] >= 0.25:
+                self._repair_song_set_region(live)
+            else:
+                self._repair_song_draw()
+            return
+        if getattr(self, "_repair_song_scrubbing", False):
+            self._repair_song_scrubbing = False
+            self._repair_song_pos = self._repair_song_x_to_t(event.x)
+            if self._repair_song_scrub:
+                self._repair_song_play(self._repair_song_side or self._repair_song_strip_side(),
+                                       at=self._repair_song_pos)
+            else:
+                self._repair_song_draw()
+            return
+        d, self._repair_song_drag = self._repair_song_drag, None
+        if d is None:
+            return
+        if abs(event.x - d[0]) < 5:              # a click: jump there
+            self._repair_song_seek(event)
+            return
+        t0, t1 = sorted((self._repair_song_x_to_t(d[0]), self._repair_song_x_to_t(event.x)))
+        if t1 - t0 < 0.25:
+            self._repair_song_draw()
+            return
+        self._repair_song_set_region((t0, t1))
+
+    def _repair_song_set_region(self, region):
+        """The section Loop repeats (None = the whole song). Setting one ticks Loop; a playing song jumps into it."""
+        self._repair_song_region = region
+        if region:
+            self.repair_song_loop_var.set(True)
+        if self._repair_src_mode() == "repaint" and self.repair_src_on_var.get():
+            self._repair_src_changed()                  # Repaint the loop section: the new section renders
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side, at=region[0] if region else None)
+        else:
+            if region:
+                self._repair_song_pos = region[0]
+            self._repair_song_draw()
+
+    def _repair_song_seek(self, event):
+        pos = self._repair_song_x_to_t(event.x)
+        if self._repair_song_t0 is not None:
+            self._repair_song_play(self._repair_song_side, at=pos)
+        else:
+            self._repair_song_pos = pos
+            self._repair_song_draw()
+
+    def _repair_song_mark(self):
+        playing = self._repair_song_t0 is not None
+        for side, b in self._repair_song_buttons.items():
+            on = playing and side == self._repair_song_side
+            b.configure(bg=COLORS["accent"] if on else COLORS["bg_deep"],
+                        state="normal" if side in self._repair_songs else "disabled")
+        pb = getattr(self, "_repair_song_pause_btn", None)
+        if pb is not None:
+            pb.configure(text="\u23f8 Pause" if playing or not self._repair_songs else "\u25b6 Resume",
+                         state="normal" if self._repair_songs else "disabled")
+
+    def _repair_song_pause_resume(self):
+        if self._repair_song_t0 is not None:
+            self._repair_song_stop()
+        else:
+            side = self._repair_song_side if self._repair_song_side in self._repair_songs \
+                else self._repair_song_strip_side()
+            if side:
+                self._repair_song_play(side)
+
+    def _repair_song_tick(self):
+        if self._repair_song_t0 is None:
+            return
+        a, b = self._repair_song_span()
+        end = b if self.repair_song_loop_var.get() else self._repair_song_duration()
+        if not self._repair_song_looping and self._repair_song_now() >= end:
+            if self.repair_song_loop_var.get():
+                self._repair_song_play(self._repair_song_side, at=a)    # Loop: again from the start
+                return
+            self._repair_song_pos, self._repair_song_t0 = 0.0, None     # the song ended
+            self._repair_song_mark()
+        self._repair_song_draw()
+        if self._repair_song_t0 is not None:
+            self.master.after(100, self._repair_song_tick)
+
+    def _repair_activity_paint(self):
+        """Block activity: each block's name glows orange with how hard that block's LoRA pushes at the playhead -
+        playing, paused or scrubbed - on the side heard (or shown): the render's BlockMeter map, scaled to the
+        song's own strongest pushes. No glow for a side without a map (No LoRA)."""
+        side = self._repair_song_strip_side() if hasattr(self, "_repair_songs") else None
+        act = self._repair_song_activity.get(side) if side else None
+        rows = getattr(self, "repair_block_vars", {})
+        if not act:
+            if any(self._repair_glow.values()):
+                for bid, w in rows.items():
+                    if self._repair_glow.get(bid):
+                        w["block_lbl"].configure(bg=COLORS["bg_surface"])
+                self._repair_glow = {}
+            return
+        import numpy as _np
+        key = id(act)
+        if getattr(self, "_repair_glow_key", None) != key:            # the song's scale, once per map
+            allv = _np.concatenate([v.ravel() for v in act.values()])
+            self._repair_glow_key, self._repair_glow_top = key, max(1e-6, float(_np.percentile(allv, 98)))
+        dur = max(1e-6, self._repair_song_duration(side))
+        frac = min(0.999, max(0.0, self._repair_song_now() / dur))
+        top = self._repair_glow_top
+        for bid, w in rows.items():
+            v = act.get(bid)
+            level = 0
+            if v is not None and len(v):
+                i = int(frac * len(v))
+                lo, hi = max(0, i - 2), min(len(v), i + 3)       # a 5-step window (~0.2 s): steady, not flickery
+                level = int(round(min(1.0, float(v[lo:hi].mean()) / top) * 8))
+            if self._repair_glow.get(bid, 0) != level:
+                self._repair_glow[bid] = level
+                w["block_lbl"].configure(bg=self._repair_glow_colour(level / 8))
+
+    @staticmethod
+    def _repair_glow_colour(k):
+        a, b = COLORS["bg_surface"].lstrip("#"), COLORS["orange"].lstrip("#")
+        k = 0.85 * k
+        return "#" + "".join(f"{round(int(a[i:i + 2], 16) * (1 - k) + int(b[i:i + 2], 16) * k):02x}" for i in (0, 2, 4))
+
+    def _repair_song_draw(self):
+        bar = getattr(self, "_repair_song_bar", None)
+        if bar is None:
+            return
+        bar.delete("all")
+        w, h = bar.winfo_width(), bar.winfo_height()
+        dur = self._repair_song_duration()
+        now = min(self._repair_song_now(), dur) if dur else 0.0
+        if dur:
+            x = int(w * now / dur)
+            imgs = self._repair_song_strip_images(w, h)
+            if imgs is not None:
+                dim, bright = imgs
+                bar.create_image(0, 0, image=dim, anchor=tk.NW)
+                if x > 0:
+                    from PIL import ImageTk
+                    self._repair_song_strip_played = ImageTk.PhotoImage(bright.crop((0, 0, x, h)))
+                    bar.create_image(0, 0, image=self._repair_song_strip_played, anchor=tk.NW)
+            bar.create_line(x, 0, x, h, fill=COLORS["accent"], width=2)
+            for y0, dy in ((0, 1), (h, -1)):           # grab handles top and bottom: drag them to scrub
+                bar.create_polygon(x - 7, y0, x + 7, y0, x, y0 + 10 * dy, fill=COLORS["accent"], outline="")
+            r = self._repair_song_region
+            drag = getattr(self, "_repair_song_drag", None)
+            if drag is not None and abs(drag[1] - drag[0]) >= 5:
+                x0, x1 = sorted(drag)
+                bar.create_rectangle(x0, 1, x1, h - 1, outline=COLORS["queue_blue"], width=2)
+            elif r:
+                r = getattr(self, "_repair_song_edge_live", None) or r      # a tab being dragged
+                x0, x1 = int(w * r[0] / dur), int(w * min(r[1], dur) / dur)
+                live = self.repair_song_loop_var.get()
+                col = COLORS["queue_blue"] if live else COLORS["text_muted"]
+                bar.create_rectangle(x0, 1, x1, h - 1, outline=col, width=2, dash=() if live else (3, 2))
+                for xe in (x0, x1):                     # the tabs: drag to refine the section
+                    bar.create_rectangle(xe - 5, h / 2 - 12, xe + 5, h / 2 + 12, fill=col, outline="")
+
+        def fmt(t):
+            return f"{int(t) // 60}:{int(t) % 60:02d}"
+        self.repair_song_time_var.set(f"{fmt(now)} / {fmt(dur)}")
+        self._repair_activity_paint()
+
+    def _repair_song_strip_side(self):
+        side = self._repair_song_side
+        if side in self._repair_songs:
+            return side
+        return next((s for s in ("tweaked", "baseline", "nolora") if s in self._repair_songs), None)
+
+    def _repair_song_strip_images(self, w, h):
+        """The waveform of the song being heard at the strip's size: (dim PhotoImage, bright PIL image for the part
+        already played), cached per song and size."""
+        side = self._repair_song_strip_side()
+        if side is None or w < 4 or h < 4:
+            return None
+        wav = self._repair_songs[side]
+        key = (id(wav), tuple(wav.shape), w, h)
+        c = getattr(self, "_repair_song_strip_cache", None)
+        if c is not None and c[0] == key:
+            return c[1], c[2]
+        import numpy as np
+        from PIL import Image, ImageDraw, ImageTk
+        a = np.abs(np.asarray(wav.float().mean(0) if hasattr(wav, "float") else wav.mean(0), dtype=np.float32))
+        n = max(1, a.shape[0] // w)
+        cols = a[:n * w].reshape(w, n) if a.shape[0] >= w else np.resize(a, (w, 1))
+        peak = max(1e-6, float(cols.max()))
+        pk, rms = cols.max(1) / peak, np.sqrt((cols ** 2).mean(1)) / peak
+        rgb = tuple(v // 257 for v in self.master.winfo_rgb(COLORS["bg_deep"]))
+        mid = h / 2
+
+        def draw(c_peak, c_rms):
+            img = Image.new("RGB", (w, h), rgb)
+            d = ImageDraw.Draw(img)
+            for x in range(w):
+                d.line([(x, mid - pk[x] * mid * 0.92), (x, mid + pk[x] * mid * 0.92)], fill=c_peak)
+                d.line([(x, mid - rms[x] * mid * 0.92), (x, mid + rms[x] * mid * 0.92)], fill=c_rms)
+            return img
+        dim = ImageTk.PhotoImage(draw((52, 62, 82), (82, 98, 124)))
+        bright = draw((70, 110, 170), (140, 190, 250))
+        self._repair_song_strip_cache = (key, dim, bright)
+        return dim, bright
+
+    def _repair_song_keep(self):
+        """The Tweaked song becomes the song to start from (a take file), set to Repaint the loop section."""
+        wav = self._repair_songs.get("tweaked")
+        if wav is None:
+            self.repair_status_var.set("Nothing to use yet: the Tweaked song renders after the first preview.")
+            return
+        import tempfile
+        try:
+            from fizgig.minimax.common import write_wav
+            path = os.path.join(tempfile.gettempdir(), f"fizgig_take_{int(time.time() * 1000)}.wav")
+            write_wav(path, wav, sample_rate=self._SONG_RATE)
+        except Exception as e:
+            self.repair_status_var.set(f"Could not keep the song: {e}")
+            return
+        if self._repair_src_mode() == "song":
+            self.repair_src_mode_var.set(dict(self._SRC_MODES)["repaint"])
+        self.repair_src_on_var.set(True)
+        self._repair_src_toggled()
+        self.repair_src_path_var.set(path)
+        self.repair_status_var.set("The Tweaked song is now the source: drag across the waveform to choose the "
+                                   "section to repaint" + (", then press Update." if not self._repair_song_region
+                                                           else " (or keep this one), then press Update."))
+
+    def _repair_song_worker(self, snapshot):
+        """Worker thread: the Baseline and Tweaked songs at the Length setting (the snapshot's preview width,
+        in seconds), and the base model's song (No LoRA) once per LoRA, prompt, seed and length."""
+        import copy
+        eng = self.repair_engine
+        eng.driver.set_options({"preview_seconds": int(snapshot.preview_width)})
+        print(f"[repair] worker: songs, {snapshot.preview_width} s")
+        songs = {"baseline": eng.generate_baseline(snapshot), "tweaked": eng.generate_preview(snapshot)}
+        key = (eng.primary_path, snapshot.seed, snapshot.prompt, int(snapshot.preview_width),
+               eng._prompt_b_key() if hasattr(eng, "_prompt_b_key") else None,
+               eng._audio_key() if hasattr(eng, "_audio_key") else None)
+        if getattr(self, "_repair_nolora_key", None) != key and not self._repair_preview_dirty:
+            base = copy.deepcopy(snapshot)
+            base.primary_scale, base.donor_scale = 0.0, 0.0
+            songs["nolora"] = eng.generate_preview(base)
+            self._repair_nolora_key = key
+        self.master.after(0, lambda: self._set_repair_songs(songs))
+
+    def _set_repair_songs(self, songs):
+        """New renders landed (Tk thread): {side: Song}. The panes show their waveforms; a side being heard
+        continues from the same moment in its new version."""
+        for side, song in songs.items():
+            if song is not None:
+                self._repair_songs[side] = song.wave
+                self._repair_song_activity[side] = getattr(song, "activity", None)
+        r = self._repair_song_region
+        if r and r[0] >= self._repair_song_duration() - 0.25:
+            self._repair_song_region = None             # a shorter Length: the section is past the end
+        playing = self._repair_song_t0 is not None
+        if "tweaked" in songs and songs["tweaked"] is not None and self.repair_song_restart_var.get():
+            # Restart on tweak: hear the new version from the top (of the loop section, when one is set)
+            self._repair_song_play("tweaked", at=self._repair_song_span()[0])
+        elif playing and self._repair_song_side in songs:
+            self._repair_song_play(self._repair_song_side)
+        else:
+            self._repair_song_mark()
+            self._repair_song_draw()
+        if "baseline" in songs and "tweaked" in songs:
+            self._set_repair_preview_images(songs["baseline"].picture(), songs["tweaked"].picture())
 
     # ----- H3 clips + the in-app clip player ---------------------------------------------
     # H3 previews are clips. The main panel keeps showing each clip's middle frame (the
@@ -25118,13 +27492,15 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
-    def _repair_play_wav(self, path):
+    def _repair_play_wav(self, path, loop=False):
+        """-> True when the player itself loops the file (seamless; winsound only)."""
         try:
             import gizmo as _gz
             if path and os.path.isfile(path):
-                _gz._play_wav(path)
+                return bool(_gz._play_wav(path, loop=loop))
         except Exception:
             pass
+        return False
 
     def _repair_clip_player_open(self, clips=None, labels=None, title=None, metrics=True,
                                  nolora=True, stem="repair", status_var=None, sides=None):
@@ -25657,6 +28033,8 @@ class LoRATrainerGUI:
 
     def _repair_popout_preview(self):
         """Open (or raise) a resizable pop-out showing baseline and tweaked side by side."""
+        if self._repair_is_audio():
+            return                       # songs are heard on the player row, not compared as pictures
         if self._repair_is_video() and self._repair_clips.get("tweaked") is not None:
             self._repair_clip_player_open()
             return
@@ -28262,6 +30640,16 @@ class LoRATrainerGUI:
         if self.repair_engine is None or self.repair_engine.primary_network is None:
             messagebox.showerror("Error", "Load a primary LoRA first.")
             return
+        # A mix (the primary's epochs or LoRA mix, or the donor's epoch blend) is no file the Explorer can open:
+        # the user bakes it with Save Repaired LoRA and explores that file
+        _B = getattr(self, "_repair_blend", {})
+        _mixed = (_B.get("primary", {}).get("mode") is not None and _B["primary"]["mode"].get() != "off") or \
+            (_B.get("donor", {}).get("var") is not None and _B["donor"]["var"].get())
+        if _mixed:
+            self.repair_status_var.set(
+                "A mix can't go to the Explorer as it is: Save Repaired LoRA bakes it into one file - load that "
+                "in LoRA the Explorer.")
+            return
         # Mirror of the Explorer-side guard: _reset_repair_session below refuses to tear down
         # mid-preview, but it returns into THIS method which would then build the Explorer
         # pipeline alongside the still-rendering preview — two pipelines, two threads, one
@@ -28424,6 +30812,7 @@ class LoRATrainerGUI:
             self._repair_popout_window = None
             self._repair_popout_label = None
             self._repair_popout_tk_img = None
+        self._repair_blend_reset_ui()
         if self.repair_engine is not None:
             print("[repair] reset session: freeing models…", flush=True)
             try:
@@ -28620,6 +31009,8 @@ class LoRATrainerGUI:
             d_color = "#888" if d_active else grey_fg
             v["donor_tag_lbl"].configure(foreground=d_color)
             v["donor_lbl"].configure(foreground=d_color if d_active else grey_fg)
+        for block_id in list(getattr(self, "_repair_locks", {})):
+            self._repair_lock_widgets(block_id)
 
     # ---------------- Presets (built-in + user JSON) -----------------
 
@@ -28849,6 +31240,108 @@ class LoRATrainerGUI:
         except Exception:
             import traceback
             messagebox.showerror("Error", f"Save failed:\n{traceback.format_exc()}")
+
+    # the values a saved setup leaves out: what the tab shows (status, times, the preset picker), not what it is set to
+    _REPAIR_SETUP_SKIP = {"repair_status_var", "repair_song_time_var", "repair_cache_status_var",
+                          "repair_preset_var", "repair_family_var"}
+
+    def _repair_setup_vars(self):
+        """Every Repair Studio control's variable, by attribute name: a control added later is saved with no change
+        here."""
+        out = {}
+        for name, v in vars(self).items():
+            if "repair" in name and isinstance(v, tk.Variable) and name not in self._REPAIR_SETUP_SKIP:
+                out[name] = v
+        return out
+
+    def _repair_setups_dir(self):
+        d = os.path.join(PRESETS_DIR, "repair_studio", "setups")
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _save_repair_setup(self):
+        """The whole Repair Studio session in one file: the family, every control and every slider."""
+        import json as _json
+        from tkinter import filedialog
+        fam = self.repair_family_var.get()
+        path = filedialog.asksaveasfilename(
+            title="Save Repair Studio setup", initialdir=self._repair_setups_dir(), defaultextension=".json",
+            initialfile=f"{self._wb_legacy_name(fam)}_setup.json", filetypes=[("Fizgig setup", "*.json")])
+        if not path:
+            return
+        values = {}
+        for name, v in self._repair_setup_vars().items():
+            try:
+                values[name] = v.get()
+            except tk.TclError:
+                pass
+        blocks = {bid: {k: bv[k].get() for k in ("primary_enabled", "primary_strength", "donor_enabled",
+                                                  "donor_strength")}
+                  for bid, bv in (getattr(self, "repair_block_vars", None) or {}).items()}
+        data = {"fizgig_repair_setup": 1, "family": fam, "values": values, "blocks": blocks}
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                _json.dump(data, f, indent=2)
+            os.replace(tmp, path)
+            self.repair_status_var.set(f"Setup saved: {os.path.basename(path)}")
+        except OSError as e:
+            messagebox.showerror("Save Setup", f"Could not save the setup:\n{e}")
+
+    def _load_repair_setup(self, path=None, _tries=0):
+        """Restore a saved setup: its family first (waiting for a family switch to land), then every control and
+        slider, then Start - which loads its LoRAs and renders."""
+        import json as _json
+        if path is None:
+            from tkinter import filedialog
+            path = filedialog.askopenfilename(title="Load Repair Studio setup", initialdir=self._repair_setups_dir(),
+                                              filetypes=[("Fizgig setup", "*.json")])
+            if not path:
+                return
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = _json.load(f)
+            except (OSError, ValueError) as e:
+                messagebox.showerror("Load Setup", f"Could not read the setup:\n{e}")
+                return
+            if not isinstance(data, dict) or not data.get("fizgig_repair_setup"):
+                messagebox.showerror("Load Setup", "That file isn't a Repair Studio setup (a slider preset loads "
+                                                   "from the Preset list).")
+                return
+            self._repair_setup_pending = data
+            fam = data.get("family", "")
+            if fam and fam != self.repair_family_var.get():
+                self.repair_family_var.set(fam)
+                self._on_repair_family_changed()
+        data = getattr(self, "_repair_setup_pending", None)
+        if data is None:
+            return
+        fam = data.get("family", "")
+        if fam and getattr(self, "_repair_family_current", fam) != fam:      # the switch is still landing
+            if _tries < 300:
+                self.master.after(250, lambda: self._load_repair_setup(path or "", _tries + 1))
+            else:
+                self._repair_setup_pending = None
+                self.repair_status_var.set("Load Setup gave up waiting for the model switch - try again.")
+            return
+        self._repair_setup_pending = None
+        live = self._repair_setup_vars()
+        for name, val in (data.get("values") or {}).items():
+            v = live.get(name)
+            if v is not None:
+                try:
+                    v.set(val)
+                except (tk.TclError, ValueError):
+                    pass
+        for bid, bs in (data.get("blocks") or {}).items():
+            bv = (getattr(self, "repair_block_vars", None) or {}).get(bid)
+            if bv is not None:
+                for k, val in bs.items():
+                    if k in bv:
+                        bv[k].set(val)
+        self.repair_status_var.set(f"Setup loaded: {os.path.basename(path or '')}")
+        if self.repair_primary_var.get().strip():
+            self._repair_start()
 
     def _load_repair_preset(self, name: str):
         if not name:
@@ -30599,9 +33092,14 @@ class LoRATrainerGUI:
                         "network_dim": str(self.settings.get("NETWORK_DIM", "")),
                         "network_alpha": str(self.settings.get("NETWORK_ALPHA", "")),
                         "max_train_epochs": str(self.settings.get("MAX_TRAIN_EPOCHS", "")),
+                        # the run's whole setup as it launched (a queue item): Resume puts it back first, so a
+                        # restart that left other settings on screen never resumes with them (Peter, 11 Oct)
+                        "run": getattr(self, "_active_run_item", None),
                     }
+                    self._paused_run_item = sidecar["run"]
+                    self._paused_output = (sidecar["output_name"], out_dir)
                     with open(self._paused_sidecar_path(), "w") as f:
-                        _json.dump(sidecar, f, indent=2)
+                        _json.dump(sidecar, f, indent=2, default=str)
                 except Exception as e:
                     self.update_console(f"[pause] WARN: failed to write sidecar: {e}\n")
                 self.training_state = "paused"
@@ -30648,6 +33146,7 @@ class LoRATrainerGUI:
         if getattr(self, "training_state", "idle") != "paused":
             messagebox.showinfo("Not Paused", "No paused training to resume.")
             return
+        self._restore_paused_run_settings()
         state_path = getattr(self, "paused_state_path", None)
         if getattr(self, "paused_mode", "state") == "ft":
             if not state_path or not os.path.isfile(state_path):
@@ -30744,6 +33243,37 @@ class LoRATrainerGUI:
             self.update_console("[resume] start declined — the run is still PAUSED and can be "
                                 "resumed once the issue above is fixed.\n")
 
+    def _restore_paused_run_settings(self):
+        """Before a resume: put the paused run's own setup back - its model, dataset folder and every Training and
+        Samples setting - so whatever is on screen after a restart (another family's settings, a later preset)
+        never rides into it. From the pause record's snapshot; an older record without one uses Last Train when
+        that snapshot is this same run (its name and output folder)."""
+        item = getattr(self, "_paused_run_item", None)
+        if not isinstance(item, dict):
+            name, out_dir = getattr(self, "_paused_output", ("", ""))
+            snap = None
+            try:
+                with open(LAST_TRAIN_FILE, "r", encoding="utf-8") as f:
+                    snap = json.load(f)
+            except (OSError, ValueError):
+                pass
+            same = lambda a, b: os.path.normcase(os.path.abspath(str(a or "."))) ==                 os.path.normcase(os.path.abspath(str(b or ".")))
+            if (isinstance(snap, dict) and name and str(snap.get("LORA_NAME", "")).strip() == name
+                    and same(snap.get("LORA_OUTPUT_DIR", ""), out_dir)):
+                item = {"architecture": snap.pop("__architecture__", ""),
+                        "model_options": snap.pop("__model_options__", None), "preset": snap}
+        if not isinstance(item, dict):
+            self.update_console("[resume] no saved setup for this paused run - resuming with the settings on "
+                                "screen.\n")
+            return
+        try:
+            self._apply_queue_item(item)
+            self.update_console("[resume] restored the paused run's own settings (model, dataset folder, Training "
+                                "and Samples) before resuming.\n")
+        except Exception as e:
+            self.update_console(f"[resume] could not restore the paused run's settings ({e}) - resuming with the "
+                                "settings on screen.\n")
+
     def _check_for_paused_state_on_startup(self):
         """On GUI launch, detect a leftover paused state and restore the Resume button."""
         try:
@@ -30762,6 +33292,9 @@ class LoRATrainerGUI:
             if _ok:
                 self.paused_state_path = state_path
                 self.paused_mode = _mode
+                self._paused_run_item = meta.get("run") if isinstance(meta.get("run"), dict) else None
+                self._paused_output = (str(meta.get("output_name", "") or ""),
+                                       self.settings.get("LORA_OUTPUT_DIR", "") or ".")
                 # Restore the paused run's frozen dataset config (#98) so a cross-restart
                 # resume trains the dataset it started with — the resume launch keeps an
                 # existing snapshot instead of re-freezing whatever the Start tab shows.

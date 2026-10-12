@@ -11,8 +11,9 @@ from fizgig.families.qwen_image import QWEN_IMAGE_21
 from fizgig.families.sdxl import SDXL
 from fizgig.families.anima import ANIMA
 from fizgig.families.zimage import ZIMAGE
+from fizgig.families.acestep import ACESTEP15
 
-FAMILIES = {d.key: d for d in (KLEIN, MINIMAX, KREA2, QWEN_IMAGE_21, SDXL, ANIMA, ZIMAGE)}
+FAMILIES = {d.key: d for d in (KLEIN, MINIMAX, KREA2, QWEN_IMAGE_21, SDXL, ANIMA, ZIMAGE, ACESTEP15)}
 
 for _d in FAMILIES.values():
     _problems = _d.validate()

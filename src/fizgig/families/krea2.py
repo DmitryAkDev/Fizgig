@@ -122,7 +122,10 @@ KREA2 = FamilyDescription(
     # +2.9 GB (15.3 -> 18.2 GB whole-GPU; the original grows +2.6 on the same data), NF4 13.3 GB at 1 MP under a
     # 16 GB card. The original's +0.25 GB/MP under-plans 1 MP: INT8 + 16 swapped blocks ran out on a 12 GB card.
     # bf16: measured on the driver, rank 8, 0.25 MP, 26.0 GB; its 1 MP point carries INT8's growth.
-    train_memory={"int8": (((0.25, 16.2), (1.0, 19.1)), 0.42), "nf4": (((0.25, 11.4), (1.0, 13.4)), 0.0),
+    # NF4 at 1 MP is 15.0: rank 16 with previews on peaked 14.9 training / 15.2 previewing on a simulated 16 GB card
+    # (#185, 11 Oct 2026) - the old 13.4 (rank 8, previews off) put 16 GB cards on NF4 at 1 MP and filled them;
+    # INT8 + 16 swapped blocks peaked 12.7 / 12.9 on the same run
+    train_memory={"int8": (((0.25, 16.2), (1.0, 19.1)), 0.42), "nf4": (((0.25, 11.4), (1.0, 15.0)), 0.0),
                   "bf16": (((0.25, 26.0), (1.0, 28.9)), 0.84)},
     optimizers=("adamw8bit", "adamw"),
     # the original's Automagic setup (Peter, 17 Sep 2026): the 264 Linears converge at very different speeds, and the

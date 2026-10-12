@@ -385,12 +385,14 @@ def _prompt_slider_step(driver, dit, net, latents, enc, gen, *, guidance, min_t,
 
 
 def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_name, steps, cfg, neg, width,
-                     height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False):
+                     height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False,
+                     strengths=()):
     """Previews on the RESIDENT training model: training adapter OFF (the deployment setup), the family's speed
     LoRA ON if one is loaded (it lives on CPU between previews). On small cards the DiT parks on CPU for the
     decode. File names match the other trainers so the GUI gallery reads them:
     <name>_e<epoch>_<idx>_<timestamp>_<seed>.png. `speed` is the speed LoRA's SamplingSettings or None; `refs` the edit previews' reference latents; `slider`
-    renders each prompt at -1 / 0 / +1 on one seed and saves them as one strip."""
+    renders each prompt at -1 / 0 / +1 on one seed and saves them as one strip. `strengths`: each prompt again at
+    these LoRA strengths, same seed, saved beside it as <...>_s<strength x100>.png (_s050 = 0.5)."""
     os.makedirs(out_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
     device = next(iter(dit.parameters())).device
@@ -414,7 +416,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             driver.block_swap_mode(dit, inference=True)
         ref_kw = {"refs": [r.to(device) for r in refs]} if refs else {}
         lats = []
-        mults = SLIDER_PREVIEW_MULTIPLIERS if slider else (None,)
+        extra = () if slider else tuple(strengths or ())
+        mults = SLIDER_PREVIEW_MULTIPLIERS if slider else (None,) + extra
         # previews run the blocks uncompiled (Compile Blocks): eval mode, the preview size and the speed LoRA are each a
         # new graph, and building them took ~5 minutes of Triton/MSVC work on the first preview after every start or
         # resume - a handful of eager steps costs seconds. Training keeps its compiled graphs
@@ -423,8 +426,8 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
         done.add("eager")
         for i, cond in enumerate(encoded):
             for m in mults:
-                if m is not None:
-                    net.set_trainable_multiplier(m)
+                if m is not None or extra:
+                    net.set_trainable_multiplier(1.0 if m is None else m)
                 if speed is not None:
                     # the speed LoRA's own CFG, unless the Samples tab asks for more (then the negative applies too)
                     _cfg = cfg if cfg and cfg > 1.0 else speed.cfg
@@ -444,20 +447,22 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             quant.move(dit, "cpu")
             torch.cuda.empty_cache()
             _preview_vram("DiT parked for the decode")
-        per = len(SLIDER_PREVIEW_MULTIPLIERS) if slider else 1
+        per = len(mults)
         for i in range(len(lats) // per):
             p = os.path.join(out_dir, f"{output_name}_e{epoch:06d}_{i:02d}_{ts}_{seed + i}.png")
-            frames = [driver.decode(vae, lat, width, height) for lat in lats[i * per:(i + 1) * per]]
             if slider:
+                frames = [driver.decode(vae, lat, width, height) for lat in lats[i * per:(i + 1) * per]]
                 strip = driver.slider_preview(frames, SLIDER_PREVIEW_MULTIPLIERS)
                 paths += driver.save_preview(_slider_strip(frames, SLIDER_PREVIEW_MULTIPLIERS) if strip is None
                                              else strip, p)
-            else:
-                paths += driver.save_preview(frames[0], p)
+                continue
+            for m, lat in zip(mults, lats[i * per:(i + 1) * per]):      # decoded one at a time: a song is big
+                q = p if m is None else f"{p[:-4]}_s{int(round(m * 100)):03d}.png"
+                paths += driver.save_preview(driver.decode(vae, lat, width, height), q)
     finally:
         if "eager" in done:
             _eager.__exit__(None, None, None)
-        if slider:
+        if slider or strengths:
             net.set_trainable_multiplier(1.0)  # a preview that failed mid-dial must not leave the LoRA scaled
         if "decode_park" in done:
             driver.unpark(dit, device, tok)
@@ -697,7 +702,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_width=None,
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
                  sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
-                 slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
+                 sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
                  train_blocks=None,
                  slider_bank=16, slider_bank_res=768,
                  metadata_title=None, metadata_author=None, metadata_description=None, metadata_license=None,
@@ -1035,8 +1040,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
                                           seed=seed + 1000 + i, cfg=sample_cfg_scale,
                                           **({"neg_cond": slider_neg} if slider_neg is not None else {}))
-                img = driver.decode(vae, lat, slider_bank_res, slider_bank_res)
-                bank.append(driver.encode_images(vae, [np.array(img)])[0][None].cpu())
+                bank.append(driver.practice_latent(vae, lat, slider_bank_res))
         if use_speed:
             net.set_enabled(SPEED, False)
             net.move_adapter(SPEED, "cpu")
@@ -1260,7 +1264,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          steps=sample_steps, cfg=sample_cfg_scale, neg=neg, width=w, height=h,
                          seed=sd, ema=ema,
                          speed=speed_desc.settings if (speed_lora and speed_desc) else None, lowmem=lowmem,
-                         swapped=bool(swapped), refs=ref_latents, slider=slider)
+                         swapped=bool(swapped), refs=ref_latents, slider=slider,
+                         strengths=sample_strengths if epoch > 0 else ())   # before training the LoRA is all zero
         last_prompt[0] = prompts[-1] if prompts else None
 
     ckpt_previews = None
@@ -1569,6 +1574,8 @@ def setup_parser():
     p.add_argument("--sample_negative", default=None)
     p.add_argument("--sample_at_first", action="store_true")
     p.add_argument("--sample_seed", type=int, default=42)
+    p.add_argument("--sample_strengths", default="",
+                   help="Also render each preview at these LoRA strengths, comma-separated (e.g. 0.5)")
     p.add_argument("--family_option", action="append", default=[], metavar="KEY=VALUE",
                    help="a family's own training option (the driver's set_options), e.g. photo_blocks=20-49")
     p.add_argument("--preview_checkpoint", default=None,
@@ -1662,6 +1669,7 @@ def main():
         sample_prompts=prompts, sample_every_n_epochs=a.sample_every_n_epochs, sample_width=a.sample_width,
         sample_height=a.sample_height, sample_steps=a.sample_steps, sample_cfg_scale=a.sample_cfg_scale,
         sample_negative=a.sample_negative, sample_at_first=a.sample_at_first, sample_seed=a.sample_seed,
+        sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),
         sample_reference=[a.sample_reference] if a.sample_reference else None, sample_image=a.sample_image,
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,

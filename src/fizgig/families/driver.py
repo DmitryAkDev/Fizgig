@@ -190,6 +190,13 @@ class FamilyDriver:
         import contextlib
         return contextlib.nullcontext()
 
+    def practice_latent(self, vae, latents, res):
+        """A prompt slider's practice item: generate()'s latents -> one training latent as the cache holds it,
+        (1, C, ...) on the CPU. Pictures go through the decoder and back (the cache's own encoding)."""
+        import numpy as np
+        img = self.decode(vae, latents, res, res)
+        return self.encode_images(vae, [np.array(img)])[0][None].cpu()
+
     def slider_preview(self, frames, multipliers):
         """One preview's decoded results at each strength -> what save_preview writes, or None for the shared
         side-by-side still strip (a clip family lays its clips side by side)."""
@@ -447,6 +454,12 @@ class FamilyDriver:
         """The Linears an INT8 / NF4 base quantises (families/quant.py). Default: the LoRA targets. A family whose
         LoRA reaches layers that must stay bf16 (Krea 2's text fusion and I/O layers) narrows it."""
         return self.lora_target_names(dit)
+
+    def activity_axis(self, module_name: str) -> bool:
+        """Block activity: whether this LoRA module's sequence runs along the output (the song's time, a picture's
+        tokens), so its push can be placed along it. A family whose cross-attention projects the prompt's tokens
+        says no for those."""
+        return True
 
     def block_of(self, module_name: str) -> Optional[str]:
         """The block id a module belongs to, or None for modules outside the map (e.g. a speed LoRA's extras)."""

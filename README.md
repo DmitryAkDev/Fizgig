@@ -26,10 +26,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/models-Klein%209B%20%2B%20Krea%202%20%2B%20MiniMax%20H3%20%2B%20Qwen%20Image%202.1%20%2B%20Z--Image%20Turbo%20%2B%20SDXL%20%2B%20Anima-blue?style=for-the-badge" alt="Klein 9B + Krea 2 + MiniMax H3 + Qwen Image 2.1 + Z-Image Turbo + SDXL + Anima">
+  <img src="https://img.shields.io/badge/models-Klein%209B%20%2B%20Krea%202%20%2B%20MiniMax%20H3%20%2B%20Qwen%20Image%202.1%20%2B%20Z--Image%20Turbo%20%2B%20SDXL%20%2B%20Anima%20%2B%20ACE--Step%201.5%20XL-blue?style=for-the-badge" alt="Klein 9B + Krea 2 + MiniMax H3 + Qwen Image 2.1 + Z-Image Turbo + SDXL + Anima + ACE-Step 1.5 XL">
+</p>
+
+<p align="center">
+  <a href="docs/RELEASE_NOTES_v7.3.0.md"><img src="assets/fizgig_meets_music.jpg" alt="Fizgig meets music" width="700"></a>
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 7.3 — music with ACE-Step 1.5 XL.** Train LoRAs on your own songs, music sliders and full fine-tuning, previews you play in the gallery, and Repair Studio as a DAW for AI music: covers, repaint and extend, a model EQ. Gizmo gets a Music tab for cutting songs into sections. [Release notes](docs/RELEASE_NOTES_v7.3.0.md) · [ACE-Step guide](docs/ACESTEP.md)
 > - **Fizgig 7.2 — Qwen Image 2.1 Turbo.** Repair Studio, LoRA the Explorer and LoRA Royale preview on Qwen's new Turbo model, and training previews use Comfy-Org's new Turbo LoRA: 8 steps, CFG 1, about four times faster, and LoRAs trained on the base keep their likeness on it. Plus MiniMax H3 long captions on V100-class cards by @Hell-Bent-Fox. [Release notes](docs/RELEASE_NOTES_v7.2.0.md)
 > - **Fizgig 7.1 — Z-Image Turbo, with its own training adapter.** LoRA and LoKR training, sliders, full fine-tuning and every workbench tab. Fizgig's training adapter keeps Turbo's 8-step look while your LoRA learns: better likeness, image quality and detail than the adapter most people use. LoRAs from 12 GB cards, fine-tunes from 16 GB. [Release notes](docs/RELEASE_NOTES_v7.1.0.md)
 > - **Fizgig 7.0 — Anima and SDXL arrive, fine-tuning for every model, and the driver system is complete - meaning the community can now add models to Fizgig (Docs included).** Anima and SDXL join with LoRA and LoKR training, sliders, fine-tuning and the full workbench. Every model fine-tunes on a 16 GB card (Anima and SDXL from 8 GB), and bigger cards train the whole model at once. [Release notes](docs/RELEASE_NOTES_v7.0.0.md) · [Add your own model](docs/drivers/README.md)
@@ -43,7 +48,7 @@
 
 ## What Fizgig is
 
-A local trainer and workbench for image and video models. Every trainer makes LoRAs; Fizgig is also built around what you do with them afterwards:
+A local trainer and workbench for image, video and music models. Every trainer makes LoRAs; Fizgig is also built around what you do with them afterwards:
 
 - **Fix** a LoRA block by block without retraining: drag a slider per block, save a new `.safetensors`.
 - **Explore** variations: the app mutates a LoRA, you pick favourites, it evolves.
@@ -64,8 +69,9 @@ Memory plans itself: precision, block swap and previews size to your free VRAM, 
 | **Z-Image Turbo** (6B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 12 GB | [7.1 notes](docs/RELEASE_NOTES_v7.1.0.md) |
 | **SDXL** (any checkpoint), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
 | **Anima** (2B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
+| **ACE-Step 1.5 XL** (4B), experimental | songs | ✅ | — | ✅ slider | ✅ experimental | 16 GB | [ACE-Step](docs/ACESTEP.md) |
 
-Every model gets all five workbench tools. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
+Every image and video model gets all five workbench tools; ACE-Step has Repair Studio and Extract. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
 
 ## The workbench
 
