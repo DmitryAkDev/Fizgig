@@ -38,12 +38,12 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
+from fizgig.minimax.refmod_meta import NODE_META_KEY, NODE_TOKEN_CAP  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
-NODE_META_KEY = "refmod_meta"
 NODE_FORMAT_VERSION = 4          # what the pack writes as of v0.2.6; its reader takes 2 and 4 alike
 BUNDLE_FORMAT_VERSION = 5        # the pack's one-file container: members ref_0, ref_1, … (BUNDLE_FORMAT.md)
-NODE_TOKEN_CAP = 5120        # the node pack's Extract default `max_tokens`; its loader does not cap
 ARCH = "minimaxh3"
 MAX_REFS_DEFAULT = 16      # measured 10 Sep 2026: 16 references scored 70 on portraits vs 60 for 8
 
