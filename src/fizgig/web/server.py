@@ -631,7 +631,7 @@ class Handler(BaseHTTPRequestHandler):
                     port = int(ch["web_port"])
                     if not 1024 <= port <= 65535:
                         raise ValueError("The port must be between 1024 and 65535.")
-                    upd["web_port"] = port
+                    upd["web_port"] = str(port)
                 update_prefs(upd)
                 return self.json({"ok": True})
             if path == "/api/state":
@@ -703,8 +703,8 @@ def run_server(host, port=None, password=None):
         srv, port = _bind(host, want, walk=True)
         if port != want:
             logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")
-        if load_prefs().get("web_port") != port:
-            update_prefs({"web_port": port})
+        if str(load_prefs().get("web_port") or "") != str(port):
+            update_prefs({"web_port": str(port)})
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))

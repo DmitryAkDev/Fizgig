@@ -953,6 +953,9 @@ DEFAULT_PREFS = {
     # then renumbers the chosen card to cuda:0 and nothing downstream - trainer, loader,
     # sampler, cache scripts - has to know a choice was made at all.
     "cuda_device": "",
+    # The web UI's port (python lora_trainer_gui.py --web). 8081 is what the pod image exposes; on a desktop where
+    # it is taken, the web UI moves to the nearest free port above and saves it here, so it keeps that port.
+    "web_port": "8081",
 }
 
 
@@ -2239,6 +2242,18 @@ class LoRATrainerGUI:
         """Save a single pref value back to prefs.json."""
         if key in self.prefs_vars:
             self.prefs[key] = self.prefs_vars[key].get()
+            if key != "web_port":
+                # the web UI may have saved a new port since this window opened: keep it, not the stale copy
+                try:
+                    with open(PREFS_FILE, encoding="utf-8") as f:
+                        disk = json.load(f).get("web_port")
+                    if disk:
+                        self.prefs["web_port"] = str(disk)
+                        if self.prefs_vars["web_port"].get() != str(disk):
+                            self.prefs_vars["web_port"].set(str(disk))
+                            return                     # that set saved everything, with this key's new value
+                except (OSError, ValueError, AttributeError):
+                    pass
             save_prefs(self.prefs)
 
     # ------------------------------------------------------------------
@@ -17438,6 +17453,34 @@ class LoRATrainerGUI:
         tk.Label(inf_card, text="On by default. Same VRAM as fp8, near-identical quality, previews only. Turn off to use fp8.",
                  font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"]).grid(
             row=2, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
+        # Card: Web UI port
+        web_card = self._start_section_card(
+            outer, "Web UI",
+            "Fizgig can also run as a web page (start it with --web) - for a pod, or to watch a run from another "
+            "device. 8081 at first; if that port is taken, it uses the nearest free one above and remembers it here.",
+        )
+        web_card.columnconfigure(1, weight=1)
+        ttk.Label(web_card, text="Web UI port:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10), pady=4)
+        _port_var = tk.StringVar(value=self.prefs_vars["web_port"].get())
+        _port_entry = ttk.Entry(web_card, textvariable=_port_var, width=8)
+        _port_entry.grid(row=0, column=1, sticky=tk.W, pady=4)
+        _port_hint = tk.Label(web_card, text="Used the next time the web UI starts. A pod always uses 8081.",
+                              font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"])
+        _port_hint.grid(row=1, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
+        def _commit_port(_e=None):
+            v = _port_var.get().strip()
+            if v.isdigit() and 1024 <= int(v) <= 65535:
+                self.prefs_vars["web_port"].set(str(int(v)))
+                _port_hint.configure(text="Used the next time the web UI starts. A pod always uses 8081.",
+                                     fg=COLORS["text_muted"])
+            else:
+                _port_var.set(self.prefs_vars["web_port"].get())
+                _port_hint.configure(text="A port is a number from 1024 to 65535.", fg=COLORS["warning"])
+        _port_entry.bind("<FocusOut>", _commit_port)
+        _port_entry.bind("<Return>", _commit_port)
+        self.prefs_vars["web_port"].trace_add("write", lambda *a: _port_var.set(self.prefs_vars["web_port"].get()))
 
         # Card 3: Output Directories
         out_card = self._start_section_card(
