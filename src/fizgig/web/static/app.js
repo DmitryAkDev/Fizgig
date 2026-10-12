@@ -2514,11 +2514,11 @@ function studioKind(L, sv) {
   if (!video) return;
   const V = L.video, h3 = sv.h3 || {};
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
-  fill("stH3Model", V.models, h3.model || V.models[0]);   // the desktop starts on First/last frame
+  fill("stH3Model", V.models, h3.model || V.models[0]);
   fill("stH3Base", V.bases, h3.base);
-  fill("stH3Len", V.lengths, h3.len || "22 frames (~1s)");
-  fill("stH3W", V.dims, h3.w || "768");
-  fill("stH3H", V.dims, h3.h || "640");
+  fill("stH3Len", V.lengths, h3.len || V.length);
+  fill("stH3W", V.dims, h3.w || V.size[0]);
+  fill("stH3H", V.dims, h3.h || V.size[1]);
   fill("stH3Scale", V.scales, h3.scale || "Full");
   if (h3.steps) $("stH3Steps").value = h3.steps;
   if (h3.turbo != null) $("stH3Turbo").value = h3.turbo;
@@ -2531,9 +2531,9 @@ function studioKind(L, sv) {
 }
 
 function studioSlots() {
-  const ref = $("stH3Model").value.includes("ref2va");
+  const ref = !!S.st.layout.video.references[$("stH3Model").value];
   $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
-  $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (the ref2va model's " +
+  $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (this checkpoint's " +
     "references), each cropped to the clip's shape - you place the crop when you pick one." :
     "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
     "you place the crop when you pick one.";
@@ -2675,7 +2675,7 @@ function studioExtra() {
   const V = L.video, f = V.scale_of[$("stH3Scale").value] || 1;
   const snap = (x) => f >= 0.999 ? x : Math.max(256, Math.floor(x * f / 32) * 32);
   const w = snap(Number($("stH3W").value) || 768), h = snap(Number($("stH3H").value) || 640);
-  const ref = $("stH3Model").value.includes("ref2va");
+  const ref = !!V.references[$("stH3Model").value];
   const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
@@ -3477,7 +3477,7 @@ async function studioStart() {
     S.st.ready = false;
     await api("/api/studio/load", {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
       fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
-      h3_model: L.kind === "video" ? $("stH3Model").value : "", base_mode: L.kind === "video" ? L.video.base_of[$("stH3Base").value] : "",
+      h3_model: L.kind === "video" ? $("stH3Model").value : "", base: L.kind === "video" ? $("stH3Base").value : "",
       canvas: studioCanvas()});
     if (S.st.mix && S.st.mix.mode !== "off" || (S.st.dmix && S.st.dmix.on)) studioMixReset();
     S.st.loadedKey = key;
@@ -4243,15 +4243,14 @@ async function refmodOpen() {
     S.rm.wired = true;
     try { S.rm.info = await api("/api/refmod/info"); } catch (e) { $("rmStatus").textContent = e.message; return; }
     const I = S.rm.info;
-    if (!I.families.length) { $("rmStatus").textContent = "No model offers RefMod Studio."; $("rmRender").disabled = $("rmSweep").disabled = true; }
+    if (!I.families.length) { $("rmStatus").textContent = "No model offers RefMod Studio."; $("rmRender").disabled = $("rmSweep").disabled = true; return; }
     rmFill("rmFamily", I.families.map((f) => f.key), I.families.map((f) => f.name));
     $("rmFamRow").style.display = I.families.length > 1 ? "" : "none";
-    rmFill("rmModel", I.models); rmFill("rmBase", ["Auto (by free VRAM)", "Stream blocks (exact int8, room for big clips)", "NF4 (smallest, 9.5% base error)"]);
+    rmFill("rmModel", I.models); rmFill("rmBase", I.bases);
     rmFill("rmLength", I.lengths); rmFill("rmSweepKind", I.sweeps); rmFill("rmCompare", I.compare);
-    const dims = ["512", "640", "768", "960", "1024", "1152", "1280", "1536"];
-    rmFill("rmW", dims); rmFill("rmH", dims);
+    rmFill("rmW", I.sizes); rmFill("rmH", I.sizes);
     for (const k of ["Fc", "Sc"]) { rmFill(`rm${k}Dir`, I.directions); rmFill(`rm${k}Shape`, I.shapes); }
-    $("rmLength").value = "22 frames (~1s)"; $("rmW").value = "640"; $("rmH").value = "768";
+    $("rmLength").value = I.lengths.find((l) => /^22 /.test(l)) || I.lengths[0]; $("rmW").value = I.size[0]; $("rmH").value = I.size[1];
     rmSetCurve("Fc", I.frame_curve); rmSetCurve("Sc", I.step_curve);
     $("rmPrompt").value = "a woman smiles at the camera, soft window light";
     for (const [name, v] of I.retention_presets) $("rmRetPresets").append(el("button", {class: "btn btn-sm", text: `${name} ${v}`,

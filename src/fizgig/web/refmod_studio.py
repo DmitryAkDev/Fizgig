@@ -19,12 +19,8 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 PRESETS_DIR = os.path.join(BASE_DIR, "presets", "refmod_studio")       # the desktop's setups
 CURVES_DIR = os.path.join(PRESETS_DIR, "curves")                       # and its curve presets
 
-MODELS = ("Reference (ref2va)", "First / Last Frame (fl2va)")
-LENGTHS = {"Still (1 frame)": 1, "22 frames (~1s)": 22, "39 frames (~1.6s)": 39, "56 frames (~2.3s)": 56,
-           "73 frames (~3s)": 73}
 SWEEPS = ("Retention 0 · 0.15 · 0.4 · 0.7 · 1", "Seeds ×4", "Frame-curve directions ×5", "Step-curve directions ×5",
           "Copies 1 · 2 · 3 · 4")
-SWEEP_FRAMES = 22            # sweeps render short clips: a still doesn't show what a RefMod does
 COMPARE = (("No mod (LoRA alone)", "nomod"), ("No LoRA (mods alone)", "nolora"), ("Neither (base model)", "neither"))
 
 _lock = threading.Lock()
@@ -36,10 +32,16 @@ def families():
     return workbench_families("refmod")
 
 
-def info(last_used):
+def info(desc, last_used):
+    """The page's choices: the model's pickers (its description's video_controls), the pack's curves and limits."""
     saved = last_used.get("refmod_studio") if isinstance(last_used.get("refmod_studio"), dict) else {}
+    vc = desc.video_controls if desc is not None else None
+    pick = {"models": [c.label for c in (vc.refmod_checkpoints or vc.checkpoints)],
+            "lengths": [n for n, _ in (vc.refmod_lengths or vc.lengths)], "sizes": [str(s) for s in vc.sizes],
+            "size": [str(s) for s in vc.refmod_size], "bases": [n for n, _ in vc.bases],
+            "sweep_frames": vc.sweep_frames} if vc else {}
     return {"families": [{"key": d.key, "name": d.display_name} for d in families()],
-            "models": list(MODELS), "lengths": list(LENGTHS), "sweeps": list(SWEEPS), "sweep_frames": SWEEP_FRAMES,
+            "family": desc.key if desc is not None else "", **pick, "sweeps": list(SWEEPS),
             "compare": [c for c, _k in COMPARE], "directions": list(rm.CURVE_DIRECTIONS), "shapes": list(rm.CURVE_SHAPES),
             "retention_presets": [list(p) for p in rm.RETENTION_PRESETS], "frame_curve": list(rm.DEFAULT_FRAME_CURVE),
             "step_curve": list(rm.DEFAULT_STEP_CURVE), "max_rows": rm.MAX_ROWS, "max_copies": rm.MAX_COPIES,
@@ -159,7 +161,7 @@ def ref_map(rows, metas):
     return rm.reference_map(rm.numbered_entries([m for _r, m in _meta_rows(rows, metas)]))
 
 
-def job(b, metas, audio_ok, overrides=None):
+def job(b, metas, audio_ok, vc, overrides=None):
     """Everything one render needs (the desktop's _rms_job): the worker's job, the ComfyUI readout, the comparison and
     the key the kept comparison render is good for. `overrides` patch one dial (a sweep item)."""
     ov = overrides or {}
@@ -178,7 +180,8 @@ def job(b, metas, audio_ok, overrides=None):
     turbo = _f(b.get("turbo"), 0.75, 0.0, 1.5)
     w, h = _i(b.get("width"), 768), _i(b.get("height"), 768)
     w, h = max(256, w // 32 * 32), max(256, h // 32 * 32)
-    frames = int(ov.get("frames", LENGTHS.get(str(b.get("frames")), 1)))     # the length's label (desktop key)
+    lengths = dict(vc.refmod_lengths or vc.lengths)
+    frames = int(ov.get("frames", lengths.get(str(b.get("frames")), 1)))     # the length's label (desktop key)
     seed = int(ov.get("seed", _i(b.get("seed"), 300)))
     prompt = str(b.get("prompt") or "").strip()
     sound = bool(b.get("sound", True)) and audio_ok

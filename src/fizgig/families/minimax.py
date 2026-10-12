@@ -5,7 +5,7 @@ and the 32B text caches are reused), kohya LoRA keys as the original writes them
 settings as family options seeded from their old MINIMAX_* keys. Facts are the original trainer's, cited per value.
 """
 from fizgig.families.description import (ClipSpec, FamilyDescription, FamilyOption, LoRAFormat, ModelFile,
-                                        SamplingSettings, SpeedLoRA)
+                                        SamplingSettings, SpeedLoRA, VideoCheckpoint, VideoWorkbench)
 
 # The old H3 Training-tab controls as family options (lora_trainer_gui.py's MiniMax rows and _build_minimax_command),
 # their old settings keys kept so presets, queued runs and Last Train carry across.
@@ -325,6 +325,23 @@ MINIMAX = FamilyDescription(
     clip_regimes=(("dial", 4, 1.0), ("confirm", 6, 0.75)),
     clip_spec=ClipSpec(fps=24, frame_step=17, frame_offset=5, max_frames=124, edge_multiple=32, audio_rate=32000,
                        audio_channels=2, mute_suffix="_mute", note="minimax/model.py FPS, pixel_frames_for_latent"),
+    video_controls=VideoWorkbench(
+        lengths=(("Still (1 frame)", 1), ("5 frames (~0.2s)", 5), ("9 frames (~0.4s, off-grid)", 9),
+                 ("13 frames (~0.5s, off-grid)", 13), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
+                 ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73), ("90 frames (~3.8s)", 90),
+                 ("107 frames (~4.5s)", 107), ("124 frames (~5.2s)", 124)),
+        default_length="22 frames (~1s)",
+        sizes=(512, 640, 768, 960, 1024, 1152, 1280, 1536), default_size=(768, 640),
+        scales=(("Full", 1.0), ("⅔", 2.0 / 3.0), ("½", 0.5)),
+        checkpoints=(VideoCheckpoint("First/last frame (fl2va) — standard", "dit"),
+                     VideoCheckpoint("Reference (ref2va)", "ref_dit", references=True)),
+        bases=(("Auto (by free VRAM)", "auto"), ("Stream blocks (exact int8, room for big clips)", "stream"),
+               ("NF4 (smallest, 9.5% base error)", "nf4")),
+        refmod_checkpoints=(VideoCheckpoint("Reference (ref2va)", "ref_dit", references=True),
+                            VideoCheckpoint("First / Last Frame (fl2va)", "dit")),
+        refmod_lengths=(("Still (1 frame)", 1), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
+                        ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73)),
+        refmod_size=(640, 768), sweep_frames=22),
 
     latent_channels=24,
     spatial_factor=16,                # dataset/image_dataset.py LATENT_SPATIAL_FACTOR[minimaxh3]

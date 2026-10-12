@@ -525,11 +525,11 @@ def refmod_render(desc, plan, canvas, kind, jobs, lora, compare, base_key, label
         keep |= {h["gen"] for h in _M["history"]} | ({_M["chips"][0]["gen"]} if _M["chips"] else set())
         if _M["tweaked"]:
             keep.add(_M["tweaked"]["gen"])
-    try:                                         # renders nothing shows any more
+    try:                                         # renders nothing shows any more (a new server: all of them)
         import re
         for f in os.listdir(RM_DIR):
             m = re.match(r"rm_(\d+)_", f)
-            if m and int(m.group(1)) not in keep and int(m.group(1)) != gen:
+            if m and (gen == 1 or (int(m.group(1)) not in keep and int(m.group(1)) != gen)):
                 os.remove(os.path.join(RM_DIR, f))
     except OSError:
         pass
@@ -684,26 +684,19 @@ def families():
     return [d for d in training_families() if "repair" in (d.workbench or ()) and d.training_ready]
 
 
-# H3's clip controls, the desktop's (_REPAIR_H3_LENGTHS / _DIMS / _DIAL_SCALES and the Model / Base pickers)
-H3_LENGTHS = [("Still (1 frame)", 1), ("5 frames (~0.2s)", 5), ("9 frames (~0.4s, off-grid)", 9),
-              ("13 frames (~0.5s, off-grid)", 13), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
-              ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73), ("90 frames (~3.8s)", 90),
-              ("107 frames (~4.5s)", 107), ("124 frames (~5.2s)", 124)]
-H3_DIMS = ["512", "640", "768", "960", "1024", "1152", "1280", "1536"]
-H3_SCALES = [("Full", 1.0), ("⅔", 2.0 / 3.0), ("½", 0.5)]
-H3_MODELS = ["First/last frame (fl2va) — standard", "Reference (ref2va)"]
-H3_BASES = [("Auto (by free VRAM)", "auto"), ("Stream blocks (exact int8, room for big clips)", "stream"),
-            ("NF4 (smallest, 9.5% base error)", "nf4")]
 SONG_LENGTHS = ["10", "20", "30", "60", "120"]
 
 
-def plan_video(desc, prefs, pref_path, ref_mode=False, base_mode="auto"):
-    """H3's load plan, as the desktop's _repair_engine_plan_video: the reference DiT under Reference (ref2va), the
-    Turbo LoRA at the family's preview strength, the prompt cache folder, the audio VAE when it is there."""
+def plan_video(desc, prefs, pref_path, checkpoint="", base="", refmod=False):
+    """A video family's load plan, as the desktop's _repair_engine_plan_video: the DiT the checkpoint picker names and
+    the base its Base picker names (the description's video_controls), the Turbo LoRA at the family's preview
+    strength, the prompt cache folder, the audio VAE when it is there."""
     look = lambda k: pref_path(prefs, k)
     path = lambda role: desc.model_path(role, look)
     labels = {f.role: f.label for f in desc.model_files}
-    roles = ("ref_dit" if ref_mode else "dit", "vae", "text_encoder")
+    vc = desc.video_controls
+    roles = (vc.checkpoint(checkpoint, refmod).role if vc and vc.checkpoints else "dit", "vae", "text_encoder")
+    base_mode = vc.base_mode(base) if vc else "auto"
     problems = [f"{labels.get(r, r)} isn't set (or isn't where Preferences says). Set it on the Preferences tab."
                 for r in roles if not path(r) or not os.path.exists(path(r))]
     sp = desc.preview_speed()
@@ -738,12 +731,16 @@ def layout(desc, prefs, pref_path, samples=None):
     ds = desc.default_sampling()
     kind = "video" if desc.video_workbench else "audio" if desc.audio_workbench else "stills"
     audio_vae = desc.model_path("audio_vae", look) if kind == "video" else ""
+    vc = desc.video_controls
     return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
-            "video": {"lengths": [n for n, _ in H3_LENGTHS], "length_frames": dict(H3_LENGTHS), "dims": H3_DIMS,
-                      "scales": [n for n, _ in H3_SCALES], "scale_of": dict(H3_SCALES), "models": H3_MODELS,
-                      "bases": [n for n, _ in H3_BASES], "base_of": dict(H3_BASES),
-                      "sound": bool(audio_vae and os.path.exists(audio_vae)),
-                      "ref_dit": bool(desc.model_path("ref_dit", look))} if kind == "video" else None,
+            "video": {"lengths": [n for n, _ in vc.lengths], "length_frames": dict(vc.lengths),
+                      "length": vc.default_length or vc.lengths[0][0], "dims": [str(d) for d in vc.sizes],
+                      "size": [str(d) for d in vc.default_size],
+                      "scales": [n for n, _ in vc.scales], "scale_of": dict(vc.scales),
+                      "models": [c.label for c in vc.checkpoints],
+                      "references": {c.label: c.references for c in vc.checkpoints},
+                      "bases": [n for n, _ in vc.bases],
+                      "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),
             "model_eq": _model_eq(desc, look) if kind != "video" else "",

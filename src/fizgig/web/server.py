@@ -348,8 +348,8 @@ def _studio_post(what, b):
         prefs = load_prefs()
         if desc.video_workbench:
             settings = None
-            kw, status, problems = studio.plan_video(desc, prefs, pref_path, ref_mode="ref2va" in str(b.get("h3_model") or ""),
-                                                     base_mode=str(b.get("base_mode") or "auto"))
+            kw, status, problems = studio.plan_video(desc, prefs, pref_path, checkpoint=str(b.get("h3_model") or ""),
+                                                     base=str(b.get("base") or ""))
         else:
             kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
                                                          samples=_studio_samples(desc), negative=b.get("negative"))
@@ -414,16 +414,20 @@ def _rm_metas(b):
     return {m["name"]: m for m in rms.scan(str(b.get("folder") or "").strip(), str(b.get("lora") or "").strip())["mods"]}
 
 
-def _rm_plan(b):
-    """(desc, load plan, audio VAE there) for the model and base the page picked."""
+def _rm_family(b):
     from fizgig.web import refmod_studio as rms
     fams = {d.key: d for d in rms.families()}
     desc = fams.get(str(b.get("family") or "")) or next(iter(fams.values()), None)
     if desc is None:
         raise ValueError("No model offers RefMod Studio.")
-    kw, _status, problems = studio.plan_video(desc, load_prefs(), pref_path,
-                                              ref_mode="ref2va" in str(b.get("model") or rms.MODELS[0]),
-                                              base_mode=dict(studio.H3_BASES).get(str(b.get("base")), "auto"))
+    return desc
+
+
+def _rm_plan(b):
+    """(desc, load plan, audio VAE there) for the model and base the page picked."""
+    desc = _rm_family(b)
+    kw, _status, problems = studio.plan_video(desc, load_prefs(), pref_path, checkpoint=str(b.get("model") or ""),
+                                              base=str(b.get("base") or ""), refmod=True)
     if problems:
         raise ValueError(" ".join(problems))
     return desc, kw, bool(kw.get("audio_vae_path"))
@@ -435,11 +439,12 @@ def _refmod_post(what, b):
     st = b.get("state") or {}
     if what == "calc":                       # the tokens readout, reference map, ComfyUI readout, prompt hints
         metas = _rm_metas(st)
+        desc = _rm_family(st)
         try:
             audio_ok = bool(_rm_plan(st)[2])
         except ValueError:
             audio_ok = False
-        j = rms.job(st, metas, audio_ok)
+        j = rms.job(st, metas, audio_ok, desc.video_controls)
         return {"tokens": rms.tokens(st.get("rows"), metas, st.get("retention")), "ref_map": j["ref_map"],
                 "readout": j["readout"], "hints": rms.prompt_hints(st.get("rows"), metas), "describe": j["describe"]}
     if what in ("render", "sweep"):
@@ -450,12 +455,13 @@ def _refmod_post(what, b):
             raise ValueError("The Profiler is rendering on the GPU - wait for it, or Stop it.")
         desc, kw, audio_ok = _rm_plan(st)
         metas = _rm_metas(st)
+        vc = desc.video_controls
         if what == "render":
-            j = rms.job(st, metas, audio_ok)
+            j = rms.job(st, metas, audio_ok, vc)
             jobs, label = [j["job"]], j["describe"]
         else:
             kind = str(b.get("sweep") or rms.SWEEPS[0])
-            js = [rms.job(st, metas, audio_ok, dict(ov, frames=rms.SWEEP_FRAMES, label=lbl))
+            js = [rms.job(st, metas, audio_ok, vc, dict(ov, frames=vc.sweep_frames, label=lbl))
                   for lbl, ov in rms.sweep_items(kind, st)]
             for x in js:
                 x["job"]["sound"] = False
@@ -1675,7 +1681,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(studio.status())
         if path == "/api/refmod/info":              # RefMod Studio: its choices, the desktop's last setup, presets
             from fizgig.web import refmod_studio as rms
-            return self.json(rms.info(_read_json(os.path.join(BASE_DIR, ".last_used.json"))))
+            fams = rms.families()
+            want = (qs.get("family") or [""])[0]
+            desc = next((d for d in fams if d.key == want), fams[0] if fams else None)
+            return self.json(rms.info(desc, _read_json(os.path.join(BASE_DIR, ".last_used.json"))))
         if path == "/api/refmod/scan":
             from fizgig.web import refmod_studio as rms
             return self.json(rms.scan((qs.get("folder") or [""])[0].strip(), (qs.get("lora") or [""])[0].strip()))
