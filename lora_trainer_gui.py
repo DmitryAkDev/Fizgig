@@ -33417,6 +33417,7 @@ class LoRATrainerGUI:
         if getattr(self, "training_state", "idle") != "paused":
             messagebox.showinfo("Not Paused", "No paused training to resume.")
             return
+        self._live_resuming = True              # the run history carries on the paused run's record
         self._restore_paused_run_settings()
         state_path = getattr(self, "paused_state_path", None)
         if getattr(self, "paused_mode", "state") == "ft":
@@ -33653,7 +33654,9 @@ class LoRATrainerGUI:
                     self._live_hist = _hist.start(
                         "desktop", _d.key if _d is not None else self.architecture_var.get(),
                         str(self.settings.get("LORA_NAME", "") or ""), str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
-                        self.image_folder_var.get().strip(), self._collect_preset_values())
+                        self.image_folder_var.get().strip(), self._collect_preset_values(),
+                        resume=bool(getattr(self, "_live_resuming", False)))
+                    self._live_resuming = False
                 except Exception:
                     self._live_hist = None
             elif was_busy and not busy_now and state == "paused":

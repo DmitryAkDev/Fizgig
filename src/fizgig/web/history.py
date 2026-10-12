@@ -64,8 +64,28 @@ def _write(runs):
     os.replace(tmp, HISTORY_FILE)
 
 
-def start(source, family, lora, output_dir, image_folder, values):
-    """Record a run that is starting; returns its id."""
+def _same_run(r, lora, output_dir):
+    norm = lambda p: os.path.normcase(os.path.abspath(str(p or ".")))
+    return (str(r.get("lora") or "").lower() == str(lora or "").lower()
+            and norm(r.get("output_dir")) == norm(output_dir))
+
+
+def start(source, family, lora, output_dir, image_folder, values, resume=False):
+    """Record a run that is starting; returns its id. A resume carries on the paused run's own record (the newest
+    paused one with the same LoRA name and folder, from either app) instead of listing the run twice."""
+    if resume:
+        try:
+            with _Lock():
+                runs = _read()
+                for r in reversed(runs):
+                    if _same_run(r, lora, output_dir):
+                        if r.get("result") != "paused":
+                            break
+                        r.update(result="running", ended_at=None, resumed_at=time.time())
+                        _write(runs)
+                        return r["id"]
+        except OSError:
+            pass
     rec = {"id": uuid.uuid4().hex[:12], "source": source, "family": family, "lora": lora, "output_dir": output_dir,
            "image_folder": image_folder, "values": values or {}, "started_at": time.time(), "ended_at": None,
            "result": "running", "progress": None}

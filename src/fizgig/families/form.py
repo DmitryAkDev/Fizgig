@@ -304,6 +304,31 @@ def form(desc):
 
     # Samples tab
     neg = desc.preview_negative
+    sp, spd = desc.preview_speed(), desc.preview_speed_defaults()
+    turbo_rows = []
+    if sp is not None and sp.pref_key and desc.samples_turbo_pace:     # H3's row: N steps at M%
+        turbo_rows = [
+            _row("FAMILY_TURBO_STEPS", "Turbo preview steps", default=str(spd[0])),
+            _row("FAMILY_TURBO_PACE", "Turbo strength (%)", default=str(round(100 * spd[1])),
+                 hint=f"Previews render in these few steps with the {sp.name} at this strength on top of your "
+                      "training LoRA - previews only, never the saved LoRA. 6 steps at 75% is the tested "
+                      "recommendation; without the Turbo, the Steps box applies."),
+        ]
+    elif sp is not None and sp.pref_key:
+        live, plain = {"SAMPLE_STEPS": str(spd[0])}, {"SAMPLE_STEPS": str(desc.preview_steps)}
+        if not desc.samples_cfg_free and sp.settings.cfg != desc.preview_cfg:
+            live["SAMPLE_CFG_SCALE"], plain["SAMPLE_CFG_SCALE"] = f"{sp.settings.cfg:g}", f"{desc.preview_cfg:g}"
+        turbo_rows = [_row(
+            "FAMILY_TURBO_STRENGTH", "Turbo LoRA strength", default=f"{spd[1]:g}",
+            hint=(f"0 = previews on the plain model ({desc.preview_steps} steps). For fast previews set 1 and "
+                  f"{sp.settings.steps} steps (the {sp.name}). Below 1 (around 0.7) with more steps often gives "
+                  "cleaner previews." if not spd[1] else
+                  f"The {sp.name} for previews, default {spd[1]:g} at {spd[0]} steps. 0 = the plain model."),
+            turbo={"on": live, "off": plain})]
+    if sp is not None and sp.pref_key:
+        turbo_rows.append(_row("TURBO_MISSING", "", "note",
+                               f"Set the {sp.name} in Preferences for fast Turbo previews; without it previews use "
+                               "the plain model."))
     add("samples", "Previews during training", "samples", [
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
@@ -314,6 +339,7 @@ def form(desc):
         _row("SAMPLE_HEIGHT", "Height", "choice", choices=SIZES, default=str(desc.preview_height)) if pictures else None,
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
+        *turbo_rows,
         *by_section("samples"),
         _row("SAMPLE_EVERY_N_EPOCHS", "Every N epochs", default=str(getattr(desc, "preview_every", 1) or 1)),
         _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
@@ -359,10 +385,12 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
-def state(desc, values, image_folder="", captioner=""):
+def state(desc, values, image_folder="", captioner="", speed_file=False):
     """What the current values hide, grey out or note (see the module docstring). captioner: the shared captioner's
-    file when it is set and on disk (auto-recaption needs it)."""
+    file when it is set and on disk (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk."""
     hidden, disabled, notes = set(), set(), {}
+    hidden |= ({"TURBO_MISSING"} if speed_file else
+               {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
     if not captioner:
         hidden |= {"KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
     kind = _kind(desc, values)
@@ -410,7 +438,7 @@ def state(desc, values, image_folder="", captioner=""):
             if o.always_shown and o.unmet_notes:
                 notes[o.key] = o.unmet_notes[1] if len(o.unmet_notes) > 1 else o.unmet_notes[0]
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
-            "media": sorted(media)}
+            "media": sorted(media), "turbo_file": bool(speed_file)}
 
 
 def _option_values(desc, values):
@@ -452,6 +480,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         **({"FAMILY_TRAIN_AREA": s("TARGET_LAYERS") or desc.train_areas[0][0], "FAMILY_TRAIN_BLOCKS": []}
            if desc.train_areas else {}),
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
+        FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
+        FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,

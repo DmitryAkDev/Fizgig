@@ -426,7 +426,8 @@ def _start(family_key, values, image_folder, resume=""):
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False)
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
-    hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values))
+    hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
+                        resume=bool(resume))
     with _lock:
         _run["history_id"] = hid
     for line in plan.console:
@@ -1373,9 +1374,13 @@ class Handler(BaseHTTPRequestHandler):
                 desc = get_family(b.get("family", ""))
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)
-                cap = pref_path(load_prefs(), "krea2_text_encoder")
+                prefs = load_prefs()
+                cap = pref_path(prefs, "krea2_text_encoder")
+                sp = desc.preview_speed()
+                spf = pref_path(prefs, sp.pref_key) if sp is not None and sp.pref_key else ""
                 return self.json(form.state(desc, b.get("values") or {}, b.get("image_folder") or "",
-                                            captioner=cap if cap and os.path.isfile(cap) else ""))
+                                            captioner=cap if cap and os.path.isfile(cap) else "",
+                                            speed_file=bool(spf and os.path.isfile(spf))))
             if path == "/api/preset":
                 desc = get_family(b.get("family", ""))
                 preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
