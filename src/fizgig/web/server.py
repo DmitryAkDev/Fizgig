@@ -2025,10 +2025,34 @@ def _bind(host, start, walk):
     sys.exit(f"Port {start} is in use{f' ({last})' if last else ''}; pick another with --port.")
 
 
+def _follow_parent(pid):
+    """Started for the Fizgig app window: stop when that window's process is gone (closed, crashed or killed), so no
+    web UI is left running with nobody's window on it. Studio's worker goes too."""
+    try:
+        import psutil
+    except ImportError:
+        return
+    while True:
+        time.sleep(5)
+        try:
+            alive = psutil.pid_exists(pid) and psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        except Exception:
+            alive = False
+        if not alive:
+            try:
+                studio.stop_worker()
+            except Exception:
+                pass
+            os._exit(0)
+
+
 def run_server(host, port=None, password=None):
     """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
     nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
     8081: it is the port its proxy forwards."""
+    parent = os.environ.get("FIZGIG_APP_PARENT", "")
+    if parent.isdigit():
+        threading.Thread(target=_follow_parent, args=(int(parent),), daemon=True).start()
     Handler.password = password or None
     Handler.local_only = not password
     Handler.port_fixed = port is not None

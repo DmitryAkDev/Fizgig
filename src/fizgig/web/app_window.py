@@ -61,7 +61,8 @@ def _icon(profile):
 
 def _start_server(port, key):
     """The web UI on this computer only (as `--web` does with no password), the window's key in its environment."""
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", FIZGIG_APP_KEY=key)
+    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", FIZGIG_APP_KEY=key,
+               FIZGIG_APP_PARENT=str(os.getpid()))            # the server stops if this window's process goes
     kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
           if os.name == "nt" else {"start_new_session": True})
     return subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "lora_trainer_gui.py"), "--web", "--port",
