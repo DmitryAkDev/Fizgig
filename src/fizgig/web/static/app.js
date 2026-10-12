@@ -1476,9 +1476,46 @@ function uploadButton(r, input, set) {
 }
 
 let wired = false;
+// ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
+const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";
+S.lb = {list: [], at: 0};
+function lightboxShow(i) {
+  const img = S.lb.list[i];
+  if (!img) return;
+  S.lb.at = i;
+  $("lightboxImg").src = img.currentSrc || img.src;
+  const fig = img.closest(".gallery-item, .caption-card");
+  const name = fig && fig.querySelector("figcaption, .caption-card-title");
+  $("lightboxName").textContent = name ? name.textContent : "";
+  $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
+  $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
+  $("lightbox").style.display = "";
+}
+function lightboxClose() { $("lightbox").style.display = "none"; $("lightboxImg").src = ""; }
+function wireLightbox() {
+  document.addEventListener("click", (e) => {
+    const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
+    if (!img) return;
+    const host = img.closest(".gallery, .captions-grid") || document;   // step through the pictures beside it
+    S.lb.list = [...host.querySelectorAll(LIGHTBOX_PICS)];
+    lightboxShow(S.lb.list.indexOf(img));
+  });
+  $("lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox" || e.target.id === "lightboxImg") lightboxClose(); });
+  $("lightboxClose").addEventListener("click", lightboxClose);
+  $("lightboxPrev").addEventListener("click", () => lightboxShow(S.lb.at - 1));
+  $("lightboxNext").addEventListener("click", () => lightboxShow(S.lb.at + 1));
+  document.addEventListener("keydown", (e) => {
+    if ($("lightbox").style.display === "none") return;
+    if (e.key === "Escape") lightboxClose();
+    else if (e.key === "ArrowLeft") lightboxShow(S.lb.at - 1);
+    else if (e.key === "ArrowRight") lightboxShow(S.lb.at + 1);
+  });
+}
+
 function wire() {
   if (wired) return;
   wired = true;
+  wireLightbox();
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
   // the sidebar's run opens the run card itself (it sits under the Training form)

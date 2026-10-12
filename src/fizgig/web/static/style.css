@@ -1541,3 +1541,21 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .btn-sm.btn-danger { background: var(--danger); border-color: var(--danger); color: #FFFFFF; }
 .btn-sm.btn-danger:hover { background: #DC2626; border-color: #DC2626; }
 .btn-sm.btn-primary { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
+
+/* Captions: the whole picture shows (no crop); it and every preview open big when clicked */
+.caption-card > img { height: 220px; object-fit: contain; }
+.caption-card > img, .gallery-item > img { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.88); display: flex;
+  align-items: center; justify-content: center; gap: 12px; padding: 16px; box-sizing: border-box; }
+.lightbox-figure { margin: 0; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+/* the window's size whatever the picture's (a 414 px dataset crop fills it too), its shape kept */
+.lightbox-figure img { width: calc(100vw - 140px); height: calc(100vh - 80px); object-fit: contain; cursor: zoom-out; }
+.lightbox-figure figcaption { color: var(--text-secondary); font-size: 9pt; margin-top: 8px; overflow-wrap: anywhere;
+  text-align: center; }
+.lightbox-close { position: absolute; top: 12px; right: 12px; }
+.lightbox-step { font-size: 22px; height: 44px; width: 44px; justify-content: center; flex: none; }
+@media (max-width: 760px) {
+  .lightbox { padding: 8px; gap: 4px; }
+  .lightbox-figure img { width: calc(100vw - 96px); }
+  .lightbox-step { width: 40px; }
+}

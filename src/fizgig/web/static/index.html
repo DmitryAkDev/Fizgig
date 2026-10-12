@@ -394,6 +394,14 @@
     </div>
   </div>
 
+  <!-- a picture shown big: click a preview or a Captions picture; click, Esc or the cross closes, arrows step -->
+  <div class="lightbox" id="lightbox" style="display:none">
+    <button class="btn lightbox-close" id="lightboxClose" title="Close (Esc)">✕</button>
+    <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←)">‹</button>
+    <figure class="lightbox-figure"><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption></figure>
+    <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>
