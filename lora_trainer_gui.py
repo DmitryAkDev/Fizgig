@@ -17557,8 +17557,10 @@ class LoRATrainerGUI:
         ttk.Checkbutton(web_card, text="Start the web UI whenever Fizgig opens",
                         variable=self.prefs_vars["web_autostart"], onvalue="1", offvalue="0"
                         ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(2, 2))
-        tk.Label(web_card, text="It runs alongside this window and stops when Fizgig closes. A run started in the "
-                                "browser is separate from one started here - start one at a time.",
+        tk.Label(web_card, text="The web UI stays up while this app is open, however you started it here. Closing "
+                                "Fizgig closes the web UI too.\n"
+                                "Training: this app can't see a run started in the web UI, and the web UI can't see "
+                                "one started here. Start only one training run at a time, or both will share the GPU.",
                  font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,
                  justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
         try:
