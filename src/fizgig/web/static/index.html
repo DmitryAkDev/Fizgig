@@ -84,17 +84,103 @@
         <section id="tab-captions" class="tab-panel">
           <div class="tab-banner">
             <h1>Captions</h1>
-            <p>Read and edit the caption of every file in the training folder. A caption saves when you press Save.</p>
+            <p>Write a caption for every file in the training folder with an AI model, a trigger word or the words
+              every song shares; translate them, find and replace, and read or edit each one below.</p>
           </div>
           <div class="section-card">
+            <div class="card-title">Settings</div>
             <div class="card-content">
-              <div class="field-row"><span class="field-label">Extension:</span>
+              <div class="field-row"><span class="field-label">Trigger word:</span>
+                <input type="text" id="capTrigger" class="w-combo" placeholder="e.g. ohwx">
+                <span class="field-hint">Put at the start of every caption.</span></div>
+              <div class="field-row"><span class="field-label">Model:</span>
+                <select id="capModel" class="w-combo-lg"></select></div>
+              <div class="field-hint" id="capModelHint"></div>
+              <div class="field-row"><span class="field-label">Task:</span>
+                <select id="capTask" class="w-combo-lg"></select>
+                <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div id="capInstrBox" style="display:none">
+                <div class="field-hint" id="capInstrHint"></div>
+                <textarea id="capInstr" rows="8"></textarea>
+                <div class="field-row"><button class="btn btn-primary" id="capInstrSave">Save instructions</button>
+                  <button class="btn" id="capInstrReset">Back to the shipped text</button>
+                  <span class="field-hint" id="capInstrStatus"></span></div>
+              </div>
+              <div class="field-row"><span class="field-label">Max tokens:</span>
+                <input type="number" id="capTokens" class="w-num" value="120">
+                <span class="field-hint">How long a caption may be.</span></div>
+              <label class="checkbox-label"><input type="checkbox" id="capOverwrite" checked>
+                Overwrite existing captions (untick to caption only the files without one)</label>
+            </div>
+          </div>
+          <div class="section-card accent-card">
+            <div class="card-title">Generate captions</div>
+            <div class="card-desc">Caption All writes a caption for each picture (and clip) with the model above.
+              Static gives every file just the trigger word. The model stays loaded for quick re-captions; Unload
+              frees its memory (it unloads itself before a run starts).</div>
+            <div class="card-content">
+              <div class="field-row">
+                <button class="btn btn-primary" id="capAll">Caption All (AI)</button>
+                <button class="btn" id="capStatic">Static Caption All</button>
+                <button class="btn btn-warning" id="capStop">Stop</button>
+                <button class="btn" id="capUnload">Unload Model</button></div>
+              <div class="fetch-bar"><div id="capBar" style="width:0%"></div></div>
+              <div class="field-hint" id="capStatus"></div>
+            </div>
+          </div>
+          <div class="section-card" id="capSongCard" style="display:none">
+            <div class="card-title">Caption every song</div>
+            <div class="card-desc">Gives every song the same caption: the trigger word, then the words every song
+              shares (genre, instruments, mood).</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Words every song shares:</span>
+                <input type="text" id="capSongWords" class="w-path"></div>
+              <div class="field-row"><button class="btn btn-primary" id="capSongs">Caption every song</button></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Bilingual (English + Chinese)</div>
+            <div class="card-desc">Adds a Chinese translation to each caption, as "english - chinese", keeping the
+              trigger word first. Uses Helsinki-NLP/opus-mt-en-zh (about 300 MB, downloaded the first time).</div>
+            <div class="card-content">
+              <label class="checkbox-label"><input type="checkbox" id="capSkipCjk" checked>
+                Skip captions that already contain Chinese</label>
+              <div class="field-row"><button class="btn" id="capTranslate">Translate captions</button></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Find &amp; Replace</div>
+            <div class="card-desc">Across every .txt caption in the training folder, ignoring upper and lower case.
+              Preview shows each change first; nothing is written until Replace.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Find:</span>
+                <input type="text" id="frFind" class="w-path"></div>
+              <div class="field-row"><span class="field-label">Replace with:</span>
+                <input type="text" id="frReplace" class="w-path"></div>
+              <div class="field-row"><button class="btn" id="frPreview">Preview</button>
+                <button class="btn btn-primary" id="frApply">Replace in all captions</button>
+                <span class="field-hint" id="frStatus"></span></div>
+              <div id="frChanges" class="checkpoint-list"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">The captions</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Caption extension:</span>
                 <input type="text" id="captionExt" class="w-num" value=".txt">
-                <button class="btn" id="captionsReload">Reload</button>
-                <span class="field-hint" id="captionsSummary"></span></div>
+                <button class="btn" id="captionsReload">Reload</button></div>
+              <div class="field-row"><span class="field-label">Search:</span>
+                <input type="text" id="capSearch" class="w-path" placeholder="file name or caption text"></div>
+              <div class="field-row"><button class="btn btn-sm" id="capPrev">‹ Prev</button>
+                <span class="field-hint" id="captionsSummary"></span>
+                <button class="btn btn-sm" id="capNext">Next ›</button></div>
             </div>
           </div>
           <div class="captions-grid" id="captionsGrid"></div>
+          <div class="section-card">
+            <div class="card-title">Log</div>
+            <div class="card-content"><pre class="console-terminal" id="capLog"></pre></div>
+          </div>
         </section>
 
         <section id="tab-samples" class="tab-panel">

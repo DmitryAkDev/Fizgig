@@ -31,7 +31,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
-from fizgig.web import live
+from fizgig.web import captions, live
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -133,6 +133,8 @@ def _poll_stats_loop():
             mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
                     "lora": _run["lora"], "output_dir": _run["output_dir"]}
         live.write(live.LIVE_WEB, mine)          # the desktop app reads this before starting a run
+        if captions.model_loaded() and captions.status()["state"] == "loaded" and live.busy(live.desktop_state()):
+            captions.unload()                    # the desktop app is training: give it the caption model's memory
         time.sleep(1.0)
 
 
@@ -247,6 +249,9 @@ def _start(family_key, values, image_folder, resume=""):
             return {"error": "A run is already going. Stop or pause it first."}
     if live.busy(live.desktop_state()):
         return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
+    if captions.status()["state"] in ("loading", "running", "translating"):
+        return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
+    captions.unload()                                     # the run gets the GPU memory the caption model held
     desc, inputs, plan = _plan(family_key, values, image_folder, resume)
     if plan.problems:
         return {"problems": plan.problems}
@@ -512,6 +517,30 @@ def _fetch_watch(proc):
             _fetch["state"] = "done" if code == 0 else "failed"
 
 
+def _caption_gpu_check(need_gb):
+    """With a run training (here or in the desktop app), a caption job only starts when the card has room for it
+    beside the run (the desktop app's rule: what the job needs + 3 GB)."""
+    with _lock:
+        mine = _run["proc"] is not None and _run["proc"].poll() is None
+    if not (mine or live.busy(live.desktop_state())):
+        return
+    g = _chosen_gpu(list_gpus(), load_prefs().get("cuda_device"))
+    free = (g["total_gb"] - g["used_gb"]) if g else 0.0
+    if free < need_gb + 3.0:
+        raise ValueError(f"A run is training and the card has {free:.0f} GB free; this needs about {need_gb + 3:.0f} GB "
+                         f"beside it. Wait for the run to finish, or pause it.")
+
+
+def _caption_args(b):
+    prefs = load_prefs()
+    desc = get_family(b.get("family", ""))
+    clips = bool(desc is not None and "clip" in desc.media)
+    folder = str(b.get("folder") or "")
+    if not os.path.isdir(folder):
+        raise ValueError("Choose the training folder on the Start tab first.")
+    return prefs, folder, clips
+
+
 def _cancel_fetch():
     """Partial files resume next time; Preferences are only written when a file is complete."""
     with _lock:
@@ -672,6 +701,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(load_state())
         if path == "/api/fetch":
             return self.json(_fetch_status())
+        if path == "/api/captions/options":
+            p = load_prefs()
+            cap = pref_path(p, "krea2_text_encoder")
+            desc = get_family((qs.get("family") or [""])[0])
+            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
+                              "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
+        if path == "/api/captions/status":
+            return self.json(captions.status())
         if path == "/api/upload/root":
             return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir")),
                               "local": self._local_viewer()})
@@ -927,7 +964,44 @@ class Handler(BaseHTTPRequestHandler):
                 update_prefs(upd)
                 return self.json({"ok": True})
             if path == "/api/state":
-                save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab")})
+                save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab",
+                                                                    "captions")})
+                return self.json({"ok": True})
+            if path == "/api/captions/ai":
+                prefs, folder, clips = _caption_args(b)
+                cap = pref_path(prefs, "krea2_text_encoder")
+                model = str(b.get("model") or "")
+                _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
+                only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) ==
+                        os.path.abspath(folder)]
+                return self.json(captions.ai_captions(
+                    prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
+                    str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
+                    bool(b.get("overwrite")), clips, only=only or None))
+            if path == "/api/captions/static":
+                _, folder, clips = _caption_args(b)
+                return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
+                                                          bool(b.get("overwrite")), clips))
+            if path == "/api/captions/songs":
+                _, folder, _ = _caption_args(b)
+                return self.json(captions.song_captions(folder, str(b.get("trigger") or ""),
+                                                        str(b.get("words") or ""), bool(b.get("overwrite"))))
+            if path == "/api/captions/replace":
+                _, folder, _ = _caption_args(b)
+                return self.json(captions.find_replace(folder, str(b.get("find") or ""), str(b.get("replace") or ""),
+                                                       bool(b.get("apply"))))
+            if path == "/api/captions/translate":
+                prefs, folder, _ = _caption_args(b)
+                _caption_gpu_check(1.0)
+                return self.json(captions.translate(prefs, folder, bool(b.get("skip_existing"))))
+            if path == "/api/captions/stop":
+                return self.json({"ok": captions.stop()})
+            if path == "/api/captions/unload":
+                return self.json({"ok": captions.unload()})
+            if path == "/api/captions/instruction":
+                ovr = captions.instruction_override(load_prefs(), str(b.get("key") or "custom"),
+                                                    str(b.get("text") or ""))
+                update_prefs({"caption_qwen_instructions": ovr})
                 return self.json({"ok": True})
             if path == "/api/captions/save":
                 folder, name, text = b.get("folder", ""), b.get("name", ""), b.get("text", "")
@@ -998,6 +1072,7 @@ def run_server(host, port=None, password=None):
         pass
     finally:
         _stop()
+        captions.unload()
         live.remove(live.LIVE_WEB)
         srv.server_close()
 

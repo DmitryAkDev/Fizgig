@@ -72,6 +72,17 @@ Every file and folder box has **Choose…**, which picks from what is already on
 
 Boxes that take a file or folder from your own data also have **Upload** beside it: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the device you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you. On the computer running Fizgig itself there's no need to upload: Choose… reaches the same files.
 
+## Captions
+
+The Captions tab has the desktop app's captioning tools, run on the machine running Fizgig:
+
+- **Caption All (AI)** with Qwen3-VL (when the Krea 2 text encoder is set in Preferences) or Florence-2, with the same tasks, trigger word, length and Overwrite choice as the desktop. **Edit instructions…** changes what Qwen3-VL is told for a task; the edit is shared with the desktop app and the trainer's auto-recaption. **Static Caption All** gives every file just the trigger word.
+- The model stays loaded between batches, so **Re-caption** on a single file is quick; **Unload Model** frees its memory, and it unloads itself before any run starts (here or in the desktop app).
+- **Caption every song** (ACE-Step), **Bilingual** (adds a Chinese translation to each caption) and **Find & Replace** with a preview.
+- The captions below can be searched and are shown 40 at a time; edit any of them and press Save.
+
+With a run training, captioning only starts if the card has room for it beside the run.
+
 ## Choosing the GPU
 
 On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is the same setting as the desktop app's GPU choice (`cuda_device` in `prefs.json`). A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.

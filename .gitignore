@@ -113,3 +113,4 @@ training_data/
 .fizgig_desktop_console.log
 # single files uploaded through the web UI (a context LoRA, a test photo)
 uploads/
+.fizgig_web_caption/

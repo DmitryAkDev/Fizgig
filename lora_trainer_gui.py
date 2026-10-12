@@ -2268,6 +2268,15 @@ class LoRATrainerGUI:
         """Save a single pref value back to prefs.json."""
         if key in self.prefs_vars:
             self.prefs[key] = self.prefs_vars[key].get()
+            try:
+                # the web UI's edited caption instructions (its Captions tab) since this window opened: keep them,
+                # not this window's older copy
+                with open(PREFS_FILE, encoding="utf-8") as f:
+                    _disk_ci = json.load(f).get("caption_qwen_instructions")
+                if isinstance(_disk_ci, dict):
+                    self.prefs["caption_qwen_instructions"] = _disk_ci
+            except (OSError, ValueError):
+                pass
             if key != "web_port":
                 # the web UI may have saved a new port since this window opened: keep it, not the stale copy
                 try:

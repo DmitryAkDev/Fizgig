@@ -51,6 +51,7 @@ async function boot() {
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
+  S.capSaved = st.captions || {};
   $("imageFolder").value = S.imageFolder;
   const sel = $("familySelect");
   sel.innerHTML = "";
@@ -629,32 +630,214 @@ async function loadCheckpoints() {
     "Nothing saved yet. Checkpoints appear here as the run saves them.";
 }
 
-// ---- Captions tab ------------------------------------------------------------------------------------------
+// ---- Captions tab ----------------------------------------------------------------------------------------
+// The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
+const CAP_PAGE = 40;
+S.cap = {page: 0, items: [], opts: null, lastState: ""};
+
+function capSettings() {
+  return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
+    tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
+    skipCjk: $("capSkipCjk").checked};
+}
+const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
+const qwenOn = () => $("capModel").value === (S.cap.opts && S.cap.opts.models[0]) && S.cap.opts.qwen_available;
+const qwenTask = () => (S.cap.opts.qwen_tasks || []).find((t) => t.label === $("capTask").value);
+
+async function loadCaptionOptions() {
+  const o = S.cap.opts = await api("/api/captions/options?family=" + encodeURIComponent(S.family));
+  const saved = S.capSaved || {};
+  const model = $("capModel");
+  model.innerHTML = "";
+  for (const m of o.models) model.append(el("option", {value: m, text: m}));
+  model.value = o.models.includes(saved.model) ? saved.model : o.default_model;
+  $("capModelHint").textContent = o.qwen_available ?
+    "Qwen3-VL (the Krea 2 text encoder from Preferences) follows an instruction you can edit and writes the best " +
+    "training captions. Florence-2 downloads itself the first time." :
+    "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL, which writes better training captions. " +
+    "Florence-2 downloads itself the first time.";
+  if (saved.trigger !== undefined) $("capTrigger").value = saved.trigger;
+  if (saved.overwrite !== undefined) $("capOverwrite").checked = saved.overwrite;
+  if (saved.skipCjk !== undefined) $("capSkipCjk").checked = saved.skipCjk;
+  fillTasks(saved.task);
+  if (saved.tokens) $("capTokens").value = saved.tokens;
+  $("capSongCard").style.display = o.song_words ? "" : "none";
+  if (o.song_words) $("capSongWords").value = saved.songWords || o.song_words;
+}
+
+function fillTasks(want) {
+  const o = S.cap.opts, task = $("capTask");
+  task.innerHTML = "";
+  const labels = qwenOn() ? o.qwen_tasks.map((t) => t.label) : o.florence_tasks;
+  for (const l of labels) task.append(el("option", {value: l, text: l}));
+  task.value = labels.includes(want) ? want : (qwenOn() ? o.default_qwen_task : "<DETAILED_CAPTION>");
+  $("capEditInstr").style.display = qwenOn() ? "" : "none";
+  $("capInstrBox").style.display = "none";
+}
+
+function onCapTask() {
+  const t = qwenOn() && qwenTask();
+  if (t) $("capTokens").value = t.tokens;            // each Qwen task suggests its own length
+  if ($("capInstrBox").style.display !== "none") openInstr();
+  saveCapSoon();
+}
+
+function openInstr() {
+  const t = qwenTask();
+  if (!t) return;
+  $("capInstrBox").style.display = "";
+  $("capInstr").value = t.instruction;
+  $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
+    ". Saved here, it is used by the desktop app's Captions tab and by the trainer's auto-recaption too.";
+  $("capInstrStatus").textContent = "";
+}
+
+async function saveInstr(text) {
+  const t = qwenTask();
+  await api("/api/captions/instruction", {key: t.key, text});
+  const keep = $("capTask").value;
+  await loadCaptionOptions();
+  $("capTask").value = keep;
+  openInstr();
+  $("capInstrStatus").textContent = "Saved.";
+}
+
+function capJobBody(extra = {}) {
+  const t = qwenOn() && qwenTask();
+  return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value,
+    instruction: t ? t.instruction : "", max_tokens: Number($("capTokens").value) || 120,
+    trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
+}
+
+async function capRun(path, body) {
+  try {
+    const r = await api(path, body);
+    if (r.error) $("capStatus").textContent = r.error;
+    pollCaptions();
+    return r;
+  } catch (e) { $("capStatus").textContent = e.message; }
+}
+
+async function pollCaptions() {
+  clearTimeout(S.cap.timer);
+  let st;
+  try { st = await api("/api/captions/status"); } catch (e) { return; }
+  const busy = ["loading", "running", "translating"].includes(st.state);
+  const pct = st.total ? (100 * st.done) / st.total : 0;
+  $("capBar").style.width = (busy ? pct : 0).toFixed(1) + "%";
+  $("capStatus").textContent = {
+    idle: "No model loaded.", loaded: `${st.model} is loaded, ready.`,
+    loading: `Loading ${st.model}… (the first time it downloads)`,
+    running: `Captioning ${st.done} of ${st.total}` + (st.fail ? ` · ${st.fail} failed` : ""),
+    translating: st.total ? `Translating ${st.done} of ${st.total}` : "Loading the translator…",
+  }[st.state] || st.state;
+  $("capAll").disabled = busy; $("capStatic").disabled = busy; $("capTranslate").disabled = busy;
+  $("capStop").disabled = !busy; $("capUnload").disabled = busy || !st.loaded;
+  const log = $("capLog");
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  log.textContent = st.log.join("\n");
+  if (atEnd) log.scrollTop = log.scrollHeight;
+  if (S.cap.lastState && ["running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();
+  S.cap.lastState = st.state;
+  if (busy || document.querySelector("#tab-captions.active")) S.cap.timer = setTimeout(pollCaptions, busy ? 1500 : 5000);
+}
+
 async function loadCaptions() {
-  const host = $("captionsGrid");
-  host.innerHTML = "";
+  if (!S.cap.opts || S.cap.optsFamily !== S.family) {        // a model change can bring the song card
+    await loadCaptionOptions().catch(() => {});
+    S.cap.optsFamily = S.family;
+  }
+  pollCaptions();
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}`);
-  const missing = r.items.filter((i) => i.caption === null).length;
-  $("captionsSummary").textContent = `${r.items.length} files${missing ? `, ${missing} without a caption` : ""}`;
-  for (const it of r.items) {
+  S.cap.items = r.items;
+  renderCaptions();
+}
+
+function renderCaptions() {
+  const host = $("captionsGrid");
+  host.innerHTML = "";
+  const ext = $("captionExt").value.trim() || ".txt";
+  const q = $("capSearch").value.trim().toLowerCase();
+  const all = S.cap.items;
+  const items = q ? all.filter((i) => i.name.toLowerCase().includes(q) || (i.caption || "").toLowerCase().includes(q)) : all;
+  const pages = Math.max(1, Math.ceil(items.length / CAP_PAGE));
+  S.cap.page = Math.min(S.cap.page, pages - 1);
+  const missing = all.filter((i) => i.caption === null).length;
+  $("captionsSummary").textContent = `${all.length} files${missing ? `, ${missing} without a caption` : ""}` +
+    (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
+  $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
+  for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     const ta = el("textarea", {rows: 4});
     ta.value = it.caption ?? "";
     const status = el("span", {class: "field-hint"});
     const save = el("button", {class: "btn btn-sm", text: "Save", onclick: async () => {
       await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
+      it.caption = ta.value;
       status.textContent = "Saved";
     }});
-    const ext2 = it.name.split(".").pop().toLowerCase();
-    const media = ["wav", "mp3", "flac", "m4a"].includes(ext2) ? el("audio", {controls: true, preload: "none", src}) :
-      ["mp4", "webm"].includes(ext2) ? el("video", {controls: true, preload: "none", src}) :
+    const kind = it.name.split(".").pop().toLowerCase();
+    const isAudio = ["wav", "mp3", "flac", "m4a"].includes(kind);
+    const recap = isAudio ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
+      title: "Write this file's caption again with the model and task above", onclick: async () => {
+        status.textContent = "Re-captioning…";
+        const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
+        if (r && r.error) status.textContent = r.error;
+      }});
+    const media = isAudio ? el("audio", {controls: true, preload: "none", src}) :
+      ["mp4", "webm"].includes(kind) ? el("video", {controls: true, preload: "none", src}) :
       el("img", {loading: "lazy", src, alt: it.name});
     host.append(el("div", {class: "caption-card"}, media,
       el("div", {class: "caption-card-body"}, el("div", {class: "caption-card-title", text: it.name}), ta,
-        el("div", {class: "field-row"}, save, status))));
+        el("div", {class: "field-row"}, save, recap, status))));
   }
+}
+
+async function findReplace(apply) {
+  const host = $("frChanges");
+  try {
+    const r = await api("/api/captions/replace", {family: S.family, folder: S.imageFolder, find: $("frFind").value,
+      replace: $("frReplace").value, apply});
+    host.innerHTML = "";
+    $("frStatus").textContent = r.changes.length ? (apply ? `Replaced in ${r.changes.length} captions.` :
+      `${r.changes.length} captions would change:`) : "No caption contains that.";
+    if (!apply) for (const c of r.changes.slice(0, 100)) host.append(el("div", {class: "checkpoint-row"},
+      el("span", {class: "checkpoint-name", text: c.name}),
+      el("span", {class: "field-hint", text: "Before: " + c.old}), el("span", {class: "field-hint", text: "After: " + c.new})));
+    if (apply) loadCaptions();
+  } catch (e) { $("frStatus").textContent = e.message; }
+}
+
+function wireCaptions() {
+  $("captionsReload").addEventListener("click", loadCaptions);
+  $("capModel").addEventListener("change", () => { fillTasks(); onCapTask(); });
+  $("capTask").addEventListener("change", onCapTask);
+  for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
+    $(id).addEventListener("change", saveCapSoon);
+  $("capEditInstr").addEventListener("click", () =>
+    $("capInstrBox").style.display === "none" ? openInstr() : ($("capInstrBox").style.display = "none"));
+  $("capInstrSave").addEventListener("click", () => saveInstr($("capInstr").value));
+  $("capInstrReset").addEventListener("click", () => saveInstr(""));
+  $("capAll").addEventListener("click", () => capRun("/api/captions/ai", capJobBody()));
+  $("capStatic").addEventListener("click", async () => {
+    const r = await capRun("/api/captions/static", capJobBody());
+    if (r && !r.error) { $("capStatus").textContent = `${r.written} written, ${r.skipped} kept.`; loadCaptions(); }
+  });
+  $("capSongs").addEventListener("click", async () => {
+    const r = await capRun("/api/captions/songs", capJobBody({words: $("capSongWords").value}));
+    if (r && !r.error) { $("capStatus").textContent = `${r.written} songs captioned "${r.caption}", ${r.skipped} kept.`; loadCaptions(); }
+  });
+  $("capTranslate").addEventListener("click", () =>
+    capRun("/api/captions/translate", capJobBody({skip_existing: $("capSkipCjk").checked})));
+  $("capStop").addEventListener("click", () => capRun("/api/captions/stop", {}));
+  $("capUnload").addEventListener("click", () => capRun("/api/captions/unload", {}));
+  $("frPreview").addEventListener("click", () => findReplace(false));
+  $("frApply").addEventListener("click", () => findReplace(true));
+  $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
+  $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
+  $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
 }
 
 // ---- file picker -------------------------------------------------------------------------------------------
@@ -877,7 +1060,7 @@ function wire() {
     pick(folder.value, true, (p) => { folder.value = p; setFolder(); }));
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
-  $("captionsReload").addEventListener("click", loadCaptions);
+  wireCaptions();
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("btnPause").addEventListener("click", () => start("/api/pause"));
