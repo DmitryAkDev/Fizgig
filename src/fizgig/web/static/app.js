@@ -1497,7 +1497,8 @@ const stRemember = debounce(() => {
     prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value, turbo: $("stTurbo").checked,
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
     luckyHi: $("stLuckyHi").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
-    scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]}};
+    scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]},
+    h3: stSaved().h3};                           // H3's clip settings and photos (studioH3Remember's)
   try { localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
 }, 500);
 
@@ -1529,6 +1530,7 @@ async function studioFamily(res) {
   const key = $("stFamily").value;
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
   const sv = stSaved();
+  studioKind(L, sv);
   $("stRes").innerHTML = "";
   for (const s of L.sizes) $("stRes").append(el("option", {value: s, text: s}));
   $("stRes").value = L.sizes.includes(String(res)) ? String(res) : L.size;
@@ -1553,6 +1555,85 @@ async function studioFamily(res) {
   studioMasters();
   studioPresets();
   studioRows();
+}
+
+// H3 (clips) and ACE-Step (songs): their own controls, the desktop's
+function studioKind(L, sv) {
+  const video = L.kind === "video", audio = L.kind === "audio";
+  $("stVideoRows").style.display = video ? "" : "none";
+  $("stFrames").style.display = video ? "" : "none";
+  $("stResLabel").textContent = audio ? "Length (s):" : "Res:";
+  $("stRes").style.display = $("stResLabel").style.display = video ? "none" : "";
+  document.querySelectorAll(".st-pane").forEach((p) => p.classList.toggle("audio", audio));
+  $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
+    audio ? "Play either song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
+  $("stPlayBoth").style.display = video || audio ? "" : "none";
+  if (!video) return;
+  const V = L.video, h3 = sv.h3 || {};
+  const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
+  fill("stH3Model", V.models, h3.model || V.models[0]);   // the desktop starts on First/last frame
+  fill("stH3Base", V.bases, h3.base);
+  fill("stH3Len", V.lengths, h3.len || "22 frames (~1s)");
+  fill("stH3W", V.dims, h3.w || "768");
+  fill("stH3H", V.dims, h3.h || "640");
+  fill("stH3Scale", V.scales, h3.scale || "Full");
+  if (h3.steps) $("stH3Steps").value = h3.steps;
+  if (h3.turbo != null) $("stH3Turbo").value = h3.turbo;
+  $("stH3Sound").checked = V.sound && h3.sound !== false;
+  $("stH3Sound").disabled = !V.sound;
+  S.st.kf = h3.kf || {};
+  studioSlots();
+}
+
+function studioSlots() {
+  const ref = $("stH3Model").value.includes("ref2va");
+  $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
+  $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (the ref2va model's " +
+    "references), each cropped to the clip's shape from its middle." :
+    "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape " +
+    "from its middle.";
+  const host = $("stFrameSlots");
+  host.innerHTML = "";
+  const slots = ref ? [["ref1", "Reference 1"], ["ref2", "Reference 2"]] : [["first", "First frame"], ["last", "Last frame"]];
+  for (const [slot, label] of slots) {
+    const input = el("input", {type: "text", class: "w-path", value: (S.st.kf[slot] || ""), placeholder: "a photo (optional)"});
+    const thumb = el("img", {alt: ""});
+    const set = (p) => { input.value = p || ""; if (p) S.st.kf[slot] = p; else delete S.st.kf[slot];
+      thumb.src = p ? `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}` : ""; studioH3Remember(); };
+    input.addEventListener("change", () => set(input.value.trim()));
+    const up = uploadButton({kind: "path", key: "STUDIO_" + slot}, input, set);
+    host.append(el("div", {class: "st-slot"}, el("span", {class: "field-label", text: label + ":"}), thumb,
+      el("div", {}, el("div", {class: "field-row"}, input,
+        el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}), up.btn,
+        el("button", {class: "btn", text: "Clear", onclick: () => set("")})), up.status)));
+    set(input.value);
+  }
+}
+
+function studioH3Remember() {
+  try {
+    const d = stSaved();
+    d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
+      h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
+      sound: $("stH3Sound").checked, kf: S.st.kf};
+    localStorage.setItem(ST_KEY, JSON.stringify(d));
+  } catch (e) { /* private window */ }
+}
+
+function studioExtra() {
+  // what a clip or a song needs beyond the sliders
+  const L = S.st.layout;
+  if (L.kind === "audio") return {audio: {seconds: Number($("stRes").value) || 30}};
+  if (L.kind !== "video") return {};
+  const V = L.video, f = V.scale_of[$("stH3Scale").value] || 1;
+  const snap = (x) => f >= 0.999 ? x : Math.max(256, Math.floor(x * f / 32) * 32);
+  const w = snap(Number($("stH3W").value) || 768), h = snap(Number($("stH3H").value) || 640);
+  const ref = $("stH3Model").value.includes("ref2va");
+  const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
+  return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
+    steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
+    turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked},
+    keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s]})), ref_mode: ref};
 }
 
 function studioNegRow() {
@@ -1786,7 +1867,7 @@ function studioSchedule(live) {
 
 async function studioRender() {
   if (!$("stPrompt").value.trim()) { $("stStatus").textContent = "Enter a prompt (include the LoRA's trigger word) to see previews."; return; }
-  try { await api("/api/studio/render", {state: studioState()}); studioPoll(); }
+  try { await api("/api/studio/render", {state: studioState(), ...studioExtra()}); studioPoll(); }
   catch (e) { $("stStatus").textContent = e.message; }
 }
 
@@ -1796,7 +1877,7 @@ async function studioStart() {
   try {
     const st = await api("/api/studio/status");
     const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
-    const key = [L.key, $("stPrimary").value.trim(), fast].join("|");
+    const key = [L.key, $("stPrimary").value.trim(), fast, L.kind === "video" ? $("stH3Model").value + $("stH3Base").value : ""].join("|");
     if (st.state === "ready" && S.st.loadedKey === key) {     // the same LoRA: the donor may change, then a render
       if ($("stDonor").value.trim() !== (st.donor || "")) await api("/api/studio/donor", {path: $("stDonor").value.trim()});
       studioRender();
@@ -1804,7 +1885,8 @@ async function studioStart() {
     }
     S.st.ready = false;
     await api("/api/studio/load", {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
-      fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim()});
+      fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
+      h3_model: L.kind === "video" ? $("stH3Model").value : "", base_mode: L.kind === "video" ? L.video.base_of[$("stH3Base").value] : ""});
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
     studioPoll();
@@ -1835,6 +1917,16 @@ async function studioPoll() {
     S.st.shown = st.shown;
     const q = (w) => `/api/studio/image?which=${w}&gen=${st.shown}&t=${encodeURIComponent(TOKEN)}`;
     $("stBase").src = q("baseline"); $("stTweak").src = q("tweaked");
+    // a clip plays in its pane (the picture its poster); a song gets its player under the waveform
+    const kind = S.st.layout && S.st.layout.kind;
+    for (const [w, img, vid, aud] of [["baseline", "stBase", "stBaseVid", "stBaseAud"], ["tweaked", "stTweak", "stTweakVid", "stTweakAud"]]) {
+      const has = st.media && st.media[w];
+      $(vid).style.display = kind === "video" && has ? "" : "none";
+      $(aud).style.display = kind === "audio" && has ? "" : "none";
+      $(img).style.display = kind === "video" && has ? "none" : "";
+      if (kind === "video" && has) { $(vid).poster = q(w); $(vid).src = q(w + "_media"); }
+      if (kind === "audio" && has) $(aud).src = q(w + "_media");
+    }
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
   }
@@ -1881,6 +1973,15 @@ async function studioSave(overwrite) {
 
 function wireStudio() {
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
+  // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
+  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound"])
+    $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
+  $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
+  $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
+  $("stPlayBothBtn").addEventListener("click", () => {
+    const pair = S.st.layout.kind === "video" ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
+    for (const id of pair) { const m = $(id); m.currentTime = 0; m.play().catch(() => {}); }
+  });
   $("stStart").addEventListener("click", studioStart);
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));

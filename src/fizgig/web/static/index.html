@@ -455,9 +455,22 @@
                 <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
               <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42">
                 <button class="btn btn-sm" id="stSeedNew" title="A random seed">↻</button>
-                <span class="field-label">Res:</span><select id="stRes" class="w-combo st-small-select"></select>
+                <span class="field-label" id="stResLabel">Res:</span><select id="stRes" class="w-combo st-small-select"></select>
                 <label class="checkbox-label" id="stTurboRow"><input type="checkbox" id="stTurbo" checked> Turbo Preview
                   (late-block changes render almost at once; the same picture as a full render)</label></div>
+              <div id="stVideoRows" style="display:none">
+                <div class="field-row"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select"></select>
+                  <span class="field-label">Base:</span><select id="stH3Base" class="w-combo st-small-select"></select></div>
+                <div class="field-row"><span class="field-label">Clip:</span>
+                  <span class="st-inline"><select id="stH3Len" class="w-combo st-small-select"></select>
+                    <span class="field-hint">W</span><select id="stH3W" class="w-combo st-small-select"></select>
+                    <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select>
+                    <span class="field-hint">Render size</span><select id="stH3Scale" class="w-combo st-small-select"></select></span></div>
+                <div class="field-row"><span class="field-label"></span>
+                  <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4">
+                    <span class="field-hint">Turbo</span><input type="text" id="stH3Turbo" value="1">
+                    <label class="checkbox-label"><input type="checkbox" id="stH3Sound" checked> Sound</label></span></div>
+              </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
                 <textarea id="stNeg" rows="2"></textarea></div>
               <div class="field-row" id="stRefRow"><span class="field-label">Reference:</span>
@@ -473,6 +486,12 @@
               <div class="run-bar"><span id="stBar" style="width:0"></span></div>
             </div>
           </div>
+          <div class="section-card" id="stFrames" style="display:none">
+            <div class="card-title" id="stFramesTitle">First / Last Frame</div>
+            <div class="card-desc" id="stFramesDesc">Optional: photos the clip starts and ends on. Each is cropped to the
+              clip's shape from its middle.</div>
+            <div class="card-content" id="stFrameSlots"></div>
+          </div>
           <div class="section-card" id="stProfile" style="display:none">
             <div class="card-title">Profile found for this LoRA</div>
             <div class="card-content"><div class="field-hint" id="stProfileLine"></div><div class="st-pills" id="stPills"></div>
@@ -482,10 +501,15 @@
             <div class="card-title">Preview</div>
             <div class="card-content">
               <div class="st-preview">
-                <figure class="gallery-item st-pane"><img id="stBase" alt=""><figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
-                <figure class="gallery-item st-pane"><img id="stTweak" alt=""><figcaption>Tweaked (current sliders)</figcaption></figure>
+                <figure class="gallery-item st-pane"><img id="stBase" alt=""><video id="stBaseVid" controls loop playsinline
+                  style="display:none"></video><audio id="stBaseAud" controls style="display:none"></audio>
+                  <figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
+                <figure class="gallery-item st-pane"><img id="stTweak" alt=""><video id="stTweakVid" controls loop playsinline
+                  style="display:none"></video><audio id="stTweakAud" controls style="display:none"></audio>
+                  <figcaption>Tweaked (current sliders)</figcaption></figure>
               </div>
-              <div class="field-hint">Click either picture to see both full size (← → switches between them).</div>
+              <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
+              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play both together</button></div>
             </div>
           </div>
           <div class="section-card" id="stMasters" style="display:none">

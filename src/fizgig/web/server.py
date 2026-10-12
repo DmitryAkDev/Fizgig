@@ -302,8 +302,13 @@ def _studio_post(what, b):
             raise ValueError("A training run is using the GPU. Repair Studio can load when it finishes.")
         desc = _studio_desc(b.get("family", ""))
         prefs = load_prefs()
-        kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
-                                                     samples=_studio_samples(desc), negative=b.get("negative"))
+        if desc.video_workbench:
+            settings = None
+            kw, status, problems = studio.plan_video(desc, prefs, pref_path, ref_mode="ref2va" in str(b.get("h3_model") or ""),
+                                                     base_mode=str(b.get("base_mode") or "auto"))
+        else:
+            kw, settings, status, problems = studio.plan(desc, prefs, pref_path, fast=b.get("fast", True) is not False,
+                                                         samples=_studio_samples(desc), negative=b.get("negative"))
         if problems:
             raise ValueError(" ".join(problems))
         captions.unload()                       # the caption model leaves the GPU too
@@ -311,7 +316,8 @@ def _studio_post(what, b):
                     status, b.get("turbo", True))
         return {"ok": True}
     if what == "render":
-        return studio.render(b.get("state") or {})
+        return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode")
+                                                          if b.get(k) is not None})
     if what == "cancel":
         studio._send({"cmd": "cancel"})
         return {"ok": True}

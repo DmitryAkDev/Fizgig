@@ -45,7 +45,10 @@ def _reader(proc):
             ev = json.loads(line[len(EV):])
         except ValueError:
             continue
-        _event(ev)
+        with _lock:
+            current = _S["proc"] is proc
+        if current:                              # a worker being stopped (a model switch) has its say no more
+            _event(ev)
     with _lock:
         if _S["proc"] is proc:
             _S.update(proc=None, state="idle", rendering=False, status="The Studio worker stopped.", progress=None)
@@ -72,6 +75,7 @@ def _event(ev):
                           if ev.get("donor") else "Donor unloaded.")
         elif kind == "rendered":
             _S.update(rendering=False, progress=None, baseline=ev.get("baseline", ""), tweaked=ev.get("tweaked", ""),
+                      baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
                       shown=ev.get("gen", 0), status="Ready.", error="")
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "aborted":
@@ -94,7 +98,7 @@ def _event(ev):
             _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
                       rendering=False, pending=None, progress=None, status="Models unloaded.")
     if nxt is not None:
-        render(nxt)
+        render(*nxt)
 
 
 def _profile(h):
@@ -188,11 +192,14 @@ def load(desc, primary, donor, kw, settings, status, turbo):
     if donor and not os.path.isfile(donor):
         raise ValueError("That donor LoRA isn't there.")
     with _lock:
+        other = _S["family"] and _S["family"] != desc.key
         _S.update(state="loading", status="Starting the Studio worker…", error="", progress=None, pending=None,
                   family=desc.key, used=time.time())
 
     def go():                                    # the worker's first start imports torch: not in the request
         try:
+            if other:                            # another model's worker: a fresh process (an engine's reset can
+                stop_worker()                    # leave enough on the card to crawl the next model - ACE then H3)
             _ensure_worker()
             with _lock:
                 _S["status"] = status
@@ -219,7 +226,7 @@ def settings(turbo=None, preview_settings=None):
     _send(c)
 
 
-def render(state):
+def render(state, extra=None):
     """Render this slider state: now if nothing renders, else it waits (replacing any older wait) and the render
     going is cancelled - the newest state is what renders next."""
     with _lock:
@@ -227,7 +234,7 @@ def render(state):
             return {"error": "Load a LoRA first."}
         _S["used"] = time.time()
         if _S["rendering"]:
-            _S["pending"] = state
+            _S["pending"] = (state, extra)
             busy = True
         else:
             _S["gen"] += 1
@@ -237,7 +244,7 @@ def render(state):
     if busy:
         _send({"cmd": "cancel"})
         return {"ok": True, "queued": True}
-    _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR})
+    _send({"cmd": "render", "gen": gen, "state": state, "out_dir": OUT_DIR, **(extra or {})})
     return {"ok": True, "gen": gen}
 
 
@@ -248,13 +255,12 @@ def save(out, state, include_donor):
 
 
 def reset():
+    """Unload: the worker quits, so the card and the RAM it held come back whole (the request waits for it - a
+    Start pressed straight after finds no half-stopped worker)."""
+    stop_worker()
     with _lock:
-        running = _S["proc"] is not None and _S["proc"].poll() is None
-        if running:
-            _S.update(status="Unloading…", pending=None)
-    if running:
-        _send({"cmd": "cancel"})
-        _send({"cmd": "reset"})
+        _S.update(state="idle", primary="", donor="", primary_blocks=[], donor_blocks=[], hash="", profile=None,
+                  rendering=False, pending=None, progress=None, family="", status="Models unloaded.")
 
 
 def stop_worker():
@@ -266,6 +272,12 @@ def stop_worker():
     try:
         _send({"cmd": "cancel"})
         _send({"cmd": "quit"})
+    except Exception:
+        pass
+    with _lock:                                  # ours to stop: its reader says nothing when it ends
+        if _S["proc"] is p:
+            _S.update(proc=None, sock=None, port=0)
+    try:
         p.wait(timeout=20)
     except Exception:
         p.kill()
@@ -280,6 +292,7 @@ def status():
     with _lock:
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
+        d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked")}
         d["pending"] = _S["pending"] is not None
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
     return d
@@ -287,7 +300,7 @@ def status():
 
 def image(which, gen):
     with _lock:
-        p = _S.get(which) if which in ("baseline", "tweaked") else ""
+        p = _S.get(which) if which in ("baseline", "tweaked", "baseline_media", "tweaked_media") else ""
     return p if p and os.path.isfile(p) else ""
 
 
@@ -304,10 +317,44 @@ STILLS_SIZES = ["256", "384", "512", "768", "1024"]
 
 
 def families():
-    """The models Repair Studio offers in the web UI: stills for now (the desktop lists H3 and ACE-Step too)."""
+    """The models Studio offers: every family whose description lists the repair workbench (the desktop's list) -
+    stills, H3's clips and ACE-Step's songs."""
     from fizgig.families.registry import training_families
-    return [d for d in training_families() if "repair" in (d.workbench or ()) and d.training_ready
-            and not ({"clip", "voice"} & set(d.media))]
+    return [d for d in training_families() if "repair" in (d.workbench or ()) and d.training_ready]
+
+
+# H3's clip controls, the desktop's (_REPAIR_H3_LENGTHS / _DIMS / _DIAL_SCALES and the Model / Base pickers)
+H3_LENGTHS = [("Still (1 frame)", 1), ("5 frames (~0.2s)", 5), ("9 frames (~0.4s, off-grid)", 9),
+              ("13 frames (~0.5s, off-grid)", 13), ("22 frames (~1s)", 22), ("39 frames (~1.6s)", 39),
+              ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73), ("90 frames (~3.8s)", 90),
+              ("107 frames (~4.5s)", 107), ("124 frames (~5.2s)", 124)]
+H3_DIMS = ["512", "640", "768", "960", "1024", "1152", "1280", "1536"]
+H3_SCALES = [("Full", 1.0), ("⅔", 2.0 / 3.0), ("½", 0.5)]
+H3_MODELS = ["First/last frame (fl2va) — standard", "Reference (ref2va)"]
+H3_BASES = [("Auto (by free VRAM)", "auto"), ("Stream blocks (exact int8, room for big clips)", "stream"),
+            ("NF4 (smallest, 9.5% base error)", "nf4")]
+SONG_LENGTHS = ["10", "20", "30", "60", "120"]
+
+
+def plan_video(desc, prefs, pref_path, ref_mode=False, base_mode="auto"):
+    """H3's load plan, as the desktop's _repair_engine_plan_video: the reference DiT under Reference (ref2va), the
+    Turbo LoRA at the family's preview strength, the prompt cache folder, the audio VAE when it is there."""
+    look = lambda k: pref_path(prefs, k)
+    path = lambda role: desc.model_path(role, look)
+    labels = {f.role: f.label for f in desc.model_files}
+    roles = ("ref_dit" if ref_mode else "dit", "vae", "text_encoder")
+    problems = [f"{labels.get(r, r)} isn't set (or isn't where Preferences says). Set it on the Preferences tab."
+                for r in roles if not path(r) or not os.path.exists(path(r))]
+    sp = desc.preview_speed()
+    turbo = path("speed_lora") or (look(sp.pref_key) if sp is not None and sp.pref_key else "")
+    cache = look("cache_dir")
+    audio = path("audio_vae")
+    kw = {"dit_path": path(roles[0]), "vae_path": path("vae"), "text_encoder_path": path("text_encoder"),
+          "device": "cuda", "speed_lora_path": turbo if turbo and os.path.exists(turbo) else "",
+          "turbo_lora_strength": (desc.preview_speed_defaults() or (0, 0.75))[1],
+          "te_cache_dir": os.path.join(cache, "te_prompts") if cache else "",
+          "audio_vae_path": audio if audio and os.path.exists(audio) else "", "base_mode": base_mode}
+    return kw, f"Loading {desc.display_name} (the base takes a minute)…", problems
 
 
 def layout(desc, prefs, pref_path, samples=None):
@@ -328,7 +375,15 @@ def layout(desc, prefs, pref_path, samples=None):
     fast = (f"{ck[1].name} ({ck[1].steps}-step, default)" if ck is not None and have(ck[0].pref_key) else
             f"{sp.name} ({sp.settings.steps}-step, default)" if sp is not None and have(sp.pref_key) else "")
     ds = desc.default_sampling()
-    return {"key": desc.key, "name": desc.display_name, "groups": groups,
+    kind = "video" if desc.video_workbench else "audio" if desc.audio_workbench else "stills"
+    audio_vae = desc.model_path("audio_vae", look) if kind == "video" else ""
+    return {"key": desc.key, "name": desc.display_name, "groups": groups, "kind": kind,
+            "video": {"lengths": [n for n, _ in H3_LENGTHS], "length_frames": dict(H3_LENGTHS), "dims": H3_DIMS,
+                      "scales": [n for n, _ in H3_SCALES], "scale_of": dict(H3_SCALES), "models": H3_MODELS,
+                      "bases": [n for n, _ in H3_BASES], "base_of": dict(H3_BASES),
+                      "sound": bool(audio_vae and os.path.exists(audio_vae)),
+                      "ref_dit": bool(desc.model_path("ref_dit", look))} if kind == "video" else None,
+            "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "categories": {b: CAT_SHORT.get(c, "") for b, c in cats.items()},
             "masters": [{"cat": c, "label": CAT_SHORT[c], "color": CAT_COLOR[c]} for c in
                         ("style_composition", "style_ident_overlap", "identity", "ident_details_overlap", "details")]
@@ -336,7 +391,7 @@ def layout(desc, prefs, pref_path, samples=None):
             "category_of": cats if desc.category_masters else {},
             "presets": presets, "lucky_zones": [list(z) for z in (desc.lucky_zones or ())],
             "reference_kind": desc.reference_kind or "", "reference_strength": bool(desc.reference_strength),
-            "size": str(desc.repair_size or 768), "sizes": STILLS_SIZES,
+            "size": str(desc.repair_size or 768), "sizes": SONG_LENGTHS if kind == "audio" else STILLS_SIZES,
             "default_strength": float(desc.repair_default_strength or 1.0),
             "negative_default": desc.preview_negative, "turbo_preview": bool(desc.activation_cache),
             "follows_samples": bool(desc.workbench_follows_samples),

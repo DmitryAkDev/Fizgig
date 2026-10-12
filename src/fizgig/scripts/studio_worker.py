@@ -69,6 +69,10 @@ def cmd_load(c):
             eng = desc.make_workbench_engine()
         S["engine"], S["desc"] = eng, desc
         eng.turbo_preview = bool(c.get("turbo", True))
+        if getattr(desc, "video_workbench", False):
+            eng.int8_attention = True                # as the desktop's Repair Studio (comfy-kitchen where it exists)
+            eng.on_status = lambda text: emit(ev="status", text=str(text))
+            S["kf"] = {}                             # keyframe / reference latents, per slot, photo, crop and canvas
         if c.get("preview_settings") is not None:
             eng.preview_settings = c["preview_settings"]
         eng.on_step = lambda done, total: emit(ev="step", done=done, total=total)
@@ -129,15 +133,21 @@ def _render(c):
             st = _state(c["state"])
             eng.clear_cancel()
             emit(ev="status", text=c.get("status") or "Generating preview…")
-            base = eng.generate_baseline(st)
-            tweak = eng.generate_preview(st)
             out = c["out_dir"]
             os.makedirs(out, exist_ok=True)
-            paths = {}
-            for name, img in (("baseline", base), ("tweaked", tweak)):
-                p = os.path.join(out, f"{name}_{gen}.png")
-                img.save(p)
-                paths[name] = p
+            desc = S["desc"]
+            if getattr(desc, "video_workbench", False):
+                paths = _render_clips(eng, desc, st, c, out, gen)
+            elif getattr(desc, "audio_workbench", False):
+                paths = _render_songs(eng, st, c, out, gen)
+            else:
+                base = eng.generate_baseline(st)
+                tweak = eng.generate_preview(st)
+                paths = {}
+                for name, img in (("baseline", base), ("tweaked", tweak)):
+                    p = os.path.join(out, f"{name}_{gen}.png")
+                    img.save(p)
+                    paths[name] = p
         emit(ev="rendered", gen=gen, **paths)
     except Exception as e:
         if _aborted(e):
@@ -147,6 +157,109 @@ def _render(c):
             emit(ev="error", where="render", gen=gen,
                  msg=("Out of VRAM for this preview: a smaller Res, or more inference block swap in Preferences."
                       if "out of memory" in msg.lower() else msg), trace=traceback.format_exc()[-2000:])
+
+
+def _cond(eng, c, width, height, frames):
+    """(keyframes, references) for the clip, as the desktop's _repair_h3_prepare_cond: under First/last frame each
+    photo's crop is a keyframe (first at frame 0, last at the final frame; a still takes the first only); under
+    Reference each is a reference. Latents are kept per slot / photo / crop / canvas."""
+    from PIL import Image
+    spec = [k for k in (c.get("keyframes") or []) if k.get("path") and os.path.isfile(k["path"])]
+    if not spec:
+        return None, None
+    ref = bool(c.get("ref_mode"))
+    out = []
+    for k in spec:
+        slot, path = k.get("slot"), k["path"]
+        if not ref and slot == "last" and int(frames) <= 1:
+            continue
+        img = Image.open(path).convert("RGB")
+        rect = tuple(k.get("rect") or _centre_crop(img.size, width, height))
+        key = ("ref" if ref else "kf", slot, path, os.path.getmtime(path), rect, int(width), int(height))
+        hit = S["kf"].get(key)
+        if hit is None:
+            crop = img.crop(rect)
+            hit = eng.encode_reference_image(crop, width, height) if ref else eng.encode_keyframe(crop, width, height)
+            S["kf"][key] = hit
+        out.append(hit if ref else (0 if slot == "first" else max(0, int(frames) - 1), hit))
+    return (None, out or None) if ref else (out or None, None)
+
+
+def _centre_crop(size, width, height):
+    """The largest box of the clip's shape in the middle of the photo (the desktop's crop dialog starts there)."""
+    w, h = size
+    want = width / float(height)
+    if w / float(h) > want:
+        cw = int(round(h * want))
+        x0 = (w - cw) // 2
+        return (x0, 0, x0 + cw, h)
+    ch = int(round(w / want))
+    y0 = (h - ch) // 2
+    return (0, y0, w, y0 + ch)
+
+
+def _write_clip(clip, path_png, path_mp4, fps, rate):
+    """The clip's middle frame as a picture and, for a clip, an MP4 with its sound (silent when it has none)."""
+    clip["middle"].save(path_png)
+    frames = clip.get("frames") or []
+    if len(frames) <= 1:
+        return ""
+    import numpy as np
+    import tempfile
+    import torch
+    from fizgig.minimax.common import _find_ffmpeg, write_preview_mp4, write_wav
+    if not _find_ffmpeg():
+        return ""
+    arr = np.stack([np.asarray(f.convert("RGB")) for f in frames])
+    ten = torch.from_numpy(arr).permute(3, 0, 1, 2).float() / 255.0
+    wav = clip.get("wav")
+    wav_path = os.path.join(tempfile.gettempdir(), f"fizgig_studio_{os.getpid()}.wav")
+    write_wav(wav_path, wav if wav is not None else torch.zeros(2, int(rate * len(frames) / fps)), sample_rate=rate)
+    write_preview_mp4(path_mp4, ten, wav_path, fps=fps)
+    return path_mp4
+
+
+def _render_clips(eng, desc, st, c, out, gen):
+    """H3: the baseline and tweaked clips, as the desktop renders them (baseline_clip, then render_clip)."""
+    v = c.get("video") or {}
+    frames = int(v.get("frames") or 22)
+    width, height = int(v.get("width") or 768), int(v.get("height") or 640)
+    st.preview_width, st.preview_height, st.preview_frames = width, height, frames
+    st.keyframes, st.references = _cond(eng, c, width, height, frames)
+    opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
+                turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),
+                with_audio=bool(v.get("sound", True)))
+    spec = getattr(desc, "clip_spec", None)
+    fps, rate = (spec.fps, spec.audio_rate) if spec is not None else (24, 32000)
+    base = eng.baseline_clip(st, cache=None, **opts)
+    tweak = eng.render_clip(st, cache=None, **opts)
+    paths = {}
+    for name, clip in (("baseline", base), ("tweaked", tweak)):
+        png = os.path.join(out, f"{name}_{gen}.png")
+        mp4 = _write_clip(clip, png, os.path.join(out, f"{name}_{gen}.mp4"), fps, rate)
+        paths[name], paths[name + "_media"] = png, mp4
+    return paths
+
+
+def _render_songs(eng, st, c, out, gen):
+    """ACE-Step: the baseline and tweaked songs (the length is the Res box, in seconds) as WAVs with their
+    waveform pictures."""
+    seconds = int((c.get("audio") or {}).get("seconds") or st.preview_width or 30)
+    try:
+        eng.driver.set_options({"preview_seconds": seconds})
+    except Exception:
+        pass
+    base = eng.generate_baseline(st)
+    tweak = eng.generate_preview(st)
+    from fizgig.minimax.common import write_wav
+    paths = {}
+    for name, song in (("baseline", base), ("tweaked", tweak)):
+        png = os.path.join(out, f"{name}_{gen}.png")
+        wav = os.path.join(out, f"{name}_{gen}.wav")
+        song.picture().save(png)
+        write_wav(wav, song.wave, sample_rate=48000)
+        paths[name], paths[name + "_media"] = png, wav
+    return paths
 
 
 def cmd_render(c):

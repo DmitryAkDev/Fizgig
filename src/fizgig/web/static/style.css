@@ -1652,3 +1652,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .st-row { grid-template-columns: 20px 34px minmax(70px, 110px) 1fr 42px; }
   .st-btns { grid-column: 3 / -1; }
 }
+
+/* Studio: clips and songs */
+.st-pane video { width: 100%; aspect-ratio: 1; object-fit: contain; background: var(--bg-deep); display: block; }
+.st-pane audio { width: 100%; margin-top: 6px; }
+.st-pane.audio img { aspect-ratio: 4 / 1; }
+.st-slot { display: grid; grid-template-columns: 110px 72px 1fr; gap: 10px; align-items: center; margin: 6px 0; }
+.st-slot img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; background: var(--bg-deep); }
+.st-slot .field-row { margin: 0; }
