@@ -52,11 +52,12 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Folder:</span>
                 <input type="text" id="imageFolder" class="w-path" placeholder="/workspace/datasets/my_subject">
-                <button class="btn btn-primary" data-pick="imageFolder" data-dir="1">Browse…</button></div>
+                <button class="btn btn-primary" data-pick="imageFolder" data-dir="1"
+                  title="A folder on the machine running Fizgig">Choose…</button></div>
               <div class="field-hint" id="folderSummary"></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card" id="uploadCard">
             <div class="card-title">Upload a training folder</div>
             <div class="card-desc">The folder above is on the machine running Fizgig. If your training data (pictures, clips or
               songs) is on the computer you're using now, upload it here, with the caption .txt files (a .zip works too).</div>
@@ -166,6 +167,8 @@
       <div class="modal-header"><span id="pickerTitle">Choose</span>
         <button class="btn" data-close="pickerModal">✕</button></div>
       <div class="modal-body">
+        <div class="field-hint">On the machine running Fizgig.</div>
+        <div class="picker-places" id="pickerPlaces"></div>
         <div class="field-row"><button class="btn" id="pickerUp">Up</button>
           <input type="text" id="pickerPath" class="w-path"></div>
         <div id="pickerList" class="picker-list"></div>

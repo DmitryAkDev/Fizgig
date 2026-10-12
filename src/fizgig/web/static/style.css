@@ -1184,3 +1184,6 @@ input[type="range"] {
     white-space: normal; }
   .modal-window { width: 94vw !important; max-height: 90dvh; overflow: auto; }
 }
+
+/* the file picker's shortcuts: training data, trained LoRAs, uploads, Fizgig */
+.picker-places { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }

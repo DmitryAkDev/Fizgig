@@ -673,7 +673,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/fetch":
             return self.json(_fetch_status())
         if path == "/api/upload/root":
-            return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir"))})
+            return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir")),
+                              "local": self._local_viewer()})
         if path == "/api/stats":
             with _lock:
                 return self.json(dict(_stats))
@@ -736,6 +737,12 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             pass
 
+    def _local_viewer(self):
+        """The page is open on the machine running Fizgig (a browser there needs no uploads: Choose reaches the
+        same files). Through a proxy (a pod) it never is."""
+        return (self.client_address[0] in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+                and not self.headers.get("X-Forwarded-For"))
+
     def _browse(self, target):
         target = target or BASE_DIR
         if not os.path.isdir(target):
@@ -749,8 +756,12 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         parent = os.path.dirname(target)
+        last_out = (load_state().get("values") or {}).get("LORA_OUTPUT_DIR") or OUTPUT_DEFAULT
+        places = [("Training data", uploads_root()), ("Trained LoRAs", last_out), ("Uploaded files", UPLOAD_FILES),
+                  ("Fizgig", BASE_DIR)]
         return self.json({"path": target, "parent": parent if parent != target else "", "dirs": dirs,
-                          "files": files[:2000]})
+                          "files": files[:2000],
+                          "places": [{"name": n, "path": p} for n, p in places if os.path.isdir(p)]})
 
     def _samples(self, folder):
         try:

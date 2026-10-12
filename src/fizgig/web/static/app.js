@@ -41,6 +41,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 async function boot() {
   try { S.schema = await api("/api/schema"); } catch (e) { return; }
   const st = await api("/api/state");
+  S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: is this page local
   const pr = await api("/api/prefs");
   S.prefs = pr.models || {};
   S.webPort = pr.web_port;
@@ -145,9 +146,11 @@ function renderRow(r) {
     const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}), input);
     let upStatus = null;
     if (r.kind === "path" || r.kind === "folder") {
-      row.append(el("button", {class: "btn", text: "Browse…", onclick: () =>
-        pick(input.value || S.imageFolder, r.kind === "folder", (p) => { input.value = p; set(p); })}));
-      if (r.upload) {
+      const startAt = r.start === "output" ? (S.values.LORA_OUTPUT_DIR || "") :
+        r.start === "data" ? ((S.uploadRoot && S.uploadRoot.root) || S.imageFolder) : S.imageFolder;
+      row.append(el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
+        pick(input.value || startAt, r.kind === "folder", (p) => { input.value = p; set(p); })}));
+      if (r.upload && !(S.uploadRoot && S.uploadRoot.local)) {
         const up = uploadButton(r, input, set);
         row.append(up.btn);
         upStatus = up.status;
@@ -234,7 +237,7 @@ function renderPrefs() {
       });
       const row = el("div", {class: "field-row"},
         el("span", {class: "field-label", text: (m.label || key) + (m.required ? " *" : "") + ":"}), input,
-        el("button", {class: "btn", text: "Browse…", onclick: () =>
+        el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
           pick(input.value, false, (p) => { input.value = p; input.dispatchEvent(new Event("change")); })}));
       if (m.repo && m.path) {
         row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: "Download",
@@ -363,6 +366,7 @@ function gpuPickCard() {
 function showUploadRoot() {
   api("/api/upload/root").then((d) => {
     S.uploadRoot = d;
+    $("uploadCard").style.display = d.local ? "none" : "";      // on the Fizgig machine itself: Choose is enough
     const box = $("dataFolder");
     if (box && document.activeElement !== box) box.value = d.set ? d.root : "";
     $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
@@ -387,7 +391,7 @@ function dataFolderCard() {
     el("div", {class: "card-title"}, el("span", {text: "Training data folder"})),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Folder:"}), input,
-        el("button", {class: "btn", text: "Browse…", onclick: () =>
+        el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
           pick(input.value, true, (p) => { input.value = p; save(); })})), hint));
 }
 
@@ -667,6 +671,10 @@ async function browse(path) {
   const r = await api("/api/browse?path=" + encodeURIComponent(path));
   $("pickerPath").value = r.path;
   $("pickerUp").onclick = () => r.parent && browse(r.parent);
+  const places = $("pickerPlaces");
+  places.innerHTML = "";
+  for (const p of r.places || []) places.append(el("button", {class: "btn btn-sm", text: p.name, title: p.path,
+    onclick: () => browse(p.path)}));
   const list = $("pickerList");
   list.innerHTML = "";
   for (const d of r.dirs) list.append(el("div", {class: "picker-item dir", text: "📁 " + d.name, onclick: () => browse(d.path)}));

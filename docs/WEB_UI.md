@@ -68,7 +68,9 @@ Uploads go into the desktop app's Preferences → Input Directories folder, in a
 
 ### Other files and folders
 
-Boxes in the training settings that take a file or folder from your own data have an **Upload** button beside **Browse…**: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the computer you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you.
+Every file and folder box has **Choose…**, which picks from what is already on the machine running Fizgig: a LoRA you trained earlier, data you uploaded before or copied over another way. Its shortcuts jump to the training data folder, your trained LoRAs, uploaded files and the Fizgig folder.
+
+Boxes that take a file or folder from your own data also have **Upload** beside it: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the device you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you. When the page is open on the machine running Fizgig itself, the upload buttons (and the Start tab's upload card) are hidden: Choose… reaches the same files.
 
 ## Choosing the GPU
 
