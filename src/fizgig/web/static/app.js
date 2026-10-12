@@ -658,12 +658,7 @@ async function loadGallery() {
   const g = await api("/api/samples?dir=" + encodeURIComponent(out + sep + "sample")).catch(() => ({items: []}));
   host.innerHTML = "";
   for (const it of g.items.slice(0, 60)) {
-    const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
-    const ext = it.name.split(".").pop().toLowerCase();
-    const media = ["wav", "mp3", "flac", "m4a"].includes(ext) ? el("audio", {controls: true, preload: "none", src}) :
-      ["mp4", "webm"].includes(ext) ? el("video", {controls: true, preload: "none", src}) :
-      el("img", {loading: "lazy", src, alt: it.name});
-    host.append(el("figure", {class: "gallery-item"}, media, el("figcaption", {text: it.name})));
+    host.append(el("figure", {class: "gallery-item"}, mediaFor(it), el("figcaption", {text: mediaLabel(it)})));
   }
   $("galleryInfo").textContent = g.items.length ? `${g.items.length} previews in ${out}${sep}sample` :
     "No previews yet. They appear here as the run makes them.";
@@ -794,6 +789,27 @@ function renderOutputs() {
     el("div", {class: "field-hint", text: r.runs.length ? "Nothing matches that search and date." :
       "Nothing saved yet. A run's LoRAs and checkpoints appear here as it saves them."}))));
 }
+
+// a song's waveform (the picture beside it with the same name) above its player, and its length; any other media
+// as before
+const fmtSecs = (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+function mediaFor(it) {
+  const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  const kind = it.name.split(".").pop().toLowerCase();
+  if (["wav", "mp3", "flac", "m4a"].includes(kind)) {
+    // nothing downloads until it plays (a page of songs is hundreds of MB); the length comes from the server
+    const audio = el("audio", {controls: true, preload: "none", src: q(it.path)});
+    const wave = el("div", {class: "song-wave-box", title: "Play / pause",
+      onclick: () => (audio.paused ? audio.play() : audio.pause())},
+      it.image ? el("img", {loading: "lazy", src: q(it.image), alt: "", class: "song-wave"}) :
+        el("div", {class: "song-wave song-wave-none", text: "♪"}),
+      it.duration != null ? el("span", {class: "song-len", text: fmtSecs(it.duration)}) : null);
+    return el("div", {class: "song-media"}, wave, audio);
+  }
+  if (["mp4", "webm"].includes(kind)) return el("video", {controls: true, preload: "none", src: q(it.path)});
+  return el("img", {loading: "lazy", src: q(it.path), alt: it.name});
+}
+const mediaLabel = (it) => it.name;
 
 // ---- Captions tab ----------------------------------------------------------------------------------------
 // The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
@@ -959,11 +975,9 @@ function renderCaptions() {
         const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
         if (r && r.error) status.textContent = r.error;
       }});
-    const media = isAudio ? el("audio", {controls: true, preload: "none", src}) :
-      ["mp4", "webm"].includes(kind) ? el("video", {controls: true, preload: "none", src}) :
-      el("img", {loading: "lazy", src, alt: it.name});
+    const media = mediaFor(it);
     host.append(el("div", {class: "caption-card"}, media,
-      el("div", {class: "caption-card-body"}, el("div", {class: "caption-card-title", text: it.name}), ta,
+      el("div", {class: "caption-card-body"}, el("div", {class: "caption-card-title", text: mediaLabel(it)}), ta,
         el("div", {class: "field-row"}, save, recap, status))));
   }
 }

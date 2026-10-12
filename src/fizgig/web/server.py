@@ -573,6 +573,46 @@ _PIC = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif"}
 _SONG = {".wav", ".mp3", ".flac", ".m4a"}
 
 
+_AUDIO = {".wav", ".mp3", ".flac", ".m4a"}
+_IMAGES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif"}
+
+
+def _audio_seconds(path):
+    """A song's length from its header (soundfile when installed, else a WAV's own header), or None."""
+    try:
+        import soundfile
+        return float(soundfile.info(path).duration)
+    except Exception:
+        pass
+    if path.lower().endswith(".wav"):
+        try:
+            import wave
+            with wave.open(path) as w:
+                return w.getnframes() / float(w.getframerate())
+        except Exception:
+            return None
+    return None
+
+
+def pair_songs(entries):
+    """[(name, path, extra), ...] with each song given the picture of the same name beside it (its waveform) and
+    its length, and those pictures left out as items of their own."""
+    stems_with_song = {os.path.splitext(n)[0] for n, _, _ in entries if os.path.splitext(n)[1].lower() in _AUDIO}
+    pics = {os.path.splitext(n)[0]: p for n, p, _ in entries if os.path.splitext(n)[1].lower() in _IMAGES}
+    out = []
+    for n, p, extra in entries:
+        stem, ext = os.path.splitext(n)
+        ext = ext.lower()
+        if ext in _IMAGES and stem in stems_with_song:
+            continue                                 # shown on its song's card
+        item = {"name": n, "path": p, **extra}
+        if ext in _AUDIO:
+            item["image"] = pics.get(stem)
+            item["duration"] = _audio_seconds(p)
+        out.append(item)
+    return out
+
+
 _thumbs: dict = {}            # (path, mtime) -> a small JPEG; the oldest go past 600
 
 
@@ -1141,8 +1181,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self.json({"items": []})
         items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
-        return self.json({"items": [{"name": e.name, "path": e.path, "time": e.stat().st_mtime}
-                                    for e in items[:300]]})
+        return self.json({"items": pair_songs([(e.name, e.path, {"time": e.stat().st_mtime}) for e in items[:600]])[:300]})
 
     def _checkpoints(self, folder):
         """The run's saved LoRAs / checkpoints in its output folder, newest first."""
@@ -1173,8 +1212,8 @@ class Handler(BaseHTTPRequestHandler):
                     text = f.read()
             except OSError:
                 text = None
-            out.append({"name": n, "path": os.path.join(folder, n), "caption": text})
-        return self.json({"items": out})
+            out.append((n, os.path.join(folder, n), {"caption": text}))
+        return self.json({"items": pair_songs(out)})
 
     # -- POST
     def do_POST(self):

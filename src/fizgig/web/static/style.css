@@ -1468,3 +1468,12 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .dataset-when { color: var(--text-muted); }
 @media (max-width: 760px) { .dataset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 .dataset-more { grid-column: 1 / -1; justify-self: center; }
+
+/* a song: its waveform above its player (click the waveform to play / pause) */
+.song-media { display: flex; flex-direction: column; background: var(--bg-inset); }
+.song-wave { width: 100%; height: 110px; object-fit: cover; display: block; cursor: pointer; }
+.song-wave-none { display: grid; place-items: center; font-size: 30px; color: var(--text-muted); cursor: default; }
+.song-media audio { width: 100%; display: block; }
+.song-wave-box { position: relative; cursor: pointer; }
+.song-len { position: absolute; right: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11.5px;
+  font-weight: 700; background: rgba(10, 14, 20, .78); color: #F0F4F8; letter-spacing: .02em; }
