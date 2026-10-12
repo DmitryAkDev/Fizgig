@@ -1212,7 +1212,8 @@ const RY_KEY = "fizgig_royale";
 const rySaved = () => { try { return JSON.parse(localStorage.getItem(RY_KEY) || "{}"); } catch (e) { return {}; } };
 function ryRemember() {
   const v = (id) => $(id).value;
-  try { localStorage.setItem(RY_KEY, JSON.stringify({family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
+  try { localStorage.setItem(RY_KEY, JSON.stringify({source: rySource(), single: v("rySingle"), cmp: v("ryCPrompts"),
+    family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
     seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
     like: v("ryLikeRef"), out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
 }
@@ -1228,9 +1229,196 @@ async function royaleOpen() {
       if (sv[k]) $(id).value = sv[k]; else if (id === "ryW" || id === "ryH") $(id).value = "512";
     await royaleFamily(sv.family);
     wireRoyale();
+    await wireRoyaleTravel();
     royaleScan();
   }
   royalePoll();
+  ryTravelPoll();
+}
+
+// ---- Royale's travel modes and comparison sheet ----
+const RY_MODES = {seed: "ryS", strength: "ryL", prompt: "ryP"};
+S.ry.tr = {};
+
+function rySource() { return (document.querySelector('input[name="rySource"]:checked') || {}).value || "folder"; }
+function rySourceChanged() { $("tab-royale").classList.toggle("single", rySource() === "single"); ryRemember(); }
+
+async function ryPtRefresh(applyPreset) {
+  // the prompt-travel card: a preset fills it (subject, prompt, knobs); the travel's waypoints fill Start / End
+  const preset = $("ryPPreset").value, subj = $("ryPSubject").value || "Woman";
+  const dim = preset && preset !== "Custom words" ? null : (preset === "Custom words" ? "Custom" : null);
+  const r = await api(`/api/royale/pt?preset=${encodeURIComponent(applyPreset ? preset : "")}&subject=${encodeURIComponent(subj)}` +
+    `&dim=${encodeURIComponent(S.ry.ptDim || dim || "")}&custom=${encodeURIComponent($("ryPCustom").value)}`).catch(() => null);
+  if (!r) return;
+  if (applyPreset === "subject" && r.preset) {      // a new subject: the prompt re-composed, the knobs left alone
+    $("ryPPrompt").value = r.preset.prompt; S.ry.ptDim = r.preset.dim;
+    return ryPtRefresh(false);
+  }
+  if (applyPreset && r.preset) {
+    const p = r.preset;
+    if (p.subject && p.subject !== $("ryPSubject").value && applyPreset === "preset") { $("ryPSubject").value = p.subject; return ryPtRefresh("preset2"); }
+    S.ry.ptDim = p.dim; $("ryPPrompt").value = p.prompt; $("ryPInterp").value = p.interp; $("ryPDrift").value = p.drift;
+    $("ryPVary").checked = !!p.vary_seed; $("ryPSeq").checked = !!p.sequential; $("ryPAnchor").checked = !!p.anchor;
+    $("ryPAnchorStr").value = p.anchor_str; $("ryPRefStr").value = p.ref_strength; $("ryPMp").value = p.ref_mp;
+    return ryPtRefresh(false);
+  }
+  const words = r.words || [];
+  for (const id of ["ryPStart", "ryPEnd"]) {
+    const cur = $(id).value;
+    $(id).replaceChildren(...words.map((w) => el("option", {value: w, text: w})));
+    $(id).value = words.includes(cur) ? cur : (id === "ryPStart" ? words[0] : words[words.length - 1]) || "";
+  }
+  S.ry.ptWords = words;
+  ryPtWords();
+}
+
+function ryPtRange() {
+  const w = S.ry.ptWords || [];
+  if (w.length < 2) return w;
+  const si = Math.max(0, w.indexOf($("ryPStart").value)), ei = w.indexOf($("ryPEnd").value) < 0 ? w.length - 1 : w.indexOf($("ryPEnd").value);
+  return si <= ei ? w.slice(si, ei + 1) : w.slice(ei, si + 1).reverse();
+}
+function ryPtWords() {
+  const w = ryPtRange();
+  $("ryPWords").textContent = w.length >= 2 ? "Waypoints:  " + w.join("  →  ") : w.length ?
+    "Pick a Start/End that span at least two waypoints." : "Add at least two comma-separated custom words to travel between.";
+  $("ryPDrift").disabled = $("ryPVary").checked;
+}
+
+async function ryTravel(mode) {
+  const p = RY_MODES[mode], v = (id) => $(p + id).value;
+  const body = {mode, family: $("ryFamily").value, source: rySource(), single: $("rySingle").value.trim(),
+    i: royaleCurrent(), prompt: $("ryPrompt").value.trim(), seed: parseInt($("rySeed").value, 10) || 42,
+    setup_ref: $("ryRef").value.trim(), width: Number(v("W")), height: Number(v("H")), frames: Number(v("Frames"))};
+  if (mode !== "strength") Object.assign(body, {ref: v("Ref").trim(), use_epoch: $(p + "UseEpoch").checked, ref_strength: v("RefStr"),
+    ref_mp: v("Mp"), sequential: $(p + "Seq").checked});
+  if (mode === "seed") Object.assign(body, {seed_a: v("A"), seed_b: v("B"), waypoints: $("rySWay").value});
+  if (mode === "strength") Object.assign(body, {s_start: $("ryLA").value, s_end: $("ryLB").value});
+  if (mode === "prompt") Object.assign(body, {base: $("ryPPrompt").value.trim(), words: ryPtRange(), interp: $("ryPInterp").value,
+    drift: $("ryPDrift").value, vary_seed: $("ryPVary").checked, anchor: $("ryPAnchor").checked, anchor_str: $("ryPAnchorStr").value});
+  try {
+    const r = await api("/api/royale/travel", body);
+    if (r.family !== $("ryFamily").value) await royaleFamily(r.family);
+    $(p + "Sc").style.display = "none";
+    ryRemember(); ryTravelPoll();
+  } catch (e) { $(p + "Status").textContent = e.message; }
+}
+
+async function rySheet() {
+  try {
+    const r = await api("/api/royale/travel", {mode: "sheet", family: $("ryFamily").value, source: rySource(),
+      single: $("rySingle").value.trim(), i: royaleCurrent(), prompts: $("ryCPrompts").value, sheet_mode: $("ryCMode").value,
+      epochs: $("ryCEpochs").value, trigger: $("ryCTrigger").value.trim(), seed: parseInt($("ryCSeed").value, 10) || 42,
+      width: Number($("ryCW").value), height: Number($("ryCH").value), row_labels: $("ryCRows").checked, brand: $("ryCTag").checked});
+    if (r.family !== $("ryFamily").value) await royaleFamily(r.family);
+    $("ryCSheet").style.display = "none";
+    ryRemember(); ryTravelPoll();
+  } catch (e) { $("ryCStatus").textContent = e.message; }
+}
+
+async function ryTravelPoll() {
+  clearTimeout(S.ry.tpoll);
+  let st;
+  try { st = await api("/api/royale/travel/status"); } catch (e) { return; }
+  let running = false;
+  for (const [mode, t] of Object.entries(st)) {
+    running = running || t.state === "rendering";
+    if (mode === "sheet") {
+      $("ryCGo").disabled = t.state === "rendering";
+      if (t.status) $("ryCStatus").textContent = t.status;
+      if (t.state === "done" && t.sheet && S.ry.tr.sheet !== t.gen) {
+        S.ry.tr.sheet = t.gen;
+        $("ryCImg").src = `/api/royale/travel/image?mode=sheet&g=${t.gen}&t=${encodeURIComponent(TOKEN)}`;
+        $("ryCSheet").style.display = "";
+      }
+      continue;
+    }
+    const p = RY_MODES[mode], sc = $(p + "Sc");
+    $(p + "Go").disabled = t.state === "rendering";
+    if (t.status) $(p + "Status").textContent = t.status;
+    const key = `${t.gen}:${t.frames.length}`;
+    if (t.frames.length && S.ry.tr[mode] !== key) {
+      S.ry.tr[mode] = key;
+      sc._frames = t.frames.slice().sort((a, b) => a.i - b.i); sc._gen = t.gen;
+      const range = sc.querySelector(".ry-scrub");
+      range.max = sc._frames.length - 1;
+      if (t.state === "done" || Number(range.value) > range.max) range.value = t.state === "done" ? 0 : range.max;
+      sc.style.display = "";
+      ryScScrub(sc);
+    }
+  }
+  if (running && $("tab-royale").classList.contains("active")) S.ry.tpoll = setTimeout(ryTravelPoll, 1000);
+}
+
+function ryScScrub(sc) {
+  const f = sc._frames || [];
+  if (!f.length) return;
+  const i = Math.max(0, Math.min(Number(sc.querySelector(".ry-scrub").value), f.length - 1));
+  sc.querySelector("img").src = `/api/royale/travel/image?mode=${sc.dataset.mode}&i=${f[i].i}&g=${sc._gen}&t=${encodeURIComponent(TOKEN)}`;
+  sc.querySelector(".ry-label").textContent = `Frame ${i + 1}/${f.length}    ${f[i].label}`;
+}
+
+async function ryScSave(sc, fmt) {
+  const mode = sc.dataset.mode, p = RY_MODES[mode], msg = sc.querySelector(".ry-sc-msg");
+  const f = sc._frames || [], i = Math.max(0, Math.min(Number(sc.querySelector(".ry-scrub").value), f.length - 1));
+  msg.textContent = "Saving…";
+  try {
+    const r = fmt === "frame" ? await api("/api/royale/travel/frame", {mode, i: f[i].i, out_dir: $("ryOut").value.trim()}) :
+      await api("/api/royale/travel/save", {mode, format: fmt, out_dir: $("ryOut").value.trim(), speed: $(p + "Speed").value,
+        loop: $(p + "Loop").checked, badge: $(p + "Badge").checked, tag: $(p + "Tag").checked, deflicker: $(p + "Deflicker").value});
+    msg.replaceChildren(el("span", {text: `Saved ${r.path} `}), el("a", {class: "btn btn-sm", download: r.path.split(/[\\/]/).pop(),
+      text: "Download", href: `/api/media?path=${encodeURIComponent(r.path)}&t=${encodeURIComponent(TOKEN)}`}));
+  } catch (e) { msg.textContent = e.message; }
+}
+
+async function wireRoyaleTravel() {
+  document.querySelectorAll('input[name="rySource"]').forEach((r) => r.addEventListener("change", rySourceChanged));
+  const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
+  const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
+  $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || S.outputDefault, false, setSingle)}),
+    up.btn, up.status);
+  for (const [mode, p] of Object.entries(RY_MODES)) {
+    $(p + "Go").addEventListener("click", () => ryTravel(mode));
+    const sc = $(p + "Sc");
+    sc.querySelector(".ry-scrub").addEventListener("input", () => ryScScrub(sc));
+    sc.querySelectorAll(".ry-sc-save button").forEach((b) => b.addEventListener("click", () => ryScSave(sc, b.dataset.fmt)));
+    if (mode !== "strength") {
+      $(p + "RefPick").addEventListener("click", () => pick($(p + "Ref").value || S.imageFolder, false, (x) => { $(p + "Ref").value = x; ryRemember(); }));
+      $(p + "RefClear").addEventListener("click", () => { $(p + "Ref").value = ""; ryRemember(); });
+      $(p + "UseEpoch").addEventListener("change", () => { for (const id of ["Ref", "RefPick", "RefClear"]) $(p + id).disabled = $(p + "UseEpoch").checked; });
+    }
+  }
+  $("ryCGo").addEventListener("click", rySheet);
+  $("ryCSave").addEventListener("click", async () => {
+    try { const r = await api("/api/royale/travel/save", {mode: "sheet", out_dir: $("ryOut").value.trim()});
+      $("ryCMsg").textContent = `Saved ${r.path}`; } catch (e) { $("ryCMsg").textContent = e.message; }
+  });
+  $("ryCImg").addEventListener("click", () => window.open($("ryCImg").src, "_blank"));
+  $("rySDice").addEventListener("click", () => { $("rySA").value = Math.floor(Math.random() * 1e6); $("rySB").value = Math.floor(Math.random() * 1e6); });
+  const info = await api("/api/royale/pt").catch(() => ({presets: [], subjects: [], seed_presets: {}}));
+  S.ry.seedPresets = info.seed_presets;
+  $("rySPreset").append(...Object.keys(info.seed_presets).map((n) => el("option", {value: n, text: n})));
+  $("rySPreset").addEventListener("change", () => {
+    const p = S.ry.seedPresets[$("rySPreset").value]; if (!p) return;
+    $("rySRefStr").value = p.ref_strength; $("rySMp").value = p.ref_mp; $("rySSeq").checked = !!p.sequential; $("rySWay").value = p.waypoints;
+  });
+  $("ryPPreset").append(...info.presets.map((n) => el("option", {value: n, text: n})));
+  $("ryPSubject").replaceChildren(...info.subjects.map((n) => el("option", {value: n, text: n})));
+  $("ryPPreset").addEventListener("change", () => { if ($("ryPPreset").value) ryPtRefresh("preset"); });
+  $("ryPSubject").addEventListener("change", () => ryPtRefresh($("ryPPreset").value ? "subject" : false));
+  $("ryPCustom").addEventListener("change", () => ryPtRefresh(false));
+  for (const id of ["ryPStart", "ryPEnd", "ryPVary"]) $(id).addEventListener("change", ryPtWords);
+  $("ryPSlot").addEventListener("click", () => { const e = $("ryPPrompt"), at = e.selectionStart ?? e.value.length;
+    e.value = e.value.slice(0, at) + "{x}" + e.value.slice(at); e.focus(); });
+  for (const p of Object.values(RY_MODES).concat(["ryC"])) for (const d of ["W", "H"]) if (!$(p + d).dataset.set) $(p + d).value = "512";
+  const sv = rySaved();
+  if (sv.source === "single") document.querySelector('input[name="rySource"][value="single"]').checked = true;
+  if (sv.single) $("rySingle").value = sv.single;
+  if (sv.cmp) $("ryCPrompts").value = sv.cmp;
+  rySourceChanged();
+  if (S.ry.ptDim === undefined) S.ry.ptDim = "Age";
+  ryPtRefresh(false);
+  ryTravelPoll();
 }
 
 async function royaleFamily(key) {
@@ -1241,6 +1429,8 @@ async function royaleFamily(key) {
   $("ryFamily").value = r.family;
   $("ryRefRow").style.display = r.reference_kind ? "" : "none";
   $("ryRefStrBox").style.display = r.reference_strength ? "" : "none";
+  $("tab-royale").classList.toggle("no-ref", !r.reference_kind);
+  $("tab-royale").classList.toggle("no-refstr", !r.reference_strength);
   if (!$("ryOut").value) $("ryOut").value = r.out_dir;
 }
 
@@ -1368,6 +1558,7 @@ function wireRoyale() {
   $("ryOutPick").addEventListener("click", () => pick($("ryOut").value, true, (p) => { $("ryOut").value = p; remember(); }));
   $("ryRender").addEventListener("click", royaleRender);
   $("ryStop").addEventListener("click", () => api("/api/royale/cancel", {}).then(royalePoll));
+  $("tab-royale").addEventListener("click", (e) => { if (e.target.matches('[id$="Go"]')) setTimeout(ryTravelPoll, 400); });
   $("ryUnload").addEventListener("click", async () => {
     await api("/api/studio/reset", {});            // the shared GPU worker quits (Studio's Unload)
     $("ryStatus").textContent = "Model unloaded - the renders stay here until the next render.";

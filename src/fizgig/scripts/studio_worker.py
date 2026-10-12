@@ -557,6 +557,154 @@ def cmd_royale(c):
     emit(ev="royale_done", gen=gen, done=done, cancelled=cancelled)
 
 
+def _travel_ref(st, p, i):
+    """A travel frame's reference(s) on its state; returns the strength for the PREVIOUS frame's latent (0 = none) -
+    the desktop's _royale_apply_travel_ref. Non-sequential: the chosen reference on every frame. Sequential: frame 0
+    the chosen reference, later frames edit the previous frame through its clean latent; with Anchor to original the
+    original stays on as a clean image reference too."""
+    st.ref_megapixels = p.get("ref_mp", 0.2)
+    st.ref2_path = ""
+    orig = p.get("ref", "")
+    orig = orig if (orig and os.path.exists(orig)) else ""
+    if p.get("sequential") and i > 0:
+        if p.get("anchor"):
+            st.ref_image_path, st.ref_strength = orig, p.get("anchor_str", 1.0)
+        else:
+            st.ref_image_path, st.ref_strength = "", 0.0
+        return float(p.get("ref_strength", 1.0))
+    st.ref_image_path, st.ref_strength = orig, p.get("ref_strength", 1.0)
+    return 0.0
+
+
+def _strip_trigger(prompt, trigger):
+    """The trigger dropped for the comparison sheet's no-LoRA column (the base model has never seen it)."""
+    import re
+    trigger = (trigger or "").strip()
+    if not trigger:
+        return prompt
+    parts = [p for p in (seg.strip() for seg in prompt.split(",")) if p and p.lower() != trigger.lower()]
+    out = ", ".join(parts)
+    if out.lower() == prompt.strip().lower():
+        out = re.sub(rf"\b{re.escape(trigger)}\b", "", prompt, flags=re.IGNORECASE)
+        out = re.sub(r"\s{2,}", " ", out).strip(" ,")
+    return out
+
+
+def cmd_royale_travel(c):
+    """LoRA Royale's travel modes and comparison sheet (the desktop's workers): "seed" (slerp between seeds along a
+    journey), "strength" (the LoRA ramped), "prompt" (the text embedding interpolated through waypoints) - each frame
+    saved and reported - and "sheet" (prompts x columns, one labelled picture)."""
+    gen, mode, p = c["gen"], c["mode"], c
+    out = c["out_dir"]
+    os.makedirs(out, exist_ok=True)
+    n_done, cancelled = 0, False
+
+    def frame(i, img, label):
+        nonlocal n_done
+        png = os.path.join(out, f"travel_{mode}_{gen}_{i}.png")
+        img.save(png)
+        n_done += 1
+        emit(ev="travel_frame", gen=gen, mode=mode, i=i, png=png, label=label)
+    try:
+        with _engine_lock:
+            emit(ev="travel_status", gen=gen, mode=mode, text="Loading the model…")
+            eng, desc = _engine_for(c)
+            eng.clear_cancel()
+
+            def say(t):
+                emit(ev="travel_status", gen=gen, mode=mode, text=t)
+            try:
+                if mode == "sheet":
+                    from fizgig.lora_royale.export import build_comparison_grid
+                    cols, prompts = p["cols"], p["prompts"]
+                    grid = [[None] * len(cols) for _ in prompts]
+                    total, k = len(cols) * len(prompts), 0
+                    for ci, (clabel, cpath) in enumerate(cols):       # column-major: each LoRA loads once
+                        base_col = p["sheet_mode"] != "Every epoch" and ci == 0
+                        _point_at(eng, desc, cpath)
+                        for ri, prompt in enumerate(prompts):
+                            k += 1
+                            say(f"Rendering {k}/{total}…")
+                            st = eng.default_state()
+                            st.prompt = _strip_trigger(prompt, p.get("trigger")) if base_col else prompt
+                            st.seed = int(p["seed"])
+                            st.preview_width, st.preview_height = int(p["width"]), int(p["height"])
+                            for bs in st.blocks.values():
+                                bs.primary_strength = 0.0 if base_col else 1.0
+                            grid[ri][ci] = eng.generate_preview(st).copy()
+                    if p["sheet_mode"] == "Every epoch":
+                        headers = [f"epoch {l}" if str(l).isdigit() else str(l) for l, _ in cols]
+                    else:
+                        headers = ["no lora", f"{p.get('trigger') or 'LoRA'} lora"]
+                    sheet = build_comparison_grid(grid, headers, row_labels=prompts if p.get("row_labels") else None,
+                                                  cell=(int(p["width"]), int(p["height"])), brand=bool(p.get("brand")))
+                    png = os.path.join(out, f"travel_sheet_{gen}.png")
+                    sheet.save(png)
+                    emit(ev="travel_done", gen=gen, mode=mode, n=1, sheet=png, size=[sheet.width, sheet.height])
+                    return
+                _point_at(eng, desc, p["path"])
+                n = max(2, int(p["frames"]))
+                prev = None
+                if mode == "prompt":
+                    from fizgig.lora_royale import prompt_travel as pt
+                    say("Encoding prompts…")
+                    ctx_list, neg = eng.encode_travel_prompts(pt.build_waypoint_prompts(p["base"], p["words"]))
+                    interp = {"Linear": "lerp", "Norm-preserved": "norm", "Slerp": "slerp"}.get(p.get("interp"), "lerp")
+                    drift = float(p.get("drift") or 0.0)
+                    drift_seed = (int(p["seed"]) + 1013904223) % (2 ** 31) if drift > 0 else None
+                if mode == "seed":
+                    from fizgig.lora_royale import journey_seeds
+                    seeds = journey_seeds(p["seed_a"], p["seed_b"], p.get("waypoints", 2))
+                    nseg = len(seeds) - 1
+                for i in range(n):
+                    t = i / float(n - 1)
+                    say(f"Rendering frame {i + 1}/{n}…")
+                    st = eng.default_state()
+                    st.preview_width, st.preview_height = int(p["width"]), int(p["height"])
+                    if mode == "strength":
+                        s = float(p["s_start"]) + (float(p["s_end"]) - float(p["s_start"])) * t
+                        st.prompt, st.seed = p["prompt"], int(p["seed"])
+                        for bs in st.blocks.values():                 # one strength on every block
+                            bs.primary_strength = s
+                        frame(i, eng.generate_preview(st), f"{s:.2f}×")
+                        continue
+                    if mode == "seed":
+                        pos = t * nseg
+                        si = min(int(pos), nseg - 1)
+                        st.prompt, st.seed = p["prompt"], seeds[si]
+                        pls = _travel_ref(st, p, i)
+                        img = eng.generate_preview(st, seed_b=seeds[si + 1], travel_t=pos - si, prev_latent=prev,
+                                                   prev_latent_strength=pls)
+                        label = p["label_disp"].upper()
+                    else:
+                        ctx = eng.interp_waypoints(ctx_list, t, mode=interp)
+                        st.prompt = p["base"]
+                        st.seed = (int(p["seed"]) + i) if p.get("vary_seed") else int(p["seed"])
+                        pls = _travel_ref(st, p, i)
+                        kw = dict(override_ctx=ctx, override_neg_ctx=neg, prev_latent=prev, prev_latent_strength=pls)
+                        if drift > 0 and not p.get("vary_seed"):
+                            kw.update(seed_b=drift_seed, travel_t=drift * t)
+                        img = eng.generate_preview(st, **kw)
+                        label = pt.dominant_word(p["words"], t).upper()
+                    frame(i, img, label)
+                    if p.get("sequential"):
+                        prev = eng._last_frame_latent
+            except Exception as e:
+                if not _aborted(e):
+                    raise
+                cancelled = True
+            finally:
+                try:
+                    from fizgig.utils.device import clean_memory_on_device
+                    clean_memory_on_device(eng.pipeline.device)
+                except Exception:
+                    pass
+    except Exception as e:
+        emit(ev="travel_done", gen=gen, mode=mode, n=n_done, error=str(e), trace=traceback.format_exc()[-2000:])
+        return
+    emit(ev="travel_done", gen=gen, mode=mode, n=n_done, cancelled=cancelled)
+
+
 def cmd_save(c):
     with _engine_lock:
         eng = S["engine"]
@@ -582,7 +730,8 @@ def cmd_reset(_c):
 
 
 HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render,
-            "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale}
+            "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
+            "royale_travel": cmd_royale_travel}
 
 
 def _run(c):

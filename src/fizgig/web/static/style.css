@@ -1742,3 +1742,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .ry-cell.best img { border-color: #FFD24A; }
 .ry-cell.best { color: #FFD24A; font-weight: 700; }
 .ry-cell.at img { outline: 2px solid var(--accent); }
+
+#tab-royale.single .ry-folder-only { display: none !important; }
+#tab-royale:not(.single) .ry-single-only { display: none !important; }
+#tab-royale.no-ref .ry-ref { display: none !important; }
+#tab-royale.no-refstr .ry-refstr { display: none !important; }
+.ry-sheet { max-width: 100%; display: block; margin: 8px 0; cursor: zoom-in; }

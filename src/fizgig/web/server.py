@@ -1611,6 +1611,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(royale.scan((qs.get("folder") or [""])[0]))
         if path == "/api/royale/status":
             return self.json(studio.royale_status())
+        if path == "/api/royale/travel/status":
+            return self.json(studio.travel_status())
+        if path == "/api/royale/travel/image":      # a travel frame, or the comparison sheet (no i)
+            i = (qs.get("i") or [None])[0]
+            p = studio.travel_file((qs.get("mode") or [""])[0], None if i in (None, "") else int(i))
+            if not p:
+                return self.json({"error": "no picture"}, 404)
+            return self._stream(p, attachment=False)
+        if path == "/api/royale/pt":                # prompt travel: its presets, subjects and a travel's waypoints
+            from fizgig.lora_royale import SEED_TRAVEL_PRESETS
+            from fizgig.lora_royale import prompt_travel as pt
+            dim, subj = (qs.get("dim") or [""])[0], (qs.get("subject") or ["Woman"])[0]
+            preset = pt.PRESETS_BY_NAME.get((qs.get("preset") or [""])[0])
+            words = (pt.parse_custom((qs.get("custom") or [""])[0]) if dim == "Custom" else
+                     pt.waypoints_for(dim, subj) if dim else [])
+            return self.json({"presets": pt.PRESET_NAMES, "subjects": pt.SUBJECT_LABELS, "words": words,
+                              "seed_presets": SEED_TRAVEL_PRESETS,
+                              "preset": dict(preset, prompt=pt.fill_subject(preset["prompt"], subj)) if preset else None})
         if path == "/api/royale/image":             # one render (by its place in the run)
             p = studio.royale_png((qs.get("i") or ["-1"])[0])
             if not p:
@@ -2275,6 +2293,126 @@ class Handler(BaseHTTPRequestHandler):
                                            ref_strength=float(b.get("ref_strength") or 1.0),
                                            meta={"run": scan["run"], "family": desc.key, "folder": b.get("folder")})
                 return self.json({"ok": True, "gen": gen, "family": desc.key, "total": len(items)})
+            if path == "/api/royale/travel":        # seed / strength / prompt travel, or the comparison sheet
+                from fizgig.web import royale
+                mode = str(b.get("mode") or "")
+                if mode not in ("seed", "strength", "prompt", "sheet"):
+                    raise ValueError("Unknown travel.")
+                fams = {d.key: d for d in royale.families()}
+                rendered = studio.royale_rendered()
+                single = str(b.get("source") or "folder") == "single"
+                if single:
+                    lpath = str(b.get("single") or "").strip()
+                    label = os.path.splitext(os.path.basename(lpath))[0]
+                elif rendered:
+                    i = max(0, min(int(b.get("i") or 0), len(rendered) - 1))
+                    label, lpath, epoch_png = rendered[i]
+                else:
+                    label, lpath = None, ""
+                p = {k: b.get(k) for k in ("prompt", "seed", "width", "height", "frames")}
+                if mode == "sheet":
+                    prompts = [ln.strip() for ln in str(b.get("prompts") or "").splitlines()
+                               if ln.strip() and not ln.strip().startswith("#")]
+                    if not prompts:
+                        raise ValueError("Enter at least one prompt - each line becomes a row of the sheet.")
+                    sheet_mode = str(b.get("sheet_mode") or "Without / with LoRA")
+                    if sheet_mode == "Every epoch":
+                        cols = [[l, pth] for l, pth, _png in rendered if os.path.isfile(pth)]
+                        if not cols:
+                            raise ValueError('"Every epoch" reuses the epochs from the render at the top of this tab: '
+                                             'pick the training folder and Render epochs first (or use "Without / '
+                                             'with LoRA", which needs no epoch render).')
+                        cols = royale.pick_columns(cols, b.get("epochs"))
+                    else:
+                        if not lpath or not os.path.isfile(lpath):
+                            raise ValueError("Pick a LoRA file (Single LoRA), or render epochs and slide to the one "
+                                             "you want to showcase.")
+                        cols = [[None, lpath], [label, lpath]]       # column 0 renders at strength 0 (the base model)
+                    p.update(cols=cols, prompts=prompts, sheet_mode=sheet_mode, trigger=str(b.get("trigger") or ""),
+                             row_labels=bool(b.get("row_labels", True)), brand=bool(b.get("brand", True)))
+                    paths = [c[1] for c in cols]
+                else:
+                    if not lpath or not os.path.isfile(lpath):
+                        raise ValueError("Pick a LoRA file (Single LoRA), or render epochs and slide to the one you "
+                                         "want, then travel.")
+                    paths = [lpath]
+                    p["path"] = lpath
+                    if mode != "prompt" and not str(b.get("prompt") or "").strip():
+                        raise ValueError("Enter a prompt (include your trigger word).")
+                    ref = ""
+                    if mode in ("seed", "prompt"):           # the card's reference: the shown epoch, its file, Setup's
+                        ref = (epoch_png if b.get("use_epoch") and not single and rendered else
+                               str(b.get("ref") or "").strip() or str(b.get("setup_ref") or "").strip())
+                    num = lambda k, d, lo, hi: max(lo, min(hi, float(b.get(k) if b.get(k) not in (None, "") else d)))
+                    p.update(ref=ref, ref_strength=num("ref_strength", 1.0, 0, 2), ref_mp=num("ref_mp", 0.2, 0.05, 1),
+                             sequential=bool(b.get("sequential")), anchor=bool(b.get("anchor")) and mode == "prompt",
+                             anchor_str=num("anchor_str", 1.0, 0, 2),
+                             label_disp=(f"Epoch {label}" if str(label).isdigit() else str(label)))
+                    if mode == "seed":
+                        p.update(seed_a=int(b.get("seed_a") or 42), seed_b=int(b.get("seed_b") or 4242),
+                                 waypoints=max(2, int(b.get("waypoints") or 2)))
+                        if p["seed_a"] == p["seed_b"] and p["waypoints"] <= 2:
+                            raise ValueError("Start and end seed are the same - pick two different seeds, or raise "
+                                             "Waypoints for a longer journey.")
+                    elif mode == "strength":
+                        p.update(s_start=float(b.get("s_start") or 0), s_end=float(b.get("s_end") or 1))
+                        if p["s_start"] == p["s_end"]:
+                            raise ValueError("Start and end strength are the same - pick two different values.")
+                    else:
+                        words = [str(w) for w in (b.get("words") or [])]
+                        if len(words) < 2:
+                            raise ValueError("Prompt travel needs at least two waypoints (pick a travel, or enter 2+ "
+                                             "custom words).")
+                        if not str(b.get("base") or "").strip():
+                            raise ValueError("Enter a base prompt (include your trigger word, and {x} where the travel "
+                                             "word goes).")
+                        p.update(base=str(b["base"]).strip(), words=words, interp=str(b.get("interp") or "Linear"),
+                                 drift=num("drift", 0.0, 0, 1), vary_seed=bool(b.get("vary_seed")))
+                key = royale.family_of(paths, fams) or str(b.get("family") or "")
+                desc = fams.get(key)
+                if desc is None:
+                    raise ValueError("Pick a model first.")
+                if not desc.reference_strength:
+                    p["sequential"] = False                  # no latent chain: each frame takes the reference itself
+                if _gpu_training():
+                    raise ValueError("A training run is using the GPU. Royale can render when it finishes.")
+                from fizgig.web import tools
+                if tools.holding_gpu():
+                    raise ValueError("The Profiler is rendering on the GPU - wait for it, or Stop it.")
+                prefs = load_prefs()
+                if desc.video_workbench:
+                    kw, _status, problems = studio.plan_video(desc, prefs, pref_path)
+                    kw["audio_vae_path"] = ""
+                    settings = None
+                else:
+                    kw, settings, _status, problems = studio.plan(desc, prefs, pref_path, fast=True,
+                                                                  samples=_studio_samples(desc))
+                if problems:
+                    raise ValueError(" ".join(problems))
+                captions.unload()
+                gen = studio.travel_render(mode, desc, kw, settings, p)
+                return self.json({"ok": True, "gen": gen, "family": desc.key})
+            if path in ("/api/royale/travel/save", "/api/royale/travel/frame"):
+                from fizgig.web import royale
+                mode = str(b.get("mode") or "")
+                folder = str(b.get("out_dir") or "").strip() or default_output_dir()
+                run = (studio.royale_status().get("meta") or {}).get("run") or "lora"
+                prefix = {"seed": "seedtravel", "strength": "strengthtravel", "prompt": "prompttravel"}.get(mode, mode)
+                if mode == "sheet":
+                    src = studio.travel_file("sheet")
+                    if not src:
+                        raise ValueError("Render the sheet first.")
+                    return self.json({"path": royale.copy_png(src, folder, "fizgig_comparison.png")})
+                if path.endswith("/frame"):
+                    i = int(b.get("i") or 0)
+                    src = studio.travel_file(mode, i)
+                    if not src:
+                        raise ValueError("Render the frames first.")
+                    return self.json({"path": royale.copy_png(src, folder, f"{prefix}-frame{i + 1:03d}.png")})
+                return self.json(royale.save_travel(studio.travel_frames(mode), folder, run, prefix,
+                                                    b.get("format") or "MP4", b.get("speed") or "Normal",
+                                                    bool(b.get("loop", True)), bool(b.get("tag", True)),
+                                                    bool(b.get("badge", True)), str(b.get("deflicker") or "None")))
             if path == "/api/royale/cancel":
                 return self.json({"ok": studio.royale_cancel()})
             if path in ("/api/royale/score", "/api/royale/export", "/api/royale/stills", "/api/royale/promote"):

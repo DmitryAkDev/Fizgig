@@ -714,12 +714,18 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="ryFamily" class="w-combo"></select>
                 <span class="field-hint">Follows the checkpoints' own model.</span></div>
-              <div class="field-row"><span class="field-label">Checkpoint folder:</span>
+              <div class="field-row"><span class="field-label">Source:</span>
+                <label class="radio-label"><input type="radio" name="rySource" value="folder" checked> Training folder (compare epochs)</label>
+                <label class="radio-label"><input type="radio" name="rySource" value="single"> Single LoRA</label></div>
+              <div class="field-row ry-folder-only"><span class="field-label">Checkpoint folder:</span>
                 <input type="text" id="ryFolder" class="w-path"><button class="btn" id="ryFolderPick">Choose…</button></div>
-              <div class="field-hint" id="ryScan"></div>
+              <div class="field-hint ry-folder-only" id="ryScan"></div>
+              <div class="field-row ry-single-only"><span class="field-label">LoRA file:</span>
+                <input type="text" id="rySingle" class="w-path"><span id="rySingleBtns"></span></div>
               <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="ryPrompt" class="w-path"
                 placeholder="include your trigger word"></div>
-              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="rySeed" class="w-num" value="42"></div>
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="rySeed" class="w-num" value="42">
+                <span class="field-hint">shared by the crossfade, prompt travel and strength travel</span></div>
               <div class="field-row" id="ryRefRow"><span class="field-label">Reference:</span>
                 <input type="text" id="ryRef" class="w-path" placeholder="optional: a reference picture">
                 <button class="btn" id="ryRefPick">Choose…</button><button class="btn" id="ryRefClear">Clear</button>
@@ -727,7 +733,7 @@
                   <span class="field-hint">Strength</span><input type="text" id="ryRefStr" class="w-num" value="1.0"></span></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card ry-folder-only">
             <div class="card-title">Crossfade</div>
             <div class="card-desc">Drag to blend between consecutive epochs - stop where it looks best.</div>
             <div class="card-content">
@@ -748,12 +754,12 @@
               <input type="range" id="ryScrub" min="0" max="0" step="0.01" value="0" class="ry-scrub">
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card ry-folder-only">
             <div class="card-title">All epochs</div>
             <div class="card-desc">Click a thumbnail to jump the crossfade there.</div>
             <div class="card-content"><div class="ry-grid" id="ryGrid"></div></div>
           </div>
-          <div class="section-card">
+          <div class="section-card ry-folder-only">
             <div class="card-title">Likeness score</div>
             <div class="card-desc">Pick a training image of your subject - Fizgig scores each epoch's face against it
               (ArcFace, on the CPU) and highlights the closest match in gold.</div>
@@ -767,7 +773,7 @@
                 <span class="field-hint" id="ryLikeStatus"></span></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card ry-folder-only">
             <div class="card-title">Export the morph</div>
             <div class="card-desc">Save the crossfade as a looping clip - face resolving epoch by epoch, with a
               Fizgig · LoRA Royale tag. Made to share.</div>
@@ -787,6 +793,158 @@
             </div>
           </div>
           <div class="section-card">
+            <div class="card-title">Seed travel</div>
+            <div class="card-desc">Take the epoch on the crossfade (or the single LoRA) and morph it smoothly between seeds
+              (slerp through noise space) - shows the LoRA's range, saved as a clip.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Preset:</span><select id="rySPreset" class="w-combo"
+                title="One-click recipes for the mechanics (reference / anchor / journey length / identity lock). They don't touch the prompt - seed travel uses the Setup prompt."><option value="">(choose)</option></select></div>
+              <div class="field-row"><span class="field-label">Seeds:</span><input type="text" id="rySA" class="w-num" value="42">
+                <span class="field-hint">→</span><input type="text" id="rySB" class="w-num" value="4242">
+                <button class="btn btn-sm" id="rySDice" title="New Start and End seeds">🎲</button>
+                <span class="field-hint" title="Seeds in the journey. 2 = a straight Start→End morph; more = a tour through extra seeds in between, all slerped. The in-betweens derive from the Start seed, so the journey is reproducible.">Waypoints</span>
+                <select id="rySWay" class="w-combo st-small-select"><option>2</option><option>3</option><option>4</option><option>5</option>
+                  <option>6</option><option>8</option></select><span class="field-hint" title="Each frame is a fresh render - more frames = smoother but slower.">Frames</span><select id="rySFrames" class="w-combo st-small-select"><option>16</option><option selected>24</option><option>36</option><option>48</option><option>64</option><option>96</option><option>128</option><option>192</option><option>256</option></select></div>
+              <div class="field-row ry-ref"><span class="field-label">Reference:</span>
+                <input type="text" id="rySRef" class="w-path" placeholder="optional - falls back to the Setup reference">
+                <button class="btn" id="rySRefPick">Choose…</button><button class="btn" id="rySRefClear">Clear</button></div>
+              <div class="field-row ry-ref"><span class="field-label"></span>
+                <label class="checkbox-label ry-folder-only"><input type="checkbox" id="rySUseEpoch"> Use the rendered epoch as the reference</label>
+                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="rySRefStr" class="w-num" value="0.25"></span>
+                <label class="checkbox-label ry-refstr" title="Feedback chain: frame 1 uses your reference, each later frame edits the previous one. Keep Strength low (about 0.4) with this on - high strength compounds every frame."><input type="checkbox" id="rySSeq"> Sequential reference</label>
+                <span class="st-inline" title="Reference encode resolution cap (megapixels), 0.05-1.0. Higher carries more detail at a little more VRAM."><span class="field-hint">Max MP</span><input type="text" id="rySMp" class="w-num" value="0.2"></span></div>
+              <div class="field-row"><span class="field-label">Size:</span><span class="field-hint">W</span><select id="rySW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="rySH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select></div>
+              <div class="field-row"><span class="field-label">Clip:</span>
+                <span class="field-hint">Speed</span><select id="rySSpeed" class="w-combo st-small-select"><option>Slow</option>
+                  <option selected>Normal</option><option>Fast</option></select>
+                <label class="checkbox-label"><input type="checkbox" id="rySLoop" checked> Loop (ping-pong)</label>
+                <label class="checkbox-label"><input type="checkbox" id="rySBadge" checked> Epoch badge</label>
+                <label class="checkbox-label"><input type="checkbox" id="rySTag" checked> Fizgig tag</label>
+                <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
+                <select id="rySDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
+              <div class="field-row"><button class="btn btn-primary" id="rySGo" style="background:#C0392B">Render seed travel</button>
+                <span class="field-hint" id="rySStatus"></span></div>
+              <div class="ry-sc" data-mode="seed" id="rySSc" style="display:none">
+                <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
+                <input type="range" class="ry-scrub" min="0" max="0" step="1" value="0">
+                <div class="field-row ry-sc-save"><button class="btn btn-sm" data-fmt="MP4">Save MP4</button>
+                  <button class="btn btn-sm" data-fmt="GIF">Save GIF</button><button class="btn btn-sm" data-fmt="frame">Save frame</button>
+                  <span class="field-hint ry-sc-msg"></span></div>
+                <div class="field-hint">Render once, scrub to review, then save - Speed, Loop, the badge, the tag and Deflicker apply at
+                  save, so you can save again in either format without rendering again.</div>
+              </div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Prompt travel</div>
+            <div class="card-desc">Morph the epoch through a series of prompt variations on a fixed seed - it interpolates
+              the text embedding, so the same subject flows (e.g. dawn → night). Saved as a clip.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Preset:</span><select id="ryPPreset" class="w-combo"
+                title="Starting points tuned from real runs: each fills the whole card and builds a prompt you can edit. image 1 = your original reference, image 2 = the previous frame."><option value="">(choose)</option></select>
+                <span class="field-hint">Subject</span><select id="ryPSubject" class="w-combo st-small-select"></select></div>
+              <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="ryPPrompt" class="w-path"
+                placeholder="a portrait of sks man, {x}"><button class="btn btn-sm" id="ryPSlot">Insert {x}</button></div>
+              <div class="field-hint pf-hint">Type {x} where the travel word goes - no {x}? the word is added at the end.</div>
+              <div class="field-row"><span class="field-label">Custom words:</span><input type="text" id="ryPCustom" class="w-path"
+                placeholder="comma-separated - used when the preset is Custom words"></div>
+              <div class="field-row"><span class="field-label">Travel:</span><select id="ryPStart" class="w-combo st-small-select"></select>
+                <span class="field-hint">→</span><select id="ryPEnd" class="w-combo st-small-select"></select>
+                <span class="field-hint" title="Each frame is a fresh render - more frames = smoother but slower.">Frames</span><select id="ryPFrames" class="w-combo st-small-select"><option>24</option><option selected>32</option><option>48</option><option>64</option><option>96</option><option>128</option><option>192</option><option>256</option></select></div>
+              <div class="field-hint" id="ryPWords"></div>
+              <div class="field-row ry-ref"><span class="field-label">Reference:</span>
+                <input type="text" id="ryPRef" class="w-path" placeholder="optional - falls back to the Setup reference">
+                <button class="btn" id="ryPRefPick">Choose…</button><button class="btn" id="ryPRefClear">Clear</button></div>
+              <div class="field-row ry-ref"><span class="field-label"></span>
+                <label class="checkbox-label ry-folder-only"><input type="checkbox" id="ryPUseEpoch"> Use the rendered epoch as the reference</label>
+                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="ryPRefStr" class="w-num" value="1.0"></span>
+                <label class="checkbox-label ry-refstr" title="Feedback chain: frame 1 uses your reference, each later frame edits the previous one. Keep Strength low (about 0.4) with this on - high strength compounds every frame."><input type="checkbox" id="ryPSeq"> Sequential reference</label>
+                <span class="st-inline" title="Reference encode resolution cap (megapixels), 0.05-1.0. Higher carries more detail at a little more VRAM."><span class="field-hint">Max MP</span><input type="text" id="ryPMp" class="w-num" value="0.2"></span>
+                <label class="checkbox-label" title="Every frame also references the ORIGINAL image at the Anchor strength alongside the previous frame, so the feedback chain can't drift."><input type="checkbox" id="ryPAnchor" checked> Anchor to original</label>
+                <span class="st-inline ry-refstr"><span class="field-hint">Anchor str</span><input type="text" id="ryPAnchorStr" class="w-num" value="1.0"></span></div>
+              <div class="field-row"><span class="field-label">Size:</span><span class="field-hint">W</span><select id="ryPW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="ryPH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>
+                <span class="field-hint" title="Linear: the original. Norm-preserved: holds the conditioning strength constant for flatter brightness. Slerp: a constant-speed spherical glide - the smoothest morph.">Interpolation</span>
+                <select id="ryPInterp" class="w-combo st-small-select"><option>Linear</option><option>Norm-preserved</option><option>Slerp</option></select>
+                <span class="field-hint" title="Slerps the noise from the base seed toward a second one across the sweep, so the prompt takes hold (0 = off, 0.1-0.3 gentle, 0.5-1.0 strong). Only with Vary seed off.">Seed drift</span>
+                <input type="text" id="ryPDrift" class="w-num" value="0.0">
+                <label class="checkbox-label" title="Each frame its own seed (base, base+1, ...) so the prompt expresses more strongly; reproducible. Turns Seed drift off."><input type="checkbox" id="ryPVary"> Vary seed</label></div>
+              <div class="field-row"><span class="field-label">Clip:</span>
+                <span class="field-hint">Speed</span><select id="ryPSpeed" class="w-combo st-small-select"><option>Slow</option>
+                  <option selected>Normal</option><option>Fast</option></select>
+                <label class="checkbox-label"><input type="checkbox" id="ryPLoop" checked> Loop (ping-pong)</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryPBadge" checked> Word badge</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryPTag" checked> Fizgig tag</label>
+                <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
+                <select id="ryPDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryPGo" style="background:#B7791F">Render prompt travel</button>
+                <span class="field-hint" id="ryPStatus"></span></div>
+              <div class="ry-sc" data-mode="prompt" id="ryPSc" style="display:none">
+                <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
+                <input type="range" class="ry-scrub" min="0" max="0" step="1" value="0">
+                <div class="field-row ry-sc-save"><button class="btn btn-sm" data-fmt="MP4">Save MP4</button>
+                  <button class="btn btn-sm" data-fmt="GIF">Save GIF</button><button class="btn btn-sm" data-fmt="frame">Save frame</button>
+                  <span class="field-hint ry-sc-msg"></span></div>
+                <div class="field-hint">Render once, scrub to review, then save - Speed, Loop, the badge, the tag and Deflicker apply at
+                  save, so you can save again in either format without rendering again.</div>
+              </div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">LoRA strength travel</div>
+            <div class="card-desc">Hold the prompt and seed fixed and ramp the LoRA's strength - watch the effect fade in (0
+              = base model) through to full strength and beyond. Saved as a clip.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Strength:</span><input type="text" id="ryLA" class="w-num" value="0.0">
+                <span class="field-hint">→</span><input type="text" id="ryLB" class="w-num" value="1.0"><span class="field-hint" title="Each frame is a fresh render - more frames = smoother but slower.">Frames</span><select id="ryLFrames" class="w-combo st-small-select"><option>16</option><option selected>24</option><option>36</option><option>48</option><option>64</option><option>96</option><option>128</option><option>192</option><option>256</option></select></div>
+              <div class="field-hint pf-hint">0 = base model (no LoRA); 1.0 = trained strength; above 1 over-drives it. Uses the Setup
+                prompt and seed.</div>
+              <div class="field-row"><span class="field-label">Size:</span><span class="field-hint">W</span><select id="ryLW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="ryLH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select></div>
+              <div class="field-row"><span class="field-label">Clip:</span>
+                <span class="field-hint">Speed</span><select id="ryLSpeed" class="w-combo st-small-select"><option>Slow</option>
+                  <option selected>Normal</option><option>Fast</option></select>
+                <label class="checkbox-label"><input type="checkbox" id="ryLLoop" checked> Loop (ping-pong)</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryLBadge" checked> Strength badge</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryLTag" checked> Fizgig tag</label>
+                <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
+                <select id="ryLDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryLGo" style="background:#B7791F">Render strength travel</button>
+                <span class="field-hint" id="ryLStatus"></span></div>
+              <div class="ry-sc" data-mode="strength" id="ryLSc" style="display:none">
+                <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
+                <input type="range" class="ry-scrub" min="0" max="0" step="1" value="0">
+                <div class="field-row ry-sc-save"><button class="btn btn-sm" data-fmt="MP4">Save MP4</button>
+                  <button class="btn btn-sm" data-fmt="GIF">Save GIF</button><button class="btn btn-sm" data-fmt="frame">Save frame</button>
+                  <span class="field-hint ry-sc-msg"></span></div>
+                <div class="field-hint">Render once, scrub to review, then save - Speed, Loop, the badge, the tag and Deflicker apply at
+                  save, so you can save again in either format without rendering again.</div>
+              </div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Comparison sheet</div>
+            <div class="card-desc">The share image people post for a new LoRA: one row per prompt, one column per condition,
+              the same seed across a row so only the LoRA changes. Saved as one labelled PNG.</div>
+            <div class="card-content">
+              <div class="field-hint pf-hint">Without / with LoRA: two columns on the current LoRA (Single LoRA, or the epoch on the
+                crossfade) - fill in Trigger so the no-LoRA column drops it. Every epoch: one column per epoch of the render at the
+                top (render it first); Epochs keeps it readable - blank = all, "every 4", or "4,8,12".</div>
+              <div class="field-row"><span class="field-label">Prompts:</span><textarea id="ryCPrompts" rows="4"
+                placeholder="one per line - each becomes a row"></textarea></div>
+              <div class="field-row"><span class="field-label">Columns:</span><select id="ryCMode" class="w-combo">
+                <option>Without / with LoRA</option><option>Every epoch</option></select>
+                <span class="field-hint">Epochs</span><input type="text" id="ryCEpochs" class="w-num" placeholder="all">
+                <span class="field-hint">Trigger</span><input type="text" id="ryCTrigger" class="w-num"></div>
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="ryCSeed" class="w-num" value="42">
+                <span class="field-hint">W</span><select id="ryCW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="ryCH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>
+                <label class="checkbox-label"><input type="checkbox" id="ryCRows" checked> Row captions</label>
+                <label class="checkbox-label"><input type="checkbox" id="ryCTag" checked> Fizgig tag</label></div>
+              <div class="field-row"><button class="btn btn-primary" id="ryCGo" style="background:#B7791F">Render comparison sheet</button>
+                <span class="field-hint" id="ryCStatus"></span></div>
+              <div id="ryCSheet" style="display:none"><img id="ryCImg" class="ry-sheet" alt="comparison sheet">
+                <div class="field-row"><button class="btn btn-sm" id="ryCSave">Save sheet</button><span class="field-hint" id="ryCMsg"></span></div></div>
+            </div>
+          </div>
+          <div class="section-card ry-folder-only">
             <div class="card-title">Promote winner</div>
             <div class="card-desc">Copy the epoch currently shown on the crossfade to a new .safetensors you can drop
               straight into ComfyUI (into the Save to folder above).</div>

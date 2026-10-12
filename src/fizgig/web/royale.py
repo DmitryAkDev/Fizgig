@@ -150,6 +150,56 @@ def promote(path, label, run, out_dir, name=""):
     return out
 
 
+def pick_columns(cols, spec):
+    """The comparison sheet's epoch columns by the Epochs box: blank = all, "every N" / "/N" = every Nth with the last
+    kept, "4,8,12" = those (the desktop's _royale_pick_epoch_columns)."""
+    spec = (spec or "").strip().lower()
+    if not spec or not cols:
+        return cols
+    m = re.fullmatch(r"(?:every\s*|/)(\d+)", spec)
+    if m:
+        n = max(1, int(m.group(1)))
+        picked = cols[n - 1::n]
+        if cols[-1] not in picked:
+            picked.append(cols[-1])
+        return picked or [cols[-1]]
+    wanted = [t.strip() for t in spec.replace(" ", ",").split(",") if t.strip()]
+    picked = [(lbl, p) for lbl, p in cols
+              if any(str(lbl) == w or (str(lbl).isdigit() and w.isdigit() and int(lbl) == int(w)) for w in wanted)]
+    return picked or cols
+
+
+def save_travel(frames, out_dir, run, prefix, fmt="MP4", speed="Normal", pingpong=True, brand=True, badge=True,
+                deflicker="None"):
+    """A travel mode's frames as a clip, the options applied now (the desktop's _royale_sc_save: render once, save in
+    either format with any options, no re-render)."""
+    from PIL import Image
+    from fizgig.lora_royale import export as rexport
+    fmt = "GIF" if str(fmt).upper() == "GIF" else "MP4"
+    imgs = []
+    for png, _label in frames:
+        with Image.open(png) as im:
+            imgs.append(im.convert("RGB"))
+    if not imgs:
+        raise ValueError("Render the frames first.")
+    if deflicker and deflicker != "None":
+        imgs = rexport.deflicker_frames(imgs, sigma=(len(imgs) / 3.0) if deflicker == "Strong" else None)
+    clip = rexport.frames_from_sequence(imgs, pingpong=pingpong, brand=brand,
+                                        labels=[l for _p, l in frames] if badge else None,
+                                        max_size=None if fmt == "MP4" else 768)
+    os.makedirs(out_dir, exist_ok=True)
+    out = _free(os.path.join(out_dir, f"{run or 'lora'}-{prefix}{'.mp4' if fmt == 'MP4' else '.gif'}"))
+    (rexport.write_mp4 if fmt == "MP4" else rexport.write_gif)(clip, out, speed=speed)
+    return {"path": out, "frames": len(clip)}
+
+
+def copy_png(src, out_dir, name):
+    os.makedirs(out_dir, exist_ok=True)
+    out = _free(os.path.join(out_dir, name))
+    shutil.copyfile(src, out)
+    return out
+
+
 def _free(path):
     if not os.path.exists(path):
         return path

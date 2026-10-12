@@ -35,6 +35,11 @@ def _send(cmd):
         sock.sendall((json.dumps(cmd) + "\n").encode("utf-8"))
 
 
+# LoRA Royale's travel modes and comparison sheet: each mode's last render (frames, or the sheet)
+_T = {m: {"state": "idle", "gen": 0, "frames": [], "status": "", "error": "", "sheet": "", "size": None}
+      for m in ("seed", "strength", "prompt", "sheet")}
+_TG = [0]                                    # one generation counter across the modes
+
 # LoRA Royale's run on the same worker (one model on the card, as the desktop): its renders, by generation
 _R = {"state": "idle", "gen": 0, "items": [], "total": 0, "status": "", "error": "", "progress": None, "meta": {}}
 
@@ -58,6 +63,9 @@ def _reader(proc):
             _S.update(proc=None, state="idle", rendering=False, status="The Studio worker stopped.", progress=None)
             if _R["state"] == "rendering":
                 _R.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.")
+            for t in _T.values():
+                if t["state"] == "rendering":
+                    t.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.")
 
 
 def _event(ev):
@@ -71,6 +79,21 @@ def _event(ev):
         elif kind == "step":
             _S["progress"] = [ev.get("done", 0), ev.get("total", 0)]
             _R["progress"] = _S["progress"]
+        elif kind in ("travel_status", "travel_frame", "travel_done") and ev.get("mode") in _T \
+                and ev.get("gen") == _T[ev["mode"]]["gen"]:
+            t = _T[ev["mode"]]
+            if kind == "travel_status":
+                t["status"] = ev.get("text", "")
+            elif kind == "travel_frame":
+                t["frames"].append({"i": ev.get("i"), "png": ev.get("png"), "label": ev.get("label", "")})
+            else:
+                n = len(t["frames"]) or (1 if ev.get("sheet") else 0)
+                t.update(state="done" if n and not ev.get("error") else "failed", sheet=ev.get("sheet", ""),
+                         size=ev.get("size"), error=ev.get("error") or ("" if n else "Nothing rendered."),
+                         status=("Stopped." if ev.get("cancelled") else
+                                 f"Sheet ready ({ev['size'][0]}x{ev['size'][1]}) - review, then save." if ev.get("sheet")
+                                 else f"Rendered {len(t['frames'])} frames - scrub to review, then save." if n
+                                 else f"Failed: {ev.get('error') or 'nothing rendered'}"))
         elif kind == "royale_status":
             _R["status"] = ev.get("text", "")
         elif kind == "royale_item" and ev.get("gen") == _R["gen"]:
@@ -354,6 +377,9 @@ def stop_worker():
             _S.update(proc=None, sock=None, port=0)
             if _R["state"] == "rendering":
                 _R.update(state="failed", error="Stopped (the GPU was wanted elsewhere).", status="Stopped.")
+            for t in _T.values():
+                if t["state"] == "rendering":
+                    t.update(state="failed", error="Stopped (the GPU was wanted elsewhere).", status="Stopped.")
     try:
         p.wait(timeout=20)
     except Exception:
@@ -363,7 +389,8 @@ def stop_worker():
 def holding_gpu() -> bool:
     with _lock:
         return _S["proc"] is not None and _S["proc"].poll() is None and (
-            _S["state"] in ("loading", "ready") or _R["state"] == "rendering")
+            _S["state"] in ("loading", "ready") or _R["state"] == "rendering"
+            or any(t["state"] == "rendering" for t in _T.values()))
 
 
 def royale_render(desc, plan, settings, items, prompt, seed, width, height, ref="", ref_strength=1.0, meta=None):
@@ -402,9 +429,65 @@ def royale_render(desc, plan, settings, items, prompt, seed, width, height, ref=
     return gen
 
 
+def travel_render(mode, desc, plan, settings, params):
+    """A Royale travel mode (or the comparison sheet) on the worker; Studio's session there ends, as for a render."""
+    with _lock:
+        if any(t["state"] == "rendering" for t in _T.values()) or _R["state"] == "rendering":
+            raise ValueError("Royale is rendering - wait, or Stop it.")
+        if _S["state"] == "loading" or _S["rendering"]:
+            raise ValueError("Studio is using the GPU - wait for it, or Unload it.")
+        _TG[0] += 1
+        gen = _TG[0]
+        _T[mode].update(state="rendering", gen=gen, frames=[], status="Starting the GPU worker…", error="", sheet="",
+                        size=None)
+        if _S["state"] == "ready":
+            _S.update(state="idle", primary="", donor="", rendering=False, pending=None, progress=None,
+                      status="LoRA Royale took the GPU worker - press Start to load Studio again.")
+        family = _S.get("family")
+
+    def go():
+        try:
+            if family and family != desc.key:
+                stop_worker()
+                with _lock:
+                    _T[mode].update(state="rendering", error="", status="Starting the GPU worker…")
+            _ensure_worker()
+            with _lock:
+                _S["family"] = desc.key
+            _send({"cmd": "royale_travel", "gen": gen, "mode": mode, "family": desc.key, "plan": plan,
+                   "settings": settings, "out_dir": OUT_DIR, **params})
+        except Exception as e:
+            with _lock:
+                _T[mode].update(state="failed", error=str(e), status=f"Couldn't start: {e}")
+    threading.Thread(target=go, daemon=True).start()
+    return gen
+
+
+def travel_status():
+    with _lock:
+        return {m: {k: (list(t[k]) if k == "frames" else t[k]) for k in t} for m, t in _T.items()}
+
+
+def travel_frames(mode):
+    with _lock:
+        t = _T.get(mode) or {}
+        return [(f["png"], f["label"]) for f in sorted(t.get("frames", []), key=lambda f: f["i"])
+                if f.get("png") and os.path.isfile(f["png"])]
+
+
+def travel_file(mode, i=None):
+    """A travel frame's PNG (i), or the sheet."""
+    with _lock:
+        t = _T.get(mode) or {}
+        if i is None:
+            return t.get("sheet") if t.get("sheet") and os.path.isfile(t["sheet"]) else ""
+        f = next((x for x in t.get("frames", []) if x.get("i") == int(i)), None)
+    return f["png"] if f and os.path.isfile(f["png"]) else ""
+
+
 def royale_cancel():
     with _lock:
-        busy = _R["state"] == "rendering"
+        busy = _R["state"] == "rendering" or any(t["state"] == "rendering" for t in _T.values())
     if busy:
         _send({"cmd": "cancel"})
     return busy
