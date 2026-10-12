@@ -11631,6 +11631,38 @@ class LoRATrainerGUI:
         # Update sample output path label
         self.update_sample_output_label()
 
+    def _apply_web_samples(self, family_key, vals):
+        """Preview settings changed in the web UI (steps, CFG, every N epochs, Turbo): the model on screen gets them in
+        its boxes, any other model in its kept settings - the two apps show the same values."""
+        try:
+            from fizgig.families.registry import get as _get_fam
+            from fizgig.web import live as _live
+            desc = _get_fam(family_key)
+            if desc is None or not isinstance(vals, dict):
+                return
+            cur = self._family_desc()
+            if cur is not None and cur.key == desc.key:
+                for k, var in (("SAMPLE_STEPS", self.sample_steps_var), ("SAMPLE_CFG_SCALE", self.sample_cfg_scale_var),
+                               ("SAMPLE_EVERY_N_EPOCHS", self.sample_every_n_epochs_var)):
+                    if k in vals:
+                        var.set(str(vals[k]))          # its trace keeps it in last_used["sample_settings"]
+                if "FAMILY_TURBO_STRENGTH" in vals and "FAMILY_TURBO_STRENGTH" in self.entries:
+                    box = self.entries["FAMILY_TURBO_STRENGTH"]
+                    box.delete(0, tk.END)
+                    box.insert(0, str(vals["FAMILY_TURBO_STRENGTH"]))
+                for k, box in (("FAMILY_TURBO_STEPS", getattr(self, "turbo_steps_entry", None)),
+                               ("FAMILY_TURBO_PACE", getattr(self, "turbo_strength_entry", None))):
+                    if k in vals and box is not None:
+                        box.delete(0, tk.END)
+                        box.insert(0, str(vals[k]))
+                self._refresh_turbo_pace_steps()
+            _live.store_samples(self.last_used, desc.key, desc.gui_label, vals)
+            self._save_last_used_paths()
+            self.update_console(f"[web UI] {desc.display_name} preview settings changed in the web UI: " +
+                                ", ".join(f"{k} {v}" for k, v in vals.items()) + "\n")
+        except Exception:
+            pass
+
     def _refresh_turbo_pace_steps(self, *_):
         """H3's previews with its Turbo LoRA (file set, strength above 0) render at the Turbo row's own steps, so the
         plain-model Steps row is hidden then; it shows again with the Turbo off or its file not set."""
@@ -33720,6 +33752,8 @@ class LoRATrainerGUI:
                 "stage": self.training_progress_text_var.get() if hasattr(self, "training_progress_text_var") else "",
                 "percent": float(self.training_progress_var.get()) if hasattr(self, "training_progress_var") else 0.0,
             })
+            for _fk, _vals in _live.take_desktop_samples().items():
+                self._apply_web_samples(_fk, _vals)
             cmd = _live.take_desktop_cmd()
             note = None
             if cmd == "pause":

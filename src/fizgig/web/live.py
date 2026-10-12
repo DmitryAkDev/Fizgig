@@ -15,6 +15,13 @@ LIVE_DESKTOP = os.path.join(BASE_DIR, ".fizgig_live_desktop.json")
 LIVE_WEB = os.path.join(BASE_DIR, ".fizgig_live_web.json")
 DESKTOP_CMD = os.path.join(BASE_DIR, ".fizgig_desktop_cmd.json")
 DESKTOP_LOG = os.path.join(BASE_DIR, ".fizgig_desktop_console.log")
+DESKTOP_SAMPLES = os.path.join(BASE_DIR, ".fizgig_desktop_samples.json")   # preview settings changed in the web UI
+LAST_USED = os.path.join(BASE_DIR, ".last_used.json")
+# the preview settings the two apps share, per model: steps, CFG, every N epochs and the Turbo (strength, or H3's
+# steps and %). The web UI sends a change to the desktop app; the desktop keeps them in .last_used.json
+SHARED_SAMPLE_KEYS = ("SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_EVERY_N_EPOCHS", "FAMILY_TURBO_STRENGTH",
+                      "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE")
+_BOX = {"SAMPLE_STEPS": "steps", "SAMPLE_CFG_SCALE": "cfg", "SAMPLE_EVERY_N_EPOCHS": "every"}
 QUEUE_FILE = os.path.join(BASE_DIR, "presets", "training_queue.json")
 FRESH_S = 8.0               # a heartbeat older than this = that side is closed (or hung)
 DESKTOP_CMDS = ("pause", "stop", "resume")
@@ -89,6 +96,67 @@ def send_desktop(cmd):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump({"cmd": cmd, "at": time.time()}, f)
     os.replace(tmp, DESKTOP_CMD)
+
+
+def send_desktop_samples(family, values):
+    """Preview settings changed in the web UI, for the open desktop app to take (merged with any not yet taken)."""
+    vals = {k: str(v) for k, v in (values or {}).items() if k in SHARED_SAMPLE_KEYS}
+    if not vals:
+        return
+    try:
+        with open(DESKTOP_SAMPLES, encoding="utf-8") as f:
+            pending = json.load(f)
+    except (OSError, ValueError):
+        pending = {}
+    pending.setdefault(family, {}).update(vals)
+    tmp = DESKTOP_SAMPLES + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(pending, f)
+    os.replace(tmp, DESKTOP_SAMPLES)
+
+
+def take_desktop_samples():
+    """For the desktop app: {family key: {setting: value}} the web UI changed, claimed so it applies once."""
+    claim = DESKTOP_SAMPLES + ".claimed"
+    try:
+        os.replace(DESKTOP_SAMPLES, claim)
+    except OSError:
+        return {}
+    try:
+        with open(claim, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    remove(claim)
+    return d if isinstance(d, dict) else {}
+
+
+def store_samples(last_used, family_key, gui_label, values):
+    """Preview settings into the desktop's memory (its .last_used.json dict) as its Samples tab keeps them:
+    sample_settings[label] (steps / cfg / every) and turbo_strengths[key]."""
+    for k, v in values.items():
+        if k in _BOX:
+            last_used.setdefault("sample_settings", {}).setdefault(gui_label, {})[_BOX[k]] = str(v)
+        elif k == "FAMILY_TURBO_STRENGTH":
+            last_used.setdefault("turbo_strengths", {})[family_key] = str(v)
+            try:
+                last_used.setdefault("samples_turbo_live", {})[family_key] = float(v or 0) > 0
+            except ValueError:
+                pass
+
+
+def write_samples_to_last_used(family_key, gui_label, values):
+    """The desktop app is closed: the change goes straight into its .last_used.json, so it opens with it."""
+    try:
+        with open(LAST_USED, encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        d = {}
+    store_samples(d, family_key, gui_label, {k: v for k, v in values.items() if k in SHARED_SAMPLE_KEYS})
+    tmp = LAST_USED + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, LAST_USED)
 
 
 def take_desktop_cmd():

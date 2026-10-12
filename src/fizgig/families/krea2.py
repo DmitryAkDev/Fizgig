@@ -162,6 +162,8 @@ KREA2 = FamilyDescription(
         ),
     ),
     preview_speed_lora="Krea 2 Turbo LoRA (8-step)",
+    preview_speed_steps=10,
+    preview_speed_strength=0.7,       # Samples previews: Turbo 0.7, 10 steps, CFG 1 (Peter's setup)
     preview_steps=8,
     preview_cfg=1.0,
     preview_negative=GENERAL_NEGATIVE,

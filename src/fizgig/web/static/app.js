@@ -170,8 +170,28 @@ function renderRow(r) {
   return wrap;
 }
 
+// preview settings the two apps share per model (fizgig/web/live.py SHARED_SAMPLE_KEYS): a change here goes to the
+// desktop app too - its boxes if it's open, its saved settings if not
+const SHARED_SAMPLE_KEYS = ["SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_EVERY_N_EPOCHS", "FAMILY_TURBO_STRENGTH",
+  "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"];
+S.toDesktop = {};
+const sendDesktopSoon = debounce(() => {
+  for (const [family, values] of Object.entries(S.toDesktop))
+    api("/api/desktop/samples", {family, values}).catch(() => {});
+  S.toDesktop = {};
+}, 800);
+function shareSamples(keys) {
+  const k = keys.filter((x) => SHARED_SAMPLE_KEYS.includes(x));
+  if (!k.length) return;
+  const m = S.toDesktop[S.family] = S.toDesktop[S.family] || {};
+  for (const x of k) m[x] = S.values[x];
+  sendDesktopSoon();
+}
+
 function onValue(r, val) {
   S.values[r.key] = val;
+  shareSamples([r.key]);
+  if (r.key === "FAMILY_TURBO_STRENGTH") S.turboByUser = true;   // the steps / CFG it moves go to the desktop too
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
   if (r.timesteps && r.timesteps[val]) {           // a Model Area with its own timestep window
@@ -224,6 +244,8 @@ function turboFollow() {
   for (const k of moved) S.values[k] = want[k];
   S.values.__turbo_live = live;
   syncInputs(moved);
+  if (S.turboByUser) shareSamples(moved);
+  S.turboByUser = false;
   saveStateSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);

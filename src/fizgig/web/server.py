@@ -1485,6 +1485,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logout_all":                 # every device: a new key makes every login stale
                 _SESSION_KEY[0] = secrets.token_urlsafe(24)
                 return self.json({"ok": True})
+            if path == "/api/desktop/samples":         # preview settings changed here go to the desktop too
+                desc = get_family(b.get("family", ""))
+                if desc is None:
+                    return self.json({"error": "unknown family"}, 400)
+                vals = b.get("values") or {}
+                if live.read_fresh(live.LIVE_DESKTOP):
+                    live.send_desktop_samples(desc.key, vals)
+                else:
+                    live.write_samples_to_last_used(desc.key, desc.gui_label, vals)
+                return self.json({"ok": True})
             if path == "/api/desktop":
                 if not live.read_fresh(live.LIVE_DESKTOP):          # commands need the app itself answering
                     return self.json({"error": "The desktop app isn't open."}, 400)
