@@ -164,6 +164,8 @@ def find_replace(folder, find, replace, apply):
     pat = re.compile(re.escape(find), re.IGNORECASE)
     changes = []
     for fp in sorted(glob.glob(os.path.join(glob.escape(folder), "*.txt"))):
+        if fp.lower().endswith(".lyrics.txt"):          # a song's lyrics are the words sung, not a caption
+            continue
         try:
             with open(fp, encoding="utf-8") as f:
                 old = f.read()

@@ -55,7 +55,9 @@ def main():
     p.add_argument("--ext", default=".txt")
     p.add_argument("--stop_file", default="")
     a = p.parse_args()
-    files = sorted(glob.glob(os.path.join(glob.escape(a.folder), "*" + a.ext)))
+    # captions only: a song's <name>.lyrics.txt are the words sung, not a description to translate
+    files = sorted(f for f in glob.glob(os.path.join(glob.escape(a.folder), "*" + a.ext))
+                   if not f.lower().endswith(".lyrics.txt"))
     if not files:
         _say(f"INFO: no {a.ext} files in {a.folder}")
         _say("DONE 0 0 0")
