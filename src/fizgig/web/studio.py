@@ -310,7 +310,7 @@ def families():
             and not ({"clip", "voice"} & set(d.media))]
 
 
-def layout(desc, prefs, pref_path):
+def layout(desc, prefs, pref_path, samples=None):
     cats = dict(desc.block_categories or ())
     groups = []
     for g in desc.load_driver().block_map():
@@ -343,4 +343,18 @@ def layout(desc, prefs, pref_path):
             "dit_fast": fast, "dit_full": f"Full ({ds.steps}-step, slow)" if ds else "",
             "cfg_fast": float(ck[1].cfg) if ck is not None and have(ck[0].pref_key) else
             float(sp.settings.cfg) if fast and sp is not None else float(ds.cfg if ds else 1.0),
-            "cfg_full": float(ds.cfg if ds else 1.0)}
+            "cfg_full": float(ds.cfg if ds else 1.0),
+            # a model that follows its Samples tab: what Studio renders with (the negative only matters above CFG 1)
+            "follow_cfg": _num((samples or {}).get("cfg"), 1.0), "follow_steps": str((samples or {}).get("steps") or ""),
+            "follow_turbo": (samples or {}).get("turbo_name", "") if (samples or {}).get("turbo_live") else "",
+            # the desktop's note: a preview checkpoint set in Preferences (Qwen's Turbo) renders at its own recipe
+            "follow_ck": (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. "
+                          f"Clear it in Preferences to preview with the Samples tab's settings instead.")
+            if ck is not None and have(ck[0].pref_key) else ""}
+
+
+def _num(x, d):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return d

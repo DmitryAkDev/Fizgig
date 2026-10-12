@@ -265,10 +265,27 @@ def _studio_desc(key):
 
 
 def _studio_samples(desc):
-    """The web UI's Samples settings for this model (a workbench that follows the Samples tab previews with them)."""
+    """The web UI's Samples settings for this model (a workbench that follows the Samples tab previews with them). A
+    value the tab never saved is what the tab shows: the Turbo's own steps and CFG while it renders (its file set,
+    strength above 0 - Qwen's: 8 steps, CFG 1), else the plain model's (as the Samples tab's Turbo follow does)."""
     v = (load_state().get("values") or {}).get(desc.key) or {}
-    return {"steps": v.get("SAMPLE_STEPS"), "cfg": v.get("SAMPLE_CFG_SCALE"), "turbo": v.get("FAMILY_TURBO_STRENGTH"),
-            "negative": v.get("SAMPLE_NEGATIVE")}
+    blank = lambda x: x is None or str(x).strip() == ""
+    sp, spd = desc.preview_speed(), desc.preview_speed_defaults()
+    turbo = v.get("FAMILY_TURBO_STRENGTH")
+    if blank(turbo):
+        turbo = spd[1] if spd else 0
+    f = pref_path(load_prefs(), sp.pref_key) if sp is not None and sp.pref_key else ""
+    try:
+        live = bool(f and os.path.isfile(f) and float(turbo) > 0)
+    except (TypeError, ValueError):
+        live = False
+    steps, cfg = v.get("SAMPLE_STEPS"), v.get("SAMPLE_CFG_SCALE")
+    if blank(steps):
+        steps = spd[0] if live else desc.preview_steps
+    if blank(cfg):
+        cfg = f"{sp.settings.cfg:g}" if live else f"{desc.preview_cfg:g}"
+    return {"steps": str(steps), "cfg": str(cfg), "turbo": str(turbo), "negative": v.get("SAMPLE_NEGATIVE"),
+            "turbo_live": live, "turbo_name": sp.name if sp is not None else ""}
 
 
 def _gpu_training():
@@ -1426,7 +1443,7 @@ class Handler(BaseHTTPRequestHandler):
                 desc = _studio_desc((qs.get("family") or [""])[0])
             except ValueError as e:
                 return self.json({"error": str(e)}, 400)
-            return self.json(studio.layout(desc, load_prefs(), pref_path))
+            return self.json(studio.layout(desc, load_prefs(), pref_path, samples=_studio_samples(desc)))
         if path == "/api/studio/status":
             return self.json(studio.status())
         if path == "/api/studio/image":

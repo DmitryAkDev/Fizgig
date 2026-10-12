@@ -1543,7 +1543,8 @@ async function studioFamily(res) {
   // which model previews: the follows-the-Samples-tab families say so; others pick fast or full
   $("stDitRow").style.display = L.follows_samples || !L.dit_fast ? "none" : "";
   $("stDitFast").textContent = L.dit_fast; $("stDitFull").textContent = L.dit_full;
-  $("stDitNote").textContent = L.follows_samples ? "Steps, CFG and Turbo strength come from this model's Samples tab." :
+  $("stDitNote").textContent = L.follows_samples && L.follow_ck ? L.follow_ck : L.follows_samples ? `Previews ${L.follow_turbo ? "on the " + L.follow_turbo + ", " : ""}` +
+    `${L.follow_steps} steps, CFG ${L.follow_cfg} - from this model's Samples tab.` :
     !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
   studioNegRow();
   S.st.blocks = {};
@@ -1558,7 +1559,7 @@ function studioNegRow() {
   const L = S.st.layout;
   if (!L) return;
   const fast = (document.querySelector('input[name="stDit"]:checked') || {}).value !== "full";
-  const cfg = L.follows_samples ? 2 : fast && L.dit_fast ? L.cfg_fast : L.cfg_full;   // Samples-tab models: their own
+  const cfg = L.follows_samples ? (L.follow_ck ? L.cfg_fast : L.follow_cfg) : fast && L.dit_fast ? L.cfg_fast : L.cfg_full;   // Samples-tab models: theirs
   $("stNegRow").style.display = L.negative_default != null && cfg > 1 ? "" : "none";
 }
 
