@@ -69,6 +69,10 @@ async function boot() {
 }
 
 async function chooseFamily(key) {
+  try {                                     // the latest saved, in case another open page changed it
+    const st = await api("/api/state");
+    if (st && st.values && st.values[key]) S.all[key] = st.values[key];
+  } catch (e) { /* keep what this page has */ }
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
   $("familySelect").value = key;
@@ -148,13 +152,25 @@ function renderRow(r) {
     } else if (r.kind === "text") {
       input = el("textarea", {id: "f_" + r.key, rows: 4, oninput: (e) => set(e.target.value)});
       input.value = v ?? "";
+    } else if (r.kind === "combo") {
+      // a dropdown of the usual values, as the desktop's, with Other… for a value of your own (a browser's
+      // suggestion list only shows what matches what's typed, so with 1.0 in the box it showed nothing)
+      const other = el("input", {type: "text", class: "combo-other", placeholder: "Your value",
+        oninput: (e) => set(e.target.value)});
+      input = el("select", {id: "f_" + r.key, onchange: (e) => {
+        const custom = e.target.value === "__other";
+        other.style.display = custom ? "" : "none";
+        if (custom) { other.value = ""; other.focus(); } else set(e.target.value);
+      }});
+      fillCombo(input, r.choices, v);
+      other.style.display = "none";
+      input._other = other;
     } else {
-      const listId = r.kind === "combo" ? "dl_" + r.key : null;
-      input = el("input", {type: "text", id: "f_" + r.key, list: listId, oninput: (e) => set(e.target.value)});
+      input = el("input", {type: "text", id: "f_" + r.key, oninput: (e) => set(e.target.value)});
       input.value = v ?? "";
-      if (listId) wrap.append(el("datalist", {id: listId}, r.choices.map((c) => el("option", {value: c}))));
     }
     const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}), input);
+    if (input._other) row.append(input._other);
     let upStatus = null;
     if (r.kind === "path" || r.kind === "folder") {
       const startAt = r.start === "output" ? (S.values.LORA_OUTPUT_DIR || "") :
@@ -214,10 +230,25 @@ function onValue(r, val) {
   saveStateSoon();
 }
 
+// a combo row's dropdown: the usual values, a value of your own kept as an option, and Other…
+function fillCombo(sel, choices, v) {
+  sel.innerHTML = "";
+  const val = v == null ? "" : String(v);
+  const opts = val && !choices.includes(val) ? [...choices, val] : choices;
+  for (const c of opts) sel.append(el("option", {value: c, text: c}));
+  sel.append(el("option", {value: "__other", text: "Other…"}));
+  sel.value = val || (choices[0] ?? "");
+}
+
 function syncInputs(keys) {
   for (const k of keys) {
     const i = $("f_" + k);
     if (!i) continue;
+    if (i.tagName === "SELECT" && [...i.options].some((o) => o.value === "__other")) {
+      const row = (S.fam.form.sections.flatMap((s) => s.rows).find((r) => r && r.key === k)) || {choices: []};
+      fillCombo(i, row.choices, S.values[k]);
+      continue;
+    }
     if (i.type === "checkbox") i.checked = !!S.values[k]; else i.value = S.values[k] ?? "";
   }
 }
@@ -549,9 +580,12 @@ function checkModels() {
 // ---- saved state -------------------------------------------------------------------------------------------
 function saveState() {
   S.all[S.family] = S.values;
-  api("/api/state", {family: S.family, image_folder: S.imageFolder, values: S.all}).catch(() => {});
+  // only the model on show: another open page (a phone, another tab) keeps the models it changed
+  api("/api/state", {family: S.family, image_folder: S.imageFolder,
+    model_values: {family: S.family, values: S.values}}).catch(() => {});
 }
-const saveStateSoon = debounce(saveState, 600);
+const saveStateSoonInner = debounce(() => { S.saveWaiting = false; saveState(); }, 600);
+const saveStateSoon = () => { S.saveWaiting = true; saveStateSoonInner(); };
 
 // ---- the run -----------------------------------------------------------------------------------------------
 const runBody = () => ({family: S.family, values: S.values, image_folder: S.imageFolder});
@@ -1886,9 +1920,27 @@ function wireLightbox() {
   });
 }
 
+// back on this page after a while (another tab or a phone may have changed things): take the saved settings of the
+// model on show, unless this page has a change of its own still waiting to save
+async function catchUp() {
+  if (document.visibilityState !== "visible" || S.saveWaiting) return;
+  let st;
+  try { st = await api("/api/state"); } catch (e) { return; }
+  const saved = st && st.values && st.values[S.family];
+  if (!saved || JSON.stringify(saved) === JSON.stringify(S.values)) return;
+  S.all[S.family] = saved;
+  S.values = {...defaults(), ...saved};
+  renderSections("samples", $("samplesForm"));
+  renderSections("training", $("trainingForm"));
+  renderPresets();
+  await refreshState();
+}
+
 function wire() {
   if (wired) return;
   wired = true;
+  document.addEventListener("visibilitychange", catchUp);
+  window.addEventListener("focus", catchUp);
   wireLightbox();
   wirePrep();
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));

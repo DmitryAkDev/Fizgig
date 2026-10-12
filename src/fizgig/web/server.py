@@ -206,6 +206,8 @@ def load_state() -> dict:
 
 
 def save_state(changes: dict):
+    if not changes:
+        return
     with _lock:
         s = load_state()
         s.update(changes)
@@ -1670,8 +1672,15 @@ class Handler(BaseHTTPRequestHandler):
                 update_prefs(upd)
                 return self.json({"ok": True})
             if path == "/api/state":
-                save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab",
-                                                                    "captions", "prep")})
+                one = b.get("model_values")
+                if isinstance(one, dict) and one.get("family") and isinstance(one.get("values"), dict):
+                    with _lock:                         # one model's settings, merged into the saved ones
+                        st = load_state()
+                        vals = st.get("values") if isinstance(st.get("values"), dict) else {}
+                        vals[str(one["family"])] = one["values"]
+                        st["values"] = vals
+                        _write_json(STATE_FILE, st)
+                save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "tab", "captions", "prep")})
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
