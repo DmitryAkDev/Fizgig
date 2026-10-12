@@ -1187,3 +1187,9 @@ input[type="range"] {
 
 /* the file picker's shortcuts: training data, trained LoRAs, uploads, Fizgig */
 .picker-places { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+
+/* Preferences: each model file (its row and its note) set apart from the next */
+.pref-file { padding: 10px 0 12px; border-bottom: 1px solid var(--border); }
+.pref-file:last-of-type { border-bottom: none; }
+.pref-file .field-row { margin-bottom: 6px; }
+.pref-file .field-label { align-self: center; }

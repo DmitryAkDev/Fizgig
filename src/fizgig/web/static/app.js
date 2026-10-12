@@ -244,9 +244,8 @@ function renderPrefs() {
         row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: "Download",
           href: `https://huggingface.co/${m.repo}/blob/main/${m.path}`}));
       }
-      body.append(row);
       const hint = m.hint || m.note;
-      if (hint) body.append(el("div", {class: "field-hint", text: hint}));
+      body.append(el("div", {class: "pref-file"}, row, hint ? el("div", {class: "field-hint", text: hint}) : null));
     }
     const fetchBox = fetchRow(f);
     if (fetchBox) body.append(fetchBox);
