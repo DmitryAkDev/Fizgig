@@ -14544,10 +14544,10 @@ class LoRATrainerGUI:
                     target = os.path.join(dest_dir, f"{stem}_{n}{ext}")
                     n += 1
                 shutil.move(p, target)
-                cap = os.path.splitext(p)[0] + ".txt"
-                if os.path.exists(cap):
-                    cap_target = os.path.splitext(target)[0] + ".txt"
-                    shutil.move(cap, cap_target)
+                for _cext in dict.fromkeys((".txt", self._caption_ext())):     # its caption goes with it
+                    cap = os.path.splitext(p)[0] + _cext
+                    if os.path.exists(cap):
+                        shutil.move(cap, os.path.splitext(target)[0] + _cext)
                 moved += 1
                 self._ff_scores.pop(p, None)
                 self._ff_marked.discard(p)
