@@ -151,7 +151,7 @@ def _render(c):
                     p = os.path.join(out, f"{name}_{gen}.png")
                     img.save(p)
                     paths[name] = p
-            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, **paths)
+            emit(ev="rendered", gen=gen, nolora_pending=nolora is not None, notes=S.get("notes"), **paths)
             _tidy(out, gen)
             if nolora is not None:               # as the desktop: the pair first, then the base model's own
                 try:
@@ -275,14 +275,76 @@ def _render_clips(eng, desc, st, c, out, gen):
     return paths, (nolora if v.get("nolora") and hasattr(eng, "nolora_clip") else None)
 
 
+def _audio_inputs(eng, a, seconds):
+    """Prompt B, the song to start from and the reference recording onto the engine (it reads them each render), as
+    the desktop's _repair_pb_push / _repair_src_effective; returns the readouts beside its sliders."""
+    pb = a.get("prompt_b") or None
+    if hasattr(eng, "prompt_b"):
+        eng.prompt_b, eng.prompt_blend = pb, (float(a.get("blend") or 0) if pb else 0.0)
+    src = a.get("source") or {}
+    path, mode = src.get("path") or None, src.get("mode") or "song"
+    d, f, s = float(src.get("denoise", 1.0)), float(src.get("follow", 1.0)), float(src.get("strength", 0.5))
+    shown_d, shown_f = d, f
+    rp, dur = None, None
+    live = bool(path and os.path.isfile(path))
+    if live and mode != "song":
+        try:
+            from fizgig.acestep.driver import audio_seconds
+            dur = float(audio_seconds(path))
+        except Exception:
+            dur = None
+    if live and mode == "repaint":
+        r = src.get("region")
+        rp = (round(float(r[0]), 2), round(float(r[1]), 2)) if r else None
+    elif live and mode == "extend":
+        rp = (round(dur, 2), float(seconds)) if dur is not None and dur < seconds - 0.25 else None
+    if mode != "song":
+        d, f = 1.0, 0.0
+        live = live and rp is not None
+    elif d >= 1.0 and f <= 0.0:
+        live = False
+    if not live:
+        path, d, f, rp = None, 1.0, 0.0, None
+    ref = a.get("reference") or None
+    if not (ref and os.path.isfile(ref)):
+        ref = None
+    if hasattr(eng, "source_path"):
+        eng.source_path, eng.source_denoise, eng.source_follow = path, d, f
+        eng.source_repaint, eng.repaint_strength = rp, s
+        eng.reference_path = ref
+    notes = {"strength": f"{s:.2f}"}
+    if rp is not None:
+        notes["strength"] += f" - remakes {rp[0]:.1f}\u2013{rp[1]:.1f} s, keeps the rest"
+    elif mode == "repaint":
+        notes["strength"] += " - drag across the Tweaked waveform to choose the section"
+    elif mode == "extend":
+        notes["strength"] += (" - pick a song" if dur is None else f" - set Length above the song's {dur:.0f} s to extend it")
+    txt, ftxt = f"{shown_d:.2f}", f"{shown_f:.2f}"
+    drv = getattr(eng, "driver", None)
+    if drv is not None and hasattr(drv, "schedule") and hasattr(drv, "source_start"):
+        try:
+            ts = drv.schedule(drv.description.preview_steps)
+            t0 = drv.source_start(ts, shown_d) if shown_d < 1.0 else ts[0]
+            n = sum(1 for t in ts if t0 is not None and t <= t0 + 1e-9)
+            txt += ((" - the source as it is" if t0 is None else f" - starts at {t0:.2f}, {n} of {len(ts)} steps")
+                    if shown_d < 1.0 else " - starts from noise")
+            ftxt += " - off" if shown_f <= 0.0 else f" - {int(n * shown_f)} of {n} steps follow"
+        except Exception:
+            pass
+    notes.update(denoise=txt, follow=ftxt)
+    return notes
+
+
 def _render_songs(eng, st, c, out, gen):
     """ACE-Step: the baseline and tweaked songs (the length is the Res box, in seconds) as WAVs with their
     waveform pictures."""
-    seconds = int((c.get("audio") or {}).get("seconds") or st.preview_width or 30)
+    a = c.get("audio") or {}
+    seconds = int(a.get("seconds") or st.preview_width or 30)
     try:
         eng.driver.set_options({"preview_seconds": seconds})
     except Exception:
         pass
+    S["notes"] = _audio_inputs(eng, a, seconds)
     base = eng.generate_baseline(st)
     tweak = eng.generate_preview(st)
     from fizgig.minimax.common import write_wav

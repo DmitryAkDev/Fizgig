@@ -453,6 +453,43 @@
                 <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1"></div>
               <div class="field-row"><span class="field-label">Prompt:</span>
                 <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
+              <div id="stAudioRows" style="display:none">
+                <div class="field-row"><span class="field-label"></span>
+                  <label class="checkbox-label"><input type="checkbox" id="stPbOn"> Blend in a Prompt B</label>
+                  <label class="checkbox-label"><input type="checkbox" id="stSrcOn"> Start from a song (audio to audio)</label>
+                  <label class="checkbox-label" title="The model hears a recording (30 s of it: a piece from the start, middle and end) and makes the song sound like it - the voice, the instruments, the mix. Works with or without a song to start from."><input type="checkbox" id="stSndOn"> Sound like a recording (reference)</label></div>
+                <div id="stPbRows" style="display:none">
+                  <div class="field-row"><span class="field-label">Prompt B:</span>
+                    <textarea id="stPromptB" rows="2" placeholder="e.g. jazz trio, upright bass, brushed drums, warm"></textarea></div>
+                  <div class="field-row"><span class="field-label"></span>
+                    <span class="st-inline" title="Every step runs the model with both prompts and mixes the two: 0 = Prompt A alone, 1 = Prompt B alone. Baseline gets the same blend, so Baseline vs Tweaked still shows only the sliders. Keep Prompt A's lyrics: Prompt B changes the style while A's words are sung.">
+                      <span class="field-hint">A</span><input type="range" id="stPbBlend" min="0" max="1" step="0.05" value="0.5">
+                      <span class="field-hint">B</span><span class="field-hint" id="stPbReadout"></span>
+                      <label class="checkbox-label"><input type="checkbox" id="stPbKeep" checked> Keep Prompt A's lyrics</label></span></div>
+                </div>
+                <div id="stSrcRows" style="display:none">
+                  <div class="field-row"><span class="field-label">Source:</span>
+                    <input type="text" id="stSrcPath" class="w-path" placeholder="a song - any audio or video file"><span id="stSrcBtns"></span></div>
+                  <div class="field-row"><span class="field-label">Use:</span>
+                    <select id="stSrcMode" class="w-combo" title="Whole song: the render follows the song and/or starts from its sound (Follow, Denoise). Repaint the loop section: only the section you drag across the Tweaked waveform is made new - the rest of the song stays exactly as it is. Extend to the Length: the song carries on past its end, up to the Length setting.">
+                      <option value="song">Whole song</option><option value="repaint">Repaint the loop section</option>
+                      <option value="extend">Extend to the Length</option></select></div>
+                  <div class="field-row" id="stSrcWhole"><span class="field-label"></span>
+                    <span class="st-inline" title="Follow: how much of the render follows the song's melody, timing and structure - but not its sound, so the prompt and LoRA choose the voice and instruments (ACE-Step's cover mode). 0 = off; lower lets the song wander in the last steps. Denoise: start from the song's actual sound with noise added, running only the rest of the steps. Lower keeps more of the real recording; 1.0 = start from noise. They work together or alone.">
+                      <span class="field-hint">Follow</span><input type="range" id="stSrcFollow" min="0" max="1" step="0.05" value="1">
+                      <span class="field-hint" id="stSrcFollowNote"></span>
+                      <span class="field-hint">Denoise</span><input type="range" id="stSrcDenoise" min="0.05" max="1" step="0.05" value="1">
+                      <span class="field-hint" id="stSrcDenoiseNote"></span></span></div>
+                  <div class="field-row" id="stSrcRep"><span class="field-label"></span>
+                    <span class="st-inline" title="How freely the new section is made. Lower holds it closer to the song around it and blends the joins more gently; higher lets it go its own way, with shorter joins. 0.5 is ACE-Step's default. Outside the section you always hear the song exactly as it was.">
+                      <span class="field-hint">Strength</span><input type="range" id="stSrcStrength" min="0" max="1" step="0.05" value="0.5">
+                      <span class="field-hint" id="stSrcRepNote"></span></span></div>
+                </div>
+                <div id="stSndRows" style="display:none">
+                  <div class="field-row"><span class="field-label">Sound like:</span>
+                    <input type="text" id="stSndPath" class="w-path" placeholder="a recording"><span id="stSndBtns"></span></div>
+                </div>
+              </div>
               <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="stSeed" class="w-num" value="42">
                 <button class="btn btn-sm" id="stSeedNew" title="A random seed">↻</button>
                 <span class="field-label" id="stResLabel">Res:</span><select id="stRes" class="w-combo st-small-select"></select>
@@ -508,12 +545,16 @@
                 <figure class="gallery-item st-pane"><img id="stBase" alt=""><video id="stBaseVid" controls loop playsinline
                   style="display:none"></video><audio id="stBaseAud" controls style="display:none"></audio>
                   <figcaption id="stBaseCap">Baseline (LoRA at default 1.0)</figcaption></figure>
-                <figure class="gallery-item st-pane"><img id="stTweak" alt=""><video id="stTweakVid" controls loop playsinline
+                <figure class="gallery-item st-pane"><div class="st-region" id="stRegion"></div><img id="stTweak" alt=""><video id="stTweakVid" controls loop playsinline
                   style="display:none"></video><audio id="stTweakAud" controls style="display:none"></audio>
                   <figcaption>Tweaked (current sliders)</figcaption></figure>
               </div>
               <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
-              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button></div>
+              <div class="field-row" id="stPlayBoth" style="display:none"><button class="btn btn-sm" id="stPlayBothBtn">▶ Play together</button>
+                <span id="stSongTools" style="display:none">
+                  <button class="btn btn-sm" id="stKeepBtn" title="The Tweaked song becomes the song to start from, set to Repaint the loop section.">⤵ Use as source</button>
+                  <button class="btn btn-sm" id="stRegionClear">Whole song</button>
+                  <span class="field-hint" id="stRegionNote">Drag across the Tweaked waveform to loop a section (and choose what Repaint remakes).</span></span></div>
             </div>
           </div>
           <div class="section-card" id="stMasters" style="display:none">

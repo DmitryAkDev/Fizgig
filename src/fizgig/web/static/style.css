@@ -1666,3 +1666,10 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .crop-window { width: auto !important; max-width: 96vw; }
 #cropCanvas { display: block; margin: 8px 0; touch-action: none; cursor: move; max-width: 100%; }
 .st-slot canvas { display: block; background: var(--bg-deep); }
+
+/* Studio (ACE-Step): the section dragged across the Tweaked waveform */
+.st-pane { position: relative; }
+.st-region { position: absolute; display: none; pointer-events: none; z-index: 1;
+  background: rgba(59, 159, 216, 0.25); border-left: 2px solid #3B9FD8; border-right: 2px solid #3B9FD8; }
+.st-pane.audio #stTweak { cursor: crosshair; }
+#stAudioRows input[type=range] { width: 130px; }

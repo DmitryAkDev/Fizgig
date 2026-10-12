@@ -1566,8 +1566,9 @@ function studioKind(L, sv) {
   $("stRes").style.display = $("stResLabel").style.display = video ? "none" : "";
   document.querySelectorAll(".st-pane").forEach((p) => p.classList.toggle("audio", audio));
   $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
-    audio ? "Play either song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
+    audio ? "Play any song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
   $("stPlayBoth").style.display = video || audio ? "" : "none";
+  studioAce(L, sv);
   if (!video) return;
   const V = L.video, h3 = sv.h3 || {};
   const fill = (id, opts, val) => { const s = $(id); s.innerHTML = ""; for (const o of opts) s.append(el("option", {value: o, text: o})); s.value = opts.includes(val) ? val : opts[0]; };
@@ -1727,7 +1728,7 @@ function studioH3Remember() {
 function studioExtra() {
   // what a clip or a song needs beyond the sliders
   const L = S.st.layout;
-  if (L.kind === "audio") return {audio: {seconds: Number($("stRes").value) || 30}};
+  if (L.kind === "audio") return {audio: studioAceExtra()};
   if (L.kind !== "video") return {};
   const V = L.video, f = V.scale_of[$("stH3Scale").value] || 1;
   const snap = (x) => f >= 0.999 ? x : Math.max(256, Math.floor(x * f / 32) * 32);
@@ -1740,6 +1741,170 @@ function studioExtra() {
     nolora: $("stH3NoLora").checked},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
+}
+
+// ---- ACE-Step: Prompt B, audio to audio, the reference recording, the section on the waveform (the desktop's) ----
+const snap05 = (v) => Math.round(Number(v) / 0.05) * 0.05;
+
+function studioAce(L, sv) {
+  const on = L.kind === "audio";
+  $("stAudioRows").style.display = on && (L.prompt_blend || L.audio_source) ? "" : "none";
+  $("stSongTools").style.display = on ? "" : "none";
+  if (!on) { S.st.region = null; studioRegionDraw(); return; }
+  const a = sv.ace || {};
+  $("stPbOn").parentElement.style.display = L.prompt_blend ? "" : "none";
+  $("stSrcOn").parentElement.style.display = $("stSndOn").parentElement.style.display = L.audio_source ? "" : "none";
+  $("stPbOn").checked = !!a.pbOn && L.prompt_blend; $("stPromptB").value = a.pb || "";
+  $("stPbBlend").value = a.blend ?? 0.5; $("stPbKeep").checked = a.keep !== false;
+  $("stSrcOn").checked = !!a.srcOn && L.audio_source; $("stSrcPath").value = a.src || "";
+  $("stSrcMode").value = a.mode || "song"; $("stSrcFollow").value = a.follow ?? 1; $("stSrcDenoise").value = a.denoise ?? 1;
+  $("stSrcStrength").value = a.strength ?? 0.5;
+  $("stSndOn").checked = !!a.sndOn && L.audio_source; $("stSndPath").value = a.snd || "";
+  S.st.region = null;
+  studioAceLayout();
+}
+
+function studioAceLayout() {
+  $("stPbRows").style.display = $("stPbOn").checked ? "" : "none";
+  $("stSrcRows").style.display = $("stSrcOn").checked ? "" : "none";
+  $("stSndRows").style.display = $("stSndOn").checked ? "" : "none";
+  const whole = $("stSrcMode").value === "song";
+  $("stSrcWhole").style.display = whole ? "" : "none";
+  $("stSrcRep").style.display = whole ? "none" : "";
+  const w = snap05($("stPbBlend").value);
+  $("stPbReadout").textContent = `${Math.round((1 - w) * 100)}% A · ${Math.round(w * 100)}% B`;
+}
+
+function studioAceRemember() {
+  try {
+    const d = stSaved();
+    d.ace = {pbOn: $("stPbOn").checked, pb: $("stPromptB").value, blend: $("stPbBlend").value, keep: $("stPbKeep").checked,
+      srcOn: $("stSrcOn").checked, src: $("stSrcPath").value.trim(), mode: $("stSrcMode").value,
+      follow: $("stSrcFollow").value, denoise: $("stSrcDenoise").value, strength: $("stSrcStrength").value,
+      sndOn: $("stSndOn").checked, snd: $("stSndPath").value.trim()};
+    localStorage.setItem(ST_KEY, JSON.stringify(d));
+  } catch (e) { /* private window */ }
+}
+
+function studioPromptB() {
+  // the Prompt B the engine renders: B as typed, or (Keep Prompt A's lyrics) B's style with A's lyrics
+  if (!$("stPbOn").checked) return null;
+  const b = $("stPromptB").value.trim();
+  if (!b) return null;
+  if (!$("stPbKeep").checked) return b;
+  const a = $("stPrompt").value, lyrics = a.includes("|") ? a.split("|").slice(1).join("|").trim() : "";
+  const style = b.split("|")[0].trim();
+  return lyrics ? `${style} | ${lyrics}` : style;
+}
+
+function studioAceExtra() {
+  const pb = studioPromptB();
+  return {seconds: Number($("stRes").value) || 30, prompt_b: pb, blend: pb ? snap05($("stPbBlend").value) : 0,
+    source: $("stSrcOn").checked && $("stSrcPath").value.trim() ? {path: $("stSrcPath").value.trim(), mode: $("stSrcMode").value,
+      follow: snap05($("stSrcFollow").value), denoise: snap05($("stSrcDenoise").value),
+      strength: snap05($("stSrcStrength").value), region: S.st.region} : null,
+    reference: $("stSndOn").checked && $("stSndPath").value.trim() ? $("stSndPath").value.trim() : null};
+}
+
+function studioRegionDraw() {
+  const r = S.st.region, box = $("stRegion"), img = $("stTweak"), secs = Number($("stRes").value) || 30;
+  if (!r || img.style.display === "none" || !img.naturalWidth) { box.style.display = "none"; }
+  else {
+    box.style.display = "block";
+    box.style.top = img.offsetTop + "px"; box.style.height = img.offsetHeight + "px";
+    box.style.left = (img.offsetLeft + img.offsetWidth * r[0] / secs) + "px";
+    box.style.width = (img.offsetWidth * (r[1] - r[0]) / secs) + "px";
+  }
+  $("stRegionNote").textContent = r ? `Section ${r[0].toFixed(1)}–${r[1].toFixed(1)} s: the players loop it` +
+    ($("stSrcOn").checked && $("stSrcMode").value === "repaint" ? "; Repaint remakes it." : ".") :
+    "Drag across the Tweaked waveform to loop a section (and choose what Repaint remakes).";
+}
+
+function studioRecordButton(input, set) {
+  // a take from this device's microphone (the browser's), the Length long, sent to the Fizgig machine
+  const btn = el("button", {class: "btn", text: "🎙 Record", title: "Record from the microphone of the device you're using, for the Length setting, then use the take."});
+  btn.addEventListener("click", async () => {
+    if (btn.disabled) return;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); }
+    catch (e) { $("stStatus").textContent = `Could not start the microphone: ${e.message}`; return; }
+    const secs = Math.max(1, Number($("stRes").value) || 30), rec = new MediaRecorder(stream), parts = [];
+    rec.ondataavailable = (e) => e.data.size && parts.push(e.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      clearInterval(tick); btn.disabled = false; btn.textContent = "🎙 Record";
+      const ext = (rec.mimeType || "audio/webm").includes("ogg") ? "ogg" : rec.mimeType.includes("mp4") ? "m4a" : "webm";
+      const file = new File(parts, `take_${Date.now()}.${ext}`, {type: rec.mimeType || "audio/webm"});
+      try {
+        const res = await uploadResumable({single: 1, folder: "", name: file.name}, file, () => {});
+        if (!res.ok) throw new Error(res.data.error || "upload failed");
+        input.value = res.data.path; set(res.data.path);
+        $("stStatus").textContent = `Recorded ${secs} s.`;
+      } catch (e) { $("stStatus").textContent = `Recording failed: ${e.message}`; }
+    };
+    const t0 = Date.now();
+    const tick = setInterval(() => { $("stStatus").textContent = `Recording: ${Math.max(0, secs - (Date.now() - t0) / 1000).toFixed(0)} s left…`; }, 250);
+    btn.disabled = true; btn.textContent = "⏺ Recording…";
+    rec.start(); setTimeout(() => rec.state !== "inactive" && rec.stop(), secs * 1000);
+  });
+  return btn;
+}
+
+function wireStudioAce() {
+  const change = () => { studioAceLayout(); studioAceRemember(); studioRegionDraw(); studioSchedule(); };
+  for (const id of ["stPbOn", "stSrcOn", "stSndOn", "stSrcMode", "stPbKeep", "stPbBlend", "stSrcFollow", "stSrcDenoise", "stSrcStrength"])
+    $(id).addEventListener("change", change);
+  for (const id of ["stPbBlend"]) $(id).addEventListener("input", studioAceLayout);
+  // typed text and new files render on Update, as the prompt does
+  const typed = () => { studioAceRemember(); if (S.st.ready) $("stStart").textContent = "Update"; };
+  for (const id of ["stPromptB", "stSrcPath", "stSndPath"]) $(id).addEventListener("input", typed);
+  for (const [id, host] of [["stSrcPath", "stSrcBtns"], ["stSndPath", "stSndBtns"]]) {
+    const input = $(id), set = (p) => { input.value = p; studioAceRemember(); studioSchedule(); };
+    const up = uploadButton({kind: "path", key: "STUDIO_" + id}, input, set);
+    $(host).replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick(input.value || S.imageFolder, false, set)}),
+      up.btn, studioRecordButton(input, set), up.status);
+  }
+  // the section: drag across the Tweaked waveform; the players loop it
+  const img = $("stTweak");
+  let a0 = null;
+  const secAt = (e) => { const b = img.getBoundingClientRect(), secs = Number($("stRes").value) || 30;
+    return Math.min(secs, Math.max(0, (e.clientX - b.left) / b.width * secs)); };
+  img.addEventListener("click", (e) => { if (S.st.layout && S.st.layout.kind === "audio") e.stopPropagation(); });   // no viewer for a waveform
+  img.addEventListener("pointerdown", (e) => { if (!(S.st.layout && S.st.layout.kind === "audio")) return;
+    e.preventDefault(); a0 = secAt(e); img.setPointerCapture(e.pointerId); });
+  img.addEventListener("pointermove", (e) => { if (a0 == null) return; const t = secAt(e);
+    S.st.region = [Math.min(a0, t), Math.max(a0, t)]; studioRegionDraw(); });
+  img.addEventListener("pointerup", () => {
+    if (a0 == null) return;
+    a0 = null;
+    if (S.st.region && S.st.region[1] - S.st.region[0] < 0.25) S.st.region = null;   // a click, not a drag
+    studioRegionDraw();
+    if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule();
+  });
+  $("stRegionClear").addEventListener("click", () => { S.st.region = null; studioRegionDraw();
+    if ($("stSrcOn").checked && $("stSrcMode").value === "repaint") studioSchedule(); });
+  for (const id of ["stNolAud", "stBaseAud", "stTweakAud"])
+    $(id).addEventListener("timeupdate", (e) => { const r = S.st.region, m = e.target;
+      if (r && S.st.layout && S.st.layout.kind === "audio" && (m.currentTime >= r[1] || m.currentTime < r[0] - 0.05)) m.currentTime = r[0]; });
+  window.addEventListener("resize", studioRegionDraw);
+  $("stTweak").addEventListener("load", studioRegionDraw);
+  $("stKeepBtn").addEventListener("click", async () => {
+    try {
+      const r = await api("/api/studio/keep", {});
+      $("stSrcOn").checked = true; $("stSrcPath").value = r.path;
+      if ($("stSrcMode").value === "song") $("stSrcMode").value = "repaint";
+      studioAceLayout(); studioAceRemember(); studioRegionDraw();
+      $("stStatus").textContent = "The Tweaked song is now the source: drag across the waveform to choose the section to repaint" +
+        (S.st.region ? " (or keep this one)." : ".");
+      if (S.st.region) studioSchedule();
+    } catch (e) { $("stStatus").textContent = e.message; }
+  });
+}
+
+function studioAceNotes(n) {
+  if (!n) return;
+  $("stSrcDenoiseNote").textContent = n.denoise || ""; $("stSrcFollowNote").textContent = n.follow || "";
+  $("stSrcRepNote").textContent = n.strength || "";
 }
 
 function studioCanvas() {
@@ -2045,6 +2210,7 @@ async function studioPoll() {
     $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
   }
   studioNoLoraPane(st);
+  studioAceNotes(st.notes);
   const pr = st.profile;
   $("stProfile").style.display = pr ? "" : "none";
   if (pr) {
@@ -2120,6 +2286,7 @@ function wireStudio() {
     for (const id of ids) { const m = $(id); m.currentTime = 0; m.play().catch(() => {}); }
   });
   $("stStart").addEventListener("click", studioStart);
+  wireStudioAce();
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
   $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();

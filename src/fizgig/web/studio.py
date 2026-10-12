@@ -77,7 +77,8 @@ def _event(ev):
         elif kind == "rendered":
             _S.update(rendering=False, progress=None, baseline=ev.get("baseline", ""), tweaked=ev.get("tweaked", ""),
                       baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
-                      shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")))
+                      shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")),
+                      notes=ev.get("notes"))
             nxt, _S["pending"] = _S["pending"], None
         elif kind == "nolora":                   # the No-LoRA pane's render landed (or a newer edit cut it short)
             _S["nolora_busy"] = False
@@ -263,6 +264,20 @@ def render(state, extra=None):
     return {"ok": True, "gen": gen}
 
 
+def keep_tweaked():
+    """ACE-Step's "Use as source": the Tweaked song copied where it stays (renders are tidied away), its path back."""
+    import shutil
+    with _lock:
+        src = _S.get("tweaked_media") or ""
+    if not src or not os.path.isfile(src) or not src.lower().endswith(".wav"):
+        raise ValueError("Nothing to use yet: the Tweaked song renders after the first preview.")
+    folder = os.path.join(OUT_DIR, "sources")
+    os.makedirs(folder, exist_ok=True)
+    out = os.path.join(folder, f"take_{int(time.time() * 1000)}.wav")
+    shutil.copyfile(src, out)
+    return out
+
+
 def save(out, state, include_donor):
     with _lock:
         _S["saved"] = None
@@ -307,6 +322,7 @@ def status():
     with _lock:
         d = {k: _S[k] for k in ("state", "family", "primary", "donor", "primary_blocks", "donor_blocks", "status",
                                 "progress", "shown", "rendering", "error", "saved", "profile")}
+        d["notes"] = _S.get("notes")
         d["media"] = {k: bool(_S.get(k + "_media")) for k in ("baseline", "tweaked", "nolora")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
@@ -401,6 +417,8 @@ def layout(desc, prefs, pref_path, samples=None):
                       "sound": bool(audio_vae and os.path.exists(audio_vae)),
                       "ref_dit": bool(desc.model_path("ref_dit", look))} if kind == "video" else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
+            "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),
+            "audio_source": bool(getattr(desc.load_driver(), "supports_audio_source", False)),
             "categories": {b: CAT_SHORT.get(c, "") for b, c in cats.items()},
             "masters": [{"cat": c, "label": CAT_SHORT[c], "color": CAT_COLOR[c]} for c in
                         ("style_composition", "style_ident_overlap", "identity", "ident_details_overlap", "details")]

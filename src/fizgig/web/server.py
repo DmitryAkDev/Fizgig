@@ -315,6 +315,8 @@ def _studio_post(what, b):
         studio.load(desc, str(b.get("primary") or "").strip(), str(b.get("donor") or "").strip(), kw, settings,
                     status, b.get("turbo", True), canvas=b.get("canvas") if desc.video_workbench else None)
         return {"ok": True}
+    if what == "keep":
+        return {"path": studio.keep_tweaked()}
     if what == "render":
         return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode")
                                                           if b.get(k) is not None})
