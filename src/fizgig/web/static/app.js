@@ -1146,6 +1146,9 @@ async function pick(start, dirOnly, done) {
   pickDone = done; pickDir = dirOnly;
   $("pickerTitle").textContent = dirOnly ? "Choose a folder" : "Choose a file";
   $("pickerChoose").style.display = dirOnly ? "" : "none";
+  $("pickerNew").style.display = dirOnly ? "" : "none";           // a folder can be made where one is chosen
+  $("pickerNewRow").style.display = "none";
+  $("pickerNewMsg").textContent = "";
   $("pickerModal").classList.add("active");
   await browse(start || "");
 }
@@ -1415,6 +1418,20 @@ function wire() {
     pick(folder.value, true, (p) => { folder.value = p; setFolder(); }));
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
+  // New folder: made in the folder on show, then opened (Use this folder picks it)
+  const newRow = (on) => { $("pickerNewRow").style.display = on ? "" : "none"; if (on) $("pickerNewName").focus(); };
+  $("pickerNew").addEventListener("click", () => { $("pickerNewMsg").textContent = ""; $("pickerNewName").value = ""; newRow(true); });
+  $("pickerNewCancel").addEventListener("click", () => newRow(false));
+  const makeFolder = async () => {
+    try {
+      const r = await api("/api/mkdir", {parent: $("pickerPath").value, name: $("pickerNewName").value});
+      newRow(false);
+      await browse(r.path);
+      $("pickerNewMsg").textContent = "Made it. Press Use this folder to choose it.";
+    } catch (e) { $("pickerNewMsg").textContent = e.message; }
+  };
+  $("pickerNewMake").addEventListener("click", makeFolder);
+  $("pickerNewName").addEventListener("keydown", (e) => { if (e.key === "Enter") makeFolder(); });
   wireCaptions();
   $("outReload").addEventListener("click", loadOutputs);
   $("runsReload").addEventListener("click", loadRuns);

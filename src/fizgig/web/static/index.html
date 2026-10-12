@@ -329,7 +329,13 @@
         <div class="field-hint">On the machine running Fizgig.</div>
         <div class="picker-places" id="pickerPlaces"></div>
         <div class="field-row"><button class="btn" id="pickerUp">Up</button>
-          <input type="text" id="pickerPath" class="w-path"></div>
+          <input type="text" id="pickerPath" class="w-path">
+          <button class="btn" id="pickerNew">New folder…</button></div>
+        <div class="field-row" id="pickerNewRow" style="display:none"><span class="field-label">New folder name:</span>
+          <input type="text" id="pickerNewName" class="w-path" placeholder="my_new_folder">
+          <button class="btn btn-primary" id="pickerNewMake">Create</button>
+          <button class="btn" id="pickerNewCancel">Cancel</button></div>
+        <div class="field-hint" id="pickerNewMsg"></div>
         <div id="pickerList" class="picker-list"></div>
       </div>
       <div class="modal-footer"><button class="btn btn-primary" id="pickerChoose">Use this folder</button></div>

@@ -1382,6 +1382,16 @@ class Handler(BaseHTTPRequestHandler):
                 if preset is None:
                     return self.json({"error": "unknown preset"}, 400)
                 return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})
+            if path == "/api/mkdir":                     # the folder picker's New folder
+                parent, name = str(b.get("parent") or ""), str(b.get("name") or "").strip()
+                if not os.path.isdir(parent):
+                    return self.json({"error": "That folder isn't there any more."}, 400)
+                name = _upload_name(_tidy_upload_name(name), "Folder name")
+                new = os.path.join(parent, name)
+                if os.path.exists(new):
+                    return self.json({"error": f"{name} is already there."}, 400)
+                os.makedirs(new)
+                return self.json({"ok": True, "path": new})
             if path == "/api/queue/add":                # Add to queue: checked like Start, saved for later
                 fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""
                 desc, inputs, plan = _plan(fam, vals, folder)
