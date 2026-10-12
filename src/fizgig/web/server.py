@@ -22,6 +22,7 @@ import os
 import re
 import secrets
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -44,6 +45,8 @@ DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
 MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".wav", ".mp3", ".flac", ".mp4", ".webm"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
+PORT_DEFAULT = 8081                     # the port the pod image exposes
+PORT_WALK = 100                         # how far above a taken port to look for a free one
 
 TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
 
@@ -440,7 +443,8 @@ class Handler(BaseHTTPRequestHandler):
             p = load_prefs()
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
-                              "cache_dir": str(p.get("cache_dir") or "")})
+                              "cache_dir": str(p.get("cache_dir") or ""),
+                              "web_port": _saved_port(p), "port_now": self.server.server_address[1]})
         if path == "/api/state":
             return self.json(load_state())
         if path == "/api/stats":
@@ -621,7 +625,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": _stop()})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir"}
-                update_prefs({k: str(v) for k, v in (b.get("changes") or {}).items() if k in allowed})
+                ch = b.get("changes") or {}
+                upd = {k: str(v) for k, v in ch.items() if k in allowed}
+                if "web_port" in ch:
+                    port = int(ch["web_port"])
+                    if not 1024 <= port <= 65535:
+                        raise ValueError("The port must be between 1024 and 65535.")
+                    upd["web_port"] = port
+                update_prefs(upd)
                 return self.json({"ok": True})
             if path == "/api/state":
                 save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab")})
@@ -639,12 +650,62 @@ class Handler(BaseHTTPRequestHandler):
         return self.json({"error": "not found"}, 404)
 
 
-def run_server(host, port, password=None):
+class _Server(ThreadingHTTPServer):
+    # Windows' SO_REUSEADDR lets a second program bind a port another is already serving on, so a taken port would
+    # look free there; only POSIX needs it (a quick restart rebinding a port still in TIME_WAIT).
+    allow_reuse_address = os.name != "nt"
+    daemon_threads = True
+
+
+def _saved_port(prefs) -> int:
+    try:
+        return int(prefs.get("web_port") or PORT_DEFAULT)
+    except (TypeError, ValueError):
+        return PORT_DEFAULT
+
+
+def _listening(port) -> bool:
+    """Something already answers on this port locally (a bind on 127.0.0.1 can succeed beside another program's
+    0.0.0.0 listener on Windows and shadow it, so a free bind alone does not prove the port is free)."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+            return True
+    except OSError:
+        return False
+
+
+def _bind(host, start, walk):
+    """The server on `start`, or the nearest free port above it when `walk`. Returns (server, port)."""
+    last = None
+    for port in range(start, min(65536, start + (PORT_WALK if walk else 1))):
+        if _listening(port):
+            continue
+        try:
+            return _Server((host, port), Handler), port
+        except OSError as e:
+            last = e
+    if walk:
+        sys.exit(f"No free port from {start} to {start + PORT_WALK - 1}; set one with --port.")
+    sys.exit(f"Port {start} is in use{f' ({last})' if last else ''}; pick another with --port.")
+
+
+def run_server(host, port=None, password=None):
+    """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
+    nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
+    8081: it is the port its proxy forwards."""
     Handler.password = password or None
     Handler.local_only = not password
+    on_pod = bool(os.environ.get("RUNPOD_POD_ID"))
+    if port is not None or on_pod:
+        srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
+    else:
+        want = _saved_port(load_prefs())
+        srv, port = _bind(host, want, walk=True)
+        if port != want:
+            logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")
+        if load_prefs().get("web_port") != port:
+            update_prefs({"web_port": port})
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
-    srv = ThreadingHTTPServer((host, port), Handler)
-    srv.daemon_threads = True
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
     try:
@@ -661,14 +722,15 @@ def main(argv=None):
     ap.add_argument("--web", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--host", default=None, help="Address to listen on (default: localhost; every address with a "
                                                  "password)")
-    ap.add_argument("--port", type=int, default=8081)
+    ap.add_argument("--port", type=int, default=None, help="Port to serve on (default: the one in Preferences, "
+                                                            "8081 at first; a taken one moves to the next free one)")
     ap.add_argument("--password", default=None, help="Login password (default: VNC_PASSWORD or FIZGIG_PASSWORD)")
     a = ap.parse_args(argv)
     pwd = a.password or os.environ.get("VNC_PASSWORD") or os.environ.get("FIZGIG_PASSWORD")
     host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
         sys.exit("Listening beyond localhost needs a password (--password, VNC_PASSWORD or FIZGIG_PASSWORD).")
-    run_server(host, a.port, pwd)
+    run_server(host, a.port, password=pwd)
 
 
 if __name__ == "__main__":

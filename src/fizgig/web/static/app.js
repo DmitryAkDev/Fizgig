@@ -41,7 +41,10 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 async function boot() {
   try { S.schema = await api("/api/schema"); } catch (e) { return; }
   const st = await api("/api/state");
-  S.prefs = (await api("/api/prefs")).models || {};
+  const pr = await api("/api/prefs");
+  S.prefs = pr.models || {};
+  S.webPort = pr.web_port;
+  S.portNow = pr.port_now;
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
   $("imageFolder").value = S.imageFolder;
@@ -202,6 +205,7 @@ function renderPresets() {
 function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
+  host.append(webPortCard());
   for (const f of S.schema.families) {
     const body = el("div", {class: "card-content" + (f.key === S.family ? "" : " collapsed")});
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
@@ -229,6 +233,30 @@ function renderPrefs() {
       el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
         el("span", {text: f.prefs_title || ("Model Paths (" + f.display_name + ")")})), body));
   }
+}
+
+// the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
+function webPortCard() {
+  const input = el("input", {type: "number", min: "1024", max: "65535", class: "w-port", value: S.webPort || 8081});
+  const hint = el("div", {class: "field-hint"});
+  const say = () => {
+    const p = Number(input.value);
+    hint.textContent = p === S.portNow ? "The port this page is on. Fizgig uses it every time it starts." :
+      `Fizgig moves to port ${p} next time it starts (this page is on ${S.portNow} until then). ` +
+      "If that port is taken, it uses the next free one above it.";
+  };
+  input.addEventListener("change", async () => {
+    const p = Number(input.value);
+    if (!Number.isInteger(p) || p < 1024 || p > 65535) { input.value = S.webPort; return say(); }
+    await api("/api/prefs", {changes: {web_port: p}});
+    S.webPort = p;
+    say();
+  });
+  say();
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "Web UI"})),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Port:"}), input), hint));
 }
 
 function checkModels() {
