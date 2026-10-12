@@ -1869,7 +1869,17 @@ class Handler(BaseHTTPRequestHandler):
             if res is None:
                 return self.json({"error": "This run has no per-image loss log."}, 404)
             pics = image_loss.image_paths(run.get("image_folder"), [im["key"] for im in res["images"]])
-            return self.json({**res, "images": [{**im, "path": pics.get(im["key"], "")} for im in res["images"]]})
+            queued, applied = image_loss.caption_state(run.get("output_dir"))
+            return self.json({**res, "live": run.get("result") in ("running", "paused"),
+                              "images": [{**im, "path": pics.get(im["key"], ""), "queued": im["key"] in queued,
+                                          "applied": (applied.get(im["key"]) or [{}])[-1].get("epoch")}
+                                         for im in res["images"]]})
+        if path == "/api/runs/caption":              # one training image's caption, for the per-image editor
+            from fizgig.web import image_loss
+            run = history.get((qs.get("id") or [""])[0]) or {}
+            text, ok = image_loss.read_caption(run.get("image_folder"), (qs.get("key") or [""])[0],
+                                               captions.caption_ext((qs.get("ext") or [""])[0]))
+            return self.json({"caption": text, "folder_ok": ok})
         if path == "/api/about":
             return self.json(about_info())
         if path == "/api/datasets":
@@ -2333,6 +2343,16 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/runs/caption":         # a caption fixed from the per-image loss view
+                from fizgig.web import image_loss
+                run = history.get(str(b.get("id") or ""))
+                if not run:
+                    return self.json({"error": "No such run."}, 404)
+                try:
+                    return self.json(image_loss.save_caption(run, b.get("key"), b.get("caption"),
+                                                             captions.caption_ext(b.get("ext"))))
+                except (ValueError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/likeness":            # three dataset photos to score the samples against; [] clears
                 from fizgig.web import gallery_likeness

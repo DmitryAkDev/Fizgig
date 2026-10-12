@@ -74,6 +74,75 @@ def residuals(output_dir):
     return out
 
 
+def caption_state(output_dir):
+    """(keys waiting in the trainer's caption queue, {key: [{epoch, caption, attempt, auto}]} already re-encoded)."""
+    d = os.path.join(output_dir or "", "loss_log")
+    queued = set()
+    for name in ("caption_updates.json", "caption_updates.json.processing"):
+        try:
+            with open(os.path.join(d, name), encoding="utf-8") as f:
+                queued.update(json.load(f).keys())
+        except (OSError, ValueError, AttributeError):
+            pass
+    try:
+        with open(os.path.join(d, "caption_updates_applied.json"), encoding="utf-8") as f:
+            applied = {k: (v if isinstance(v, list) else [v]) for k, v in json.load(f).items()}
+    except (OSError, ValueError, AttributeError):
+        applied = {}
+    return queued, applied
+
+
+def read_caption(folder, key, ext):
+    p = os.path.join(folder or "", os.path.basename(key) + ext)
+    try:
+        with open(p, encoding="utf-8-sig", errors="replace") as f:     # a BOM never rides into the embedding
+            return f.read().strip(), True
+    except OSError:
+        return "", os.path.isdir(folder or "")
+
+
+def save_caption(run, key, caption, ext):
+    """An image's caption fixed from the per-image loss view (the desktop's Problem Images editor): the caption file
+    rewritten, and - while the run is going or paused - the edit queued for the trainer, which re-encodes it at the
+    next epoch boundary and restarts that image's history (fizgig/families/loss_watch.py)."""
+    caption = str(caption or "").strip()
+    if not caption:
+        raise ValueError("The caption is empty - not saved.")
+    key = os.path.basename(str(key))
+    folder = run.get("image_folder") or ""
+    wrote, queued = False, False
+    if os.path.isdir(folder):
+        p = os.path.join(folder, key + ext)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(caption)
+        os.replace(tmp, p)
+        wrote = True
+    if run.get("result") in ("running", "paused") and run.get("output_dir"):
+        d = os.path.join(run["output_dir"], "loss_log")
+        os.makedirs(d, exist_ok=True)
+        q = os.path.join(d, "caption_updates.json")
+        updates = {}
+        if os.path.exists(q):
+            try:
+                with open(q, encoding="utf-8") as f:
+                    updates = json.load(f)
+            except (OSError, ValueError):
+                # other edits are waiting in a file we can't read: writing just this one would lose them
+                raise ValueError("The trainer's caption queue couldn't be read - not overwriting it. Try again in a "
+                                 "moment.")
+            if not isinstance(updates, dict):
+                updates = {}
+        updates[key] = caption
+        with open(q + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(updates, f, indent=2)
+        os.replace(q + ".tmp", q)                    # atomic: the trainer never reads half a file
+        queued = True
+    if not wrote and not queued:
+        raise ValueError("The run's training folder isn't there any more - nothing saved.")
+    return {"wrote": wrote, "queued": queued}
+
+
 def image_paths(folder, keys):
     """{key: picture path} - a key is the picture's name without its extension, in the run's training folder."""
     out = {}

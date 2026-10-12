@@ -1201,7 +1201,7 @@ async function loadRuns() {
       onclick: async () => {
         if (ilBox.style.display !== "none") { ilBox.style.display = "none"; return; }
         ilBox.style.display = ""; ilBox.textContent = "Loading…";
-        try { imageLossPanel(ilBox, await api("/api/runs/image_loss?id=" + encodeURIComponent(run.id))); }
+        try { imageLossPanel(ilBox, await api("/api/runs/image_loss?id=" + encodeURIComponent(run.id)), run); }
         catch (e) { ilBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
       }}) : null;
     host.append(el("div", {class: "run-row"},
@@ -1235,7 +1235,7 @@ const IL_ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted"
 const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
 
-function imageLossPanel(box, d) {
+function imageLossPanel(box, d, run) {
   const imgs = d.images || [], rep = d.report || {};
   // one scale for every tile, so tiles compare: room for every image's recent level with a margin (a one-epoch
   // spike past it is clipped; a consistently hard image keeps its shape)
@@ -1259,7 +1259,7 @@ function imageLossPanel(box, d) {
       sort.value === "verdict" ? (a, b) => o(a.verdict) - o(b.verdict) || b.recent - a.recent : (a, b) => b.recent - a.recent);
     const pages = Math.max(1, Math.ceil(list.length / IL_PAGE));
     page = Math.min(page, pages - 1);
-    grid.replaceChildren(...list.slice(page * IL_PAGE, (page + 1) * IL_PAGE).map((im) => imageLossTile(im, ymax)));
+    grid.replaceChildren(...list.slice(page * IL_PAGE, (page + 1) * IL_PAGE).map((im) => imageLossTile(im, ymax, run, d.live)));
     if (!list.length) grid.append(el("div", {class: "field-hint", text: "No image has a problem verdict."}));
     pager.replaceChildren(...(pages > 1 ? [
       el("button", {class: "btn btn-sm", text: "‹ Prev", disabled: page === 0, onclick: () => { page--; draw(); }}),
@@ -1271,15 +1271,16 @@ function imageLossPanel(box, d) {
   box.replaceChildren(
     el("div", {class: "field-hint", text: head}),
     rep.plateaued && rep.best_epoch_estimate ? el("div", {class: "il-plateau",
-      text: `The run plateaued: the best checkpoint is likely around epoch ${rep.best_epoch_estimate} - compare a few epochs either side.`}) : null,
+      text: `The run plateaued: the best checkpoint is likely around epoch ${rep.best_epoch_estimate} - compare a few epochs either side.`}) : "",      // (replaceChildren writes a null as the word)
     el("div", {class: "field-hint", text: "Each line is one image's loss minus the dataset's average at the same noise level, " +
       "epoch by epoch. Above the dotted line it is harder than the rest; a line falling is the image being learned. " +
-      "All tiles share one scale."}),
+      "All tiles share one scale." + (d.live ? " Edit caption fixes one while the run goes: the trainer re-encodes it at " +
+      "the next epoch and that image's history starts again - it should turn blue (learning) if the fix worked." : "")}),
     el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Sort:"}), sort, show), grid, pager);
   draw();
 }
 
-function imageLossTile(im, ymax) {
+function imageLossTile(im, ymax, run, live) {
   const [col, say] = IL_VERDICTS[im.verdict] || IL_VERDICTS.mid;
   const W = 200, H = 56, pad = 3, pts = im.series;
   const e0 = pts[0][0], e1 = pts[pts.length - 1][0];
@@ -1304,8 +1305,37 @@ function imageLossTile(im, ymax) {
       el("div", {class: "il-name", title: im.key, text: im.key}),
       el("span", {class: "il-verdict", style: `background:${col}`, title: say,
         text: (im.verdict || "mid") + (im.multiplier != null && im.multiplier !== 1 ? ` ×${im.multiplier}` : "")}),
-      el("span", {class: "field-hint", text: ` now ${sign(im.recent)}`, title: "Mean over the last 5 epochs (the watch's window)"})),
-    svg);
+      el("span", {class: "field-hint", text: ` now ${sign(im.recent)}`, title: "Mean over the last 5 epochs (the watch's window)"}),
+      im.queued ? el("span", {class: "il-cap-state", text: "caption queued", title: "Waiting for the next epoch boundary, when the trainer re-encodes it"}) :
+        im.applied != null ? el("span", {class: "il-cap-state done", text: `caption fixed at epoch ${im.applied}`}) : null),
+    svg, run ? imageLossCaption(im, run, live) : null);
+}
+
+// one image's caption, edited from its tile (the desktop's Problem Images editor)
+function imageLossCaption(im, run, live) {
+  const box = el("div", {class: "il-cap", style: "display:none"});
+  const btn = el("button", {class: "btn btn-sm", text: "Edit caption", onclick: async () => {
+    if (box.style.display !== "none") { box.style.display = "none"; return; }
+    box.style.display = "";
+    box.replaceChildren(el("div", {class: "field-hint", text: "Loading…"}));
+    let r;
+    try { r = await api(`/api/runs/caption?id=${encodeURIComponent(run.id)}&key=${encodeURIComponent(im.key)}&ext=${encodeURIComponent(capExt())}`); }
+    catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
+    const ta = el("textarea", {rows: 5, class: "il-cap-text"});
+    ta.value = r.caption;
+    const say = el("div", {class: "field-hint", text: "Caption what the picture actually shows - viewpoint (from behind, side profile), pose, what's in the way."});
+    const save = el("button", {class: "btn btn-sm btn-primary", text: live ? "Save and queue for re-encode" : "Save caption", onclick: async () => {
+      try {
+        const res = await api("/api/runs/caption", {id: run.id, key: im.key, caption: ta.value, ext: capExt()});
+        say.textContent = res.queued ? "Saved and queued - the trainer re-encodes it at the next epoch." +
+          (res.wrote ? "" : " (The caption file couldn't be written: the run is fixed, a later re-cache uses the old caption.)")
+          : "Saved. It's used the next time this folder trains.";
+      } catch (e) { say.textContent = e.message; }
+    }});
+    box.replaceChildren(ta, el("div", {class: "field-row"}, save), say);
+    ta.focus();
+  }});
+  return el("div", {}, btn, box);
 }
 
 // ---- LoRA Royale: every epoch on one seed, crossfaded (fizgig/web/royale.py; renders on the GPU worker) ----
