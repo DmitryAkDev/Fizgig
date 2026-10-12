@@ -1210,7 +1210,7 @@ body { font-size: 13.5px; background: var(--bg-deep); }
 .side-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; }
 .side-brand img { width: 30px; height: 30px; border-radius: 8px; }
 .side-brand span { font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.15; }
-.side-brand small { display: block; font-size: 11px; font-weight: 500; color: var(--text-muted); }
+.side-brand small { display: block; font-size: 11px; font-weight: 500; color: var(--text-muted); margin-top: 3px; }
 .tab-bar-scroller { flex-direction: column; align-items: stretch; height: auto; padding: 0; overflow: visible; gap: 2px;
   flex: 0 0 auto; }
 .side-label { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
