@@ -1502,9 +1502,6 @@ class LoRATrainerGUI:
             "GRADIENT_ACCUMULATION": 1,  # Effective batch size = batch × this
             "MAX_GRAD_NORM": 1.0,  # Gradient clipping (0 to disable)
             "ATTENTION_MECHANISM": "sdpa",  # Default attention (was "none", causing duplicate flags)
-            "LOGGING_DIR": "",
-            "LOG_WITH": "none",
-            "LOG_PREFIX": "",
             "IMG_IN_TXT_IN_OFFLOADING": False,
             "LR_SCHEDULER": "constant",
             "LR_WARMUP_STEPS": "",
@@ -8534,25 +8531,6 @@ class LoRATrainerGUI:
                   "Blackwell card (H100, RTX 5090).",
                   foreground=COLORS["text_explain"], font=HINT_FONT).grid(
             row=row, column=0, columnspan=3, sticky=tk.W, padx=5)
-        row += 1
-
-        # Logging
-        ttk.Label(parent, text="Logging Directory:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
-        self.entries["LOGGING_DIR"] = ttk.Entry(parent, width=40)
-        self.entries["LOGGING_DIR"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
-        ttk.Button(parent, text="Browse", command=lambda: self.browse_directory("LOGGING_DIR")).grid(row=row, column=2, sticky=tk.W, padx=5)
-        row += 1
-
-        ttk.Label(parent, text="Log With:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
-        self.log_with_var = tk.StringVar(value=self.settings["LOG_WITH"])
-        log_with_options = ["none", "tensorboard", "wandb", "all"]
-        self.entries["LOG_WITH"] = ttk.Combobox(parent, textvariable=self.log_with_var, values=log_with_options, state="readonly")
-        self.entries["LOG_WITH"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
-        row += 1
-
-        ttk.Label(parent, text="Log Prefix:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
-        self.entries["LOG_PREFIX"] = ttk.Entry(parent, width=40)
-        self.entries["LOG_PREFIX"].grid(row=row, column=1, sticky=tk.EW, padx=5, pady=2)
         row += 1
 
         # img_in/txt_in offloading — no-op for Klein 9B, widget kept for preset compat
@@ -32275,9 +32253,6 @@ class LoRATrainerGUI:
             "OPTIMIZER_TYPE": self.entries["OPTIMIZER_TYPE"].get(),
             "OPTIMIZER_ARGS": self.entries["OPTIMIZER_ARGS"].get(),
             "ATTENTION_MECHANISM": self.entries["ATTENTION_MECHANISM"].get(),
-            "LOGGING_DIR": self.entries["LOGGING_DIR"].get(),
-            "LOG_WITH": self.entries["LOG_WITH"].get(),
-            "LOG_PREFIX": self.entries["LOG_PREFIX"].get(),
             "IMG_IN_TXT_IN_OFFLOADING": self.entries["IMG_IN_TXT_IN_OFFLOADING"].get(),
             "LR_SCHEDULER": self.entries["LR_SCHEDULER"].get(),
             "LR_WARMUP_STEPS": self.entries["LR_WARMUP_STEPS"].get(),
