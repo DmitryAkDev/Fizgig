@@ -557,3 +557,97 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     return d
+
+
+# ---- MiniMax H3 RefMod (fizgig/families/refmod.py): the desktop's RefMod card, on H3's files ----------------------
+def refmod_form(h3, ref_dit_set=False):
+    """RefMod's form: H3's Training Base (Reference first when the reference DiT is set, as the desktop switches it),
+    Output, the RefMod card in the desktop's order, the cache tick; a note where the Samples tab would be."""
+    from fizgig.families import refmod as rm
+    model = [_option_row(o) for o in h3.options if o.tab == "model"]
+    for r in model:
+        if ref_dit_set and r["key"] == "H3_TRAIN_BASE":
+            ref = next((c for c in r["choices"] if "ref2va" in c.lower()), None)
+            if ref:
+                r["default"] = ref           # a RefMod rides the ref2va path at generation
+    sections = [
+        {"id": "model", "title": "Base Model", "tab": "training", "rows": model + [_row(
+            "_model_note", "A RefMod runs on MiniMax H3's files (set in Preferences under MiniMax H3). Reference "
+            "(ref2va) is the model a RefMod rides at generation.", "note")]},
+        {"id": "output", "title": "Output", "tab": "training", "rows": [
+            _row("LORA_OUTPUT_DIR", "Output Directory", "folder", "Where the mod is saved: <name>.safetensors. Point "
+                 "it at ComfyUI/models/refmods and the mod is ready to load. Empty (or Reset to default) uses the LoRA "
+                 "output folder in Preferences.", default=""),
+            _row("LORA_NAME", "Name", default="my_refmod")]},
+        {"id": "refmod", "title": "RefMod", "tab": "training", "rows": [
+            _row("MINIMAX_REFMOD_GRID", "Grid", "choice", "", rm.REFMOD_GRID_OPTIONS, rm.REFMOD_GRID_OPTIONS[0]),
+            _row("MINIMAX_REFMOD_REFS", "References", "combo", "", rm.REFMOD_REFS_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_REFS"]),
+            _row("REFMOD_TOKENS", "", "note"),
+            _row("MINIMAX_REFMOD_STEPS", "Steps", "combo", "", rm.REFMOD_STEP_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_STEPS"]),
+            _row("DATASET_MEGAPIXELS", "Target MP", "choice", "", rm.REFMOD_MP_OPTIONS, "0.25"),
+            _row("MINIMAX_REFMOD_CLIPS", "Clips", "choice",
+                 "How a clip in the dataset enters the mod. Sharpest still: one frame, the face — the identity choice. "
+                 "Motion: every latent frame of the clip, the node pack's video reference (a dance, a camera move); "
+                 "tokens are per frame, so a clip costs its length. Prepare clips with Gizmo first — cut to H3's "
+                 "frame grid at the right size, they work best.", rm.REFMOD_CLIPS_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_CLIPS"]),
+            _row("MINIMAX_REFMOD_DESC", "Description (mod hint)",
+                 hint="A few words saying what the mod is — 'a ginger woman with messy hair', 'a 1970s film look'. "
+                      "Stored in the file; RefMod Studio's '+ mod hints' and the pack's loader put 'concept: "
+                      "description' into the prompt so the model knows what it is looking at.", default=""),
+            _row("MINIMAX_REFMOD_CONCEPT", "Concept", "choice",
+                 "What the mod is, in the pack's terms: identity (a person), style (a look), pose_motion (a dance, a "
+                 "camera move), clothing, background, generic.", rm.REFMOD_CONCEPT_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_CONCEPT"]),
+            _row("MINIMAX_REFMOD_TOKEN_CAP", "Clip token cap (stills untouched)", "choice",
+                 "For clips as motion only: thin their frames to fit a token budget the way the pack's extractor "
+                 "thins a clip. Only when the mod is over the cap, each clip loses the frames that are near-duplicates "
+                 "of the last kept one (a held shot is mostly those), then what is left is spread evenly down to what "
+                 "fits. Photos are never touched, whatever the cap; with no motion clips this does nothing. Off keeps "
+                 "every frame.", rm.REFMOD_TOKEN_CAP_OPTIONS, rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_TOKEN_CAP"]),
+            _row("MINIMAX_REFMOD_AUDIO", "Audio support", "choice",
+                 "Also make an audio mod: the folder's sound (each clip's soundtrack and any audio file, in file "
+                 "order) through the H3 audio VAE, the pack's audio RefMod. One file puts it in <name>.safetensors "
+                 "beside the visual mod (the pack's bundle; needs the current pack). Two files writes it as "
+                 "<name>_audio.safetensors, which any version reads. A clip Gizmo marked mute (_mute in its name) "
+                 "lends no sound, the same rule as H3 training. A plain encode, no training. Needs the Audio VAE "
+                 "path in Preferences. RefMod Studio renders visual mods only; audio mods play in ComfyUI.",
+                 rm.REFMOD_AUDIO_OPTIONS, rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_AUDIO"]),
+            _row("MINIMAX_REFMOD_AUDIO_CONCEPT", "Kind", "choice",
+                 "What the sound is, in the pack's terms: voice, singing, music_style, sound_fx, ambience. Stored in "
+                 "the file as its concept type.", rm.REFMOD_AUDIO_CONCEPT_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_AUDIO_CONCEPT"]),
+            _row("MINIMAX_REFMOD_AUDIO_SECONDS", "Up to (seconds)", "combo", "", rm.REFMOD_AUDIO_SECONDS_OPTIONS,
+                 rm.REFMOD_DEFAULTS["MINIMAX_REFMOD_AUDIO_SECONDS"]),
+            _row("_refmod_note", "Steps 0 writes the plain encode (no captions needed). Steps above 0 optimise the mod "
+                 "against H3: level on shots like your photos, well ahead on looks they never showed, cleaner skin in "
+                 "both. RefMods make no previews: judge a mod in the desktop app's RefMod Studio.", "note"),
+            _row("ENABLE_CACHE", "Prepare the cache before making the mod", "check", default=True)]},
+        {"id": "samples_none", "title": "Previews", "tab": "samples", "rows": [_row(
+            "_samples_note", "RefMods have no previews, so this tab isn't used. Judge a mod in the desktop app's "
+            "RefMod Studio once it is made.", "note")]},
+    ]
+    return {"sections": sections,
+            "presets": [{"name": n, "values": dict(v)} for n, v in rm.REFMOD_BUILT_IN_PRESETS.items()]}
+
+
+def refmod_state(values, image_folder=""):
+    """What RefMod's values hide and note: Kind and Up to only while Audio support is on; the token readout."""
+    from fizgig.families import refmod as rm
+    hidden, notes = set(), {}
+    if not rm.refmod_audio_on(values.get("MINIMAX_REFMOD_AUDIO")):
+        hidden |= {"MINIMAX_REFMOD_AUDIO_CONCEPT", "MINIMAX_REFMOD_AUDIO_SECONDS"}
+    text, over = rm.token_text(values.get("MINIMAX_REFMOD_GRID"), values.get("MINIMAX_REFMOD_REFS"),
+                               values.get("DATASET_MEGAPIXELS"))
+    notes["REFMOD_TOKENS"] = ("⚠ " if over else "") + text
+    from fizgig.families import launch
+    media = launch.dataset_media(image_folder) if image_folder else set()
+    return {"hidden": sorted(hidden), "disabled": [], "notes": notes, "kind": "standard", "media": sorted(media),
+            "turbo_file": False}
+
+
+def refmod_preset(values, preset):
+    """A RefMod preset over the form's values: its keys as they are (the Training Base is never a preset's)."""
+    return {**values, **{k: v for k, v in preset.items() if k != "H3_TRAIN_BASE"}}

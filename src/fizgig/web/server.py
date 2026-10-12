@@ -34,6 +34,7 @@ from fizgig.families.registry import get as get_family, training_families
 from fizgig.web import captions, history, live
 from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
+from fizgig.families import refmod
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -198,6 +199,16 @@ def pref_path(prefs, key) -> str:
 PRESETS_DIR = os.path.join(BASE_DIR, "presets")
 
 
+class _RefModPresets:
+    gui_label = refmod.LABEL
+    presets = tuple(refmod.REFMOD_BUILT_IN_PRESETS.items())
+
+
+def _preset_family(key):
+    """What the preset calls need of a model: its name (the folder) and built-in presets."""
+    return _RefModPresets if key == refmod.KEY else get_family(key)
+
+
 def user_presets(desc) -> list:
     """The presets saved for this model, in either app (presets/<model's name>/<name>.json), by name."""
     d = os.path.join(PRESETS_DIR, desc.gui_label)
@@ -227,7 +238,35 @@ def save_state(changes: dict):
 
 
 # ---- runs -------------------------------------------------------------------------------------------------------
+def _files_family(key):
+    """The family whose files a model runs on: RefMod runs on MiniMax H3's."""
+    return get_family("minimax" if key == refmod.KEY else key)
+
+
+def _refmod_plan(values, image_folder):
+    """MiniMax H3 RefMod's launch (fizgig/families/refmod.py, the desktop's own): H3's files, the card's values."""
+    prefs = load_prefs()
+    h3 = get_family("minimax")
+    values = dict(values or {})
+    name = str(values.get("LORA_NAME") or "").strip() or "my_refmod"
+    out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
+    base = next((o for o in h3.options if o.key == "H3_TRAIN_BASE"), None)
+    st = {**refmod.REFMOD_DEFAULTS, "MINIMAX_REFMOD_GRID": refmod.REFMOD_GRID_OPTIONS[0], "SEED": 42,
+          "BLOCKS_SWAP": "auto", "DATASET_MEGAPIXELS": "0.25",
+          **{k: v for k, v in values.items() if not str(k).startswith("__")},
+          "LORA_NAME": name, "LORA_OUTPUT_DIR": out_dir,
+          "DATASET_CONFIG": os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"),
+          "MINIMAX_TRAIN_BASE": refmod.minimax_train_base(values.get("H3_TRAIN_BASE") or (base.default if base else ""))}
+    models = {k: pref_path(prefs, k) for k in form.model_keys(h3)}
+    p = refmod.plan(st, models, python=sys.executable, repo_dir=BASE_DIR, image_folder=str(image_folder or "").strip(),
+                    cache_root=pref_path(prefs, "cache_dir"), cache_dir_for=launch.cache_dir_for,
+                    caching=values.get("ENABLE_CACHE", True) is not False)
+    return None, st, p
+
+
 def _plan(family_key, values, image_folder, resume=""):
+    if family_key == refmod.KEY:
+        return _refmod_plan(values, image_folder)
     desc = get_family(family_key)
     if desc is None:
         raise ValueError(f"Unknown family: {family_key}")
@@ -646,7 +685,8 @@ def _run_stages(stages, out_dir):
             history.end(_run.get("history_id"), "failed", _run.get("progress"))
             webqueue.on_run_ended("failed", _run.get("lora"), _queue_starter)
             return
-    paused = os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"]
+    paused = ((os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"])
+              and _run.get("family") != refmod.KEY)                  # a RefMod finishes in one go
     with _lock:
         _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
     history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
@@ -1027,7 +1067,8 @@ def _fetch_status() -> dict:
 def _start_fetch(family, token="", optional=False):
     """The family's model files plus the helper models, into <repo>/models (a pod links that to its volume), paths
     written to Preferences by the fetcher. A token is passed to that one download only, never written to disk."""
-    desc = get_family(family)
+    desc = _files_family(family)
+    family = desc.key if desc is not None else family
     if desc is None:
         raise ValueError(f"Unknown family: {family}")
     token = (token or "").strip() or os.environ.get("HF_TOKEN", "").strip()
@@ -1086,7 +1127,7 @@ def _caption_gpu_check(need_gb):
 
 def _caption_args(b):
     prefs = load_prefs()
-    desc = get_family(b.get("family", ""))
+    desc = _files_family(b.get("family", ""))
     media = set(desc.media) if desc is not None else {"photo"}
     folder = str(b.get("folder") or "")
     if not os.path.isdir(folder):
@@ -1241,7 +1282,8 @@ class Handler(BaseHTTPRequestHandler):
             return None if path.startswith("/api/") else self.json({"error": "not found"}, 404)
 
         if path == "/api/schema":
-            return self.json({**get_schema(), "logged_in": True})
+            return self.json({**get_schema(ref_dit_set=bool(pref_path(load_prefs(), "minimax_ref_dit"))),
+                              "logged_in": True})
         if path == "/api/prefs":
             p = load_prefs()
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
@@ -1263,7 +1305,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/presets":               # a model's presets: the built-in ones, then the ones you saved
-            desc = get_family((qs.get("family") or [""])[0])
+            desc = _preset_family((qs.get("family") or [""])[0])
             if desc is None:
                 return self.json({"error": "unknown family"}, 400)
             built = [n for n, _ in (desc.presets or ())]
@@ -1539,6 +1581,8 @@ class Handler(BaseHTTPRequestHandler):
         b = self._body()
         try:
             if path == "/api/form/state":
+                if b.get("family") == refmod.KEY:
+                    return self.json(form.refmod_state(b.get("values") or {}, b.get("image_folder") or ""))
                 desc = get_family(b.get("family", ""))
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)
@@ -1550,7 +1594,7 @@ class Handler(BaseHTTPRequestHandler):
                                             captioner=cap if cap and os.path.isfile(cap) else "",
                                             speed_file=bool(spf and os.path.isfile(spf))))
             if path == "/api/preset/save":            # Save preset: the desktop's format and folder
-                desc = get_family(b.get("family", ""))
+                desc = _preset_family(b.get("family", ""))
                 name = str(b.get("name") or "").strip()
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)
@@ -1562,10 +1606,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"exists": True})
                 os.makedirs(d, exist_ok=True)
                 with open(path_, "w", encoding="utf-8") as f:
-                    json.dump(form.to_preset(desc, b.get("values") or {}), f, indent=4)
+                    vals = b.get("values") or {}
+                    json.dump(form.to_preset(desc, vals) if desc is not _RefModPresets else
+                              {k: v for k, v in vals.items() if not str(k).startswith("__") and k != "H3_TRAIN_BASE"},
+                              f, indent=4)
                 return self.json({"ok": True, "user": user_presets(desc)})
             if path == "/api/preset":
-                desc = get_family(b.get("family", ""))
+                desc = _preset_family(b.get("family", ""))
                 preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
                 if preset is None and desc is not None and b.get("name") in user_presets(desc):
                     try:                             # one you saved, in either app
@@ -1575,6 +1622,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json({"error": "That preset's file can't be read."}, 400)
                 if preset is None:
                     return self.json({"error": "unknown preset"}, 400)
+                if desc is _RefModPresets:
+                    return self.json({"values": form.refmod_preset(b.get("values") or {}, preset)})
                 return self.json({"values": form.apply_preset(desc, b.get("values") or {}, preset)})
             if path == "/api/mkdir":                     # the folder picker's New folder
                 parent, name = str(b.get("parent") or ""), str(b.get("name") or "").strip()
@@ -1626,6 +1675,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/runs/settings":            # Start again with these settings
                 rec = history.get(str(b.get("id") or ""))
+                if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):
+                    return self.json({"family": refmod.KEY, "values": {k: v for k, v in (rec.get("values") or {}).items()
+                                                                        if not str(k).startswith("__")},
+                                      "image_folder": rec.get("image_folder") or ""})
                 desc = get_family(rec.get("family", "")) if rec else None
                 if desc is None:
                     return self.json({"error": "That run's model isn't available here."}, 400)
@@ -1658,6 +1711,8 @@ class Handler(BaseHTTPRequestHandler):
                     out, running = _run["output_dir"], _run["proc"] is not None and _run["proc"].poll() is None
                 if not running:
                     return self.json({"error": "Nothing is running."}, 400)
+                if _run.get("family") == refmod.KEY:
+                    return self.json({"error": "A RefMod can't pause: it is made in one go. Stop ends it."}, 400)
                 with open(os.path.join(out, ".pause_requested"), "w", encoding="utf-8") as f:
                     f.write("pause\n")
                 with _lock:
@@ -1678,6 +1733,8 @@ class Handler(BaseHTTPRequestHandler):
                 _SESSION_KEY[0] = secrets.token_urlsafe(24)
                 return self.json({"ok": True})
             if path == "/api/desktop/samples":         # preview settings changed here go to the desktop too
+                if b.get("family") == refmod.KEY:
+                    return self.json({"ok": True})     # a mod has no previews
                 desc = get_family(b.get("family", ""))
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)

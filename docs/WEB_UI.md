@@ -78,6 +78,10 @@ Every file and folder box has **Choose…**, which picks from what is already on
 
 Boxes that take a file or folder from your own data also have **Upload** beside it: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the device you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you. On the computer running Fizgig itself there's no need to upload: Choose… reaches the same files.
 
+## MiniMax H3 RefMod
+
+RefMod is in the web UI's model list, right after MiniMax H3, with the desktop app's RefMod card: Grid, References (with the token readout), Steps, Target MP, Clips, Description, Concept, the clip token cap and Audio support, its five presets, and H3's Training Base (Reference when its DiT is set). It runs on MiniMax H3's files and builds exactly the run the desktop app builds. A RefMod makes no previews and can't pause: it is made in one go. Judge a mod in the desktop app's RefMod Studio.
+
 ## Image Prep
 
 The desktop app's Image Prep tab, in the browser: resize and convert to PNG, face close-ups, the What will happen summary, Test face detection on one photo, and the Look Consistency Filter (pick 3 baselines from the folder's pictures, scan, Auto-Suggest, mark, move the marked ones to `excluded_by_look`). It all runs on the Fizgig machine, on its CPU, with the same code the desktop app runs. Face tools need insightface there (`install_fizgig.py` adds it). Gizmo, for cutting video clips and voice segments, opens in its own window, so it stays in the desktop app.

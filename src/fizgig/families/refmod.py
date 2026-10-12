@@ -334,3 +334,114 @@ def maker_command(python, repo_dir, st, dit, ref_dit, audio_vae, ref_dirs=(), ca
     # No previews (Peter, 16 Sep 2026): a mod is judged in RefMod Studio (the script keeps its --sample_* flags for
     # command-line sweeps).
     return cmd
+
+
+# ---- the run (the web UI's; the desktop app builds the same through these pieces) ---------------------------------
+SAFE_NUMBERS = {"NETWORK_DIM": "16", "NETWORK_ALPHA": "16", "LEARNING_RATE": "1e-4", "MAX_TRAIN_EPOCHS": "1",
+                "SAVE_EVERY_N_EPOCHS": "1", "LORA_LR_RATIO": "1", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0"}
+
+
+def dataset_toml(folder, megapixels, caption_ext, cache_root, clip_megapixels, cache_dir_for):
+    """The dataset TOML the desktop writes for RefMod: one folder, a square of toml_megapixels on the 16 grid,
+    clip_megapixels when the folder holds a clip, its own cache folder."""
+    side = int((float(megapixels) * 1_000_000) ** 0.5) // 16 * 16
+    lines = ["[general]", f"resolution = [{side}, {side}]", f'caption_extension = "{caption_ext}"', "batch_size = 1",
+             "num_repeats = 1", "enable_bucket = true", "bucket_no_upscale = true"]
+    try:
+        cmp_ = float(clip_megapixels or 0)
+    except (TypeError, ValueError):
+        cmp_ = 0.0
+    try:
+        has_clip = any(f.lower().endswith(".mp4") for f in os.listdir(folder))
+    except OSError:
+        has_clip = False
+    if cmp_ > 0 and has_clip:
+        lines.append(f"clip_megapixels = {cmp_:g}")
+    lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
+    if cache_root:
+        lines.append(f'cache_directory = "{cache_dir_for(cache_root, folder).replace(chr(92), "/")}"')
+    return "\n".join(lines) + "\n"
+
+
+def start_problems(st, models, image_folder, caption_ext=".txt"):
+    """What Start refuses for a RefMod run, in the desktop's order and words. st: the card's labels, LORA_NAME,
+    LORA_OUTPUT_DIR, DATASET_CONFIG, BLOCKS_SWAP, MINIMAX_TRAIN_BASE; models: {pref key: path}."""
+    from fizgig.families import checks
+    v = {**SAFE_NUMBERS, **st}
+    out = checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
+    for key, label in (("minimax_dit", "MiniMax H3 DiT"), ("minimax_vae", "MiniMax H3 Video VAE"),
+                       ("minimax_text_encoder", "Qwen3-VL-32B text encoder")):
+        path = models.get(key, "")
+        if not path:
+            out.append(f"{label} path is empty (set it on the Preferences tab)")
+        elif not os.path.exists(path):
+            out.append(f"{label} file does not exist: {path}")
+    if refmod_audio_on(st.get("MINIMAX_REFMOD_AUDIO")):
+        avae = models.get("minimax_audio_vae", "")
+        if not avae:
+            out.append("Audio mod is on but the MiniMax H3 Audio VAE path is empty — set it on the Preferences tab, or "
+                       "set Audio mod to off")
+        elif not os.path.exists(avae):
+            out.append(f"MiniMax H3 Audio VAE file does not exist: {avae}")
+        try:
+            secs = float(refmod_num(st.get("MINIMAX_REFMOD_AUDIO_SECONDS", "30"), "30", float))
+        except (TypeError, ValueError):
+            secs = 0.0
+        if not secs > 0:
+            out.append("Audio mod: 'Up to' must be a number of seconds above 0")
+    if st.get("MINIMAX_TRAIN_BASE") == "ref2va" and not models.get("minimax_ref_dit"):
+        out.append("Training Base is set to Reference (ref2va) but 'DiT (reference)' is empty on the Preferences tab. "
+                   "Easiest fix: on the Preferences tab tick 'Include the reference DiT (+21 GB)' and hit '⬇ Download "
+                   "models for me' — it fetches the model and fills the path in for you. Or switch Training Base back "
+                   "to First/last frame.")
+    bs = str(v.get("BLOCKS_SWAP") or "auto").strip()
+    swap = 0 if bs.lower().startswith("auto") else (int(bs) if bs.isdigit() else None)
+    name_error = checks.tidy_name(v.get("LORA_NAME"))[1]
+    out += checks.run(v, blocks_swap=swap, swap_max=BLOCKS_SWAP_MAX, arch_label=LABEL, name_error=name_error)
+    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+    out += checks.training_folder(image_folder, caption_ext, check_captions=not plain_encode(st.get("MINIMAX_REFMOD_STEPS")),
+                                  media_exts={e.lower() for e in IMAGE_EXTENSIONS} | {".mp4"})
+    return out
+
+
+def plan(st, models, *, python, repo_dir, image_folder, cache_root, cache_dir_for, caching=True, caption_ext=".txt",
+         clip_megapixels="0.25"):
+    """The RefMod launch as a launch.LaunchPlan: problems first; then the dataset TOML, latent caching, the
+    references' own pass at Target MP when it optimises at another size, text caching unless it is a plain encode,
+    then the maker. caching False runs the maker alone (the desktop's Enable Cache untick)."""
+    from fizgig.families.checks import tidy_name
+    from fizgig.families.launch import LaunchPlan, Stage
+    st = dict(st)
+    if image_folder and not os.path.isabs(image_folder):
+        image_folder = os.path.abspath(image_folder)
+    st["LORA_NAME"] = tidy_name(str(st.get("LORA_NAME") or ""))[0]
+    p = LaunchPlan(problems=start_problems(st, models, image_folder, caption_ext))
+    if p.problems:
+        return p
+    steps = st.get("MINIMAX_REFMOD_STEPS", REFMOD_DEFAULTS["MINIMAX_REFMOD_STEPS"])
+    mp = st.get("DATASET_MEGAPIXELS") or "0.25"
+    try:
+        p.dataset_toml = dataset_toml(image_folder, toml_megapixels(steps, mp), caption_ext, cache_root,
+                                      clip_megapixels, cache_dir_for)
+    except (TypeError, ValueError):
+        p.problems.append("Target MP must be a number above 0")
+        return p
+    p.files.append((st["DATASET_CONFIG"], p.dataset_toml))
+    p.dirs.append(st["LORA_OUTPUT_DIR"])
+    refs = ref_cache_dirs([image_folder], cache_root, cache_dir_for) if ref_pass_needed(steps, mp) else ()
+    maker = maker_command(python, repo_dir, st, models.get("minimax_dit", ""), models.get("minimax_ref_dit", ""),
+                          models.get("minimax_audio_vae", ""), refs, caching, p.console.append)
+    if caching:
+        latents = cache_latents_command(python, repo_dir, st["DATASET_CONFIG"], models.get("minimax_vae", ""),
+                                        models.get("minimax_audio_vae", ""), steps)
+        p.stages.append(Stage("Cache Preparation", latents))
+        if ref_pass_needed(steps, mp):
+            p.console.append(f"Encoding the references at {mp} MP after the latent caching.\n")
+            p.stages.append(Stage("Reference Caching", ref_cache_command(latents, mp)))
+        if plain_encode(steps):
+            p.console.append("Plain encode — no captions needed, skipping text encoder caching.\n")
+        else:
+            p.stages.append(Stage("Text Encoder Caching", cache_text_command(python, repo_dir, st["DATASET_CONFIG"],
+                                                                             models.get("minimax_text_encoder", ""))))
+    p.stages.append(Stage("Training", maker))
+    return p

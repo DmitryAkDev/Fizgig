@@ -126,7 +126,11 @@ function renderRow(r) {
   // across the card - from the schema's row kind, so every model's form lays out the same way
   const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind, "data-key": r.key});
-  if (r.kind === "note") { wrap.append(el("div", {class: "field-hint", text: r.label})); return wrap; }
+  if (r.kind === "note") {                        // its own text, and any the form's state writes (RefMod's tokens)
+    if (r.label) wrap.append(el("div", {class: "field-hint", text: r.label}));
+    wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+    return wrap;
+  }
   const v = S.values[r.key];
   let input;
   const set = (val) => onValue(r, val);
@@ -360,6 +364,7 @@ function renderPrefs() {
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
   for (const f of S.schema.families) {
+    if (f.prefs_skip) continue;              // RefMod: MiniMax H3's files, on H3's card
     const body = el("div", {class: "card-content" + (f.key === S.family ? "" : " collapsed")});
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
     for (const key of f.model_keys) {
@@ -710,6 +715,9 @@ async function pollRun() {
     showProgress(r.progress, r.state, r.lora, r.stage);
     $("btnStart").disabled = live;
     $("btnPause").disabled = !r.running;
+    // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
+    const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
+    $("btnPause").style.display = runFam.no_pause ? "none" : "";
     $("btnStop").disabled = !live;
     $("btnResume").style.display = !live && r.resume ? "" : "none";
   }

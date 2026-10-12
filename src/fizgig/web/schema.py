@@ -33,7 +33,23 @@ def describe_family(f) -> Dict[str, Any]:
     return data
 
 
-def get_schema() -> Dict[str, Any]:
-    """Every training family, in the registry's order, read fresh on each call."""
-    fams = [describe_family(f) for f in training_families()]
+def describe_refmod(h3, ref_dit_set=False) -> Dict[str, Any]:
+    """MiniMax H3 RefMod for the page (fizgig/families/refmod.py): not a family description - it runs on H3's files
+    and makes a mod, not a LoRA - so it is described here: its form, presets and H3's model files."""
+    from fizgig.families import refmod
+    f = form.refmod_form(h3, ref_dit_set)
+    return {"key": refmod.KEY, "display_name": refmod.LABEL, "gui_label": refmod.LABEL, "media": ["photo", "clip", "voice"],
+            "model_files": _jsonable(h3.model_files), "model_keys": form.model_keys(h3), "model_note": "",
+            "lora_name_suffix": refmod.LORA_NAME_SUFFIX, "is_refmod": True, "prefs_skip": True, "no_pause": True,
+            "form": f, "presets": f["presets"]}
+
+
+def get_schema(ref_dit_set=False) -> Dict[str, Any]:
+    """Every training family, in the registry's order, read fresh on each call; RefMod right after MiniMax H3, the
+    family whose files it runs on (as the desktop lists it)."""
+    fams, raw = [], list(training_families())
+    for f in raw:
+        fams.append(describe_family(f))
+        if f.key == "minimax":
+            fams.append(describe_refmod(f, ref_dit_set))
     return {"families": fams, "order": [f["key"] for f in fams]}
