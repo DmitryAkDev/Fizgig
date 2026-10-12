@@ -111,7 +111,10 @@ function renderSections(tab, host) {
 }
 
 function renderRow(r) {
-  const wrap = el("div", {class: "form-row", "data-key": r.key});
+  // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
+  // across the card - from the schema's row kind, so every model's form lays out the same way
+  const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide"}[r.kind] || "field";
+  const wrap = el("div", {class: "form-row kind-" + kind, "data-key": r.key});
   if (r.kind === "note") { wrap.append(el("div", {class: "field-hint", text: r.label})); return wrap; }
   const v = S.values[r.key];
   let input;
