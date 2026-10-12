@@ -4,9 +4,15 @@ Fizgig can run as a web page as well as a desktop app: on a pod, on a machine wi
 
 ## Starting it
 
+In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It runs in the background and stops when the desktop app closes.
+
+Without the desktop app (a server, or a pod with no desktop session):
+
 ```
 python lora_trainer_gui.py --web
 ```
+
+A run started in the browser is separate from one started in the desktop app, so start one at a time.
 
 The console prints the address, for example `Fizgig web UI on http://localhost:8081/`. The desktop app's Preferences → Web UI card has links to it: one for this machine, and one with this machine's network address for other devices.
 

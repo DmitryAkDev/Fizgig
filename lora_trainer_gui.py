@@ -959,6 +959,8 @@ DEFAULT_PREFS = {
     # The web UI's login password. Empty = the web UI only listens on this machine; set = it listens on every
     # address and asks for this password, so other devices can open it. --password / FIZGIG_PASSWORD win over it.
     "web_password": "",
+    # "1" = the desktop app starts the web UI in the background when it opens (Preferences > Web UI)
+    "web_autostart": "0",
 }
 
 
@@ -17545,6 +17547,31 @@ class LoRATrainerGUI:
         self.prefs_vars["web_port"].trace_add("write", _on_port_pref)
         self.prefs_vars["web_password"].trace_add("write", lambda *a: _paint_links())
 
+        _run_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
+        _run_row.grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 2))
+        self._web_ui_btn = ttk.Button(_run_row, text="Start web UI", command=self._web_ui_toggle)
+        self._web_ui_btn.pack(side=tk.LEFT)
+        self._web_ui_status = tk.Label(_run_row, text="Not running.", font=(FONT_FAMILY, 9),
+                                       fg=COLORS["text_secondary"], bg=COLORS["bg_surface"])
+        self._web_ui_status.pack(side=tk.LEFT, padx=(12, 0))
+        ttk.Checkbutton(web_card, text="Start the web UI whenever Fizgig opens",
+                        variable=self.prefs_vars["web_autostart"], onvalue="1", offvalue="0"
+                        ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(2, 2))
+        tk.Label(web_card, text="It runs alongside this window and stops when Fizgig closes. A run started in the "
+                                "browser is separate from one started here - start one at a time.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,
+                 justify=tk.LEFT).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
+        try:
+            # a web UI already serving on the port (left running, or started by hand) is Fizgig's, not a clash
+            from fizgig.web.port import is_fizgig, saved_port
+            _up = is_fizgig(saved_port(self.prefs))
+        except Exception:
+            _up = False
+        if _up:
+            self._web_ui_say(f"Already running on http://localhost:{saved_port(self.prefs)}/", "success")
+        elif str(self.prefs_vars["web_autostart"].get()) == "1":
+            self.master.after(1500, self._web_ui_start)
+
         # Card 3: Output Directories
         out_card = self._start_section_card(
             outer, "Output Directories",
@@ -33418,6 +33445,102 @@ class LoRATrainerGUI:
         except Exception:
             pass
 
+    # ---- the web UI, started from Preferences > Web UI ----------------------------------------------------------
+    def _web_ui_running(self):
+        p = getattr(self, "_web_ui_proc", None)
+        return p is not None and p.poll() is None
+
+    def _web_ui_say(self, text, colour="text_secondary"):
+        lbl = getattr(self, "_web_ui_status", None)
+        if lbl is not None:
+            try:
+                lbl.configure(text=text, fg=COLORS[colour])
+            except tk.TclError:
+                pass
+        btn = getattr(self, "_web_ui_btn", None)
+        if btn is not None:
+            try:
+                btn.configure(text="Stop web UI" if self._web_ui_running() else "Start web UI")
+            except tk.TclError:
+                pass
+
+    def _web_ui_toggle(self):
+        if self._web_ui_running():
+            self._web_ui_stop()
+            self._web_ui_say("Stopped.")
+        else:
+            self._web_ui_start()
+
+    def _web_ui_start(self):
+        """`lora_trainer_gui.py --web` in the background, with the port and password from Preferences. The address
+        it prints becomes the status; it is stopped when Fizgig closes."""
+        if self._web_ui_running():
+            return
+        try:
+            from fizgig.web.port import is_fizgig, saved_port
+            port = saved_port(self.prefs)
+            if is_fizgig(port):
+                self._web_ui_say(f"Already running on http://localhost:{port}/", "success")
+                return
+        except Exception:
+            pass
+        import subprocess
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+        kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+              if os.name == "nt" else {"start_new_session": True})
+        try:
+            self._web_ui_proc = subprocess.Popen(
+                [sys.executable, os.path.abspath(__file__), "--web"], cwd=FIZGIG_DIR, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", **kw)
+        except Exception as e:
+            self._web_ui_say(f"Could not start: {e}", "warning")
+            return
+        self._web_ui_say("Starting…")
+        proc = self._web_ui_proc
+
+        def watch():
+            tail = []
+            for line in proc.stdout:
+                line = line.rstrip()
+                if not line:
+                    continue
+                tail = (tail + [line])[-6:]
+                if "Fizgig web UI on " in line:
+                    addr = line.split("Fizgig web UI on ", 1)[1]
+                    self.master.after(0, lambda a=addr: self._web_ui_say(f"Running on {a}", "success"))
+                if "takes" in line and "keeps it" in line:          # moved to a free port: show it in the card
+                    self.master.after(0, lambda: self.prefs_vars["web_port"].set(
+                        str(load_prefs().get("web_port") or self.prefs_vars["web_port"].get())))
+            code = proc.wait()
+            if getattr(self, "_web_ui_proc", None) is proc and code not in (0, None) and \
+                    not getattr(self, "_web_ui_stopping", False):
+                msg = tail[-1] if tail else f"exit code {code}"
+                self.master.after(0, lambda: self._web_ui_say(f"Stopped: {msg}", "warning"))
+            else:
+                self.master.after(0, lambda: self._web_ui_say("Not running."))
+        threading.Thread(target=watch, daemon=True).start()
+
+    def _web_ui_stop(self):
+        p = getattr(self, "_web_ui_proc", None)
+        if p is None or p.poll() is not None:
+            return
+        self._web_ui_stopping = True
+        try:
+            if os.name == "nt":
+                import subprocess
+                subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"], capture_output=True,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            else:
+                import signal as _signal
+                os.killpg(os.getpgid(p.pid), _signal.SIGTERM)
+        except Exception:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        finally:
+            self._web_ui_stopping = False
+
     def _on_app_close(self):
         """WM_DELETE_WINDOW: never orphan a live training subprocess on window close."""
         proc = getattr(self, "current_process", None)
@@ -33438,6 +33561,10 @@ class LoRATrainerGUI:
                 self.stop_training()
             except Exception:
                 pass
+        try:
+            self._web_ui_stop()            # the web UI it started goes with it
+        except Exception:
+            pass
         # Final settings snapshot — some fields only persist via debounced traces or other
         # tabs' events, so closing mid-edit would otherwise drop the last change.
         try:
