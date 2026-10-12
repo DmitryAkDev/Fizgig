@@ -664,7 +664,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/fetch":
             return self.json(_fetch_status())
         if path == "/api/upload/root":
-            return self.json({"root": uploads_root()})
+            return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir"))})
         if path == "/api/stats":
             with _lock:
                 return self.json(dict(_stats))
@@ -887,7 +887,8 @@ class Handler(BaseHTTPRequestHandler):
                 live.send_desktop(str(b.get("cmd") or ""))
                 return self.json({"ok": True})
             if path == "/api/prefs":
-                allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir"}
+                allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir",
+                                                                                          "input_dataset_dir"}
                 ch = b.get("changes") or {}
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
                 if "cuda_device" in ch:

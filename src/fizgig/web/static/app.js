@@ -210,6 +210,7 @@ function renderPrefs() {
   const host = $("prefsForm");
   host.innerHTML = "";
   host.append(webPortCard());
+  host.append(dataFolderCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
@@ -348,6 +349,39 @@ function gpuPickCard() {
     el("div", {class: "card-title"}, el("span", {text: "GPU"})),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Train on:"}), sel), hint));
+}
+
+// where uploads go: Preferences' training data folder (the desktop's Input Directories > Training images), else
+// training_data inside Fizgig
+function showUploadRoot() {
+  api("/api/upload/root").then((d) => {
+    S.uploadRoot = d;
+    const box = $("dataFolder");
+    if (box && document.activeElement !== box) box.value = d.set ? d.root : "";
+    $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
+      (d.set ? "That folder is set in Preferences (Training data folder). " :
+        "That is Fizgig's own training_data folder; choose another in Preferences (Training data folder). ") +
+      "Uploading again with the same name adds to that folder.";
+  }).catch(() => {});
+}
+
+function dataFolderCard() {
+  const input = el("input", {type: "text", class: "w-path", id: "dataFolder", value: (S.uploadRoot && S.uploadRoot.set) ?
+    S.uploadRoot.root : "", placeholder: "Fizgig's own training_data folder"});
+  const save = async () => {
+    try { await api("/api/prefs", {changes: {input_dataset_dir: input.value.trim()}}); showUploadRoot(); }
+    catch (e) { hint.textContent = e.message; }
+  };
+  input.addEventListener("change", save);
+  const hint = el("div", {class: "field-hint", text: "Where uploaded training data goes, each upload in its own folder " +
+    "inside it, and where the folder pickers start. Leave it empty for Fizgig's own training_data folder. The " +
+    "desktop app's Preferences > Input Directories > Training images is the same setting."});
+  return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "Training data folder"})),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Folder:"}), input,
+        el("button", {class: "btn", text: "Browse…", onclick: () =>
+          pick(input.value, true, (p) => { input.value = p; save(); })})), hint));
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
@@ -790,10 +824,7 @@ function wire() {
     for (const en of entries) await collect(en, files);
     uploadFiles(files);
   });
-  api("/api/upload/root").then((d) => {
-    $("uploadWhere").textContent = `It goes into ${d.root}, in a folder with the name above. ` +
-      "Uploading again with the same name adds to that folder.";
-  }).catch(() => {});
+  showUploadRoot();
   document.querySelector('[data-pick="imageFolder"]').addEventListener("click", () =>
     pick(folder.value, true, (p) => { folder.value = p; setFolder(); }));
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
