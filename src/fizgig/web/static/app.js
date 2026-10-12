@@ -41,7 +41,7 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 async function boot() {
   try { S.schema = await api("/api/schema"); } catch (e) { return; }
   const st = await api("/api/state");
-  S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: is this page local
+  S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: where Choose… starts
   const pr = await api("/api/prefs");
   S.prefs = pr.models || {};
   S.webPort = pr.web_port;
@@ -148,9 +148,9 @@ function renderRow(r) {
     if (r.kind === "path" || r.kind === "folder") {
       const startAt = r.start === "output" ? (S.values.LORA_OUTPUT_DIR || "") :
         r.start === "data" ? ((S.uploadRoot && S.uploadRoot.root) || S.imageFolder) : S.imageFolder;
-      row.append(el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
+      row.append(el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
         pick(input.value || startAt, r.kind === "folder", (p) => { input.value = p; set(p); })}));
-      if (r.upload && !(S.uploadRoot && S.uploadRoot.local)) {
+      if (r.upload) {
         const up = uploadButton(r, input, set);
         row.append(up.btn);
         upStatus = up.status;
@@ -237,7 +237,7 @@ function renderPrefs() {
       });
       const row = el("div", {class: "field-row"},
         el("span", {class: "field-label", text: (m.label || key) + (m.required ? " *" : "") + ":"}), input,
-        el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
+        el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
           pick(input.value, false, (p) => { input.value = p; input.dispatchEvent(new Event("change")); })}));
       if (m.repo && m.path) {
         row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: "Download",
@@ -390,7 +390,7 @@ function dataFolderCard() {
     el("div", {class: "card-title"}, el("span", {text: "Training data folder"})),
     el("div", {class: "card-content"},
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Folder:"}), input,
-        el("button", {class: "btn", text: "Choose…", title: "On the machine running Fizgig", onclick: () =>
+        el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
           pick(input.value, true, (p) => { input.value = p; save(); })})), hint));
 }
 
@@ -833,7 +833,7 @@ function uploadButton(r, input, set) {
       say(`Uploaded to ${res.data.path}` + ((res.data.replaced || []).length ? " (replacing the one there)." : "."));
     } catch (e) { say(`${f.name}: ${e.message}`, true); }
   });
-  const btn = el("label", {class: "btn", title: "From the computer you're using now"},
+  const btn = el("label", {class: "btn", title: "From the device you're using now, sent to the machine running Fizgig. On the computer running Fizgig itself there's no need: Choose… picks it directly."},
     r.kind === "folder" ? "Upload a folder…" : "Upload…", picker);
   return {btn, status};
 }

@@ -60,7 +60,7 @@ Some models are gated: their makers require each user to accept the licence on H
 
 ## Uploading training data
 
-The training folder on the Start tab is a folder on the machine running Fizgig. When your training data is on the computer you're browsing from, use **Upload a training folder** on the Start tab: drop your folder onto it (or click **Choose a folder…**), and it uploads everything inside, subfolders included, into a new folder with the same name. You can also drop or choose single files, after typing a name for the new folder. When the upload finishes, the new folder becomes the training folder.
+The training folder on the Start tab is a folder on the machine running Fizgig. When your training data is on the computer you're browsing from, use **Upload a training folder** on the Start tab: drop your folder onto it (or click **Upload a folder…**), and it uploads everything inside, subfolders included, into a new folder with the same name. You can also drop or choose single files, after typing a name for the new folder. When the upload finishes, the new folder becomes the training folder.
 
 It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), caption `.txt` files, ACE-Step's `.json` song details, and `.zip` files, which are unpacked as they arrive. Anything else is left out and listed. Convert other video formats (`.mov`, `.webm`) to `.mp4` first.
 
@@ -70,7 +70,7 @@ Uploads go into the desktop app's Preferences → Input Directories folder, in a
 
 Every file and folder box has **Choose…**, which picks from what is already on the machine running Fizgig: a LoRA you trained earlier, data you uploaded before or copied over another way. Its shortcuts jump to the training data folder, your trained LoRAs, uploaded files and the Fizgig folder.
 
-Boxes that take a file or folder from your own data also have **Upload** beside it: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the device you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you. When the page is open on the machine running Fizgig itself, the upload buttons (and the Start tab's upload card) are hidden: Choose… reaches the same files.
+Boxes that take a file or folder from your own data also have **Upload** beside it: the context LoRA, an edit run's test photo and edited-photos folder, a slider's second-look folder, and a fine-tune's regularisation images. **Upload…** sends one file from the device you're using into the `uploads` folder inside Fizgig; **Upload a folder…** sends a whole folder into the training data folder, as above. Either way the box is filled in for you. On the computer running Fizgig itself there's no need to upload: Choose… reaches the same files.
 
 ## Choosing the GPU
 
