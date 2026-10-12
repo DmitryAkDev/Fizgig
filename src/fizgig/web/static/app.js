@@ -1638,6 +1638,13 @@ function studioExtra() {
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s]})), ref_mode: ref};
 }
 
+function studioCanvas() {
+  // H3: [width, height, frames, keyframes, references] of the first clip, so Auto loads the base with room for it
+  if (S.st.layout.kind !== "video") return null;
+  const x = studioExtra(), n = x.keyframes.length;
+  return [x.video.width, x.video.height, x.video.frames, x.ref_mode ? 0 : n, x.ref_mode ? n : 0];
+}
+
 function studioNegRow() {
   const L = S.st.layout;
   if (!L) return;
@@ -1888,7 +1895,8 @@ async function studioStart() {
     S.st.ready = false;
     await api("/api/studio/load", {family: L.key, primary: $("stPrimary").value.trim(), donor: $("stDonor").value.trim(),
       fast, turbo: $("stTurbo").checked, negative: $("stNeg").value.trim(),
-      h3_model: L.kind === "video" ? $("stH3Model").value : "", base_mode: L.kind === "video" ? L.video.base_of[$("stH3Base").value] : ""});
+      h3_model: L.kind === "video" ? $("stH3Model").value : "", base_mode: L.kind === "video" ? L.video.base_of[$("stH3Base").value] : "",
+      canvas: studioCanvas()});
     S.st.loadedKey = key;
     S.st.pendingFirst = true;
     studioPoll();

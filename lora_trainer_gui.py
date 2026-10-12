@@ -20788,6 +20788,12 @@ class LoRATrainerGUI:
         # ~16x on H3 and is never used)
         self.repair_engine.turbo_preview = self.repair_turbo_var.get()
         self.repair_status_var.set(f"Loading {desc.display_name} (the base takes a minute)…")
+        try:    # Auto plans the base for the clip this tab renders first (its size, length and photos)
+            w, h = self._repair_h3_canvas()
+            n, ref = len(self._repair_h3_keyframe_spec()), self._repair_h3_ref_mode()
+            self.repair_engine.plan_canvas = (w, h, int(self._repair_h3_frames()), 0 if ref else n, n if ref else 0)
+        except Exception:
+            self.repair_engine.plan_canvas = None
         return dict(dit_path=dit_path, vae_path=vae_path, text_encoder_path=te_path, device="cuda",
                     speed_lora_path=turbo_path,
                     turbo_lora_strength=(desc.preview_speed_defaults() or (None, 0.75))[1],

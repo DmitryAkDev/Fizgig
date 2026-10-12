@@ -313,7 +313,7 @@ def _studio_post(what, b):
             raise ValueError(" ".join(problems))
         captions.unload()                       # the caption model leaves the GPU too
         studio.load(desc, str(b.get("primary") or "").strip(), str(b.get("donor") or "").strip(), kw, settings,
-                    status, b.get("turbo", True))
+                    status, b.get("turbo", True), canvas=b.get("canvas") if desc.video_workbench else None)
         return {"ok": True}
     if what == "render":
         return studio.render(b.get("state") or {}, extra={k: b.get(k) for k in ("video", "audio", "keyframes", "ref_mode")

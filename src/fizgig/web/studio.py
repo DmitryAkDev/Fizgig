@@ -199,7 +199,7 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
     return kw, settings, status, problems
 
 
-def load(desc, primary, donor, kw, settings, status, turbo):
+def load(desc, primary, donor, kw, settings, status, turbo, canvas=None):
     if not primary or not os.path.isfile(primary):
         raise ValueError("Choose a primary LoRA first (that file isn't there).")
     if donor and not os.path.isfile(donor):
@@ -217,7 +217,7 @@ def load(desc, primary, donor, kw, settings, status, turbo):
             with _lock:
                 _S["status"] = status
             _send({"cmd": "load", "family": desc.key, "plan": kw, "primary": primary, "donor": donor or "",
-                   "turbo": bool(turbo), "preview_settings": settings, "status": status})
+                   "turbo": bool(turbo), "preview_settings": settings, "status": status, "canvas": canvas})
         except Exception as e:
             with _lock:
                 _S.update(state="idle", error=str(e), status=f"Couldn't start: {e}")

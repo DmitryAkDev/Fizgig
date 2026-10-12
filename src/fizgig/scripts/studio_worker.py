@@ -78,6 +78,7 @@ def cmd_load(c):
             eng.preview_settings = c["preview_settings"]
         eng.on_step = lambda done, total: emit(ev="step", done=done, total=total)
         emit(ev="status", text=c.get("status") or f"Loading {desc.display_name}…")
+        eng.plan_canvas = tuple(c["canvas"]) if c.get("canvas") else None   # H3 Auto: room for this clip
         eng.ensure_pipeline(**plan)
         emit(ev="status", text="Loading the LoRA…")
         eng.load_primary(c["primary"])
@@ -239,8 +240,15 @@ def _render_clips(eng, desc, st, c, out, gen):
                 with_audio=bool(v.get("sound", True)))
     spec = getattr(desc, "clip_spec", None)
     fps, rate = (spec.fps, spec.audio_rate) if spec is not None else (24, 32000)
+    import torch
+    torch.cuda.reset_peak_memory_stats()
+    rest = torch.cuda.memory_allocated() / 2**30
     base = eng.baseline_clip(st, cache=None, **opts)
     tweak = eng.render_clip(st, cache=None, **opts)
+    print(f"[studio] clip {width}x{height} x{frames}, {len(st.keyframes or [])} keyframe(s), "
+          f"{len(st.references or [])} reference(s): peak {torch.cuda.max_memory_allocated() / 2**30:.2f} GB allocated, "
+          f"{torch.cuda.max_memory_reserved() / 2**30:.2f} GB reserved, from {rest:.2f} GB at rest "
+          f"(base {getattr(eng, 'base_plan', None)})", flush=True)
     paths = {}
     for name, clip in (("baseline", base), ("tweaked", tweak)):
         png = os.path.join(out, f"{name}_{gen}.png")
