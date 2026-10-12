@@ -114,3 +114,4 @@ training_data/
 # single files uploaded through the web UI (a context LoRA, a test photo)
 uploads/
 .fizgig_web_caption/
+.fizgig_web_zips/

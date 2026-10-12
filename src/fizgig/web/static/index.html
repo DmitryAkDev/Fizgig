@@ -24,6 +24,7 @@
           <button class="tab-item" data-tab="captions">2. Captions</button>
           <button class="tab-item" data-tab="samples">3. Samples</button>
           <button class="tab-item" data-tab="training">4. Training</button>
+          <button class="tab-item" data-tab="outputs">Download your outputs</button>
           <button class="tab-item" data-tab="prefs">Preferences</button>
         </nav>
         <div class="top-status-container run-badge" id="runBadge" title="The current run"></div>
@@ -237,6 +238,32 @@
           </div>
         </section>
 
+        <section id="tab-outputs" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Download your outputs</h1>
+            <p>Every LoRA and fine-tune saved in Fizgig's output folders, newest run first. Download sends a file to
+              the device you're using now. On a pod, very large fine-tunes come off faster through the file manager
+              on port 8080.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Search:</span>
+                <input type="text" id="outSearch" class="w-path" placeholder="run name or folder">
+                <button class="btn" id="outReload">Reload</button></div>
+              <div class="field-row"><span class="field-label">Saved:</span>
+                <select id="outWhen" class="w-combo">
+                  <option value="any">Any time</option><option value="1">In the last 24 hours</option>
+                  <option value="7">In the last 7 days</option><option value="30">In the last 30 days</option>
+                  <option value="custom">Between two dates…</option></select></div>
+              <div class="field-row" id="outRange" style="display:none"><span class="field-label">From / to:</span>
+                <input type="date" id="outFrom"> <input type="date" id="outTo"></div>
+              <label class="checkbox-label"><input type="checkbox" id="outFizgigOnly" checked>
+                Only Fizgig's outputs (untick to also see other LoRAs kept in the same folders)</label>
+              <div class="field-hint" id="outSummary"></div>
+            </div>
+          </div>
+          <div id="outRuns"></div>
+        </section>
         <section id="tab-prefs" class="tab-panel">
           <div class="tab-banner">
             <h1>Preferences</h1>

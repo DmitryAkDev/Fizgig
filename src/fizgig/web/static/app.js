@@ -629,6 +629,68 @@ async function loadCheckpoints() {
     "Nothing saved yet. Checkpoints appear here as the run saves them.";
 }
 
+// ---- Download your outputs tab ------------------------------------------------------------------------------
+async function loadOutputs() {
+  const all = !$("outFizgigOnly").checked;
+  let r;
+  try { r = await api("/api/outputs" + (all ? "?all=1" : "")); } catch (e) { $("outSummary").textContent = e.message; return; }
+  S.outputs = r;
+  renderOutputs();
+}
+
+function renderOutputs() {
+  const r = S.outputs;
+  if (!r) return;
+  const q = $("outSearch").value.trim().toLowerCase();
+  // saved when: the last N days, or between two dates (the end date counts in full); a run keeps its files in range
+  const when$ = $("outWhen").value;
+  let lo = 0, hi = Infinity;
+  if (when$ === "custom") {
+    if ($("outFrom").value) lo = new Date($("outFrom").value + "T00:00:00").getTime() / 1000;
+    if ($("outTo").value) hi = new Date($("outTo").value + "T23:59:59").getTime() / 1000;
+  } else if (when$ !== "any") lo = Date.now() / 1000 - Number(when$) * 86400;
+  const inRange = (f) => f.time >= lo && f.time <= hi;
+  const runs = r.runs
+    .filter((x) => !q || (x.name + " " + x.folder).toLowerCase().includes(q))
+    .map((x) => ({...x, files: x.files.filter(inRange)}))
+    .filter((x) => x.files.length);
+  const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
+  const when = (t) => new Date(t * 1000).toLocaleString();
+  $("outSummary").textContent = `${r.runs.length} run${r.runs.length === 1 ? "" : "s"} in ${r.folders.length} ` +
+    `folder${r.folders.length === 1 ? "" : "s"}` + (q || when$ !== "any" ? ` · ${runs.length} shown` : "") +
+    (r.hidden ? ` · ${r.hidden} other LoRA${r.hidden === 1 ? "" : "s"} in these folders hidden` : "") + ".";
+  const host = $("outRuns");
+  host.innerHTML = "";
+  const dl = (f) => el("a", {class: "btn btn-sm btn-primary", download: f.name, text: "Download",
+    href: `/api/download?path=${encodeURIComponent(f.path)}&t=${encodeURIComponent(TOKEN)}`});
+  const row = (f) => el("div", {class: "checkpoint-row"},
+    el("span", {class: "checkpoint-name", text: f.name}),
+    el("span", {class: "field-hint", text: `${f.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
+      `${size(f.size)} · ${when(f.time)}`}), dl(f));
+  for (const run of runs.slice(0, 200)) {
+    const [top, ...rest] = run.files;
+    const more = el("div", {class: "checkpoint-list", style: "display:none"}, rest.map(row));
+    const body = el("div", {class: "card-content"}, el("div", {class: "checkpoint-list"}, row(top)));
+    if (rest.length) body.append(el("button", {class: "btn btn-sm", text: `Show ${rest.length} earlier checkpoint` +
+      (rest.length === 1 ? "" : "s"), onclick: (e) => {
+        const open = more.style.display === "none";
+        more.style.display = open ? "" : "none";
+        e.target.textContent = open ? "Hide the earlier checkpoints" : `Show ${rest.length} earlier checkpoint` +
+          (rest.length === 1 ? "" : "s");
+      }}), more);
+    if (run.samples) body.append(el("div", {class: "field-row"}, el("a", {class: "btn btn-sm",
+      text: `Download the previews (${run.samples} files, .zip)`,
+      href: `/api/outputs/previews?dir=${encodeURIComponent(run.folder)}&name=${encodeURIComponent(run.name)}` +
+        `&t=${encodeURIComponent(TOKEN)}`})));
+    host.append(el("div", {class: "section-card"},
+      el("div", {class: "card-title"}, el("span", {text: run.name})),
+      el("div", {class: "card-desc", text: `${run.folder} · last saved ${when(run.time)}`}), body));
+  }
+  if (!runs.length) host.append(el("div", {class: "section-card"}, el("div", {class: "card-content"},
+    el("div", {class: "field-hint", text: r.runs.length ? "Nothing matches that search and date." :
+      "Nothing saved yet. A run's LoRAs and checkpoints appear here as it saves them."}))));
+}
+
 // ---- Captions tab ----------------------------------------------------------------------------------------
 // The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
 const CAP_PAGE = 40;
@@ -884,6 +946,7 @@ function showTab(name) {
   if (name === "captions") loadCaptions();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
+  if (name === "outputs") loadOutputs();
   api("/api/state", {tab: name}).catch(() => {});
 }
 
@@ -1060,6 +1123,15 @@ function wire() {
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
   wireCaptions();
+  $("outReload").addEventListener("click", loadOutputs);
+  $("outFizgigOnly").addEventListener("change", loadOutputs);
+  $("outSearch").addEventListener("input", debounce(renderOutputs, 200));
+  $("outWhen").addEventListener("change", () => {
+    $("outRange").style.display = $("outWhen").value === "custom" ? "" : "none";
+    renderOutputs();
+  });
+  $("outFrom").addEventListener("change", renderOutputs);
+  $("outTo").addEventListener("change", renderOutputs);
   $("btnCheck").addEventListener("click", check);
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("btnPause").addEventListener("click", () => start("/api/pause"));

@@ -220,6 +220,134 @@ def _safe(name):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:80] or "run"
 
 
+_meta_cache: dict = {}         # path -> (mtime, metadata) - a folder of LoRAs is read once, not on every look
+
+
+def _safetensors_meta(path) -> dict:
+    """A .safetensors file's metadata header (a few KB, never the tensors)."""
+    try:
+        mtime = os.path.getmtime(path)
+        hit = _meta_cache.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        with open(path, "rb") as f:
+            n = int.from_bytes(f.read(8), "little")
+            meta = json.loads(f.read(n)).get("__metadata__") or {} if 0 < n < (64 << 20) else {}
+    except (OSError, ValueError):
+        meta = {}
+    _meta_cache[path] = (mtime if "mtime" in locals() else 0, meta)
+    return meta
+
+
+def _fizgig_made(meta) -> bool:
+    """Trained by Fizgig: its LoRAs name it as their network module, its fine-tunes carry fizgig_finetune."""
+    return "fizgig" in str(meta.get("ss_network_module", "")).lower() or bool(meta.get("fizgig_finetune"))
+
+
+def output_folders() -> list:
+    """Every folder Fizgig saves LoRAs and fine-tunes to: the web UI's per-model output folders, the desktop app's
+    (its .last_used.json lora_output_dirs), the default output_loras, and the runs going now."""
+    found = [OUTPUT_DEFAULT]
+    for vals in (load_state().get("values") or {}).values():
+        if isinstance(vals, dict) and vals.get("LORA_OUTPUT_DIR"):
+            found.append(vals["LORA_OUTPUT_DIR"])
+    desk = _read_json(os.path.join(BASE_DIR, ".last_used.json")).get("lora_output_dirs")
+    if isinstance(desk, dict):
+        found += [v for v in desk.values() if isinstance(v, str) and v]
+    with _lock:
+        found.append(_run.get("output_dir") or "")
+    d = live.desktop_state()
+    if d and d.get("output_dir"):
+        found.append(d["output_dir"])
+    out, seen = [], set()
+    for f in found:
+        f = pref_path({"x": f}, "x") if f else ""
+        key = os.path.normcase(os.path.abspath(f)) if f else ""
+        if f and key not in seen and os.path.isdir(f):
+            seen.add(key)
+            out.append(os.path.abspath(f))
+    return out
+
+
+_CKPT = re.compile(r"^(.*)-(\d{6})$")
+
+
+def list_outputs(fizgig_only=True) -> dict:
+    """Runs, newest first: {name, folder, files (the final first, then its checkpoints newest first), time,
+    samples (how many previews)}; `hidden` counts the other LoRAs left out when fizgig_only."""
+    from concurrent.futures import ThreadPoolExecutor
+    runs, hidden, now = {}, 0, time.time()
+    for folder in output_folders():
+        try:
+            entries = [e for e in os.scandir(folder) if e.is_file() and e.name.lower().endswith(".safetensors")]
+        except OSError:
+            continue
+        entries = [e for e in entries if now - e.stat().st_mtime >= 5]       # not one still being written
+        # each file's header, read side by side (a ComfyUI loras folder can hold a thousand LoRAs; one at a time
+        # that is a long wait on a slow disk), then remembered until the file changes
+        with ThreadPoolExecutor(16) as pool:
+            metas = dict(zip((e.path for e in entries), pool.map(lambda e: _safetensors_meta(e.path), entries)))
+        previews = _folder_previews(folder)
+        for e in entries:
+            st = e.stat()
+            meta = metas[e.path]
+            if fizgig_only and not _fizgig_made(meta):
+                hidden += 1
+                continue
+            stem = e.name[:-len(".safetensors")]
+            m = _CKPT.match(stem)
+            base, epoch = (m.group(1), int(m.group(2))) if m else (stem, None)
+            r = runs.setdefault((folder, base), {"name": base, "folder": folder, "files": [], "time": 0})
+            r["files"].append({"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
+                               "epoch": epoch, "kind": "finetune" if meta.get("fizgig_finetune") else "lora"})
+            r["time"] = max(r["time"], st.st_mtime)
+            r["samples"] = previews.get(base, 0)
+    for r in runs.values():
+        r["files"].sort(key=lambda f: (f["epoch"] is not None, -(f["epoch"] or 0), -f["time"]))
+    return {"runs": sorted(runs.values(), key=lambda r: -r["time"]), "hidden": hidden,
+            "folders": output_folders()}
+
+
+def _folder_previews(folder) -> dict:
+    """{run name: how many previews} for an output folder's sample/, scanned once: a preview is named
+    <run>_e<epoch>_…, so its run is everything before the last "_e<digits>_"."""
+    out = {}
+    try:
+        for e in os.scandir(os.path.join(folder, "sample")):
+            if e.is_file() and os.path.splitext(e.name)[1].lower() in MEDIA:
+                m = re.match(r"^(.*)_e\d+_", e.name)
+                if m:
+                    out[m.group(1)] = out.get(m.group(1), 0) + 1
+    except OSError:
+        pass
+    return out
+
+
+def _run_samples(folder, name):
+    """A run's preview files in <output>/sample (they start with the run's name)."""
+    sdir = os.path.join(folder, "sample")
+    try:
+        return sorted(e.path for e in os.scandir(sdir) if e.is_file()
+                      and os.path.splitext(e.name)[1].lower() in MEDIA
+                      and (re.match(r"^(.*)_e\d+_", e.name) or [None, None])[1] == name)  # not a longer-named run's
+    except OSError:
+        return []
+
+
+def samples_zip(folder, name) -> str:
+    """The run's previews in one zip (stored, not compressed: pictures and songs don't shrink), for downloading."""
+    import zipfile
+    files = _run_samples(folder, name)
+    if not files:
+        raise ValueError("This run has no previews.")
+    os.makedirs(os.path.join(BASE_DIR, ".fizgig_web_zips"), exist_ok=True)
+    out = os.path.join(BASE_DIR, ".fizgig_web_zips", re.sub(r"[^\w.-]+", "_", name) + "_previews.zip")
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
+        for p in files:
+            z.write(p, os.path.basename(p))
+    return out
+
+
 def _checkpoint_kind(path) -> str:
     """'finetune' (a whole model, the source file with the trained tensors replaced) or 'lora', from the file's
     metadata header - a few KB read, never the tensors."""
@@ -741,6 +869,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(p, attachment=False)       # in pieces, with byte ranges: songs and clips seek
         if path == "/api/checkpoints":
             return self._checkpoints((qs.get("dir") or [""])[0])
+        if path == "/api/outputs":
+            return self.json(list_outputs(fizgig_only=(qs.get("all") or ["0"])[0] != "1"))
+        if path == "/api/outputs/previews":
+            folder, name = (qs.get("dir") or [""])[0], (qs.get("name") or [""])[0]
+            if os.path.abspath(folder) not in output_folders():
+                return self.json({"error": "not an output folder"}, 404)
+            try:
+                return self._stream(samples_zip(folder, name))
+            except ValueError as e:
+                return self.json({"error": str(e)}, 404)
         if path == "/api/download":
             p = (qs.get("path") or [""])[0]
             if not p.lower().endswith(".safetensors") or not os.path.isfile(p):
