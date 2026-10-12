@@ -465,14 +465,18 @@ const saveStateSoon = debounce(saveState, 600);
 // ---- the run -----------------------------------------------------------------------------------------------
 const runBody = () => ({family: S.family, values: S.values, image_folder: S.imageFolder});
 
-function showProblems(list) {
-  $("problems").textContent = (list || []).length ? "Can't start yet:\n• " + list.join("\n• ") : "";
+function showProblems(list, okText) {
+  const box = $("problems"), bad = (list || []).length;
+  box.classList.toggle("ok", !bad && !!okText);
+  box.textContent = bad ? "Can't start yet:\n• " + list.join("\n• ") : (okText || "");
 }
 
 async function check() {
-  const p = await api("/api/plan", runBody());
-  showProblems(p.problems);
-  if (!p.problems.length) $("runStatus").textContent = "Ready: " + p.stages.map((s) => s.name).join(" → ");
+  try {
+    const p = await api("/api/plan", runBody());
+    showProblems(p.problems, "✓ All good - nothing missing, Start Training will work. It will run: " +
+      p.stages.map((s) => s.name).join(" → ") + ".");
+  } catch (e) { showProblems([e.message]); }
 }
 
 async function start(path) {
@@ -1116,6 +1120,14 @@ function wireCaptions() {
   $("capTask").addEventListener("change", onCapTask);
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
     $(id).addEventListener("change", saveCapSoon);
+  // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
+  $("capTrigger").addEventListener("input", () => {
+    const word = $("capTrigger").value.trim().replace(/,+$/, "").trim();
+    if (!word) return;
+    S.values.CAPTION_TRIGGER_WORD = word;
+    syncInputs(["CAPTION_TRIGGER_WORD"]);
+    saveStateSoon();
+  });
   $("capEditInstr").addEventListener("click", () =>
     $("capInstrBox").style.display === "none" ? openInstr() : ($("capInstrBox").style.display = "none"));
   $("capInstrSave").addEventListener("click", () => saveInstr($("capInstr").value));

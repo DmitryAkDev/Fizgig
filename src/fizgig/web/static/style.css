@@ -1525,3 +1525,6 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 
 /* a switch line followed by buttons (Bilingual: Skip... then Translate captions): room between them */
 .checkbox-label + .field-row { margin-top: 12px; }
+
+/* Check settings found nothing wrong */
+.problems.ok { color: var(--success); }

@@ -209,7 +209,8 @@ def form(desc):
                  "Filter scan)", "check"),
             _row("KREA2_AUTO_RECAPTION", "Auto-recaption stuck images (Qwen3-VL rewrites the caption between "
                  "epochs)", "check", "Needs the Krea 2 text encoder set in Preferences."),
-            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption."),
+            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption. Filled in from the Captions tab's "
+                 "trigger word."),
         ]
     params += by_section("training", "", "lora")
     if desc.identity_blocks:

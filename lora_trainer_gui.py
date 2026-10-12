@@ -4188,12 +4188,22 @@ class LoRATrainerGUI:
         )
         self._krea2_perimglr_cb.grid(row=21, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(2, 0))
         self.krea2_auto_recaption_var = tk.BooleanVar(value=bool(self.settings.get("KREA2_AUTO_RECAPTION", False)))
+        # the tick and its trigger word together, so they show and hide as one
+        self._krea2_autorecap_frame = tk.Frame(training_content, bg=COLORS["bg_surface"])
+        self._krea2_autorecap_frame.grid(row=22, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(2, 0))
         self._krea2_autorecap_cb = ttk.Checkbutton(
-            training_content,
+            self._krea2_autorecap_frame,
             text="Auto-recaption stuck images (Qwen3-VL rewrites the caption between epochs) — experimental",
             variable=self.krea2_auto_recaption_var,
         )
-        self._krea2_autorecap_cb.grid(row=22, column=0, columnspan=2, sticky=tk.W, padx=5, pady=(2, 0))
+        self._krea2_autorecap_cb.pack(anchor=tk.W)
+        _trig_row = tk.Frame(self._krea2_autorecap_frame, bg=COLORS["bg_surface"])
+        _trig_row.pack(anchor=tk.W, padx=(24, 0), pady=(2, 0))
+        ttk.Label(_trig_row, text="Trigger word:").pack(side=tk.LEFT)
+        self.recaption_trigger_var = tk.StringVar(value=str(self.settings.get("CAPTION_TRIGGER_WORD", "") or ""))
+        ttk.Entry(_trig_row, textvariable=self.recaption_trigger_var, width=24).pack(side=tk.LEFT, padx=(6, 0))
+        tk.Label(_trig_row, text="added at the end of each new caption; filled in from the Captions tab's trigger word",
+                 font=HINT_FONT, fg=COLORS["text_explain"], bg=COLORS["bg_surface"]).pack(side=tk.LEFT, padx=(10, 0))
         self.krea2_warmup_look_var = tk.BooleanVar(value=bool(self.settings.get("KREA2_WARMUP_LOOK", False)))
         self._krea2_warmuplook_cb = ttk.Checkbutton(
             training_content,
@@ -5158,6 +5168,8 @@ class LoRATrainerGUI:
             self.krea2_auto_recaption_var.set(bool(preset["KREA2_AUTO_RECAPTION"]))
         if "KREA2_WARMUP_LOOK" in preset and hasattr(self, 'krea2_warmup_look_var'):
             self.krea2_warmup_look_var.set(bool(preset["KREA2_WARMUP_LOOK"]))
+        if "CAPTION_TRIGGER_WORD" in preset and hasattr(self, 'recaption_trigger_var'):
+            self.recaption_trigger_var.set(str(preset["CAPTION_TRIGGER_WORD"] or ""))
 
         # Adaptive LR checkbox + sync enabled state of Min/Max LR dropdowns
         if "ADAPTIVE_LR" in preset and hasattr(self, 'adaptive_lr_var'):
@@ -6313,7 +6325,7 @@ class LoRATrainerGUI:
             loss_watch={"detect": self.krea2_loss_watch_var.get(), "per_image_lr": self.krea2_per_image_lr_var.get(),
                         "warmup": self.krea2_warmup_look_var.get(), "recaption": self.krea2_auto_recaption_var.get()},
             captioner=self._qwen_captioner_path(),
-            caption_trigger=(self.caption_trigger_var.get().strip() if hasattr(self, "caption_trigger_var") else ""),
+            caption_trigger=(self.recaption_trigger_var.get().strip() if hasattr(self, "recaption_trigger_var") else ""),
             caption_overrides=self._caption_overrides(),
             samples={"enabled": bool(self.sample_enabled_var.get()),
                      "every": self.sample_every_n_epochs_var.get().strip(),
@@ -6399,6 +6411,7 @@ class LoRATrainerGUI:
         _grab("krea2_loss_watch_var", "KREA2_LOSS_WATCH")
         _grab("krea2_per_image_lr_var", "KREA2_PER_IMAGE_LR")
         _grab("krea2_auto_recaption_var", "KREA2_AUTO_RECAPTION")
+        _grab("recaption_trigger_var", "CAPTION_TRIGGER_WORD")
         _grab("krea2_warmup_look_var", "KREA2_WARMUP_LOOK")
         _grab("multiconcept_var", "FAMILY_MULTICONCEPT")
         _grab("adaptive_lr_var", "ADAPTIVE_LR")
@@ -7174,7 +7187,7 @@ class LoRATrainerGUI:
         for w in (self._krea2_losswatch_frame, self._krea2_perimglr_cb, self._krea2_warmuplook_cb,
                   self._krea2_losswatch_hint):
             self._set_widget_visible(w, _lw)
-        self._set_widget_visible(self._krea2_autorecap_cb, _lw and self._family_can_caption(desc))
+        self._set_widget_visible(self._krea2_autorecap_frame, _lw and self._family_can_caption(desc))
         self._refresh_samples_ft_note()
         # Network Type (LoRA/LoKR); a family with one network type hides it (_generic_training_visibility). The
         # row frame carries the combo + hint together.
@@ -8608,7 +8621,13 @@ class LoRATrainerGUI:
         )
 
         ttk.Label(settings_card, text="Trigger Word:").grid(row=2, column=0, sticky=tk.W, padx=(0, 10), pady=4)
-        self.caption_trigger_var = tk.StringVar(value=self.settings.get("CAPTION_TRIGGER_WORD", ""))
+        self.caption_trigger_var = tk.StringVar(value="")
+
+        def _fill_recaption_trigger(*_):
+            word = self.caption_trigger_var.get().strip().rstrip(",").strip()
+            if word and hasattr(self, "recaption_trigger_var"):
+                self.recaption_trigger_var.set(word)
+        self.caption_trigger_var.trace_add("write", _fill_recaption_trigger)
         ttk.Entry(settings_card, textvariable=self.caption_trigger_var, width=40).grid(row=2, column=1, sticky=tk.W, pady=4)
         tk.Label(settings_card, text="(prepended to all captions)",
                  font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"]).grid(
