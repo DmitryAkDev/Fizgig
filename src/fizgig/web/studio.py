@@ -14,6 +14,7 @@ import time
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 OUT_DIR = os.path.join(BASE_DIR, ".fizgig_web_studio")
+RM_DIR = os.path.join(OUT_DIR, "refmod")      # RefMod Studio's renders: its history outlives a worker restart
 EV = "@@EV "
 
 _lock = threading.Lock()
@@ -44,6 +45,13 @@ _TG = [0]                                    # one generation counter across the
 _R = {"state": "idle", "gen": 0, "items": [], "total": 0, "status": "", "error": "", "progress": None, "meta": {}}
 
 
+# RefMod Studio on the same worker: the With-mods render, the comparison (kept while its settings hold), the sweep's
+# chips and the last renders (history)
+_M = {"state": "idle", "gen": 0, "kind": "", "status": "", "error": "", "progress": None, "early": "", "tweaked": None,
+      "baseline": None, "baseline_key": None, "pending_key": None, "chips": [], "history": [], "label": "", "sweep": ""}
+RM_HISTORY = 12
+
+
 def _reader(proc):
     for line in proc.stdout:
         if not line.startswith(EV):
@@ -66,6 +74,9 @@ def _reader(proc):
             for t in _T.values():
                 if t["state"] == "rendering":
                     t.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.")
+            if _M["state"] == "rendering":
+                _M.update(state="failed", error="The GPU worker stopped.", status="The GPU worker stopped.",
+                          progress=None)
 
 
 def _event(ev):
@@ -78,7 +89,31 @@ def _event(ev):
             _S["status"] = ev.get("text", "")
         elif kind == "step":
             _S["progress"] = [ev.get("done", 0), ev.get("total", 0)]
-            _R["progress"] = _S["progress"]
+            _R["progress"] = _M["progress"] = _S["progress"]
+        elif kind == "rm_status":
+            _M["status"] = ev.get("text", "")
+        elif kind == "rm_early" and ev.get("gen") == _M["gen"]:
+            _M.update(early=ev.get("png", ""), status=f"Early look after pass {ev.get('step')} of {ev.get('n')} - finishing…")
+        elif kind == "rm_item" and ev.get("gen") == _M["gen"]:
+            item = {k: ev.get(k) for k in ("gen", "side", "i", "png", "mp4", "label", "describe", "steps", "turbo",
+                                           "frames")}
+            item["label"] = item["label"] or _M["label"]
+            if ev.get("side") == "chip":
+                _M["chips"].append(item)
+                _M["status"] = f"Sweep: {len(_M['chips'])} done…"
+            elif ev.get("side") == "baseline":
+                _M.update(baseline=item, baseline_key=_M["pending_key"])
+            else:
+                _M.update(tweaked=item, early="")
+                _M["history"] = ([item] + _M["history"])[:RM_HISTORY]
+        elif kind == "rm_done" and ev.get("gen") == _M["gen"]:
+            _M.update(progress=None, early="",
+                      state="failed" if ev.get("error") else "done",
+                      error=ev.get("error") or "",
+                      status=("Cancelled." if ev.get("cancelled") else
+                              f"Render failed: {ev['error']}" if ev.get("error") else
+                              f"Sweep done: {_M['label']}. Click a chip to put it on the left." if _M["kind"] == "sweep"
+                              else _rm_done_line()))
         elif kind in ("travel_status", "travel_frame", "travel_done") and ev.get("mode") in _T \
                 and ev.get("gen") == _T[ev["mode"]]["gen"]:
             t = _T[ev["mode"]]
@@ -380,6 +415,9 @@ def stop_worker():
             for t in _T.values():
                 if t["state"] == "rendering":
                     t.update(state="failed", error="Stopped (the GPU was wanted elsewhere).", status="Stopped.")
+            if _M["state"] == "rendering":
+                _M.update(state="failed", error="Stopped (the GPU was wanted elsewhere).", status="Stopped.",
+                          progress=None)
     try:
         p.wait(timeout=20)
     except Exception:
@@ -389,7 +427,7 @@ def stop_worker():
 def holding_gpu() -> bool:
     with _lock:
         return _S["proc"] is not None and _S["proc"].poll() is None and (
-            _S["state"] in ("loading", "ready") or _R["state"] == "rendering"
+            _S["state"] in ("loading", "ready") or _R["state"] == "rendering" or _M["state"] == "rendering"
             or any(t["state"] == "rendering" for t in _T.values()))
 
 
@@ -461,6 +499,102 @@ def travel_render(mode, desc, plan, settings, params):
                 _T[mode].update(state="failed", error=str(e), status=f"Couldn't start: {e}")
     threading.Thread(target=go, daemon=True).start()
     return gen
+
+
+def refmod_render(desc, plan, canvas, kind, jobs, lora, compare, base_key, label=""):
+    """RefMod Studio's render (kind "render": With mods, then the comparison unless the kept one still matches
+    base_key) or sweep, on the worker; a Studio session there ends, as for Royale."""
+    with _lock:
+        if _M["state"] == "rendering" or _R["state"] == "rendering" or any(t["state"] == "rendering" for t in _T.values()):
+            raise ValueError("The GPU worker is rendering - wait, or Cancel it.")
+        if _S["state"] == "loading" or _S["rendering"]:
+            raise ValueError("Studio is using the GPU - wait for it, or Unload it.")
+        b = _M["baseline"]
+        need_base = kind == "render" and not (b and _M["baseline_key"] == base_key and os.path.isfile(b["png"]))
+        _M["gen"] += 1
+        gen = _M["gen"]
+        _M.update(state="rendering", kind=kind, status="Starting the GPU worker…", error="", progress=None, early="",
+                  pending_key=base_key, label=label)
+        if kind == "sweep":
+            _M.update(chips=[], sweep=label)
+        if _S["state"] == "ready":
+            _S.update(state="idle", primary="", donor="", rendering=False, pending=None, progress=None,
+                      status="RefMod Studio took the GPU worker - press Start to load Studio again.")
+        family = _S.get("family")
+        keep = {_M["baseline"]["gen"]} if _M["baseline"] and not need_base else set()
+        keep |= {h["gen"] for h in _M["history"]} | ({_M["chips"][0]["gen"]} if _M["chips"] else set())
+        if _M["tweaked"]:
+            keep.add(_M["tweaked"]["gen"])
+    try:                                         # renders nothing shows any more
+        import re
+        for f in os.listdir(RM_DIR):
+            m = re.match(r"rm_(\d+)_", f)
+            if m and int(m.group(1)) not in keep and int(m.group(1)) != gen:
+                os.remove(os.path.join(RM_DIR, f))
+    except OSError:
+        pass
+
+    def go():
+        try:
+            if family and family != desc.key:
+                stop_worker()
+                with _lock:
+                    _M.update(state="rendering", error="", status="Starting the GPU worker…")
+            _ensure_worker()
+            with _lock:
+                _S["family"] = desc.key
+            _send({"cmd": "refmod", "gen": gen, "kind": kind, "family": desc.key, "plan": plan, "canvas": canvas,
+                   "jobs": jobs, "lora": lora or "", "compare": compare, "need_base": need_base, "out_dir": RM_DIR})
+        except Exception as e:
+            with _lock:
+                _M.update(state="failed", error=str(e), status=f"Couldn't start: {e}")
+    threading.Thread(target=go, daemon=True).start()
+    return {"gen": gen, "need_base": need_base}
+
+
+def _rm_done_line():
+    t = _M["tweaked"] or {}
+    tu = t.get("turbo")
+    tut = "no Turbo LoRA" if tu is None else "Turbo off" if abs(float(tu)) < 1e-9 else f"Turbo {float(tu):g}"
+    return f"Done: {t.get('steps')} steps · {tut}." if t.get("steps") else "Done."
+
+
+def refmod_cancel():
+    with _lock:
+        busy = _M["state"] == "rendering"
+    if busy:
+        _send({"cmd": "cancel"})
+        with _lock:
+            _M["status"] = "Cancelling…"
+    return busy
+
+
+def refmod_status():
+    with _lock:
+        d = {k: _M[k] for k in ("state", "gen", "kind", "status", "error", "progress", "label", "sweep")}
+        d["early"] = bool(_M["early"])
+        pub = lambda it: None if not it else {k: it.get(k) for k in ("gen", "side", "i", "label", "describe", "steps",
+                                                                     "turbo", "frames")} | {"media": bool(it.get("mp4"))}
+        d["tweaked"], d["baseline"] = pub(_M["tweaked"]), pub(_M["baseline"])
+        d["chips"] = [pub(c) for c in _M["chips"]]
+        d["history"] = [pub(h) for h in _M["history"]]
+        d["baseline_key"] = _M["baseline_key"]
+    return d
+
+
+def refmod_item(gen, side, i):
+    """The item a page asks for by (gen, side, i): its record, or None."""
+    with _lock:
+        if side == "early":
+            return {"png": _M["early"]} if _M["early"] and os.path.isfile(_M["early"]) else None
+        pool = ([_M["tweaked"], _M["baseline"]] + _M["history"] + _M["chips"])
+        return next((dict(x) for x in pool if x and x["gen"] == int(gen) and x["side"] == side and x["i"] == int(i)),
+                    None)
+
+
+def refmod_chips():
+    with _lock:
+        return [dict(c) for c in _M["chips"]]
 
 
 def travel_status():

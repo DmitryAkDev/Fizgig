@@ -33,6 +33,7 @@
           <button class="tab-item" data-tab="profiler"><i></i><span>Profiler</span></button>
           <button class="tab-item" data-tab="studio"><i></i><span>Studio</span></button>
           <button class="tab-item" data-tab="royale"><i></i><span>LoRA Royale</span></button>
+          <button class="tab-item" data-tab="refmod"><i></i><span>RefMod Studio</span></button>
           <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
           <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
@@ -960,6 +961,165 @@
               <div class="field-row"><button class="btn btn-primary" id="ryPromote">Promote current epoch</button>
                 <input type="text" id="ryPromoteName" class="w-path" placeholder="name (leave empty for run-epochN-pick)">
                 <span class="field-hint" id="ryPromoteStatus"></span></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-refmod" class="tab-panel">
+          <div class="tab-banner">
+            <h1>RefMod Studio</h1>
+            <p>Try RefMods and ReFLoRAs before ComfyUI: a still or a short clip with them and without them, side by side
+              on the same seed. Every dial here is a setting on the ComfyUI nodes, so what works here is what to type there.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Setup</span></div>
+            <div class="card-desc">A RefMod is a few reference pictures of a person or a style packed into a small file;
+              ComfyUI's RefMod nodes (ComfyUI-MiniMaxH3Mod) add it to a render with no training. A ReFLoRA is a LoRA and
+              its RefMods in one file (ComfyUI-MiniMaxH3RefLoRA). The model files come from Preferences; the first
+              Render loads the model.</div>
+            <div class="card-content">
+              <div class="field-row" id="rmFamRow"><span class="field-label">Model:</span><select id="rmFamily" class="w-combo"></select></div>
+              <div class="field-row"><span class="field-label">RefMod folder:</span><input type="text" id="rmFolder" class="w-path"
+                title="ComfyUI reads models/refmods; Fizgig writes new mods to the RefMod model's Output folder on the Training tab - point both at the same place.">
+                <button class="btn" id="rmFolderPick">Choose…</button>
+                <button class="btn" id="rmRescan" title="Look for new mods (one you have just made, say)">↻ Refresh</button></div>
+              <div class="field-hint rm-hint" id="rmScanNote"></div>
+              <div class="field-row"><span class="field-label">Checkpoint:</span><select id="rmModel" class="w-combo"
+                title="Which H3 the mods run on. A mod does best on the model it was made for; pick the one you use in ComfyUI."></select></div>
+              <div class="field-row"><span class="field-label">Base:</span><select id="rmBase" class="w-combo"
+                title="int8 on big cards, streamed blocks for long clips, NF4 for the smallest footprint."></select>
+                <button class="btn" id="rmUnload" title="Free the GPU: the model leaves the card (the next Render loads it again).">Unload model</button></div>
+              <div class="field-row"><span class="field-label">LoRA or ReFLoRA:</span><input type="text" id="rmLora" class="w-path"
+                placeholder="optional">
+                <button class="btn" id="rmLoraPick">Choose…</button><button class="btn" id="rmLoraClear">Clear</button></div>
+              <div class="field-hint rm-hint rm-accent" id="rmLoraInfo"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Mods</span><span class="rm-tokens" id="rmTokens"
+              title="Reference tokens the model attends to on every step: each mod's T × (H/2) × (W/2), times its copies. The pack caps a mod at 5 120; a bundle well over that slows every step and starves the prompt.">Tokens: 0</span></div>
+            <div class="card-desc">One mod per row; untick a row to leave it out. <b>Strength</b>: 0 off, 1 as stored.
+              <b>Copies</b>: how many times it rides in the bundle - more pull harder, each costs its tokens. A second row
+              shows two mods together, the way two loader slots run them in ComfyUI. Nothing here edits a mod file.</div>
+            <div class="card-content">
+              <datalist id="rmModList"></datalist>
+              <div id="rmRows"></div>
+              <div class="field-row"><button class="btn" id="rmAddRow">+ Add a mod row</button></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Apply</span></div>
+            <div class="card-desc">How the mods are applied while the picture renders - each control is a setting on the
+              pack's Apply and Step Curve nodes (named in brackets), so what you find here is what you type into ComfyUI.</div>
+            <div class="card-content">
+              <div class="rm-warn" id="rmNumNote" style="display:none">Numbered references is on, so the render takes the
+                pack's Text Encode path: each row's Strength only. Retention, the fades, Shuffle and the Step Curve are not
+                applied, because that ComfyUI graph has no Apply or Step Curve node.</div>
+              <div class="field-row"><span class="field-label">Strength:</span>
+                <input type="range" id="rmRet" min="0" max="1" step="0.01" value="1" class="rm-slider">
+                <input type="text" id="rmRetNum" class="w-num" value="1.00"><span id="rmRetPresets" class="st-inline"></span></div>
+              <div class="field-hint rm-hint">(Apply's Retention) How much of the references reaches the picture: 1.0 as
+                stored, 0.4 keeps the look and frees the scene, 0 off. It multiplies every row's own strength.</div>
+              <div class="field-row"><span class="field-label">Shuffle seed:</span><input type="text" id="rmScramble" class="w-num" value="-1">
+                <button class="btn btn-sm" id="rmScrRand">🎲 Random</button><button class="btn btn-sm" id="rmScrOff">Off</button></div>
+              <div class="field-hint rm-hint">(Apply's Scramble seed) -1 keeps your row order; any seed shuffles the bundle
+                and keeps a random half or more, so a different reference leads. Only matters with more than one entry.</div>
+              <div class="field-row"><span class="field-label">Fade across clip:</span>
+                <span class="field-hint">where</span><select id="rmFcDir" class="w-combo st-small-select"></select>
+                <span class="field-hint">shape</span><select id="rmFcShape" class="w-combo st-small-select"></select>
+                <span class="field-hint">amount</span><input type="range" id="rmFcVal" min="0" max="1" step="0.01" class="rm-slider-sm">
+                <span class="st-chip" id="rmFcValNum"></span></div>
+              <div class="field-hint rm-hint">(Apply's Frame curve - video mods only) How strongly a video mod's frames
+                apply along its length; a still mod has one frame and ignores it.</div>
+              <div class="field-row"><span class="field-label">Change during render:</span>
+                <label class="checkbox-label"><input type="checkbox" id="rmScOn"> On</label>
+                <span class="field-hint">where</span><select id="rmScDir" class="w-combo st-small-select"></select>
+                <span class="field-hint">shape</span><select id="rmScShape" class="w-combo st-small-select"></select>
+                <span class="field-hint">amount</span><input type="range" id="rmScVal" min="0" max="1" step="0.01" class="rm-slider-sm">
+                <span class="st-chip" id="rmScValNum"></span></div>
+              <div class="field-hint rm-hint">(the Step Curve node) Off: the same strength at every step. concept_at_start
+                keeps the references strong while the structure forms, then eases off for the texture steps.</div>
+              <canvas id="rmCurves" width="560" height="150" class="rm-curves"></canvas>
+              <div class="field-row"><span class="field-label">Curve presets:</span><select id="rmCurvePreset" class="w-combo st-small-select"></select>
+                <input type="text" id="rmCurveName" class="w-num rm-name" placeholder="name">
+                <button class="btn btn-sm" id="rmCurveSave">Save</button><button class="btn btn-sm" id="rmCurveDel">Delete</button></div>
+              <div class="field-row"><span class="field-label">ComfyUI graph preset:</span><select id="rmGraph" class="w-combo st-small-select"></select>
+                <button class="btn btn-sm" id="rmGraphUse">Use for the fade</button><span class="field-hint" id="rmGraphNote"></span></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Render</span></div>
+            <div class="card-desc">The left picture is your setup; the right is the same seed without it (rendered once and
+              kept while its settings hold). Click a still to see it full size.</div>
+            <div class="card-content">
+              <div class="field-row rm-top"><span class="field-label">Prompt:</span><textarea id="rmPrompt" rows="3" class="w-path rm-prompt"></textarea>
+                <button class="btn btn-sm" id="rmHints" title="Append every active mod's 'concept_type: description' - the Loader node's prompt_hint output">+ mod hints</button></div>
+              <div class="field-row"><span class="field-label"></span>
+                <label class="checkbox-label" title="Each active mod is shown to the text encoder as a numbered picture or video, the way the pack's H3 RefMod Text Encode node does, so the prompt can say 'the woman in <Picture 1>'. Costs a decode per mod."><input type="checkbox" id="rmNumbered"> Numbered references (Text Encode node)</label>
+                <span class="field-hint" id="rmRefMap"></span><button class="btn btn-sm" id="rmLabels">+ labels</button></div>
+              <div class="field-row"><span class="field-label">Seed:</span><input type="text" id="rmSeed" class="w-num" value="300">
+                <button class="btn btn-sm" id="rmSeedRand">🎲</button>
+                <span class="field-hint">Length</span><select id="rmLength" class="w-combo st-small-select"></select>
+                <span class="field-hint">Size</span><select id="rmW" class="w-combo st-small-select"></select><span class="field-hint">×</span>
+                <select id="rmH" class="w-combo st-small-select"></select></div>
+              <div class="field-row"><span class="field-label">Steps:</span><input type="text" id="rmSteps" class="w-num" value="4">
+                <span class="field-hint">Turbo</span><input type="text" id="rmTurbo" class="w-num" value="1.0"
+                  title="Turbo LoRA strength: 6 steps at 0.75 is the training-preview regime, 4 at 1.0 the fast dial, 0 = off (20 steps, slow).">
+                <label class="checkbox-label" title="Decode the clip's soundtrack (needs the audio VAE in Preferences)"><input type="checkbox" id="rmSound" checked> Sound</label>
+                <label class="checkbox-label" title="Put up the pass-2 estimate while the remaining passes run"><input type="checkbox" id="rmEarly" checked> Show early</label></div>
+              <div class="field-row"><button class="btn btn-primary" id="rmRender">▶ Render</button>
+                <button class="btn" id="rmCancel" disabled>Cancel</button>
+                <span class="st-inline" id="rmCompareBox" style="display:none"><span class="field-hint">Right-hand picture</span>
+                  <select id="rmCompare" class="w-combo st-small-select"
+                    title="What the right-hand picture leaves out: the mods (the LoRA alone), the LoRA (the mods alone), or both (the base model)."></select></span></div>
+              <div class="field-row"><button class="btn" id="rmSweep" title="The current setup as a row of short clips with ONE dial stepped through its useful values - the quickest way to see what a control does to this mod.">▶ Render sweep</button>
+                <span class="field-hint">of</span><select id="rmSweepKind" class="w-combo st-small-select"></select></div>
+              <div class="field-row"><span class="rm-status" id="rmStatus">Set up your mods, then Render.</span></div>
+              <div class="run-bar"><span id="rmBar" style="width:0"></span></div>
+              <div class="st-preview rm-preview">
+                <figure class="gallery-item st-pane"><img id="rmTweak" alt=""><video id="rmTweakVid" controls loop playsinline style="display:none"></video>
+                  <figcaption id="rmTweakCap">With mods</figcaption></figure>
+                <figure class="gallery-item st-pane"><img id="rmBaseImg" alt=""><video id="rmBaseVid" controls loop playsinline style="display:none"></video>
+                  <figcaption id="rmBaseCap">No mod (base, same seed)</figcaption></figure>
+              </div>
+              <div class="field-row" id="rmPlayBoth" style="display:none"><button class="btn btn-sm" id="rmPlayBothBtn">▶ Play together</button></div>
+              <div id="rmSweepBox" style="display:none">
+                <div class="rm-sub">Sweep <span class="field-hint" id="rmSweepName"></span>
+                  <button class="btn btn-sm" id="rmStrip">💾 Save strip</button></div>
+                <div class="rm-strip" id="rmChips"></div>
+              </div>
+              <div id="rmHistBox" style="display:none">
+                <div class="rm-sub">History <span class="field-hint">(last 12 - click one to put it back on the left)</span></div>
+                <div class="rm-strip" id="rmHist"></div>
+              </div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Actions</span></div>
+            <div class="card-desc">Take the result to ComfyUI. <b>ComfyUI settings</b>: the node values that give the same
+              render with the mod files as they are. <b>Bake</b> is the one thing here that writes a mod: one row's mod
+              with its Strength, the master Strength, its Copies and the fade folded in, so it loads at 1.0 with no curve
+              (one mod per file - two mods together are two loader slots). Shuffle and the step curve act at render time
+              and cannot be baked.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Save to:</span><input type="text" id="rmOut" class="w-path"
+                title="Where Save preview and Save strip put their files"><button class="btn" id="rmOutPick">Choose…</button>
+                <button class="btn" id="rmSavePrev">💾 Save preview</button></div>
+              <div class="field-row"><span class="field-label">Setup:</span><select id="rmSetup" class="w-combo st-small-select"></select>
+                <button class="btn btn-sm" id="rmSetupLoad">Load</button>
+                <input type="text" id="rmSetupName" class="w-num rm-name" placeholder="name">
+                <button class="btn btn-sm" id="rmSetupSave">Save</button>
+                <span class="field-hint">this whole tab (the desktop's files)</span></div>
+              <div class="field-row"><span class="field-label">ComfyUI:</span><button class="btn" id="rmReadoutBtn">📋 ComfyUI settings</button>
+                <button class="btn btn-sm" id="rmReadoutCopy" style="display:none">Copy</button></div>
+              <pre class="rm-readout" id="rmReadout" style="display:none"></pre>
+              <div class="field-row"><span class="field-label">Bake:</span><select id="rmBakeRow" class="w-combo st-small-select"></select>
+                <input type="text" id="rmBakeName" class="w-path rm-name-l" placeholder="new mod name (beside the source)">
+                <button class="btn" id="rmBake">🧪 Bake as new RefMod</button></div>
+              <div class="field-row" id="rmRflRow" style="display:none"><span class="field-label">ReFLoRA:</span>
+                <input type="text" id="rmRflName" class="w-path rm-name-l" placeholder="file name (beside the LoRA)">
+                <button class="btn" id="rmRfl" title="The LoRA and the references of the ticked rows, as they are, in one file for ComfyUI's Load H3 RefLoRA node">📦 Save as ReFLoRA</button></div>
+              <div class="field-hint rm-hint" id="rmActStatus"></div>
             </div>
           </div>
         </section>

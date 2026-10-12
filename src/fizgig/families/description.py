@@ -452,7 +452,8 @@ class FamilyDescription:
     # downloader fetches them with the helper models so first use works offline
     helper_files: tuple = ()
 
-    # workbench tools that support this family ("repair", ...); the generic WorkbenchEngine drives them all
+    # workbench tools that support this family ("repair", "explorer", "profiler", "extract", "royale", and "refmod":
+    # RefMod Studio, the engine's render_refmod / reference_items); the generic WorkbenchEngine drives them all
     workbench: tuple = ()
     # the workbench engine class ("module:Class") when the generic engines do not fit (a family with clips gets the
     # generic video engine, families/video_workbench.py). H3 brings its own for keyframes, references and RefMod on

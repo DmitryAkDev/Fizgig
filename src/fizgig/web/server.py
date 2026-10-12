@@ -408,6 +408,102 @@ def _studio_post(what, b):
     raise ValueError("unknown action")
 
 
+def _rm_metas(b):
+    """RefMod Studio: the folder's mods (and the LoRA's, a ReFLoRA's) by their picker names."""
+    from fizgig.web import refmod_studio as rms
+    return {m["name"]: m for m in rms.scan(str(b.get("folder") or "").strip(), str(b.get("lora") or "").strip())["mods"]}
+
+
+def _rm_plan(b):
+    """(desc, load plan, audio VAE there) for the model and base the page picked."""
+    from fizgig.web import refmod_studio as rms
+    fams = {d.key: d for d in rms.families()}
+    desc = fams.get(str(b.get("family") or "")) or next(iter(fams.values()), None)
+    if desc is None:
+        raise ValueError("No model offers RefMod Studio.")
+    kw, _status, problems = studio.plan_video(desc, load_prefs(), pref_path,
+                                              ref_mode="ref2va" in str(b.get("model") or rms.MODELS[0]),
+                                              base_mode=dict(studio.H3_BASES).get(str(b.get("base")), "auto"))
+    if problems:
+        raise ValueError(" ".join(problems))
+    return desc, kw, bool(kw.get("audio_vae_path"))
+
+
+def _refmod_post(what, b):
+    """RefMod Studio's actions (fizgig/web/refmod_studio.py; renders on the Studio worker)."""
+    from fizgig.web import refmod_studio as rms
+    st = b.get("state") or {}
+    if what == "calc":                       # the tokens readout, reference map, ComfyUI readout, prompt hints
+        metas = _rm_metas(st)
+        try:
+            audio_ok = bool(_rm_plan(st)[2])
+        except ValueError:
+            audio_ok = False
+        j = rms.job(st, metas, audio_ok)
+        return {"tokens": rms.tokens(st.get("rows"), metas, st.get("retention")), "ref_map": j["ref_map"],
+                "readout": j["readout"], "hints": rms.prompt_hints(st.get("rows"), metas), "describe": j["describe"]}
+    if what in ("render", "sweep"):
+        if _gpu_training():
+            raise ValueError("A training run is using the GPU. RefMod Studio can render when it finishes.")
+        from fizgig.web import tools
+        if tools.holding_gpu():
+            raise ValueError("The Profiler is rendering on the GPU - wait for it, or Stop it.")
+        desc, kw, audio_ok = _rm_plan(st)
+        metas = _rm_metas(st)
+        if what == "render":
+            j = rms.job(st, metas, audio_ok)
+            jobs, label = [j["job"]], j["describe"]
+        else:
+            kind = str(b.get("sweep") or rms.SWEEPS[0])
+            js = [rms.job(st, metas, audio_ok, dict(ov, frames=rms.SWEEP_FRAMES, label=lbl))
+                  for lbl, ov in rms.sweep_items(kind, st)]
+            for x in js:
+                x["job"]["sound"] = False
+            j, jobs, label = js[0], [x["job"] for x in js], kind
+        if not j["job"]["prompt"]:
+            raise ValueError("Enter a prompt.")
+        n_refs = sum(r["copies"] for r in j["job"]["rows"] if r["on"] and r["value"] > 0)
+        canvas = [j["job"]["width"], j["job"]["height"], j["job"]["frames"], 0, n_refs]
+        captions.unload()
+        got = studio.refmod_render(desc, kw, canvas, what, jobs, j["lora"], j["compare"], j["base_key"], label=label)
+        return dict(got, active=j["active"])
+    if what == "cancel":
+        return {"ok": studio.refmod_cancel()}
+    if what == "lora":
+        return rms.lora_info(str(b.get("path") or ""), str(b.get("folder") or ""))
+    if what == "curve_save":
+        return rms.curve_preset_save(b.get("name"), st.get("frame_curve"), st.get("step_curve"), st.get("step_on"),
+                                     st.get("retention"), overwrite=bool(b.get("overwrite")))
+    if what == "curve_load":
+        return rms.curve_preset_load(b.get("name"))
+    if what == "curve_delete":
+        return rms.curve_preset_delete(b.get("name"))
+    if what == "graph":
+        return {"curve": rms.graph_preset(str(b.get("path") or ""))}
+    if what == "setup_save":
+        return rms.setup_save(b.get("name"), b.get("data") or {}, overwrite=bool(b.get("overwrite")))
+    if what == "setup_load":
+        return {"data": rms.setup_load(b.get("name"))}
+    if what == "save_preview":
+        it = studio.refmod_item(b.get("gen", 0), b.get("side") or "tweaked", b.get("i", 0))
+        if it is None:
+            raise ValueError("Nothing rendered yet.")
+        return {"path": rms.save_item(it, str(b.get("out") or ""), "refmod_with_mods" if it["side"] == "tweaked"
+                                      else "refmod_" + re.sub(r"[^A-Za-z0-9_-]+", "_", it.get("label") or it["side"]))}
+    if what == "save_strip":
+        return {"path": rms.save_strip(studio.refmod_chips(), str(b.get("out") or ""), studio.refmod_status()["sweep"])}
+    if what == "bake":
+        rows = st.get("rows") or []
+        i = int(b.get("row", 0))
+        if not 0 <= i < len(rows):
+            raise ValueError("Pick the row to bake.")
+        return rms.bake(rows[i], _rm_metas(st), st.get("retention"), st.get("frame_curve"), str(b.get("name") or ""))
+    if what == "reflora":
+        return rms.save_reflora(st.get("lora"), st.get("rows"), _rm_metas(st), st.get("retention"),
+                                str(b.get("name") or ""))
+    raise ValueError("unknown action")
+
+
 def _files_family(key):
     """The family whose files a model runs on: RefMod runs on MiniMax H3's."""
     return get_family("minimax" if key == refmod.KEY else key)
@@ -1577,6 +1673,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(studio.layout(desc, load_prefs(), pref_path, samples=_studio_samples(desc)))
         if path == "/api/studio/status":
             return self.json(studio.status())
+        if path == "/api/refmod/info":              # RefMod Studio: its choices, the desktop's last setup, presets
+            from fizgig.web import refmod_studio as rms
+            return self.json(rms.info(_read_json(os.path.join(BASE_DIR, ".last_used.json"))))
+        if path == "/api/refmod/scan":
+            from fizgig.web import refmod_studio as rms
+            return self.json(rms.scan((qs.get("folder") or [""])[0].strip(), (qs.get("lora") or [""])[0].strip()))
+        if path == "/api/refmod/graphs":            # the pack's graph presets in <mods folder>/graph_presets
+            from fizgig.web import refmod_studio as rms
+            return self.json({"presets": rms.graph_presets((qs.get("folder") or [""])[0].strip())})
+        if path == "/api/refmod/status":
+            return self.json(studio.refmod_status())
+        if path == "/api/refmod/media":             # a render: its PNG, or (mp4=1) its clip
+            it = studio.refmod_item((qs.get("gen") or ["0"])[0], (qs.get("side") or [""])[0], (qs.get("i") or ["0"])[0])
+            p = (it or {}).get("mp4" if (qs.get("mp4") or [""])[0] else "png") or ""
+            if not p or not os.path.isfile(p):
+                return self.json({"error": "no picture"}, 404)
+            return self._stream(p, attachment=False)
         if path == "/api/studio/image":
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:
@@ -2203,6 +2316,11 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     return self.json(_studio_post(path[len("/api/studio/"):], b))
                 except (ValueError, RuntimeError) as e:
+                    return self.json({"error": str(e)}, 400)
+            if path.startswith("/api/refmod/"):
+                try:
+                    return self.json(_refmod_post(path[len("/api/refmod/"):], b))
+                except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
             if path in ("/api/prep/run", "/api/look/scan", "/api/look/move"):
                 folder = str(b.get("folder") or "")

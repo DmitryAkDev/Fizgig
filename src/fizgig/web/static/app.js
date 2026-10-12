@@ -3805,6 +3805,496 @@ function wireCaptions() {
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
 }
 
+// ---- RefMod Studio (the desktop tab's): mods, how they apply, a render beside the same seed without them ----------
+S.rm = {wired: false, info: null, mods: {}, rows: [], calc: {}, seen: {}, left: null, lastT: 0, polling: false};
+const RM_KEY = "fizgig.refmod";
+const rmSaved = () => { try { return JSON.parse(localStorage.getItem(RM_KEY) || "null"); } catch (e) { return null; } };
+const rmMedia = (it, mp4) => `/api/refmod/media?gen=${it.gen}&side=${it.side}&i=${it.i}${mp4 ? "&mp4=1" : ""}&t=${encodeURIComponent(TOKEN)}`;
+
+function rmCurve(k) { return [$(`rm${k}Dir`).value, $(`rm${k}Shape`).value, Math.round(Number($(`rm${k}Val`).value) * 100) / 100]; }
+function rmState() {
+  // the desktop's setup keys (presets/refmod_studio/*.json load in either app)
+  return {family: $("rmFamily").value, base: $("rmBase").value, model: $("rmModel").value, prompt: $("rmPrompt").value.trim(),
+    seed: $("rmSeed").value.trim(), frames: $("rmLength").value, width: $("rmW").value, height: $("rmH").value,
+    steps: $("rmSteps").value.trim(), turbo: $("rmTurbo").value.trim(), sound: $("rmSound").checked, early: $("rmEarly").checked,
+    folder: $("rmFolder").value.trim(), rows: S.rm.rows.map((r) => ({on: r.on, mod: r.mod, value: r.value, copies: r.copies})),
+    retention: Number($("rmRet").value), scramble: $("rmScramble").value.trim(), frame_curve: rmCurve("Fc"),
+    step_curve: rmCurve("Sc"), step_on: $("rmScOn").checked, numbered: $("rmNumbered").checked,
+    lora: $("rmLora").value.trim(), compare: $("rmCompare").value, out: $("rmOut").value.trim()};
+}
+function rmSetCurve(k, c) {
+  if (!c) return;
+  if (S.rm.info.directions.includes(c[0])) $(`rm${k}Dir`).value = c[0];
+  if (S.rm.info.shapes.includes(c[1])) $(`rm${k}Shape`).value = c[1];
+  $(`rm${k}Val`).value = Number(c[2] ?? 1);
+}
+function rmApplyState(d) {
+  if (!d) return;
+  const set = (id, v) => { if (v != null && v !== "") $(id).value = String(v); };
+  const opt = (id, v) => { if (v != null && [...$(id).options].some((o) => o.value === String(v))) $(id).value = String(v); };
+  opt("rmFamily", d.family); opt("rmBase", d.base); opt("rmModel", d.model); opt("rmLength", d.frames);
+  opt("rmW", d.width); opt("rmH", d.height); opt("rmCompare", d.compare);
+  set("rmPrompt", d.prompt); set("rmSeed", d.seed); set("rmSteps", d.steps); set("rmTurbo", d.turbo); set("rmFolder", d.folder);
+  set("rmScramble", d.scramble); set("rmOut", d.out);
+  $("rmLora").value = d.lora || "";
+  if ("sound" in d) $("rmSound").checked = !!d.sound;
+  if ("early" in d) $("rmEarly").checked = !!d.early;
+  $("rmNumbered").checked = !!d.numbered;
+  $("rmScOn").checked = !!d.step_on;
+  if (d.retention != null) $("rmRet").value = Number(d.retention);
+  rmSetCurve("Fc", d.frame_curve); rmSetCurve("Sc", d.step_curve);
+  if (Array.isArray(d.rows)) S.rm.rows = d.rows.slice(0, S.rm.info.max_rows).map((r) => ({on: r.on !== false,
+    mod: String(r.mod || S.rm.info.none), value: Math.max(0, Math.min(1, Number(r.value ?? 1))),
+    copies: Math.max(1, Math.min(S.rm.info.max_copies, parseInt(r.copies, 10) || 1))}));
+  if (!S.rm.rows.length) S.rm.rows = [{on: true, mod: S.rm.info.none, value: 1, copies: 1}];
+}
+
+function rmRemember() { try { localStorage.setItem(RM_KEY, JSON.stringify(rmState())); } catch (e) { /* private */ } }
+
+function rmChanged() {
+  $("rmRetNum").value = Number($("rmRet").value).toFixed(2);
+  $("rmFcValNum").textContent = Number($("rmFcVal").value).toFixed(2);
+  $("rmScValNum").textContent = Number($("rmScVal").value).toFixed(2);
+  $("rmNumNote").style.display = $("rmNumbered").checked ? "" : "none";
+  rmTitles();
+  rmDrawCurves();
+  rmBakeRows();
+  rmRemember();
+  rmCalcSoon();
+}
+const rmCalcSoon = debounce(rmCalc, 300);
+async function rmCalc() {
+  try { S.rm.calc = await api("/api/refmod/calc", {state: rmState()}); } catch (e) { return; }
+  const c = S.rm.calc, cap = S.rm.info.token_cap;
+  $("rmTokens").textContent = `Tokens: ${c.tokens.toLocaleString()} / ${cap.toLocaleString()}`;
+  $("rmTokens").classList.toggle("over", c.tokens > cap);
+  $("rmRefMap").textContent = !$("rmNumbered").checked ? "" : (c.ref_map.length ? c.ref_map.join("   ") : "No active mod - nothing to number.");
+  if ($("rmReadout").style.display !== "none") $("rmReadout").textContent = c.readout;
+}
+
+// the mods ---------------------------------------------------------------------------------------------------------
+async function rmRescan(quiet) {
+  const st = rmState();
+  let r;
+  try { r = await api(`/api/refmod/scan?folder=${encodeURIComponent(st.folder)}&lora=${encodeURIComponent(st.lora)}`); }
+  catch (e) { $("rmScanNote").textContent = e.message; return; }
+  S.rm.mods = Object.fromEntries(r.mods.map((m) => [m.name, m]));
+  const dl = $("rmModList");
+  dl.innerHTML = "";
+  for (const n of [S.rm.info.none, ...Object.keys(S.rm.mods)]) dl.append(el("option", {value: n}));
+  if (!quiet || r.mods.length) $("rmScanNote").textContent = r.status;
+  rmDrawRows();
+  rmGraphs();
+  rmChanged();
+}
+function rmResolve(typed, prev) {
+  // a typed name: an exact match (any case), else the only name containing it, else the previous pick
+  const names = [S.rm.info.none, ...Object.keys(S.rm.mods)];
+  const t = typed.trim().toLowerCase();
+  const exact = names.find((n) => n.toLowerCase() === t);
+  if (exact) return exact;
+  const hits = t ? names.filter((n) => n.toLowerCase().includes(t)) : [];
+  return hits.length === 1 ? hits[0] : prev;
+}
+function rmDrawRows() {
+  const box = $("rmRows");
+  box.innerHTML = "";
+  S.rm.rows.forEach((r, i) => {
+    const m = S.rm.mods[r.mod];
+    const info = el("div", {class: "rm-info", text: m ? m.info : r.mod !== S.rm.info.none ? "(mod not in this folder)" : ""});
+    const num = el("input", {type: "text", class: "w-num", value: r.value.toFixed(2)});
+    const rng = el("input", {type: "range", min: 0, max: 1, step: 0.01, value: r.value, class: "rm-slider-sm",
+      title: "How strongly this mod applies (0 = off, 1 = as stored)",
+      oninput: () => { r.value = Number(rng.value); num.value = r.value.toFixed(2); rmChanged(); }});
+    num.addEventListener("change", () => {
+      const v = Number(num.value);
+      r.value = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : r.value;
+      num.value = r.value.toFixed(2); rng.value = r.value; rmChanged();
+    });
+    const mod = el("input", {type: "text", class: "w-path rm-mod", list: "rmModList", value: r.mod,
+      placeholder: "type to search the mods", onfocus: (e) => e.target.select()});
+    mod.addEventListener("change", () => {
+      r.mod = rmResolve(mod.value, r.mod); mod.value = r.mod;
+      const mm = S.rm.mods[r.mod];
+      info.textContent = mm ? mm.info : r.mod !== S.rm.info.none ? "(mod not in this folder)" : "";
+      rmChanged();
+    });
+    const cp = el("input", {type: "number", min: 1, max: S.rm.info.max_copies, value: r.copies, class: "w-num",
+      title: "The same reference repeated in the bundle - 2-3 is the pack's sweet spot for a stronger pull; every copy costs its tokens.",
+      onchange: () => { r.copies = Math.max(1, Math.min(S.rm.info.max_copies, parseInt(cp.value, 10) || 1)); cp.value = r.copies; rmChanged(); }});
+    const on = el("input", {type: "checkbox", onchange: () => { r.on = on.checked; rmChanged(); }});
+    on.checked = r.on;
+    box.append(el("div", {class: "rm-row"},
+      el("div", {class: "field-row"}, on, mod, el("span", {class: "field-hint", text: "Strength"}), rng, num,
+        el("span", {class: "field-hint", text: "Copies"}), cp,
+        el("button", {class: "btn btn-sm", text: "✕", title: "Remove this row", onclick: () => {
+          if (S.rm.rows.length > 1) S.rm.rows.splice(i, 1);
+          else S.rm.rows[0] = {on: true, mod: S.rm.info.none, value: 1, copies: 1};   // the last row empties instead
+          rmDrawRows(); rmChanged();
+        }})),
+      info));
+  });
+  $("rmAddRow").disabled = S.rm.rows.length >= S.rm.info.max_rows;
+}
+function rmBakeRows() {
+  const sel = $("rmBakeRow"), was = sel.value;
+  sel.innerHTML = "";
+  const ret = Number($("rmRet").value);
+  S.rm.rows.forEach((r, i) => {
+    if (r.on && r.value > 0 && S.rm.mods[r.mod]) sel.append(el("option", {value: i, text: `${r.mod} @ ${(Math.min(1, r.value) * ret).toFixed(2)}`}));
+  });
+  if ([...sel.options].some((o) => o.value === was)) sel.value = was;
+}
+async function rmLoraChanged() {
+  const path = $("rmLora").value.trim();
+  if (path === S.rm.seen.lora) return;
+  S.rm.seen.lora = path;
+  await rmLoraInfo(true);
+}
+async function rmLoraInfo(replaceRows) {
+  // the LoRA card's line, the pickers with a ReFLoRA's references; a newly opened ReFLoRA's become the rows
+  const path = $("rmLora").value.trim();
+  let r;
+  try { r = await api("/api/refmod/lora", {path, folder: $("rmFolder").value.trim()}); }
+  catch (e) { $("rmLoraInfo").textContent = e.message; return; }
+  $("rmLoraInfo").textContent = r.line;
+  await rmRescan(true);
+  if (replaceRows && r.refs && r.refs.length) {   // a ReFLoRA: its own RefMods become the rows
+    S.rm.rows = r.refs.slice(0, S.rm.info.max_rows).map((n) => ({on: true, mod: n, value: 1, copies: 1}));
+    rmDrawRows();
+    $("rmStatus").textContent = `Opened the ReFLoRA ${path.split(/[\\/]/).pop()} - press Render.`;
+  }
+  rmChanged();
+}
+function rmTitles() {
+  const lora = !!$("rmLora").value.trim() && !/^File not found/.test($("rmLoraInfo").textContent);
+  $("rmCompareBox").style.display = lora ? "" : "none";
+  $("rmRflRow").style.display = lora ? "" : "none";
+  const mode = lora ? $("rmCompare").selectedIndex : 0;
+  $("rmBaseCap").textContent = [lora ? "LoRA alone (no mod, same seed)" : "No mod (base, same seed)",
+    "Mods alone (no LoRA, same seed)", "Neither (base, same seed)"][mode];
+  if (!S.rm.left) $("rmTweakCap").textContent = lora ? "LoRA + mods" : "With mods";
+}
+
+// curves -----------------------------------------------------------------------------------------------------------
+function rmEase(shape, x) {
+  switch (shape) {
+    case "linear": return x;
+    case "ease": return x * x * (3 - 2 * x);
+    case "sigmoid": return 1 / (1 + Math.exp(-12 * (x - 0.5)));
+    case "tanh": return 0.5 * (Math.tanh(8 * (x - 0.5)) + 1);
+    case "quadratic": return x * x;
+    case "cubic": return x * x * x;
+    case "exponential": return 2 ** x - 1;
+    case "stair": return Math.min(1, Math.floor(x * 4) / 3);
+    case "elastic": return x <= 0 ? 0 : x >= 1 ? 1 : 2 ** (-10 * x) * Math.sin((x * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
+    case "bump": return 1 - Math.abs(2 * x - 1);
+    case "dip": return Math.abs(2 * x - 1);
+    default: return x;
+  }
+}
+function rmCurveAt([dir, shape, v], x) {
+  // fizgig.minimax.refmod_meta.curve_value_at
+  const c = (t) => Math.max(0, Math.min(1, t));
+  if (dir === "constant") return shape === "linear" ? v : c(v * rmEase(shape, x));
+  const y = rmEase(shape, x);
+  if (dir === "concept_at_end") return c(v * y);
+  if (dir === "concept_at_start") return c(v * (1 - y));
+  if (dir === "concept_at_middle") return c(v * (1 - Math.abs(2 * y - 1)));
+  if (dir === "concept_at_ends") return c(v * Math.abs(2 * y - 1));
+  return 1;
+}
+function rmDrawCurves() {
+  const cv = $("rmCurves"), g = cv.getContext("2d");
+  const css = getComputedStyle(document.documentElement);
+  const col = (n, d) => (css.getPropertyValue(n) || d).trim() || d;
+  const W = cv.width, H = cv.height, x0 = 36, y0 = 12, x1 = W - 12, y1 = H - 26;
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = col("--border", "#3a3a3a"); g.fillStyle = col("--text-secondary", "#999"); g.lineWidth = 1;
+  g.font = "9px sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
+  for (let i = 0; i < 5; i++) {
+    const y = y0 + (y1 - y0) * i / 4;
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
+    g.fillText((1 - i / 4).toFixed(2), x0 - 6, y);
+    const x = x0 + (x1 - x0) * i / 4;
+    g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke();
+  }
+  const line = (spec, colour, dash) => {
+    g.strokeStyle = colour; g.lineWidth = 2; g.setLineDash(dash || []);
+    g.beginPath();
+    for (let i = 0; i <= 200; i++) {
+      const x = i / 200, v = Math.max(0, Math.min(1, rmCurveAt(spec, x)));
+      const px = x0 + (x1 - x0) * x, py = y1 - (y1 - y0) * v;
+      i ? g.lineTo(px, py) : g.moveTo(px, py);
+    }
+    g.stroke(); g.setLineDash([]);
+  };
+  const accent = col("--accent", "#3B9FD8");
+  line(rmCurve("Fc"), accent);
+  g.textBaseline = "top"; g.fillStyle = accent;
+  g.textAlign = "left"; g.fillText("reference frame 1", x0 + 4, y1 + 6);
+  g.textAlign = "right"; g.fillText("last frame", x1 - 4, y1 + 6);
+  if ($("rmScOn").checked) {
+    line(rmCurve("Sc"), "#E0A030", [4, 3]);
+    g.fillStyle = "#E0A030"; g.textAlign = "center"; g.fillText("step curve: first step → last step", (x0 + x1) / 2, y1 + 6);
+  }
+  g.fillStyle = col("--text-secondary", "#999"); g.textAlign = "right"; g.fillText("reference strength", x1 - 4, y0 + 2);
+}
+function rmFill(id, values, labels) {
+  const sel = $(id);
+  sel.innerHTML = "";
+  values.forEach((v, i) => sel.append(el("option", {value: v, text: labels ? labels[i] : v})));
+}
+async function rmGraphs() {
+  let r = {presets: []};
+  try { r = await api(`/api/refmod/graphs?folder=${encodeURIComponent($("rmFolder").value.trim())}`); } catch (e) { /* none */ }
+  S.rm.graphs = r.presets;
+  rmFill("rmGraph", r.presets.map((p, i) => i), r.presets.map((p) => p.name));
+  $("rmGraph").disabled = $("rmGraphUse").disabled = !r.presets.length;
+  $("rmGraphNote").textContent = r.presets.length ? "" : "none in <RefMod folder>/graph_presets";
+}
+
+// rendering --------------------------------------------------------------------------------------------------------
+function rmShow(img, vid, it) {
+  const clip = it && it.media && it.frames > 1;
+  $(vid).style.display = clip ? "" : "none";
+  $(img).style.display = clip ? "none" : "";
+  if (!it) { $(img).removeAttribute("src"); $(vid).removeAttribute("src"); return; }
+  if (clip) { $(vid).poster = rmMedia(it); if ($(vid).dataset.src !== rmMedia(it, true)) { $(vid).dataset.src = rmMedia(it, true); $(vid).src = rmMedia(it, true); } }
+  else $(img).src = rmMedia(it);
+}
+function rmShowLeft(it, caption) {
+  S.rm.left = it;
+  rmShow("rmTweak", "rmTweakVid", it);
+  $("rmTweakCap").textContent = caption;
+  document.querySelectorAll("#rmChips figure, #rmHist figure").forEach((f) => f.classList.toggle("on", f.dataset.key === `${it.gen}-${it.side}-${it.i}`));
+}
+function rmStrip(box, items, describe) {
+  box.innerHTML = "";
+  for (const it of items) {
+    const fig = el("figure", {title: it.label || "", onclick: () => rmShowLeft(it, describe(it))},
+      el("img", {src: rmMedia(it), alt: "", loading: "lazy"}), el("figcaption", {text: describe(it)}));
+    fig.dataset.key = `${it.gen}-${it.side}-${it.i}`;
+    box.append(fig);
+  }
+}
+async function rmPoll() {
+  let st;
+  try { st = await api("/api/refmod/status"); } catch (e) { S.rm.polling = false; return; }
+  const busy = st.state === "rendering";
+  $("rmRender").disabled = $("rmSweep").disabled = busy;
+  $("rmCancel").disabled = !busy;
+  if (st.status) $("rmStatus").textContent = st.status;
+  const p = st.progress;
+  $("rmBar").style.width = p && p[1] ? `${Math.round(100 * p[0] / p[1])}%` : busy ? "100%" : "0";
+  $("rmBar").parentElement.classList.toggle("indeterminate", busy && !(p && p[1]));
+  if (busy && st.early && st.kind === "render") { $("rmTweak").style.display = ""; $("rmTweakVid").style.display = "none";
+    $("rmTweak").src = `/api/refmod/media?side=early&gen=0&i=0&t=${encodeURIComponent(TOKEN)}&n=${Date.now()}`; }
+  const t = st.tweaked, b = st.baseline;
+  if (t && t.gen !== S.rm.lastT) {
+    S.rm.lastT = t.gen;
+    const lora = !!$("rmLora").value.trim();
+    rmShowLeft(t, (lora ? "LoRA + mods - " : "With mods - ") + ((t.describe || []).map(([n, s]) => `${n}@${s.toFixed(2)}`).join(", ") || "none"));
+  }
+  const bk = b ? `${b.gen}` : "";
+  if (bk !== S.rm.seen.base) { S.rm.seen.base = bk; rmShow("rmBaseImg", "rmBaseVid", b); }
+  $("rmPlayBoth").style.display = t && b && t.media && b.media && t.frames > 1 && b.frames > 1 ? "" : "none";
+  const ck = st.chips.map((c) => c.gen + "-" + c.i).join(",");
+  if (ck !== S.rm.seen.chips) {
+    S.rm.seen.chips = ck;
+    $("rmSweepBox").style.display = st.chips.length ? "" : "none";
+    $("rmSweepName").textContent = st.sweep || "";
+    rmStrip($("rmChips"), st.chips, (c) => c.label);
+  }
+  const hk = st.history.map((h) => h.gen).join(",");
+  if (hk !== S.rm.seen.hist) {
+    S.rm.seen.hist = hk;
+    $("rmHistBox").style.display = st.history.length ? "" : "none";
+    rmStrip($("rmHist"), st.history, (h) => (h.describe || []).map(([n, s]) => `${n}@${s.toFixed(2)}`).join(", ") || "no mods");
+    for (const [i, f] of [...$("rmHist").children].entries()) f.title = st.history[i].label || "";
+  }
+  if (busy) setTimeout(rmPoll, 800); else S.rm.polling = false;
+}
+function rmPollStart() { if (!S.rm.polling) { S.rm.polling = true; rmPoll(); } }
+async function rmGo(kind) {
+  rmRemember();
+  try {
+    const r = await api(`/api/refmod/${kind}`, {state: rmState(), sweep: $("rmSweepKind").value});
+    $("rmStatus").textContent = kind === "sweep" ? `Sweep: ${$("rmSweepKind").value}…`
+      : !r.active ? "No active mod - rendering With mods as the plain base." : r.need_base ? "Rendering With mods, then the comparison…" : "Rendering With mods…";
+    rmPollStart();
+  } catch (e) { $("rmStatus").textContent = e.message; }
+}
+
+async function rmAct(path, body, say) {
+  $("rmActStatus").textContent = "Working…";
+  try { const r = await api(path, body); $("rmActStatus").textContent = say(r); return r; }
+  catch (e) { $("rmActStatus").textContent = e.message; return null; }
+}
+function rmPresets(curves, setups) {
+  if (curves) { rmFill("rmCurvePreset", ["", ...curves], ["(curve presets)", ...curves]); }
+  if (setups) { rmFill("rmSetup", setups); $("rmSetupLoad").disabled = !setups.length; }
+}
+
+async function refmodOpen() {
+  if (!S.rm.wired) {
+    S.rm.wired = true;
+    try { S.rm.info = await api("/api/refmod/info"); } catch (e) { $("rmStatus").textContent = e.message; return; }
+    const I = S.rm.info;
+    if (!I.families.length) { $("rmStatus").textContent = "No model offers RefMod Studio."; $("rmRender").disabled = $("rmSweep").disabled = true; }
+    rmFill("rmFamily", I.families.map((f) => f.key), I.families.map((f) => f.name));
+    $("rmFamRow").style.display = I.families.length > 1 ? "" : "none";
+    rmFill("rmModel", I.models); rmFill("rmBase", ["Auto (by free VRAM)", "Stream blocks (exact int8, room for big clips)", "NF4 (smallest, 9.5% base error)"]);
+    rmFill("rmLength", I.lengths); rmFill("rmSweepKind", I.sweeps); rmFill("rmCompare", I.compare);
+    const dims = ["512", "640", "768", "960", "1024", "1152", "1280", "1536"];
+    rmFill("rmW", dims); rmFill("rmH", dims);
+    for (const k of ["Fc", "Sc"]) { rmFill(`rm${k}Dir`, I.directions); rmFill(`rm${k}Shape`, I.shapes); }
+    $("rmLength").value = "22 frames (~1s)"; $("rmW").value = "640"; $("rmH").value = "768";
+    rmSetCurve("Fc", I.frame_curve); rmSetCurve("Sc", I.step_curve);
+    $("rmPrompt").value = "a woman smiles at the camera, soft window light";
+    for (const [name, v] of I.retention_presets) $("rmRetPresets").append(el("button", {class: "btn btn-sm", text: `${name} ${v}`,
+      onclick: () => { $("rmRet").value = v; rmChanged(); }}));
+    rmPresets(I.curve_presets, I.setups);
+    S.rm.rows = [{on: true, mod: I.none, value: 1, copies: 1}];
+    rmApplyState(rmSaved() || I.desktop);    // this browser's last, else the desktop tab's
+    if (!$("rmOut").value) $("rmOut").value = S.outputDefault || "";
+    rmWire();
+    S.rm.seen.lora = $("rmLora").value.trim();
+    await rmLoraInfo(false);
+  }
+  rmPollStart();
+}
+
+function rmWire() {
+  const ch = () => rmChanged();
+  for (const id of ["rmRet", "rmFcVal", "rmScVal"]) $(id).addEventListener("input", ch);
+  for (const id of ["rmFcDir", "rmFcShape", "rmScDir", "rmScShape", "rmScOn", "rmNumbered", "rmCompare", "rmModel", "rmBase",
+    "rmFamily", "rmLength", "rmW", "rmH", "rmSound", "rmEarly", "rmPrompt", "rmScramble", "rmSeed", "rmOut"]) $(id).addEventListener("change", ch);
+  $("rmRetNum").addEventListener("change", () => {
+    const v = Number($("rmRetNum").value);
+    if (Number.isFinite(v)) $("rmRet").value = Math.max(0, Math.min(1, v));
+    rmChanged();
+  });
+  $("rmSteps").addEventListener("change", () => { const v = parseInt($("rmSteps").value, 10); $("rmSteps").value = Number.isFinite(v) ? Math.max(1, Math.min(40, v)) : 6; rmChanged(); });
+  $("rmTurbo").addEventListener("change", () => { const v = Number($("rmTurbo").value); $("rmTurbo").value = Number.isFinite(v) ? Math.max(0, Math.min(1.5, v)) : 0.75; rmChanged(); });
+  $("rmPrompt").addEventListener("input", debounce(rmRemember, 400));
+  $("rmScrRand").addEventListener("click", () => { $("rmScramble").value = Math.floor(Math.random() * 2 ** 31); rmChanged(); });
+  $("rmScrOff").addEventListener("click", () => { $("rmScramble").value = "-1"; rmChanged(); });
+  $("rmSeedRand").addEventListener("click", () => { $("rmSeed").value = Math.floor(Math.random() * 2 ** 31); rmChanged(); });
+  $("rmFolderPick").addEventListener("click", () => pick($("rmFolder").value, true, (p) => { $("rmFolder").value = p; rmRescan(); }));
+  $("rmFolder").addEventListener("change", () => rmRescan());
+  $("rmRescan").addEventListener("click", () => rmRescan());
+  $("rmLoraPick").addEventListener("click", () => pick($("rmLora").value || S.outputDefault, false, (p) => { $("rmLora").value = p; rmLoraChanged(); }));
+  $("rmLora").addEventListener("change", rmLoraChanged);
+  $("rmLoraClear").addEventListener("click", () => { $("rmLora").value = ""; rmLoraChanged(); });
+  $("rmAddRow").addEventListener("click", () => {
+    if (S.rm.rows.length < S.rm.info.max_rows) S.rm.rows.push({on: true, mod: S.rm.info.none, value: 1, copies: 1});
+    rmDrawRows(); rmChanged();
+  });
+  $("rmHints").addEventListener("click", async () => {
+    await rmCalc();
+    const h = S.rm.calc.hints, cur = $("rmPrompt").value.trim();
+    if (!h) { $("rmStatus").textContent = "No active mod carries a description - nothing to add."; return; }
+    if (!cur.includes(h)) { $("rmPrompt").value = cur ? `${cur}, ${h}` : h; rmChanged(); }
+  });
+  $("rmLabels").addEventListener("click", async () => {
+    $("rmNumbered").checked = true;
+    await rmCalc();
+    const lines = S.rm.calc.ref_map || [];
+    if (!lines.length) { $("rmStatus").textContent = "No active mod - nothing to number."; return; }
+    const labels = lines.map((l) => l.split(" = ")[0]).join(", "), cur = $("rmPrompt").value.trim();
+    if (!cur.includes(labels)) $("rmPrompt").value = cur ? `${cur}, ${labels}` : labels;
+    rmChanged();
+  });
+  $("rmRender").addEventListener("click", () => rmGo("render"));
+  $("rmSweep").addEventListener("click", () => rmGo("sweep"));
+  $("rmCancel").addEventListener("click", () => api("/api/refmod/cancel", {}).then(rmPollStart).catch(() => {}));
+  $("rmUnload").addEventListener("click", async () => {
+    await api("/api/studio/reset", {}).catch(() => {});   // the shared GPU worker quits (Studio's Unload)
+    $("rmStatus").textContent = "Model unloaded - the next Render loads it again.";
+  });
+  $("rmPlayBothBtn").addEventListener("click", () => {
+    for (const v of ["rmTweakVid", "rmBaseVid"]) { $(v).currentTime = 0; $(v).play().catch(() => {}); }
+  });
+  // curve presets and the pack's graph presets
+  $("rmCurvePreset").addEventListener("change", async () => {
+    const name = $("rmCurvePreset").value;
+    if (!name) return;
+    try {
+      const d = await api("/api/refmod/curve_load", {name});
+      rmSetCurve("Fc", d.frame_curve); rmSetCurve("Sc", d.step_curve);
+      if ("step_on" in d) $("rmScOn").checked = d.step_on;
+      if ("retention" in d) $("rmRet").value = d.retention;
+      $("rmCurveName").value = name;
+      rmChanged();
+    } catch (e) { $("rmStatus").textContent = e.message; }
+  });
+  $("rmCurveSave").addEventListener("click", async () => {
+    const name = $("rmCurveName").value.trim() || $("rmCurvePreset").value;
+    let r;
+    try {
+      r = await api("/api/refmod/curve_save", {name, state: rmState()});
+      if (r.exists && confirm(`Replace the curve preset '${r.name}'?`)) r = await api("/api/refmod/curve_save", {name, state: rmState(), overwrite: true});
+    } catch (e) { $("rmStatus").textContent = e.message; return; }
+    if (r.ok) { rmPresets(r.presets); $("rmCurvePreset").value = r.name; $("rmStatus").textContent = `Curve preset '${r.name}' saved.`; }
+  });
+  $("rmCurveDel").addEventListener("click", async () => {
+    const name = $("rmCurvePreset").value;
+    if (!name || !confirm(`Delete the curve preset '${name}'?`)) return;
+    const r = await api("/api/refmod/curve_delete", {name}).catch((e) => ({error: e.message}));
+    if (r.presets) rmPresets(r.presets);
+  });
+  $("rmGraphUse").addEventListener("click", () => {
+    const p = (S.rm.graphs || [])[Number($("rmGraph").value)];
+    if (!p) return;
+    rmSetCurve("Fc", p.curve); rmChanged();
+    $("rmStatus").textContent = `Fade from ${p.name}: ${p.curve[0]} / ${p.curve[1]} / ${Number(p.curve[2]).toFixed(2)}.`;
+  });
+  // actions
+  $("rmOutPick").addEventListener("click", () => pick($("rmOut").value, true, (p) => { $("rmOut").value = p; rmRemember(); }));
+  $("rmSavePrev").addEventListener("click", () => {
+    const it = S.rm.left || null;
+    rmAct("/api/refmod/save_preview", {out: $("rmOut").value.trim(), gen: it ? it.gen : S.rm.lastT, side: it ? it.side : "tweaked", i: it ? it.i : 0},
+      (r) => `Saved ${r.path}`);
+  });
+  $("rmStrip").addEventListener("click", () => rmAct("/api/refmod/save_strip", {out: $("rmOut").value.trim()},
+    (r) => `Strip saved: ${r.path}`));
+  $("rmReadoutBtn").addEventListener("click", async () => {
+    const show = $("rmReadout").style.display === "none";
+    if (show) { await rmCalc(); $("rmReadout").textContent = S.rm.calc.readout || ""; }
+    $("rmReadout").style.display = $("rmReadoutCopy").style.display = show ? "" : "none";
+  });
+  $("rmReadoutCopy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("rmReadout").textContent); $("rmActStatus").textContent = "ComfyUI settings copied."; }
+    catch (e) { $("rmActStatus").textContent = "Select the text and copy it (the browser blocked the clipboard)."; }
+  });
+  $("rmSetupSave").addEventListener("click", async () => {
+    const name = $("rmSetupName").value.trim();
+    let r = await rmAct("/api/refmod/setup_save", {name, data: rmState()}, (x) => x.ok ? `Setup saved: ${x.name}.` : "");
+    if (r && r.exists && confirm(`Replace the setup '${r.name}'?`)) r = await rmAct("/api/refmod/setup_save", {name, data: rmState(), overwrite: true}, (x) => `Setup saved: ${x.name}.`);
+    if (r && r.setups) { rmPresets(null, r.setups); $("rmSetup").value = r.name; }
+  });
+  $("rmSetupLoad").addEventListener("click", async () => {
+    const name = $("rmSetup").value;
+    const r = await rmAct("/api/refmod/setup_load", {name}, () => `Setup loaded: ${name}.`);
+    if (!r) return;
+    rmApplyState(r.data);
+    $("rmSetupName").value = name;
+    S.rm.seen.lora = $("rmLora").value.trim();
+    await rmLoraInfo(false);
+  });
+  $("rmBake").addEventListener("click", async () => {
+    const row = $("rmBakeRow").value;
+    if (row === "") { $("rmActStatus").textContent = "No active mod with a strength above 0."; return; }
+    const r = await rmAct("/api/refmod/bake", {state: rmState(), row: Number(row), name: $("rmBakeName").value.trim()}, (x) => x.message);
+    if (r) rmRescan(true);
+  });
+  $("rmRfl").addEventListener("click", async () => {
+    const r = await rmAct("/api/refmod/reflora", {state: rmState(), name: $("rmRflName").value.trim()}, (x) => x.message);
+    if (r) rmRescan(true);
+  });
+}
+
 // ---- file picker -------------------------------------------------------------------------------------------
 let pickDone = null, pickDir = false;
 async function pick(start, dirOnly, done) {
@@ -3859,6 +4349,7 @@ function showTab(name) {
   if (name === "extract") extractOpen();
   if (name === "profiler") profilerOpen();
   if (name === "royale") royaleOpen();
+  if (name === "refmod") refmodOpen();
   if (name === "metadata") mdWire();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();

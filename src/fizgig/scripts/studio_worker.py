@@ -4,7 +4,8 @@ desktop's own) so the model stays loaded between renders. Commands arrive as JSO
 thread, so a "cancel" is heard while it renders.
 
 Commands (cmd=...): load {family, plan, primary, donor, turbo, preview_settings}, donor {path} / unload_donor,
-settings {turbo, preview_settings}, render {gen, state, out_dir}, cancel, save {out, state, include_donor}, reset, quit.
+settings {turbo, preview_settings}, render {gen, state, out_dir}, cancel, save {out, state, include_donor}, reset, quit;
+royale / royale_travel (LoRA Royale), refmod (RefMod Studio).
 Events (ev=...): status {text}, step {done, total}, loaded {...}, rendered {gen, baseline, tweaked},
 aborted {gen}, error {where, msg}, saved {summary}, reset, donor {...}.
 """
@@ -472,9 +473,9 @@ def _plan_for(desc, plan):
     return plan
 
 
-def _engine_for(c):
-    """LoRA Royale's engine: the family's preview model loaded with this plan (the one already here when it matches -
-    a Studio session's or the last render's), no LoRA chosen yet. Under the engine lock."""
+def _engine_for(c, status_ev="royale_status"):
+    """LoRA Royale's (and RefMod Studio's) engine: the family's preview model loaded with this plan (the one already
+    here when it matches - a Studio session's or the last render's), no LoRA chosen yet. Under the engine lock."""
     from fizgig.families.registry import get as get_family
     desc = get_family(c["family"])
     if desc is None:
@@ -490,7 +491,9 @@ def _engine_for(c):
     S["engine"], S["desc"], S["plan_sig"] = eng, desc, sig
     if getattr(desc, "video_workbench", False):
         eng.int8_attention = True
-        eng.on_status = lambda text: emit(ev="royale_status", text=str(text))
+        eng.on_status = lambda text: emit(ev=status_ev, text=str(text))
+        if c.get("canvas"):
+            eng.plan_canvas = tuple(c["canvas"])  # H3 Auto: room for the clip about to render
     if c.get("settings") is not None:
         eng.preview_settings = c["settings"]
     eng.on_step = lambda done, total: emit(ev="step", done=done, total=total)
@@ -705,6 +708,128 @@ def cmd_royale_travel(c):
     emit(ev="travel_done", gen=gen, mode=mode, n=n_done, cancelled=cancelled)
 
 
+def _rm_rows(rows):
+    """The page's Mods rows as refmod_apply.ModRows, each mod's latent read once (in the file's own dtype, the pack
+    mixes in it) and kept while the file is unchanged."""
+    from safetensors import safe_open
+    from fizgig.minimax import refmod_apply as ra
+    cache = S.setdefault("rm_latents", {})
+    out = []
+    for r in rows:
+        m = r["meta"]
+        key = (m["path"], str(m.get("tensor_key", "latent")), os.path.getmtime(m["path"]))
+        z = cache.get(key)
+        if z is None:
+            with safe_open(m["path"], framework="pt", device="cpu") as f:
+                z = f.get_tensor(str(m.get("tensor_key", "latent"))).clone()
+            cache[key] = z
+        out.append(ra.ModRow(z, m, value=float(r.get("value", 1.0)), copies=int(r.get("copies", 1)),
+                             enabled=bool(r.get("on", True)), name=str(m.get("name", ""))))
+    return out
+
+
+def _rm_bundle(job):
+    """(latents, describe, entries, step schedule) for one RefMod render, as the desktop's _rms_job builds them: the
+    numbered-references path takes the Text Encode node's route (loader order, every copy, row strengths only)."""
+    from fizgig.minimax import refmod_apply as ra
+    rows = _rm_rows(job["rows"])
+    if job.get("numbered"):
+        latents, describe, entries = ra.build_bundle_entries(rows, retention=1.0, curve=None, scramble_seed=-1)
+        return latents, describe, entries, None
+    fc = tuple(job["frame_curve"])
+    latents, describe, entries = ra.build_bundle_entries(rows, retention=float(job["retention"]), curve=fc,
+                                                         scramble_seed=int(job.get("scramble", -1)))
+    sched = ra.step_schedule(tuple(job["step_curve"]), latents) if job.get("step_on") else None
+    return latents, describe, entries, sched
+
+
+def _rm_sync_lora(eng, path):
+    """The engine's LoRA is the page's (swapped in place when the structure matches, else the old one off and the
+    new one wired), or none - the desktop's _rms_sync_lora."""
+    cur = eng.primary_path if getattr(eng, "primary_network", None) is not None else None
+    if not path:
+        if cur:
+            eng.unload_primary()
+        return
+    if cur and os.path.normcase(cur) == os.path.normcase(path):
+        return
+    emit(ev="rm_status", text=f"Loading the LoRA {os.path.basename(path)}…")
+    if cur and eng.swap_primary_weights(path):
+        return
+    if cur:
+        eng.unload_primary()
+    eng.load_primary(path)
+
+
+def cmd_refmod(c):
+    """RefMod Studio: kind "render" = With mods, then (need_base) the comparison render; kind "sweep" = one short clip
+    per job. Each lands as a PNG (+ MP4 for a clip) and an rm_item event."""
+    gen, out, kind = c["gen"], c["out_dir"], c.get("kind", "render")
+    os.makedirs(out, exist_ok=True)
+    done, cancelled = 0, False
+    try:
+        with _engine_lock:
+            emit(ev="rm_status", text="Loading the model (the base takes a minute)…")
+            eng, desc = _engine_for(c, status_ev="rm_status")
+            eng.clear_cancel()
+            spec = getattr(desc, "clip_spec", None)
+            fps, rate = (spec.fps, spec.audio_rate) if spec is not None else (24, 32000)
+            _rm_sync_lora(eng, c.get("lora") or "")
+            n = len(c["jobs"])
+            for i, job in enumerate(c["jobs"]):
+                latents, describe, entries, sched = _rm_bundle(job)
+                items = None
+                if job.get("numbered") and latents:
+                    emit(ev="rm_status", text="Decoding the mods for the numbered references…")
+                    items = eng.reference_items(latents, entries)
+                kw = dict(seed=int(job["seed"]), prompt=job["prompt"], width=int(job["width"]),
+                          height=int(job["height"]), frames=int(job["frames"]), regime="custom",
+                          with_audio=bool(job.get("sound")), steps=int(job["steps"]),
+                          turbo_strength=float(job["turbo"]))
+
+                def early(img, step, n_, gen=gen):
+                    p = os.path.join(out, f"rm_{gen}_early.png")
+                    img.save(p)
+                    emit(ev="rm_early", gen=gen, png=p, step=step, n=n_)
+                if kind == "render" and job.get("early") and int(job["steps"]) > 2:
+                    kw.update(early_step=2, on_early=early)
+                emit(ev="rm_status", text=("Rendering With mods…" if kind == "render" else
+                                           f"Sweep: {job.get('label', '')} ({i + 1} of {n})…"))
+                clip = eng.render_refmod(ref_latents=latents or None, ref_schedule=sched, ref_items=items, **kw)
+                side = "tweaked" if kind == "render" else "chip"
+                png = os.path.join(out, f"rm_{gen}_{side}_{i}.png")
+                mp4 = _write_clip(clip, png, os.path.join(out, f"rm_{gen}_{side}_{i}.mp4"), fps, rate)
+                done += 1
+                emit(ev="rm_item", gen=gen, side=side, i=i, png=png, mp4=mp4, label=job.get("label", ""),
+                     describe=[[nm, float(s)] for nm, s in describe], steps=clip.get("steps"),
+                     turbo=clip.get("turbo_strength"), frames=int(job["frames"]))
+                if kind == "render" and c.get("need_base"):
+                    cmp_ = c.get("compare") or "nomod"
+                    emit(ev="rm_status", text="With mods done - rendering the comparison…")
+                    keep = cmp_ == "nolora"
+                    kw.pop("early_step", None)
+                    kw.pop("on_early", None)
+                    b = eng.render_refmod(ref_latents=(latents or None) if keep else None,
+                                          ref_schedule=sched if keep else None, ref_items=items if keep else None,
+                                          no_lora=cmp_ in ("nolora", "neither"), **kw)
+                    png = os.path.join(out, f"rm_{gen}_baseline_0.png")
+                    mp4 = _write_clip(b, png, os.path.join(out, f"rm_{gen}_baseline_0.mp4"), fps, rate)
+                    emit(ev="rm_item", gen=gen, side="baseline", i=0, png=png, mp4=mp4, label="", describe=[],
+                         steps=b.get("steps"), turbo=b.get("turbo_strength"), frames=int(job["frames"]))
+            try:
+                from fizgig.utils.device import clean_memory_on_device
+                clean_memory_on_device(eng.pipeline.device)
+            except Exception:
+                pass
+    except Exception as e:
+        if not _aborted(e):
+            emit(ev="rm_done", gen=gen, done=done, cancelled=False, error=str(e) or type(e).__name__,
+                 trace=traceback.format_exc()[-2000:])
+            return
+        cancelled = True
+    emit(ev="rm_done", gen=gen, done=done, cancelled=cancelled)
+
+
 def cmd_save(c):
     with _engine_lock:
         eng = S["engine"]
@@ -731,7 +856,7 @@ def cmd_reset(_c):
 
 HANDLERS = {"load": cmd_load, "donor": cmd_donor, "settings": cmd_settings, "render": cmd_render,
             "cancel": cmd_cancel, "save": cmd_save, "reset": cmd_reset, "royale": cmd_royale,
-            "royale_travel": cmd_royale_travel}
+            "royale_travel": cmd_royale_travel, "refmod": cmd_refmod}
 
 
 def _run(c):

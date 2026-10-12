@@ -287,7 +287,7 @@ MINIMAX = FamilyDescription(
     settings_aliases={"FAMILY_EMA": "MINIMAX_EMA", "FAMILY_PRECISION": "MINIMAX_BASE_QUANT", "FAMILY_FT": "MINIMAX_FINETUNE",
                       "FAMILY_FT_ROTATE_EVERY": "MINIMAX_FT_EVERY", "FAMILY_FT_FUSED": "MINIMAX_FT_FUSED",
                       "FAMILY_FT_REG_DIR": "MINIMAX_REG_DIR", "FAMILY_FT_REG_MULT": "MINIMAX_REG_MULT"},
-    workbench=("repair", "explorer", "profiler", "extract", "royale"),
+    workbench=("repair", "explorer", "profiler", "extract", "royale", "refmod"),
     workbench_engine="fizgig.minimax.workbench:H3WorkbenchEngine",
     finetune=True,
     ft_learning_rate=3e-5,            # the tested H3 fine-tune rate (1e-4 destroys; 1e-5 too slow to judge from)                    # the old rotation FT (component windows on an NF4 trunk, int8 ConvRot saves)

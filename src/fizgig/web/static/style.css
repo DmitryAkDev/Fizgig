@@ -1763,3 +1763,39 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 #tab-royale .ry-sc-save { margin-top: 4px; }
 #tab-royale select.st-small-select { width: auto !important; min-width: 84px; flex: none; }
 #tab-royale .ry-scrub { width: 100%; margin: 6px 0 4px; box-sizing: border-box; }
+
+/* RefMod Studio */
+#tab-refmod .field-row > .field-label { min-width: 150px; }
+#tab-refmod select.st-small-select { width: auto !important; min-width: 0; }
+#tab-refmod .rm-hint { padding-left: 158px; margin: -2px 0 8px; }
+#tab-refmod .rm-accent { color: var(--accent); font-weight: 600; }
+#tab-refmod .rm-tokens { font-size: 10pt; color: var(--text-secondary); font-weight: 600; }
+#tab-refmod .rm-tokens.over { color: var(--danger); }
+#tab-refmod .rm-warn { color: var(--warning); font-style: italic; margin-bottom: 8px; }
+#tab-refmod .rm-status { color: var(--warning); font-weight: 600; }
+#tab-refmod .rm-slider { width: 220px; }
+#tab-refmod .rm-slider-sm { width: 110px; }
+#tab-refmod .rm-name { width: 120px; }
+#tab-refmod .rm-name-l { max-width: 320px; }
+#tab-refmod .rm-top { align-items: flex-start; }
+#tab-refmod .rm-prompt { min-height: 60px; resize: vertical; font: inherit; }
+#tab-refmod .rm-curves { display: block; max-width: 100%; background: var(--bg-deep); margin: 4px 0 10px 158px; }
+#tab-refmod .rm-row { border-bottom: 1px solid var(--border); padding: 6px 0; }
+#tab-refmod .rm-row .field-row { margin: 0; }
+#tab-refmod .rm-row .rm-mod { width: 340px; max-width: 100%; }
+#tab-refmod .rm-row .rm-info { padding-left: 30px; font-size: 9pt; color: var(--text-secondary); }
+#tab-refmod .rm-sub { margin: 14px 0 6px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+#tab-refmod .rm-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+#tab-refmod .rm-strip figure { margin: 0; width: 132px; cursor: pointer; }
+#tab-refmod .rm-strip img { width: 132px; height: 132px; object-fit: contain; background: var(--bg-deep); display: block; }
+#tab-refmod .rm-strip figcaption { font-size: 8.5pt; color: var(--text-secondary); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+#tab-refmod .rm-strip figure.on img { outline: 2px solid var(--accent); }
+#tab-refmod .rm-readout { background: var(--bg-deep); padding: 10px; white-space: pre; overflow-x: auto; font-size: 9.5pt;
+  max-height: 340px; }
+@media (max-width: 760px) {
+  #tab-refmod .rm-hint { padding-left: 0; }
+  #tab-refmod .rm-curves { margin-left: 0; }
+}
+#tab-refmod .card-title { display: flex; justify-content: space-between; align-items: baseline; }
+.tab-item[data-tab="refmod"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='1.6' fill='black'/%3E%3Cellipse cx='12' cy='12' rx='10' ry='4'/%3E%3Cellipse cx='12' cy='12' rx='10' ry='4' transform='rotate(60 12 12)'/%3E%3Cellipse cx='12' cy='12' rx='10' ry='4' transform='rotate(120 12 12)'/%3E%3C/svg%3E"); }
