@@ -53,6 +53,7 @@ async function boot() {
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
   S.capSaved = st.captions || {};
+  S.prepSaved = st.prep || {};
   $("imageFolder").value = S.imageFolder;
   const sel = $("familySelect");
   sel.innerHTML = "";
@@ -1122,6 +1123,224 @@ function mediaFor(it) {
 }
 const mediaLabel = (it) => it.name;
 
+// ---- Image Prep tab: resize / PNG / face close-ups, and the Look Filter (fizgig/web/prep_jobs.py) -------------
+S.prep = {opts: null, logSize: 0, timer: null, look: null, marked: new Set(), bases: [], page: 0, picking: false};
+const thumbOf = (p) => `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+const prepSettings = () => ({
+  mode: (document.querySelector('input[name="prepMode"]:checked') || {}).value || "Auto Prep (Face Crops)",
+  mp: $("prepMp").value || "1.0", face: $("prepFace").value || "Largest Face", padding: $("prepPadding").value || "20",
+  replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1"});
+const savePrepSoon = debounce(() => { S.prepSaved = prepSettings(); api("/api/state", {prep: S.prepSaved}).catch(() => {}); }, 600);
+
+async function loadPrep() {
+  if (!S.prep.opts) {
+    S.prep.opts = await api("/api/prep/options");
+    const o = S.prep.opts, saved = S.prepSaved || {};
+    $("prepMp").innerHTML = ""; for (const m of o.megapixels) $("prepMp").append(el("option", {value: m, text: m}));
+    $("prepFace").innerHTML = ""; for (const f of o.faces) $("prepFace").append(el("option", {value: f, text: f}));
+    $("prepMp").value = saved.mp || "1.0";
+    $("prepFace").value = saved.face || "Largest Face";
+    if (saved.padding) $("prepPadding").value = saved.padding;
+    const mode = saved.mode || "Auto Prep (Face Crops)";
+    document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
+    document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
+    $("prepNoFaces").style.display = o.face_tools ? "none" : "";
+  }
+  $("prepFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
+    "Choose the training folder on the Start tab first.";
+  await prepSummary();
+  pollPrep();
+  lookPoll();
+}
+
+async function prepSummary() {
+  const p = prepSettings(), faceOn = p.mode !== "Resize Only";
+  document.querySelectorAll(".prep-face select, .prep-face input").forEach((i) => { i.disabled = !faceOn || !S.prep.opts.face_tools; });
+  $("prepTest").disabled = !faceOn || !S.prep.opts.face_tools;
+  if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
+  const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
+    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
+  if (!r) return;
+  $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
+  $("prepMain").style.display = r.audio_only ? "none" : "";
+  $("prepSummary").replaceChildren(...r.lines.map((t) => el("div", {text: t})));
+  $("prepMpWarn").textContent = r.warn || "";
+  if (!S.prep.running) $("prepRun").textContent = r.count ? `✨ Prepare ${r.count} Image${r.count === 1 ? "" : "s"} Now` :
+    "✨ Prepare Images Now";
+}
+
+async function pollPrep() {
+  clearTimeout(S.prep.timer);
+  const r = await api("/api/prep/status?since=" + S.prep.logSize).catch(() => null);
+  if (r) {
+    if (r.size < S.prep.logSize) { $("prepLog").textContent = ""; S.prep.logSize = 0; }
+    if (r.log) { $("prepLog").textContent += r.log; $("prepLog").scrollTop = $("prepLog").scrollHeight; }
+    S.prep.logSize = r.size;
+    const was = S.prep.running;
+    S.prep.running = r.state === "running";
+    $("prepRun").disabled = S.prep.running;
+    if (S.prep.running) $("prepRun").textContent = "Preparing…";
+    $("prepState").textContent = S.prep.running ? "Working on the Fizgig computer: you can leave this page." :
+      r.state === "done" ? "Done." : r.state === "failed" ? "It stopped with an error: see the log." : "";
+    if (was && !S.prep.running) { prepSummary(); loadDatasets(); }
+  }
+  if (S.prep.running) S.prep.timer = setTimeout(pollPrep, 1000);
+}
+
+async function prepRun() {
+  if (!S.imageFolder) { $("prepState").textContent = "Choose the training folder on the Start tab first."; return; }
+  const p = prepSettings();
+  try {
+    await api("/api/prep/run", {folder: S.imageFolder, ...p});
+    $("prepLog").textContent = ""; S.prep.logSize = 0;
+    pollPrep();
+  } catch (e) { $("prepState").textContent = e.message; }
+}
+
+function prepTest() {
+  pick(S.imageFolder, false, async (path) => {
+    const host = $("prepTestResult");
+    host.replaceChildren(el("div", {class: "field-hint", text: "Finding faces… (the first time loads the face model)"}));
+    try {
+      const r = await api("/api/prep/test", {path, face: $("prepFace").value});
+      if (!r.faces.length) { host.replaceChildren(el("div", {class: "field-hint", text: "No faces found in that photo."})); return; }
+      host.replaceChildren(
+        el("div", {class: "field-hint", text: `${r.faces.length} face${r.faces.length === 1 ? "" : "s"} found: ` +
+          r.faces.map((f, i) => `face ${i + 1}, ${f.gender === "unknown" ? "?" : f.gender}, ${f.area.toLocaleString()} px` +
+            (f.selected ? " (chosen for the crop)" : "")).join("; ") + ". Green = chosen, yellow = the others."}),
+        el("img", {class: "prep-test-img", src: r.image, alt: "faces found"}));
+    } catch (e) { host.replaceChildren(el("div", {class: "problems", text: e.message})); }
+  });
+}
+
+// ---- the Look Filter ----
+async function lookPickOpen() {
+  const host = $("lookPicker");
+  if (S.prep.picking) { S.prep.picking = false; host.style.display = "none"; return; }
+  if (!S.imageFolder) { $("lookStatus").textContent = "Choose the training folder on the Start tab first."; return; }
+  S.prep.picking = true;
+  host.style.display = "";
+  host.replaceChildren(el("div", {class: "field-hint", text: "Loading the folder's pictures…"}));
+  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}`).catch(() => ({items: []}));
+  const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp)$/i.test(it.name));
+  host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best nail the look you want."}),
+    ...pics.map((it) => el("button", {class: "look-tile pick" + (S.prep.bases.includes(it.path) ? " chosen" : ""),
+      title: it.name, onclick: (e) => {
+        const i = S.prep.bases.indexOf(it.path);
+        if (i >= 0) S.prep.bases.splice(i, 1);
+        else if (S.prep.bases.length < 3) S.prep.bases.push(it.path);
+        else return;
+        e.currentTarget.classList.toggle("chosen", S.prep.bases.includes(it.path));
+        lookBasesShow();
+      }}, el("img", {loading: "lazy", src: thumbOf(it.path), alt: ""}), el("span", {text: it.name}))));
+}
+
+function lookBasesShow() {
+  $("lookBases").replaceChildren(...S.prep.bases.map((p) => el("img", {src: thumbOf(p), title: p, alt: ""})),
+    el("span", {class: "field-hint", text: `${S.prep.bases.length} of 3 chosen`}));
+  $("lookScan").disabled = S.prep.bases.length !== 3;
+}
+
+async function lookScan() {
+  try {
+    await api("/api/look/scan", {folder: S.imageFolder, baselines: S.prep.bases});
+    S.prep.picking = false; $("lookPicker").style.display = "none";
+    S.prep.marked = new Set(); S.prep.page = 0;
+    lookPoll();
+  } catch (e) { $("lookStatus").textContent = e.message; }
+}
+
+async function lookPoll() {
+  clearTimeout(S.prep.lookTimer);
+  const r = await api("/api/look/status").catch(() => null);
+  if (!r) return;
+  S.prep.look = r;
+  if (r.state === "running") {
+    $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
+      "Loading the face model (the first time downloads about 300 MB)…";
+    S.prep.lookTimer = setTimeout(lookPoll, 1000);
+  } else if (r.state === "failed") $("lookStatus").textContent = r.error;
+  else if (r.state === "done" && r.rows.length) {
+    if (!S.prep.bases.length) { S.prep.bases = r.baselines; lookBasesShow(); }
+    const faces = r.rows.filter((x) => x.score != null).length;
+    $("lookStatus").textContent = `${r.rows.length} picture(s) scored: ${faces} with faces, ${r.rows.length - faces} ` +
+      "without. Worst matches first. Click a picture to mark it, or use Auto-Suggest. Scores are saved with the " +
+      "dataset: low scorers you keep can ease in with “Warm up look outliers” on the Training tab.";
+  }
+  lookRender();
+}
+
+const LOOK_PAGE = 200;
+function lookRender() {
+  const r = S.prep.look, host = $("lookRows");
+  const rows = r && r.state === "done" && r.folder === S.imageFolder ? r.rows : [];
+  $("lookTools").style.display = rows.length ? "" : "none";
+  host.innerHTML = "";
+  const pages = Math.max(1, Math.ceil(rows.length / LOOK_PAGE));
+  S.prep.page = Math.min(S.prep.page, pages - 1);
+  $("lookPages").style.display = pages > 1 ? "" : "none";
+  $("lookPageInfo").textContent = `Page ${S.prep.page + 1} of ${pages} · ${rows.length} pictures · ${S.prep.marked.size} marked`;
+  $("lookPrev").disabled = S.prep.page === 0; $("lookNext").disabled = S.prep.page >= pages - 1;
+  $("lookCount").textContent = S.prep.marked.size ? `${S.prep.marked.size} marked` : "";
+  $("lookMove").disabled = !S.prep.marked.size;
+  for (const x of rows.slice(S.prep.page * LOOK_PAGE, (S.prep.page + 1) * LOOK_PAGE)) {
+    const marked = S.prep.marked.has(x.path);
+    const tile = el("button", {class: "look-tile" + (marked ? " marked" : ""), style: `--verdict:${x.colour}`,
+      title: x.blurb, onclick: () => { S.prep.marked.has(x.path) ? S.prep.marked.delete(x.path) : S.prep.marked.add(x.path); lookRender(); }},
+      el("img", {loading: "lazy", src: thumbOf(x.path), alt: ""}),
+      el("span", {class: "look-name", text: x.name}),
+      el("span", {class: "look-verdict", text: (x.score != null ? `${Math.round(x.score * 100)}% · ` : "") + x.verdict.toUpperCase() +
+        (x.baseline ? " · ★ baseline" : "")}),
+      el("span", {class: "look-mark", text: marked ? "✕ marked to move out" : ""}));
+    host.append(tile);
+  }
+}
+
+function lookSuggest() {
+  const r = S.prep.look;
+  if (!r || r.cutoff == null) { $("lookStatus").textContent = "Not enough scored faces for statistics: mark by eye."; return; }
+  const newly = r.rows.filter((x) => x.suggest && !S.prep.marked.has(x.path));
+  newly.forEach((x) => S.prep.marked.add(x.path));
+  $("lookStatus").textContent = `Auto-suggest marked ${newly.length} picture(s) (dataset median ${Math.round(r.median * 100)}%, ` +
+    `cutoff ${Math.round(r.cutoff * 100)}%). Review before moving: it flags statistical drift, not certainty.`;
+  lookRender();
+}
+
+function lookMoveAsk() {
+  const n = S.prep.marked.size;
+  if (!n) return;
+  const sep = S.imageFolder.includes("\\") ? "\\" : "/";
+  $("lookConfirm").replaceChildren(el("div", {class: "run-delete"},
+    el("div", {class: "field-hint", text: `Move ${n} picture(s), with their captions, out of the dataset to ` +
+      `${S.imageFolder}${sep}excluded_by_look? Nothing is deleted: move them back to put them in again.`}),
+    el("div", {class: "field-row"},
+      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async () => {
+        try {
+          const r = await api("/api/look/move", {folder: S.imageFolder, paths: [...S.prep.marked], ext: capExt()});
+          S.prep.marked = new Set();
+          $("lookConfirm").innerHTML = "";
+          $("lookStatus").textContent = `Moved ${r.moved} picture(s) to ${r.dest}. ${r.left} remain in the dataset.` +
+            (r.errors.length ? " " + r.errors.join(" ") : "");
+          await lookPoll(); loadDatasets();
+        } catch (e) { $("lookConfirm").replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { $("lookConfirm").innerHTML = ""; }}))));
+}
+
+function wirePrep() {
+  document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
+    r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
+  for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  $("prepRun").addEventListener("click", prepRun);
+  $("prepTest").addEventListener("click", prepTest);
+  $("lookPick").addEventListener("click", lookPickOpen);
+  $("lookScan").addEventListener("click", lookScan);
+  $("lookSuggest").addEventListener("click", lookSuggest);
+  $("lookMove").addEventListener("click", lookMoveAsk);
+  $("lookPrev").addEventListener("click", () => { S.prep.page--; lookRender(); });
+  $("lookNext").addEventListener("click", () => { S.prep.page++; lookRender(); });
+}
+
 // ---- Captions tab ----------------------------------------------------------------------------------------
 // The desktop Captions tab's tools, run on the Fizgig machine (fizgig/web/captions.py). Settings are remembered.
 const CAP_PAGE = 40;
@@ -1402,6 +1621,7 @@ function showTab(name) {
   });
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
   if (name === "captions") loadCaptions();
+  if (name === "prep") loadPrep();
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
@@ -1634,6 +1854,7 @@ function wire() {
   if (wired) return;
   wired = true;
   wireLightbox();
+  wirePrep();
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
   // the sidebar's run opens the run card itself (it sits under the Training form)

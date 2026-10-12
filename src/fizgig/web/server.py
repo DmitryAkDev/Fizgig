@@ -33,6 +33,7 @@ from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
 from fizgig.web import captions, history, live
 from fizgig.web import queue as webqueue
+from fizgig.web import prep_jobs
 from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
 from fizgig.web.schema import get_schema
 
@@ -1240,6 +1241,32 @@ class Handler(BaseHTTPRequestHandler):
             desc = get_family((qs.get("family") or [""])[0])
             return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
+        if path == "/api/prep/options":            # Image Prep: its choices, and whether face tools are here
+            from fizgig.dataset import prep as _prep
+            return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
+                              "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available()})
+        if path == "/api/prep/summary":            # the What will happen card
+            from fizgig.dataset import prep as _prep
+            g = lambda k, d="": (qs.get(k) or [d])[0]
+            folder = g("folder")
+            try:
+                mp = float(g("mp", "1.0"))
+                train = float(g("train_mp")) if g("train_mp") else None
+            except ValueError:
+                mp, train = 1.0, None
+            r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train)
+            try:
+                names = os.listdir(folder)
+            except OSError:
+                names = []
+            exts = {os.path.splitext(n)[1].lower() for n in names}
+            r["audio_only"] = not r["count"] and bool(exts & {".wav", ".mp3", ".flac", ".m4a"})
+            r["clips"] = sum(1 for n in names if n.lower().endswith(".mp4"))
+            return self.json(r)
+        if path == "/api/prep/status":
+            return self.json(prep_jobs.status(int((qs.get("since") or ["0"])[0] or 0)))
+        if path == "/api/look/status":
+            return self.json(prep_jobs.look_status())
         if path == "/api/captions/status":
             return self.json(captions.status())
         if path == "/api/runs":
@@ -1636,7 +1663,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/state":
                 save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "values", "tab",
-                                                                    "captions")})
+                                                                    "captions", "prep")})
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
@@ -1650,6 +1677,31 @@ class Handler(BaseHTTPRequestHandler):
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
                     bool(b.get("overwrite")), clips, only=only or None, photos=photos,
                     ext=captions.caption_ext(b.get("ext"))))
+            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move"):
+                folder = str(b.get("folder") or "")
+                norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
+                with _lock:
+                    training_here = (_run["proc"] is not None and _run["proc"].poll() is None
+                                     and norm(_run.get("image_folder")) == norm(folder))
+                if training_here:
+                    return self.json({"error": "A run is training on this folder now. Wait for it to finish, or "
+                                               "stop it first."}, 400)
+                try:
+                    if path == "/api/prep/run":
+                        return self.json(prep_jobs.start(folder, str(b.get("mode") or ""), b.get("mp") or 1.0,
+                                                         str(b.get("face") or "Largest Face"),
+                                                         b.get("padding") or 20, bool(b.get("replace"))))
+                    if path == "/api/look/scan":
+                        return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
+                    return self.json(prep_jobs.look_move(folder, b.get("paths") or [],
+                                                         captions.caption_ext(b.get("ext"))))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/prep/test":              # Test face detection on one photo (writes nothing)
+                try:
+                    return self.json(prep_jobs.test_faces(str(b.get("path") or ""), str(b.get("face") or "")))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
             if path == "/api/captions/static":
                 _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),

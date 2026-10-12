@@ -14152,19 +14152,9 @@ class LoRATrainerGUI:
     _FF_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 
     def _ff_verdict(self, sim):
-        """(label, color, blurb) for a similarity score. Thresholds are ArcFace cosine-sim
-        conventions: same person across varied photos usually lands 0.30-0.70 vs a single
-        baseline; a different person rarely clears 0.25."""
-        if sim is None:
-            return ("no face", "#7F8C8D",
-                    "No face detected — can't be scored. Back shots are fine; judge by eye.")
-        if sim >= 0.45:
-            return ("match", "#70AD47", "Solid match to the baseline look.")
-        if sim >= 0.30:
-            return ("borderline", "#E67E22",
-                    "Same person territory, but drifting — worth an eyeball.")
-        return ("drift", "#E74C3C",
-                "Weak match — likely off-look (synthetic drift or a different subject).")
+        """(label, color, blurb) for a similarity score (fizgig/dataset/prep.py, shared with the web UI)."""
+        from fizgig.dataset import prep
+        return prep.verdict(sim)
 
     def _open_face_filter_window(self):
         """Look Consistency Filter — score every training image's face against 3 chosen baselines
@@ -14413,27 +14403,23 @@ class LoRATrainerGUI:
         def work():
             import numpy as np
             try:
-                base_embs = [self._ff_embed_cached(b) for b in self._ff_baselines]
-                missing = [os.path.basename(b) for b, e in zip(self._ff_baselines, base_embs)
-                           if e is None]
-                if missing:
-                    self.master.after(0, lambda: self._ff_scan_done(
-                        None, "No face found in baseline(s): " + ", ".join(missing) +
-                        " — pick images with a clear face."))
-                    return
-                scores = {}
-                for i, p in enumerate(files, 1):
+                from fizgig.dataset import prep           # the scoring the web UI's Look Filter runs
+
+                class _Closed(Exception):
+                    pass
+
+                def progress(i, total):
                     if not win.winfo_exists():
-                        return   # window closed mid-scan — drop the work silently
-                    emb = self._ff_embed_cached(p)
-                    # Average of the 3 similarities == similarity to the (unnormalized) centroid
-                    # of the baselines — one photo's framing bias can't dominate the score.
-                    scores[p] = None if emb is None else float(
-                        np.mean([np.dot(be, emb) for be in base_embs]))
-                    if i % 3 == 0 or i == len(files):
-                        done, total = i, len(files)
-                        self.master.after(0, lambda d=done, t=total:
-                                          self._ff_set_status(f"Scoring faces… {d}/{t}"))
+                        raise _Closed()  # window closed mid-scan — drop the work silently
+                    if i % 3 == 0 or i == total:
+                        self.master.after(0, lambda d=i, t=total: self._ff_set_status(f"Scoring faces… {d}/{t}"))
+                try:
+                    scores = prep.score(files, self._ff_baselines, self._ff_embed_cached, progress)
+                except _Closed:
+                    return
+                except ValueError as e:
+                    self.master.after(0, lambda m=str(e): self._ff_scan_done(None, m))
+                    return
                 self.master.after(0, lambda: self._ff_scan_done(scores, None))
             except Exception as e:
                 self.master.after(0, lambda err=str(e): self._ff_scan_done(None, f"Scan failed: {err}"))
@@ -14458,19 +14444,8 @@ class LoRATrainerGUI:
         # Persist for the trainer's "Warm up look outliers" toggle — the scores travel with the
         # dataset (same pattern as fizgig_excluded.json). Cutoff = the auto-suggest fence.
         try:
-            folder = self.image_folder_var.get().strip()
-            ss = sorted(scored)
-            cutoff = None
-            if len(ss) >= 4:
-                n = len(ss)
-                med, q1, q3 = ss[n // 2], ss[n // 4], ss[(3 * n) // 4]
-                cutoff = max(med - 1.5 * (q3 - q1), 0.25)
-            payload = {"baselines": [os.path.basename(b) for b in self._ff_baselines],
-                       "cutoff": cutoff,
-                       "scores": {os.path.splitext(os.path.basename(p))[0]: s
-                                  for p, s in scores.items()}}
-            with open(os.path.join(folder, "fizgig_look_scores.json"), "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2)
+            from fizgig.dataset import prep
+            prep.save_scores(self.image_folder_var.get().strip(), self._ff_baselines, scores)
         except Exception:
             pass
         self._ff_set_status(f"{len(scores)} image(s) scored — {len(scored)} with faces, {nf} without. "
@@ -14510,16 +14485,12 @@ class LoRATrainerGUI:
         """Mark statistical drift: below the dataset's own low outlier fence (median − 1.5·IQR)
         or below the 0.25 different-person floor. No-face rows are never suggested — unscoreable
         isn't the same as bad (think from-behind shots)."""
-        scored = sorted(s for s in self._ff_scores.values() if s is not None)
-        if len(scored) < 4:
+        from fizgig.dataset import prep
+        med, cutoff = prep.cutoff(self._ff_scores)
+        if cutoff is None:
             messagebox.showinfo("Look Filter", "Not enough scored faces for statistics — mark by eye.")
             return
-        n = len(scored)
-        med = scored[n // 2]
-        q1, q3 = scored[n // 4], scored[(3 * n) // 4]
-        cutoff = max(med - 1.5 * (q3 - q1), 0.25)   # dataset's low outlier fence, floored at the
-        newly = {p for p, s in self._ff_scores.items()   # ~different-person similarity level
-                 if s is not None and s < cutoff and p not in self._ff_baselines}
+        newly = prep.suggest(self._ff_scores, self._ff_baselines)
         self._ff_marked |= newly
         self._ff_set_status(f"Auto-suggest marked {len(newly)} image(s) "
                             f"(dataset median {med * 100:.0f}%, cutoff {cutoff * 100:.0f}%). "
@@ -14613,38 +14584,14 @@ class LoRATrainerGUI:
                 f"Move {len(marked)} image(s) (plus matching captions) out of the dataset "
                 f"to:\n\n{dest_dir}\n\nNothing is deleted — move them back to re-admit them."):
             return
-        import shutil
-        os.makedirs(dest_dir, exist_ok=True)
-        moved = 0
-        for p in marked:
-            target = None
-            try:
-                base = os.path.basename(p)
-                target = os.path.join(dest_dir, base)
-                n = 2
-                while os.path.exists(target):
-                    stem, ext = os.path.splitext(base)
-                    target = os.path.join(dest_dir, f"{stem}_{n}{ext}")
-                    n += 1
-                shutil.move(p, target)
-                for _cext in dict.fromkeys((".txt", self._caption_ext())):     # its caption goes with it
-                    cap = os.path.splitext(p)[0] + _cext
-                    if os.path.exists(cap):
-                        shutil.move(cap, os.path.splitext(target)[0] + _cext)
-                moved += 1
-                self._ff_scores.pop(p, None)
-                self._ff_marked.discard(p)
-            except Exception as e:
-                # A failed move can leave a half-state behind (shutil.move falls back to
-                # copy+delete when the source is briefly locked, e.g. mid thumbnail decode;
-                # the copy lands, the delete fails). Remove the orphan copy so the image
-                # isn't duplicated in and out of the dataset.
-                try:
-                    if target and os.path.exists(p) and os.path.exists(target):
-                        os.remove(target)
-                except Exception:
-                    pass
-                self._ff_set_status(f"Could not move {os.path.basename(p)}: {e}")
+        from fizgig.dataset import prep
+        done, errors = prep.move_out(folder, marked, (".txt", self._caption_ext()))
+        moved = len(done)
+        for p in done:
+            self._ff_scores.pop(p, None)
+            self._ff_marked.discard(p)
+        if errors:
+            self._ff_set_status(errors[-1])
         # Re-flow the page: the list is shorter, so the slice shifted and the page may have
         # emptied. Thumbs are cached, so this is cheap; the scroll position is put back.
         try:
@@ -14700,128 +14647,10 @@ class LoRATrainerGUI:
         except Exception as exc:
             messagebox.showerror("Gizmo could not start", f"{type(exc).__name__}: {exc}")
 
-    @staticmethod
-    def _atomic_png_save(img, output_path):
-        """Write the PNG to a temp file then os.replace into place. In-place mode saves
-        straight over the original — a crash, full disk or End Task mid-write used to
-        truncate the source photo beyond recovery."""
-        tmp = output_path + ".fizgig-tmp"
-        try:
-            img.save(tmp, "PNG")
-            os.replace(tmp, output_path)
-        except Exception:
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-            raise
-
-    def _safe_output_path(self, filepath, output_path):
-        """Never overwrite a DIFFERENT existing file.
-
-        Every prep mode writes `<stem>.png`, so a folder holding photo.jpg AND an
-        unrelated photo.png would have the .jpg's output destroy the .png (and
-        _handle_original then deletes the .jpg — one photo gone, silently).
-        In-place re-save of the same file is fine; a genuine collision gets a
-        `_2`/`_3`... suffix instead, with a log line."""
-        if not os.path.exists(output_path):
-            return output_path
-        try:
-            if os.path.samefile(filepath, output_path):
-                return output_path  # in-place re-save of itself
-        except OSError:
-            pass
-        stem, ext = os.path.splitext(output_path)
-        n = 2
-        candidate = f"{stem}_{n}{ext}"
-        while os.path.exists(candidate):
-            n += 1
-            candidate = f"{stem}_{n}{ext}"
-        self._log(f"Name collision: {os.path.basename(output_path)} already exists — "
-                  f"writing {os.path.basename(candidate)} instead\n")
-        return candidate
-
-    def _stash_original_if_inplace(self, filepath, output_path, output_folder, replace_originals):
-        """Call BEFORE saving. Keep-safe mode + in-place PNG output means the save OVERWRITES
-        the original — by the time _handle_original ran, there was nothing left to move
-        (issue #43: PNG originals silently destroyed while JPGs were kept). A COPY rather
-        than a move, because PIL may still hold the source file open at this point and a
-        move of an open file fails on Windows; the end state is identical — original
-        content in originals/, processed image at the original name."""
-        if replace_originals or filepath != output_path or not os.path.exists(filepath):
-            return
-        if not hasattr(self, '_originals_dir_cache'):
-            self._originals_dir_cache = {}
-        if output_folder not in self._originals_dir_cache:
-            self._originals_dir_cache[output_folder] = self._get_originals_dir(output_folder)
-        originals_dir = self._originals_dir_cache[output_folder]
-        os.makedirs(originals_dir, exist_ok=True)
-        import shutil
-        shutil.copy2(filepath, os.path.join(originals_dir, os.path.basename(filepath)))
-
-    def _handle_original(self, filepath, output_path, output_folder, replace_originals):
-        """Handle the original file: delete if replacing, move to subfolder if preserving.
-        The in-place keep-safe case is covered by _stash_original_if_inplace BEFORE the save
-        — by this point the overwrite has already happened, correctly for replace mode and
-        harmlessly for keep-safe (the original is already copied out)."""
-        if filepath == output_path:
-            return  # Output overwrote original, nothing to do
-        if replace_originals:
-            os.remove(filepath)
-        else:
-            if not hasattr(self, '_originals_dir_cache'):
-                self._originals_dir_cache = {}
-            if output_folder not in self._originals_dir_cache:
-                self._originals_dir_cache[output_folder] = self._get_originals_dir(output_folder)
-            originals_dir = self._originals_dir_cache[output_folder]
-            os.makedirs(originals_dir, exist_ok=True)
-            import shutil
-            dest = os.path.join(originals_dir, os.path.basename(filepath))
-            shutil.move(filepath, dest)
-
-    def _get_originals_dir(self, output_folder):
-        """Find the next available originals folder (originals, originals_2, originals_3, etc.)."""
-        candidate = os.path.join(output_folder, "originals")
-        if not os.path.isdir(candidate):
-            return candidate
-        # Check if it has any images
-        has_images = any(
-            os.path.splitext(f)[1].lower() in self.IMAGE_EXTENSIONS
-            for f in os.listdir(candidate) if os.path.isfile(os.path.join(candidate, f))
-        )
-        if not has_images:
-            return candidate
-        # Find next numbered folder
-        n = 2
-        while True:
-            candidate = os.path.join(output_folder, f"originals_{n}")
-            if not os.path.isdir(candidate):
-                return candidate
-            has_images = any(
-                os.path.splitext(f)[1].lower() in self.IMAGE_EXTENSIONS
-                for f in os.listdir(candidate) if os.path.isfile(os.path.join(candidate, f))
-            )
-            if not has_images:
-                return candidate
-            n += 1
-
     def _get_image_files(self, folder):
-        """Scan folder for image files, return sorted list of full paths."""
-        files = []
-        for filename in sorted(os.listdir(folder)):
-            filepath = os.path.join(folder, filename)
-            if os.path.isfile(filepath) and os.path.splitext(filename)[1].lower() in self.IMAGE_EXTENSIONS:
-                files.append(filepath)
-        return files
-
-    def _load_image(self, filepath):
-        """Load an image and convert to RGB/RGBA."""
-        img = Image.open(filepath)
-        if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
-            img = img.convert('RGBA')
-        else:
-            img = img.convert('RGB')
-        return img
+        """The folder's images (top level), sorted."""
+        from fizgig.dataset import prep
+        return prep.image_files(folder)
 
     @staticmethod
     def _bucket_step():
@@ -14838,82 +14667,19 @@ class LoRATrainerGUI:
             return 16
 
     def _prep_target_area(self, mp):
-        """Training's real target AREA for a megapixel setting.
-
-        Derived exactly as the dataset TOML writer derives `resolution` — floor the square side
-        to the bucket grid (1.0 MP -> 992x992 = 984 064 px, not 1 000 000). Matching it means
-        prep lands at or just UNDER what training asks for, which keeps training's no-upscale
-        path: the cache step then resamples and crops nothing at all."""
-        step = self._bucket_step()
-        side = max(step, int(math.sqrt(max(0.0, mp) * 1_000_000)) // step * step)
-        return side * side
+        """Training's real target AREA for a megapixel setting (fizgig/dataset/prep.py, shared with the web UI)."""
+        from fizgig.dataset import prep
+        return prep.target_area(mp)
 
     def _prep_output_size(self, size, target_area):
-        """The (w, h) `_resize_image` would produce for `size` — same maths, no pixels touched.
-        Used by the summary card to show a worked example before anything is written."""
-        width, height = size
-        cur_area = width * height
-        if cur_area <= target_area:
-            return width, height
-        step = self._bucket_step()
-        scale = math.sqrt(target_area / cur_area)
-        return (max(step, int(width * scale) // step * step),
-                max(step, int(height * scale) // step * step))
+        """The (w, h) prep would produce for `size` - same maths, no pixels touched (fizgig/dataset/prep.py)."""
+        from fizgig.dataset import prep
+        return prep.output_size(size, target_area)
 
     def _resize_image(self, img, target_area):
-        """Resize to ~`target_area` PIXELS, preserving aspect ratio. Never upscales.
-        Returns (img, resized_bool).
-
-        Area, not longest edge: training chooses its resolution by area and — with No Upscale on,
-        the default — leaves any image already at or under the target exactly as it is. A
-        longest-edge cap therefore pushed every non-square image permanently below the training
-        target (a 3:4 photo trained at 75% of the pixels it could have, 16:9 at 56%; issue #44).
-
-        Both sides are floored to the bucket step (16). Training floors to that grid anyway, so
-        doing it here makes the saved file exactly what trains, and lands just under the target
-        area — which keeps training's no-upscale path and means the cache step resamples and
-        crops nothing at all."""
-        width, height = img.size
-        cur_area = width * height
-        if cur_area <= target_area:
-            return img, False                      # never upscale — it would only invent detail
-        step = self._bucket_step()
-        scale = math.sqrt(target_area / cur_area)
-        new_width = max(step, int(width * scale) // step * step)
-        new_height = max(step, int(height * scale) // step * step)
-        if (new_width, new_height) == (width, height):
-            return img, False
-        return img.resize((new_width, new_height), Image.LANCZOS), True
-
-    def _select_face(self, faces, face_mode):
-        """Select a face from detected faces based on face_mode. Returns (FaceInfo, note_str) or (None, note_str)."""
-        if not faces:
-            return None, ""
-        if face_mode == "largest_male":
-            selected = self.face_detector.get_largest_by_gender(faces, "male", fallback_to_any=True)
-            note = "  Note: No male face, using largest face\n" if (selected and selected.gender != "male") else ""
-        elif face_mode == "largest_female":
-            selected = self.face_detector.get_largest_by_gender(faces, "female", fallback_to_any=True)
-            note = "  Note: No female face, using largest face\n" if (selected and selected.gender != "female") else ""
-        else:
-            selected = self.face_detector.get_largest(faces)
-            note = ""
-        return selected, note
-
-    def _get_next_facecrop_index(self, folder):
-        """Find next available FaceCrop_NNN index in a folder."""
-        import glob as glob_module
-        existing = glob_module.glob(os.path.join(glob_module.escape(folder), "FaceCrop_*.png"))
-        max_idx = 0
-        for f in existing:
-            basename = os.path.splitext(os.path.basename(f))[0]
-            parts = basename.split("_")
-            if len(parts) >= 2:
-                try:
-                    max_idx = max(max_idx, int(parts[1]))
-                except ValueError:
-                    pass
-        return max_idx + 1
+        """Resize to ~`target_area` pixels, aspect kept, never upscaling; (img, resized). fizgig/dataset/prep.py."""
+        from fizgig.dataset import prep
+        return prep.resize_image(img, target_area)
 
     def _log(self, text):
         """Append text to the convert log (preserves user scroll position). Marshals to the
@@ -15127,12 +14893,14 @@ class LoRATrainerGUI:
 
         def _prep_worker():
             try:
+                from fizgig.dataset import prep           # the same code the web UI's Image Prep runs
+                job = prep.Prep(self._log, self.face_detector if prep_mode != "Resize Only" else None)
                 if prep_mode == "Auto Prep (Face Crops)":
-                    self._auto_prep_images(source_folder, output_folder, target_area, face_mode, face_padding, replace_originals)
+                    job.auto_prep(source_folder, output_folder, target_area, face_mode, face_padding, replace_originals)
                 elif prep_mode == "Resize Only":
-                    self._resize_only_images(source_folder, output_folder, target_area, replace_originals)
+                    job.resize_only(source_folder, output_folder, target_area, replace_originals)
                 elif prep_mode == "Face Crop Only":
-                    self._face_crop_only_images(source_folder, output_folder, target_area, face_mode, face_padding, replace_originals)
+                    job.face_crop_only(source_folder, output_folder, target_area, face_mode, face_padding, replace_originals)
             except Exception as e:
                 self._log(f"\nERROR: prep failed — {type(e).__name__}: {e}\n")
             finally:
@@ -15149,195 +14917,6 @@ class LoRATrainerGUI:
             pass
         self.convert_log.configure(state="disabled")
         self.convert_log.see(tk.END)
-
-    def _resize_only_images(self, source_folder, output_folder, target_area, replace_originals):
-        """Resize Only mode: convert/resize images, no face detection."""
-        self._log("Mode: Resize Only\n\n")
-        files = self._get_image_files(source_folder)
-        converted, skipped, errors = 0, 0, 0
-
-        for filepath in files:
-            filename = os.path.basename(filepath)
-            ext = os.path.splitext(filename)[1].lower()
-            try:
-                img = self._load_image(filepath)
-                original_size = img.size
-                img, resized = self._resize_image(img, target_area)
-                w, h = img.size
-
-                base_name = os.path.splitext(filename)[0]
-                output_path = os.path.join(output_folder, base_name + ".png")
-
-                if filepath == output_path and ext == '.png' and not resized:
-                    self._log(f"Skipped (no changes): {filename}\n")
-                    skipped += 1
-                    img.close()
-                    continue
-
-                output_path = self._safe_output_path(filepath, output_path)
-                self._stash_original_if_inplace(filepath, output_path, output_folder, replace_originals)
-                self._atomic_png_save(img, output_path)
-                size_info = f"{original_size[0]}x{original_size[1]} -> {w}x{h}" if resized else f"{w}x{h}"
-                self._log(f"Converted: {filename} [{size_info}]\n")
-                converted += 1
-                img.close()
-
-                self._handle_original(filepath, output_path, output_folder, replace_originals)
-
-            except Exception as e:
-                self._log(f"Error ({filename}): {e}\n")
-                errors += 1
-
-        self._log(f"\n--- Summary ---\nConverted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
-
-    def _face_crop_only_images(self, source_folder, output_folder, target_area, face_mode, face_padding, replace_originals):
-        """Face Crop Only mode: face crop replaces the output."""
-        self._log(f"Mode: Face Crop Only ({face_mode}, padding {face_padding}%)\n\n")
-        files = self._get_image_files(source_folder)
-        converted, skipped, errors, face_crops, no_face = 0, 0, 0, 0, 0
-
-        for filepath in files:
-            filename = os.path.basename(filepath)
-            ext = os.path.splitext(filename)[1].lower()
-            try:
-                img = self._load_image(filepath)
-                original_size = img.size
-                cropped = False
-                crop_info = ""
-
-                try:
-                    faces = self.face_detector.detect_from_pil(img)
-                    if faces:
-                        selected, note = self._select_face(faces, face_mode)
-                        if note:
-                            self._log(note)
-                        if selected:
-                            img = crop_to_face(img, selected, face_padding)
-                            cropped = True
-                            face_crops += 1
-                            crop_info = f" [face: {selected.gender}]"
-                    else:
-                        self._log(f"  No face in {filename}, skipping crop\n")
-                        no_face += 1
-                except Exception as fe:
-                    self._log(f"  Face error ({filename}): {fe}\n")
-
-                img, resized = self._resize_image(img, target_area)
-                w, h = img.size
-
-                base_name = os.path.splitext(filename)[0]
-                output_path = os.path.join(output_folder, base_name + ".png")
-
-                if filepath == output_path and ext == '.png' and not resized and not cropped:
-                    self._log(f"Skipped (no changes): {filename}\n")
-                    skipped += 1
-                    img.close()
-                    continue
-
-                output_path = self._safe_output_path(filepath, output_path)
-                self._stash_original_if_inplace(filepath, output_path, output_folder, replace_originals)
-                self._atomic_png_save(img, output_path)
-                size_info = f"{original_size[0]}x{original_size[1]} -> {w}x{h}" if (resized or cropped) else f"{w}x{h}"
-                self._log(f"Converted: {filename} [{size_info}]{crop_info}\n")
-                converted += 1
-                img.close()
-
-                self._handle_original(filepath, output_path, output_folder, replace_originals)
-
-            except Exception as e:
-                self._log(f"Error ({filename}): {e}\n")
-                errors += 1
-
-        self._log(f"\n--- Summary ---\nConverted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
-        self._log(f"Face crops: {face_crops} | No face: {no_face}\n")
-
-    def _auto_prep_images(self, source_folder, output_folder, target_area, face_mode, face_padding, replace_originals):
-        """Auto Prep mode: resize originals + generate face crops from the HIGH-RES original
-        (before it gets overwritten/moved), then handle originals."""
-        self._log(f"Mode: Auto Prep (Face Crops)\n")
-        self._log(f"Face target: {face_mode}, padding: {face_padding}%\n")
-        self._log(f"Output: {output_folder}\n\n")
-
-        files = self._get_image_files(source_folder)
-        converted, skipped, errors = 0, 0, 0
-        face_crops_created, no_face = 0, 0
-        crop_index = self._get_next_facecrop_index(output_folder)
-
-        for filepath in files:
-            filename = os.path.basename(filepath)
-            ext = os.path.splitext(filename)[1].lower()
-            base_name = os.path.splitext(filename)[0]
-
-            # Skip existing FaceCrop derivatives
-            if base_name.startswith("FaceCrop_"):
-                self._log(f"Skipped (derivative): {filename}\n")
-                skipped += 1
-                continue
-
-            try:
-                # Load original at full resolution
-                original_img = self._load_image(filepath)
-                original_size = original_img.size
-
-                # --- Face crop from the HIGH-RES original (before resize) ---
-                try:
-                    faces = self.face_detector.detect_from_pil(original_img)
-                    if faces:
-                        selected, note = self._select_face(faces, face_mode)
-                        if note:
-                            self._log(note)
-                        if selected:
-                            cropped = crop_to_face(original_img, selected, face_padding)
-                            cropped, _ = self._resize_image(cropped, target_area)
-                            crop_name = f"FaceCrop_{crop_index:03d}.png"
-                            crop_path = os.path.join(output_folder, crop_name)
-                            cropped.save(crop_path, "PNG")
-                            cw, ch = cropped.size
-                            self._log(f"Face crop: {crop_name} ({cw}x{ch}) from {filename} ({original_size[0]}x{original_size[1]}) [{selected.gender}]\n")
-                            face_crops_created += 1
-                            crop_index += 1
-                            cropped.close()
-                        else:
-                            no_face += 1
-                    else:
-                        self._log(f"No face: {filename}\n")
-                        no_face += 1
-                except Exception as e:
-                    self._log(f"Face crop error ({filename}): {e}\n")
-
-                # --- Resize and save the main image ---
-                resized_img, resized = self._resize_image(original_img, target_area)
-                w, h = resized_img.size
-                output_path = os.path.join(output_folder, base_name + ".png")
-
-                if filepath == output_path and ext == '.png' and not resized:
-                    self._log(f"OK (no changes): {filename}\n")
-                    skipped += 1
-                    resized_img.close()
-                    continue
-
-                output_path = self._safe_output_path(filepath, output_path)
-                # Keep-safe + in-place PNG means this save OVERWRITES the original and
-                # _handle_original below has nothing left to move — the issue #43 failure, which
-                # was fixed in the other two modes but not here, i.e. in the DEFAULT one.
-                self._stash_original_if_inplace(filepath, output_path, output_folder, replace_originals)
-                self._atomic_png_save(resized_img, output_path)
-                size_info = f"{original_size[0]}x{original_size[1]} -> {w}x{h}" if resized else f"{w}x{h}"
-                self._log(f"Converted: {filename} [{size_info}]\n")
-                converted += 1
-                resized_img.close()
-
-                self._handle_original(filepath, output_path, output_folder, replace_originals)
-
-            except Exception as e:
-                self._log(f"Error ({filename}): {e}\n")
-                errors += 1
-
-        self._log(f"\n--- Summary ---\n")
-        self._log(f"Originals converted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
-        self._log(f"Face crops created: {face_crops_created} | No face: {no_face}\n")
-        self._log(f"Total files in output: {len(self._get_image_files(output_folder))}\n")
-
 
     # region LoRA the Explorer Tab
 

@@ -24,9 +24,10 @@
         <nav class="tab-bar-scroller" id="tabs">
           <div class="side-label">Train</div>
           <button class="tab-item active" data-tab="start"><i></i><span>1. Start</span></button>
-          <button class="tab-item" data-tab="captions"><i></i><span>2. Captions</span></button>
-          <button class="tab-item" data-tab="samples"><i></i><span>3. Samples</span></button>
-          <button class="tab-item" data-tab="training"><i></i><span>4. Training</span></button>
+          <button class="tab-item" data-tab="prep"><i></i><span>2. Image Prep</span></button>
+          <button class="tab-item" data-tab="captions"><i></i><span>3. Captions</span></button>
+          <button class="tab-item" data-tab="samples"><i></i><span>4. Samples</span></button>
+          <button class="tab-item" data-tab="training"><i></i><span>5. Training</span></button>
           <div class="side-label">After</div>
           <button class="tab-item" data-tab="outputs"><i></i><span>Runs &amp; outputs</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
@@ -103,6 +104,129 @@
             <div class="card-title">Model files needed</div>
             <div class="card-desc" id="modelWarningText"></div>
             <div class="card-content"><button class="btn btn-primary" data-goto="prefs">Open Preferences</button></div>
+          </div>
+        </section>
+
+        <section id="tab-prep" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Image Prep</h1>
+            <p>Resize, convert to PNG, and optionally face-crop your training images. Optional: skip straight to
+              Captions if your images are already prepared.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Training folder</div>
+            <div class="card-desc">Everything below happens inside the training folder from the Start tab: prepared
+              images land there, ready for the Captions tab and training.</div>
+            <div class="card-content"><div class="field-hint" id="prepFolder"></div></div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Working from video or audio?</div>
+            <div class="card-desc">Gizmo cuts training clips and voice segments: frame rate, frame count, sizing and
+              sound come out on spec, with optional Whisper transcription for voice. It opens in its own window, so
+              it runs in the desktop app only: on the Fizgig computer, open the desktop app's Image Prep tab and
+              press Open Gizmo. Video and voice training are MiniMax H3 only; still images need none of this.</div>
+          </div>
+          <div class="section-card" id="prepAudioOnly" style="display:none">
+            <div class="card-desc">🎙 Audio-only training set: this tab prepares images, and voice recordings need none
+              of it. Segments are cut, captioned and sized in Gizmo's audio tab (desktop app); your files here are
+              already ready to train.</div>
+          </div>
+          <div id="prepMain">
+            <div class="section-card">
+              <div class="card-title">1 · What to do</div>
+              <div class="card-content">
+                <label class="radio-label"><input type="radio" name="prepMode" value="Auto Prep (Face Crops)">
+                  Resize + face close-ups — recommended for people</label>
+                <div class="field-hint radio-hint">Every photo is resized and saved as PNG, plus a zoomed-in copy of
+                  the face saved beside it: more detail shots for better likeness. 💡 Works best on high-res
+                  originals: if your photos are already shrunk to training size, the face close-ups come out soft.
+                  Start from the biggest versions you have.</div>
+                <label class="radio-label"><input type="radio" name="prepMode" value="Resize Only"> Resize only</label>
+                <div class="field-hint radio-hint">Just resize and convert to PNG. Use for styles, objects, or
+                  already-cropped sets.</div>
+                <label class="radio-label"><input type="radio" name="prepMode" value="Face Crop Only">
+                  Face close-ups only</label>
+                <div class="field-hint radio-hint">Keep only the cropped face from each photo: the full shot is not
+                  kept.</div>
+                <div class="field-row prep-opts">
+                  <span class="field-label">Target megapixels:</span><select id="prepMp" class="w-combo"></select>
+                  <span class="field-hint">MP (larger images shrink to fit; smaller are left alone)</span>
+                </div>
+                <div class="field-row prep-opts prep-face">
+                  <span class="field-label">Face:</span><select id="prepFace" class="w-combo"></select>
+                  <span class="field-label">Padding:</span>
+                  <input type="text" id="prepPadding" class="w-num" value="20">
+                  <span class="field-hint">% around the face</span>
+                </div>
+                <div class="field-hint" id="prepNoFaces" style="display:none">Face detection isn't installed on the
+                  Fizgig computer: run install_fizgig.py there to add it. Resize only still works.</div>
+                <div class="field-hint">Sizing is by target area (megapixels), not longest side: this matches how
+                  training buckets your images, so prepping costs you no resolution. Aspect ratio is kept; nothing is
+                  cropped.</div>
+                <div class="problems" id="prepMpWarn"></div>
+              </div>
+            </div>
+            <div class="section-card">
+              <div class="card-title">2 · Your originals</div>
+              <div class="card-content">
+                <label class="radio-label"><input type="radio" name="prepReplace" value="0" checked>
+                  Keep them safe — moved to an 'originals' subfolder</label>
+                <label class="radio-label"><input type="radio" name="prepReplace" value="1">
+                  Replace them ⚠ originals are gone after this</label>
+              </div>
+            </div>
+            <div class="section-card accent-card">
+              <div class="card-title">📋 What will happen</div>
+              <div class="card-content"><div class="prep-summary" id="prepSummary"></div></div>
+            </div>
+            <div class="section-card">
+              <div class="card-title">3 · Run it</div>
+              <div class="card-content">
+                <div class="field-row"><button class="btn btn-primary" id="prepRun">✨ Prepare Images Now</button>
+                  <span class="field-hint" id="prepState"></span></div>
+                <div class="field-row"><span class="field-hint">Want to check first?</span>
+                  <button class="btn btn-sm" id="prepTest">Test face detection on one photo…</button>
+                  <span class="field-hint">optional and safe: shows the crop, writes nothing</span></div>
+                <div id="prepTestResult"></div>
+              </div>
+            </div>
+            <div class="section-card">
+              <div class="card-title">Output log</div>
+              <div class="card-content"><pre class="console-terminal prep-log" id="prepLog"></pre></div>
+            </div>
+          </div>
+          <div class="section-card" id="lookCard">
+            <div class="card-title">Final step: Look Consistency Filter (faces)</div>
+            <div class="card-desc">Run this last, after every other prep stage: it scores the finished training
+              folder. Pick three baseline pictures that nail the look you want; every picture's face is scored against
+              all three and averaged (ArcFace similarity), so no one photo's angle, expression or light sets the bar.
+              It finds pictures that drifted off-look, the near-misses a loss curve can't see. Click pictures to mark
+              them, or let Auto-Suggest flag the outliers, then move the marked ones out in one go (to an
+              excluded_by_look subfolder; nothing is deleted). The scores are saved with the dataset, so low scorers
+              you keep can ease in with the Training tab's "Warm up look outliers".</div>
+            <div class="card-content">
+              <div class="field-row">
+                <button class="btn" id="lookPick">Choose 3 baselines…</button>
+                <span class="look-bases" id="lookBases"></span>
+                <button class="btn btn-primary" id="lookScan" disabled>Scan folder</button>
+              </div>
+              <div class="field-hint" id="lookStatus">Each score is the average similarity to your 3 baselines. The
+                same person typically lands at 30–70%, the baselines included (each is scored against the other two
+                as well as itself).</div>
+              <div id="lookPicker" class="look-grid" style="display:none"></div>
+              <div class="field-row" id="lookTools" style="display:none">
+                <button class="btn" id="lookSuggest">Auto-Suggest drift</button>
+                <button class="btn btn-danger" id="lookMove" disabled>Move marked out of the dataset</button>
+                <span class="field-hint" id="lookCount"></span>
+              </div>
+              <div id="lookConfirm"></div>
+              <div class="field-row" id="lookPages" style="display:none">
+                <button class="btn btn-sm" id="lookPrev">‹ Previous</button>
+                <span class="field-hint" id="lookPageInfo"></span>
+                <button class="btn btn-sm" id="lookNext">Next ›</button>
+              </div>
+              <div id="lookRows" class="look-grid"></div>
+            </div>
           </div>
         </section>
 
