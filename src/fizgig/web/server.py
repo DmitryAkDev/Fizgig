@@ -786,9 +786,11 @@ def main(argv=None):
                                                  "password)")
     ap.add_argument("--port", type=int, default=None, help="Port to serve on (default: the one in Preferences, "
                                                             "8081 at first; a taken one moves to the next free one)")
-    ap.add_argument("--password", default=None, help="Login password (default: VNC_PASSWORD or FIZGIG_PASSWORD)")
+    ap.add_argument("--password", default=None, help="Login password (default: FIZGIG_PASSWORD, then the one in "
+                                                     "Preferences, then VNC_PASSWORD)")
     a = ap.parse_args(argv)
-    pwd = a.password or os.environ.get("VNC_PASSWORD") or os.environ.get("FIZGIG_PASSWORD")
+    pwd = (a.password or os.environ.get("FIZGIG_PASSWORD") or str(load_prefs().get("web_password") or "").strip()
+           or os.environ.get("VNC_PASSWORD"))
     host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
         sys.exit("Listening beyond localhost needs a password (--password, VNC_PASSWORD or FIZGIG_PASSWORD).")

@@ -98,7 +98,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.
 
-Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: [docs/CLI.md](docs/CLI.md).
+Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: [docs/CLI.md](docs/CLI.md). Or in a browser, from any device: [docs/WEB_UI.md](docs/WEB_UI.md).
 
 ## Install
 
@@ -159,6 +159,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |
+| [Web UI](docs/WEB_UI.md) | Fizgig in a browser: starting it, its port and password, model downloads |
 | [RunPod](docker/README.md) | The cloud image |
 
 ## License

@@ -956,6 +956,9 @@ DEFAULT_PREFS = {
     # The web UI's port (python lora_trainer_gui.py --web). 8081 is what the pod image exposes; on a desktop where
     # it is taken, the web UI moves to the nearest free port above and saves it here, so it keeps that port.
     "web_port": "8081",
+    # The web UI's login password. Empty = the web UI only listens on this machine; set = it listens on every
+    # address and asks for this password, so other devices can open it. --password / FIZGIG_PASSWORD win over it.
+    "web_password": "",
 }
 
 
@@ -17491,6 +17494,21 @@ class LoRATrainerGUI:
         _port_entry.bind("<FocusOut>", _commit_port)
         _port_entry.bind("<Return>", _commit_port)
 
+        ttk.Label(web_card, text="Password:").grid(row=3, column=0, sticky=tk.W, padx=(0, 10), pady=(8, 4))
+        _pw_row = tk.Frame(web_card, bg=COLORS["bg_surface"])
+        _pw_row.grid(row=3, column=1, sticky=tk.W, pady=(8, 4))
+        _pw_entry = ttk.Entry(_pw_row, textvariable=self.prefs_vars["web_password"], width=28, show="*")
+        _pw_entry.pack(side=tk.LEFT)
+        _pw_show = tk.BooleanVar(value=False)
+        ttk.Checkbutton(_pw_row, text="Show", variable=_pw_show,
+                        command=lambda: _pw_entry.configure(show="" if _pw_show.get() else "*")
+                        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Label(web_card, text="Empty: the web UI opens on this machine only. Set: other devices can open it too, "
+                                "after logging in with this password. Saved in prefs.json as plain text; used the "
+                                "next time the web UI starts.",
+                 font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"], wraplength=640,
+                 justify=tk.LEFT).grid(row=4, column=1, sticky=tk.W, padx=5, pady=(0, 4))
+
         # where to open it: this machine, other devices on the network (those need a password), or the pod's proxy
         _links = tk.Frame(web_card, bg=COLORS["bg_surface"])
         _links.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(4, 0))
@@ -17508,7 +17526,8 @@ class LoRATrainerGUI:
             rows = ([("Open the web UI:", f"https://{_pod}-8081.proxy.runpod.net/", "")] if _pod else
                     [("Open the web UI:", f"http://localhost:{p}/", "on this machine, while the web UI runs")]
                     + ([("Other devices:", f"http://{_lan}:{p}/",
-                         "start the web UI with a password (--password) to reach it from them")] if _lan else []))
+                         "" if self.prefs_vars["web_password"].get().strip()
+                         else "set a password below to open it from other devices")] if _lan else []))
             for i, (label, url, note) in enumerate(rows):
                 ttk.Label(_links, text=label).grid(row=i, column=0, sticky=tk.W, padx=(0, 10), pady=2)
                 lk = tk.Label(_links, text=url, font=(FONT_FAMILY, 10, "underline"), fg=COLORS["accent"],
@@ -17524,6 +17543,7 @@ class LoRATrainerGUI:
             _port_var.set(self.prefs_vars["web_port"].get())
             _paint_links()
         self.prefs_vars["web_port"].trace_add("write", _on_port_pref)
+        self.prefs_vars["web_password"].trace_add("write", lambda *a: _paint_links())
 
         # Card 3: Output Directories
         out_card = self._start_section_card(

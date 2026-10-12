@@ -8,7 +8,17 @@ Fizgig can run as a web page as well as a desktop app: on a pod, on a machine wi
 python lora_trainer_gui.py --web
 ```
 
-The console prints the address, for example `Fizgig web UI on http://localhost:8081/`. On its own the web UI listens only on this machine. To reach it from other devices, give it a password (`--password`, or the `FIZGIG_PASSWORD` or `VNC_PASSWORD` environment variable); it then listens on every address and asks for that password.
+The console prints the address, for example `Fizgig web UI on http://localhost:8081/`. The desktop app's Preferences → Web UI card has links to it: one for this machine, and one with this machine's network address for other devices.
+
+## The password
+
+Without a password the web UI only opens on the machine it runs on. With one, it listens on every address and asks for the password, so a phone, tablet or another computer on your network can open it.
+
+- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only.
+- **By hand:** set `"web_password"` in `prefs.json`, e.g. `"web_password": "something long"`.
+- **For one launch:** `--password something`, or the `FIZGIG_PASSWORD` environment variable.
+
+The password is saved in `prefs.json` as plain text, so use one you don't use anywhere else. When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then the one in Preferences, then `VNC_PASSWORD` (the pod template's login password, so a pod has one with no setup).
 
 ## The port
 
@@ -18,7 +28,7 @@ To change the port:
 
 - **Desktop app:** Preferences → Web UI → Web UI port.
 - **Web UI:** Preferences → Web UI → Port. The new port is used the next time the web UI starts.
-- **By hand**, when neither is available: open `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`) and set `"web_port"`, e.g. `"web_port": "8090"`. Add the line if it is not there, keeping the file valid JSON (a comma between entries). Then start the web UI again.
+- **By hand**, when neither is available: open `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`) and set `"web_port"`, e.g. `"web_port": "8090"` (`"web_password"` sits beside it, see above). Add the line if it is not there, keeping the file valid JSON (a comma between entries). Then start the web UI again.
 - **For one launch:** `python lora_trainer_gui.py --web --port 8090`. This uses that port only and does not change the saved one.
 
 On a RunPod pod the web UI always uses 8081, the port the pod's proxy forwards, whatever is saved.
