@@ -1212,7 +1212,11 @@ const RY_KEY = "fizgig_royale";
 const rySaved = () => { try { return JSON.parse(localStorage.getItem(RY_KEY) || "{}"); } catch (e) { return {}; } };
 function ryRemember() {
   const v = (id) => $(id).value;
-  try { localStorage.setItem(RY_KEY, JSON.stringify({source: rySource(), single: v("rySingle"), cmp: v("ryCPrompts"),
+  const keep = {};                                  // the travel cards' own fields, as the desktop remembers them
+  for (const id of ["ryPPrompt", "ryPCustom", "ryPSubject", "ryPPreset", "rySA", "rySB", "rySWay", "ryLA", "ryLB",
+    "ryCMode", "ryCEpochs", "ryCTrigger", "ryCSeed"]) if ($(id)) keep[id] = $(id).value;
+  try { localStorage.setItem(RY_KEY, JSON.stringify({tool: S.ry.tool, keep, ptDim: S.ry.ptDim, source: rySource(),
+    single: v("rySingle"), cmp: v("ryCPrompts"),
     family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
     seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
     like: v("ryLikeRef"), out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
@@ -1240,8 +1244,22 @@ async function royaleOpen() {
 const RY_MODES = {seed: "ryS", strength: "ryL", prompt: "ryP"};
 S.ry.tr = {};
 
+function ryShowTool(key) {
+  // one tool at a time; the epoch tools need a run (Single LoRA starts on seed travel)
+  if (key === "epochs" && rySource() === "single") key = "seed";
+  S.ry.tool = key;
+  document.querySelectorAll("#tab-royale [data-ry]").forEach((x) => {
+    if (x.classList.contains("ry-tab")) x.classList.toggle("active", x.dataset.ry === key);
+    else x.classList.toggle("ry-off", x.dataset.ry !== key);
+  });
+  try { const d = rySaved(); d.tool = key; localStorage.setItem(RY_KEY, JSON.stringify(d)); } catch (e) { /* private */ }
+}
+
 function rySource() { return (document.querySelector('input[name="rySource"]:checked') || {}).value || "folder"; }
-function rySourceChanged() { $("tab-royale").classList.toggle("single", rySource() === "single"); ryRemember(); }
+function rySourceChanged() {
+  $("tab-royale").classList.toggle("single", rySource() === "single"); ryRemember();
+  ryShowTool(S.ry.tool || rySaved().tool || "epochs");
+}
 
 async function ryPtRefresh(applyPreset) {
   // the prompt-travel card: a preset fills it (subject, prompt, knobs); the travel's waypoints fill Start / End
@@ -1373,6 +1391,7 @@ async function ryScSave(sc, fmt) {
 
 async function wireRoyaleTravel() {
   document.querySelectorAll('input[name="rySource"]').forEach((r) => r.addEventListener("change", rySourceChanged));
+  document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => ryShowTool(b.dataset.ry)));
   const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
   const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
   $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || S.outputDefault, false, setSingle)}),
@@ -1415,6 +1434,11 @@ async function wireRoyaleTravel() {
   if (sv.source === "single") document.querySelector('input[name="rySource"][value="single"]').checked = true;
   if (sv.single) $("rySingle").value = sv.single;
   if (sv.cmp) $("ryCPrompts").value = sv.cmp;
+  for (const [id, val] of Object.entries(sv.keep || {})) if ($(id) && val != null &&
+    ($(id).tagName !== "SELECT" || [...$(id).options].some((o) => o.value === val))) $(id).value = val;
+  if (sv.ptDim) S.ry.ptDim = sv.ptDim;
+  document.querySelectorAll("#tab-royale input, #tab-royale select, #tab-royale textarea").forEach((x) =>
+    x.addEventListener("change", () => ryRemember()));
   rySourceChanged();
   if (S.ry.ptDim === undefined) S.ry.ptDim = "Age";
   ryPtRefresh(false);

@@ -1748,3 +1748,18 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 #tab-royale.no-ref .ry-ref { display: none !important; }
 #tab-royale.no-refstr .ry-refstr { display: none !important; }
 .ry-sheet { max-width: 100%; display: block; margin: 8px 0; cursor: zoom-in; }
+
+/* Royale: the tools as tabs, the rows lined up */
+.ry-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 32px 12px; }
+.ry-tab { background: var(--bg-surface); border: 1px solid var(--border); color: var(--text-secondary); padding: 7px 14px;
+  cursor: pointer; font: inherit; }
+.ry-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+#tab-royale [data-ry].ry-off { display: none !important; }
+/* a hint under a row starts under its box, not under the label (175 px labels + the 10 px gap) */
+#tab-royale .card-content > .field-hint, #tab-royale .card-content > .pf-hint { padding-left: 185px; }
+@media (max-width: 760px) { .ry-tabs { margin: 0 12px 12px; } #tab-royale .card-content > .field-hint,
+  #tab-royale .card-content > .pf-hint { padding-left: 0; } }
+#tab-royale .st-inline { display: inline-flex; align-items: center; gap: 6px; }
+#tab-royale .ry-sc-save { margin-top: 4px; }
+#tab-royale select.st-small-select { width: auto !important; min-width: 84px; flex: none; }
+#tab-royale .ry-scrub { width: 100%; margin: 6px 0 4px; box-sizing: border-box; }

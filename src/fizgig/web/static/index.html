@@ -731,9 +731,19 @@
                 <button class="btn" id="ryRefPick">Choose…</button><button class="btn" id="ryRefClear">Clear</button>
                 <span class="st-inline" id="ryRefStrBox" title="How strongly the reference anchors each epoch render. 1.0 = full edit-model anchor (the reference holds the composition while each epoch's LoRA renders the prompt), lower lets the prompt vary more, 0 = off.">
                   <span class="field-hint">Strength</span><input type="text" id="ryRefStr" class="w-num" value="1.0"></span></div>
+              <div class="field-row"><span class="field-label">Save to:</span><input type="text" id="ryOut" class="w-path"
+                title="Where clips, stills, sheets and promoted LoRAs go">
+                <button class="btn" id="ryOutPick">Choose…</button></div>
             </div>
           </div>
-          <div class="section-card ry-folder-only">
+          <div class="ry-tabs" id="ryTabs">
+            <button class="ry-tab ry-folder-only" data-ry="epochs">Epochs</button>
+            <button class="ry-tab" data-ry="seed">Seed travel</button>
+            <button class="ry-tab" data-ry="prompt">Prompt travel</button>
+            <button class="ry-tab" data-ry="strength">Strength travel</button>
+            <button class="ry-tab" data-ry="sheet">Comparison sheet</button>
+          </div>
+          <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Crossfade</div>
             <div class="card-desc">Drag to blend between consecutive epochs - stop where it looks best.</div>
             <div class="card-content">
@@ -754,12 +764,12 @@
               <input type="range" id="ryScrub" min="0" max="0" step="0.01" value="0" class="ry-scrub">
             </div>
           </div>
-          <div class="section-card ry-folder-only">
+          <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">All epochs</div>
             <div class="card-desc">Click a thumbnail to jump the crossfade there.</div>
             <div class="card-content"><div class="ry-grid" id="ryGrid"></div></div>
           </div>
-          <div class="section-card ry-folder-only">
+          <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Likeness score</div>
             <div class="card-desc">Pick a training image of your subject - Fizgig scores each epoch's face against it
               (ArcFace, on the CPU) and highlights the closest match in gold.</div>
@@ -773,7 +783,7 @@
                 <span class="field-hint" id="ryLikeStatus"></span></div>
             </div>
           </div>
-          <div class="section-card ry-folder-only">
+          <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Export the morph</div>
             <div class="card-desc">Save the crossfade as a looping clip - face resolving epoch by epoch, with a
               Fizgig · LoRA Royale tag. Made to share.</div>
@@ -785,14 +795,12 @@
                 <label class="checkbox-label"><input type="checkbox" id="ryLoop" checked> Loop (ping-pong)</label>
                 <label class="checkbox-label"><input type="checkbox" id="ryTicker" checked> Epoch ticker</label>
                 <label class="checkbox-label"><input type="checkbox" id="ryTag" checked> Fizgig tag</label></div>
-              <div class="field-row"><span class="field-label">Save to:</span><input type="text" id="ryOut" class="w-path">
-                <button class="btn" id="ryOutPick">Choose…</button></div>
               <div class="field-row"><button class="btn btn-primary" id="ryExport">Export clip</button>
                 <button class="btn" id="ryStills" title="Save every rendered epoch still as a full-size PNG (named by epoch so they sort in order).">Save all stills</button>
                 <span class="field-hint" id="ryExportStatus"></span></div>
             </div>
           </div>
-          <div class="section-card">
+          <div data-ry="seed" class="section-card">
             <div class="card-title">Seed travel</div>
             <div class="card-desc">Take the epoch on the crossfade (or the single LoRA) and morph it smoothly between seeds
               (slerp through noise space) - shows the LoRA's range, saved as a clip.</div>
@@ -822,7 +830,7 @@
                 <label class="checkbox-label"><input type="checkbox" id="rySTag" checked> Fizgig tag</label>
                 <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
                 <select id="rySDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
-              <div class="field-row"><button class="btn btn-primary" id="rySGo" style="background:#C0392B">Render seed travel</button>
+              <div class="field-row"><button class="btn btn-primary" id="rySGo">Render seed travel</button>
                 <span class="field-hint" id="rySStatus"></span></div>
               <div class="ry-sc" data-mode="seed" id="rySSc" style="display:none">
                 <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
@@ -835,7 +843,7 @@
               </div>
             </div>
           </div>
-          <div class="section-card">
+          <div data-ry="prompt" class="section-card">
             <div class="card-title">Prompt travel</div>
             <div class="card-desc">Morph the epoch through a series of prompt variations on a fixed seed - it interpolates
               the text embedding, so the same subject flows (e.g. dawn → night). Saved as a clip.</div>
@@ -876,7 +884,7 @@
                 <label class="checkbox-label"><input type="checkbox" id="ryPTag" checked> Fizgig tag</label>
                 <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
                 <select id="ryPDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
-              <div class="field-row"><button class="btn btn-primary" id="ryPGo" style="background:#B7791F">Render prompt travel</button>
+              <div class="field-row"><button class="btn btn-primary" id="ryPGo">Render prompt travel</button>
                 <span class="field-hint" id="ryPStatus"></span></div>
               <div class="ry-sc" data-mode="prompt" id="ryPSc" style="display:none">
                 <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
@@ -889,7 +897,7 @@
               </div>
             </div>
           </div>
-          <div class="section-card">
+          <div data-ry="strength" class="section-card">
             <div class="card-title">LoRA strength travel</div>
             <div class="card-desc">Hold the prompt and seed fixed and ramp the LoRA's strength - watch the effect fade in (0
               = base model) through to full strength and beyond. Saved as a clip.</div>
@@ -907,7 +915,7 @@
                 <label class="checkbox-label"><input type="checkbox" id="ryLTag" checked> Fizgig tag</label>
                 <span class="field-hint" title="Timelapse-style luminance deflicker (post-process). Normal removes frame-to-frame jitter and keeps the intended slow brightness arc; Strong flattens harder.">Deflicker</span>
                 <select id="ryLDeflicker" class="w-combo st-small-select"><option>None</option><option>Normal</option><option>Strong</option></select></div>
-              <div class="field-row"><button class="btn btn-primary" id="ryLGo" style="background:#B7791F">Render strength travel</button>
+              <div class="field-row"><button class="btn btn-primary" id="ryLGo">Render strength travel</button>
                 <span class="field-hint" id="ryLStatus"></span></div>
               <div class="ry-sc" data-mode="strength" id="ryLSc" style="display:none">
                 <div class="ry-stage"><img alt=""></div><div class="ry-label"></div>
@@ -920,7 +928,7 @@
               </div>
             </div>
           </div>
-          <div class="section-card">
+          <div data-ry="sheet" class="section-card">
             <div class="card-title">Comparison sheet</div>
             <div class="card-desc">The share image people post for a new LoRA: one row per prompt, one column per condition,
               the same seed across a row so only the LoRA changes. Saved as one labelled PNG.</div>
@@ -938,16 +946,16 @@
                 <span class="field-hint">W</span><select id="ryCW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="ryCH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select>
                 <label class="checkbox-label"><input type="checkbox" id="ryCRows" checked> Row captions</label>
                 <label class="checkbox-label"><input type="checkbox" id="ryCTag" checked> Fizgig tag</label></div>
-              <div class="field-row"><button class="btn btn-primary" id="ryCGo" style="background:#B7791F">Render comparison sheet</button>
+              <div class="field-row"><button class="btn btn-primary" id="ryCGo">Render comparison sheet</button>
                 <span class="field-hint" id="ryCStatus"></span></div>
               <div id="ryCSheet" style="display:none"><img id="ryCImg" class="ry-sheet" alt="comparison sheet">
                 <div class="field-row"><button class="btn btn-sm" id="ryCSave">Save sheet</button><span class="field-hint" id="ryCMsg"></span></div></div>
             </div>
           </div>
-          <div class="section-card ry-folder-only">
+          <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Promote winner</div>
             <div class="card-desc">Copy the epoch currently shown on the crossfade to a new .safetensors you can drop
-              straight into ComfyUI (into the Save to folder above).</div>
+              straight into ComfyUI (into the Save to folder).</div>
             <div class="card-content">
               <div class="field-row"><button class="btn btn-primary" id="ryPromote">Promote current epoch</button>
                 <input type="text" id="ryPromoteName" class="w-path" placeholder="name (leave empty for run-epochN-pick)">
