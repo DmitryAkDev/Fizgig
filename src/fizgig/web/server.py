@@ -2831,6 +2831,10 @@ class Handler(BaseHTTPRequestHandler):
                             raise ValueError("Pick a LoRA file (Single LoRA), or render epochs and slide to the one "
                                              "you want to showcase.")
                         cols = [[None, lpath], [label, lpath]]       # column 0 renders at strength 0 (the base model)
+                    total = len(prompts) * len(cols)
+                    if total > 24 and not b.get("confirm"):       # the desktop's Large sheet question
+                        return self.json({"confirm": f"That's {total} renders ({len(prompts)} prompts x {len(cols)} "
+                                                     "columns). It will take a while."})
                     p.update(cols=cols, prompts=prompts, sheet_mode=sheet_mode, trigger=str(b.get("trigger") or ""),
                              row_labels=bool(b.get("row_labels", True)), brand=bool(b.get("brand", True)))
                     paths = [c[1] for c in cols]
@@ -2846,7 +2850,11 @@ class Handler(BaseHTTPRequestHandler):
                     if mode in ("seed", "prompt"):           # the card's reference: the shown epoch, its file, Setup's
                         ref = (epoch_png if b.get("use_epoch") and not single and rendered else
                                str(b.get("ref") or "").strip() or str(b.get("setup_ref") or "").strip())
-                    num = lambda k, d, lo, hi: max(lo, min(hi, float(b.get(k) if b.get(k) not in (None, "") else d)))
+                    def num(k, d, lo, hi):           # as the desktop: a box without a number is its default
+                        try:
+                            return max(lo, min(hi, float(str(b.get(k)).strip())))
+                        except (TypeError, ValueError):
+                            return d
                     p.update(ref=ref, ref_strength=num("ref_strength", 1.0, 0, 2), ref_mp=num("ref_mp", 0.2, 0.05, 1),
                              sequential=bool(b.get("sequential")), anchor=bool(b.get("anchor")) and mode == "prompt",
                              anchor_str=num("anchor_str", 1.0, 0, 2),

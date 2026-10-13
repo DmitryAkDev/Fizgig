@@ -1659,7 +1659,12 @@ function ryRemember() {
   const v = (id) => $(id).value;
   const keep = {};                                  // the travel cards' own fields, as the desktop remembers them
   for (const id of ["ryPPrompt", "ryPCustom", "ryPSubject", "ryPPreset", "rySA", "rySB", "rySWay", "ryLA", "ryLB",
-    "ryCMode", "ryCEpochs", "ryCTrigger", "ryCSeed"]) if ($(id)) keep[id] = $(id).value;
+    "ryCMode", "ryCEpochs", "ryCTrigger", "ryCSeed",
+    // each card's knobs, as the desktop keeps them: reference, strength, size, anchor, interpolation, frames, W x H
+    "rySPreset", "rySRef", "rySRefStr", "rySMp", "rySSeq", "rySUseEpoch", "rySFrames", "rySW", "rySH",
+    "ryPRef", "ryPRefStr", "ryPMp", "ryPSeq", "ryPUseEpoch", "ryPAnchor", "ryPAnchorStr", "ryPInterp", "ryPDrift",
+    "ryPVary", "ryPStart", "ryPEnd", "ryPFrames", "ryPW", "ryPH", "ryLFrames", "ryLW", "ryLH", "ryCW", "ryCH"])
+    if ($(id)) keep[id] = $(id).type === "checkbox" ? $(id).checked : $(id).value;
   try { localStorage.setItem(RY_KEY, JSON.stringify({tool: S.ry.tool, keep, ptDim: S.ry.ptDim, source: rySource(),
     single: v("rySingle"), cmp: v("ryCPrompts"),
     family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
@@ -1767,12 +1772,17 @@ async function ryTravel(mode) {
   } catch (e) { $(p + "Status").textContent = e.message; }
 }
 
-async function rySheet() {
+async function rySheet(confirm) {
   try {
-    const r = await api("/api/royale/travel", {mode: "sheet", family: $("ryFamily").value, source: rySource(),
+    const r = await api("/api/royale/travel", {mode: "sheet", confirm: confirm === true, family: $("ryFamily").value, source: rySource(),
       single: $("rySingle").value.trim(), i: royaleCurrent(), prompts: $("ryCPrompts").value, sheet_mode: $("ryCMode").value,
       epochs: $("ryCEpochs").value, trigger: $("ryCTrigger").value.trim(), seed: seedOf("ryCSeed"),
       width: Number($("ryCW").value), height: Number($("ryCH").value), row_labels: $("ryCRows").checked, brand: $("ryCTag").checked});
+    if (r.confirm) {                  // a big sheet: say so first, as the desktop does
+      $("ryCStatus").replaceChildren(document.createTextNode(r.confirm + " "),
+        el("button", {class: "btn btn-sm", text: "Render it", onclick: () => rySheet(true)}));
+      return;
+    }
     if (r.family !== $("ryFamily").value) await royaleFamily(r.family);
     $("ryCSheet").style.display = "none";
     ryRemember(); ryTravelPoll();
@@ -1852,7 +1862,7 @@ async function wireRoyaleTravel() {
       $(p + "UseEpoch").addEventListener("change", () => { for (const id of ["Ref", "RefPick", "RefClear"]) $(p + id).disabled = $(p + "UseEpoch").checked; });
     }
   }
-  $("ryCGo").addEventListener("click", rySheet);
+  $("ryCGo").addEventListener("click", () => rySheet());
   $("ryCSave").addEventListener("click", async () => {
     try { const r = await api("/api/royale/travel/save", {mode: "sheet", out_dir: $("ryOut").value.trim()});
       $("ryCMsg").textContent = `Saved ${r.path}`; } catch (e) { $("ryCMsg").textContent = e.message; }
@@ -1879,8 +1889,11 @@ async function wireRoyaleTravel() {
   if (sv.source === "single") document.querySelector('input[name="rySource"][value="single"]').checked = true;
   if (sv.single) $("rySingle").value = sv.single;
   if (sv.cmp) $("ryCPrompts").value = sv.cmp;
-  for (const [id, val] of Object.entries(sv.keep || {})) if ($(id) && val != null &&
-    ($(id).tagName !== "SELECT" || [...$(id).options].some((o) => o.value === val))) $(id).value = val;
+  for (const [id, val] of Object.entries(sv.keep || {})) {
+    if (!$(id) || val == null) continue;
+    if ($(id).type === "checkbox") $(id).checked = !!val;
+    else if ($(id).tagName !== "SELECT" || [...$(id).options].some((o) => o.value === val)) { $(id).value = val; $(id).dataset.set = "1"; }
+  }
   if (sv.ptDim) S.ry.ptDim = sv.ptDim;
   document.querySelectorAll("#tab-royale input, #tab-royale select, #tab-royale textarea").forEach((x) =>
     x.addEventListener("change", () => ryRemember()));
