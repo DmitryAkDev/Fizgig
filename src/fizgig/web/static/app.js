@@ -5310,6 +5310,12 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  // Gizmo is a window on the Fizgig computer: offered only to a page open there (not a phone, not a pod)
+  $("gizmoCard").style.display = S.uploadRoot && S.uploadRoot.local && !S.onPod ? "" : "none";
+  $("gizmoOpen").addEventListener("click", async () => {
+    try { await api("/api/gizmo/open", {}); $("gizmoNote").textContent = "Gizmo is opening in its own window."; }
+    catch (e) { $("gizmoNote").textContent = e.message; }
+  });
   $("podStopKeep").addEventListener("click", () => api("/api/pod/keep", {}).then(pollRun).catch(() => {}));
   $("rvBtn").addEventListener("click", rvOpen);
   $("rvSlot").addEventListener("change", rvBuild);

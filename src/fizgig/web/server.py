@@ -2392,6 +2392,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"Too short: {len(pwd)} of at least 8 characters."}, 400)
                 update_prefs({"web_password": pwd})
                 return self.json({"ok": True, "saved": bool(pwd)})
+            if path == "/api/gizmo/open":           # Gizmo, the clip / voice / music prep app, on this computer
+                if on_pod() or not self._local_viewer():
+                    return self.json({"error": "Gizmo opens on the computer running Fizgig - use it there."}, 400)
+                script = os.path.join(BASE_DIR, "gizmo.pyw" if os.name == "nt" else "gizmo.py")
+                if not os.path.isfile(script):
+                    return self.json({"error": "gizmo.py is missing from your Fizgig folder - update Fizgig."}, 400)
+                exe = sys.executable
+                if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
+                    exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
+                subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+                return self.json({"ok": True})
             if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
                 from fizgig.web import pod_stop
                 return self.json({"ok": pod_stop.cancel(append_log)})

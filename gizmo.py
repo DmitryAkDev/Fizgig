@@ -23,7 +23,7 @@ Two things it will NOT do, both on purpose:
   * It does not caption. Captioning happens in Fizgig afterwards, on the whole folder at once,
     which is also why muting is a filename suffix — there are no .txt files yet to keep in sync.
 
-Run: venv/Scripts/pythonw.exe gizmo.pyw    (or the Launch Gizmo .bat, or from Fizgig's Image Prep)
+Run: venv/Scripts/pythonw.exe gizmo.pyw    (or the Launch Gizmo .bat, or Open Gizmo on Fizgig's Image Prep tab)
 """
 
 import os
@@ -738,13 +738,15 @@ CROP_SHAPES = (
 )
 
 # --- palette --------------------------------------------------------------------------------
-# A local copy of Fizgig's, not an import: gizmo.py must never load lora_trainer_gui.py.
+# The Fizgig app's colours (its web look, src/fizgig/web/static/style.css), copied rather than imported: gizmo.py
+# must never load the app.
 COLORS = {
-    "bg_deep": "#1E2530", "bg_surface": "#252D38", "bg_hover": "#2A3542",
-    "text_primary": "#F0F4F8", "text_secondary": "#8A9BAE", "text_explain": "#C3CDD9",
-    "text_muted": "#5A6B7E",
+    "bg_deep": "#12161D", "bg_surface": "#1A2029", "bg_hover": "#252D3A", "bg_raised": "#212834",
+    "bg_inset": "#10141A",
+    "text_primary": "#F0F4F8", "text_secondary": "#93A3B5", "text_explain": "#C3CDD9",
+    "text_muted": "#66778A",
     "accent": "#3B82F6", "accent_hover": "#60A5FA",
-    "border": "#3A4555",
+    "border": "#2A3341",
     "success": "#10B981", "warning": "#F59E0B", "error": "#EF4444",
 }
 FONT_FAMILY = "Segoe UI"
@@ -1413,6 +1415,11 @@ class Gizmo:
             s.theme_use("clam")
         except tk.TclError:
             pass
+        # clam draws every widget with a light bevel (lightcolor / darkcolor) and a pale border: white outlines round
+        # each tab, dropdown, slider and scrollbar on the dark cards. One set of quiet edges for everything.
+        s.configure(".", bordercolor=COLORS["border"], lightcolor=COLORS["bg_hover"], darkcolor=COLORS["bg_hover"],
+                    troughcolor=COLORS["bg_inset"], focuscolor=COLORS["accent"])
+        s.configure("G.TCombobox", lightcolor=COLORS["bg_hover"], darkcolor=COLORS["bg_hover"])
         s.configure("G.TCombobox", fieldbackground=COLORS["bg_hover"],
                     background=COLORS["bg_hover"], foreground=COLORS["text_primary"],
                     arrowcolor=COLORS["text_secondary"], bordercolor=COLORS["border"],
@@ -1445,8 +1452,8 @@ class Gizmo:
                               ("selectForeground", COLORS["text_primary"])):
             self.root.option_add(f"*TCombobox*Listbox.{option}", value)
 
-        s.configure("G.Horizontal.TScale", background=COLORS["bg_surface"],
-                    troughcolor=COLORS["bg_deep"])
+        s.configure("G.Horizontal.TScale", background=COLORS["bg_hover"], troughcolor=COLORS["bg_inset"],
+                    bordercolor=COLORS["border"], lightcolor=COLORS["bg_hover"], darkcolor=COLORS["bg_hover"])
         # The window's own scrollbar, which clam otherwise draws in stock light grey against
         # every dark card.
         s.configure("Vertical.TScrollbar", background=COLORS["bg_hover"],
@@ -1460,26 +1467,45 @@ class Gizmo:
 
         # The mode tabs. Clam's stock notebook is a light strip on our dark ground; restyle it
         # to read as part of the app rather than a window inside a window.
-        s.configure("G.TNotebook", background=COLORS["bg_deep"], borderwidth=0)
+        s.configure("G.TNotebook", background=COLORS["bg_deep"], borderwidth=0, bordercolor=COLORS["bg_deep"],
+                    lightcolor=COLORS["bg_deep"], darkcolor=COLORS["bg_deep"], tabmargins=(18, 0, 18, 0))
         s.configure("G.TNotebook.Tab", background=COLORS["bg_surface"],
                     foreground=COLORS["text_secondary"], font=(FONT_FAMILY, 11, "bold"),
-                    padding=(18, 8), borderwidth=0)
+                    padding=(18, 8), borderwidth=0, bordercolor=COLORS["border"],
+                    lightcolor=COLORS["bg_surface"], darkcolor=COLORS["bg_surface"])
         s.map("G.TNotebook.Tab",
               background=[("selected", COLORS["accent"]), ("active", COLORS["bg_hover"])],
-              foreground=[("selected", COLORS["text_primary"])])
+              foreground=[("selected", COLORS["text_primary"])],
+              lightcolor=[("selected", COLORS["accent"])], darkcolor=[("selected", COLORS["accent"])],
+              bordercolor=[("selected", COLORS["accent"])],
+              expand=[("selected", (0, 0, 0, 0))],         # every tab the same size, the chosen one just lit
+              padding=[("selected", (18, 8)), ("!selected", (18, 8))])
+
+    def open_fizgig(self):
+        """The Fizgig app's window (lora_trainer_gui.py --app: the web UI in its own window, joining one already
+        running). Its own process, so closing Gizmo leaves it open."""
+        here = os.path.dirname(os.path.abspath(__file__))
+        exe = sys.executable
+        if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
+            exe = os.path.join(os.path.dirname(exe), "pythonw.exe")   # no console window beside the app
+        try:
+            subprocess.Popen([exe, os.path.join(here, "lora_trainer_gui.py"), "--app"], cwd=here,
+                             creationflags=_NO_WINDOW)
+        except OSError as e:
+            messagebox.showerror("Gizmo", f"Couldn't open Fizgig: {e}")
 
     def _card(self, parent, title, description=None):
         outer = tk.Frame(parent, bg=COLORS["bg_surface"], highlightthickness=1,
-                         highlightbackground=COLORS["border"])
-        outer.pack(fill=tk.X, padx=16, pady=(0, 12))
+                         highlightbackground=COLORS["border"], highlightcolor=COLORS["border"])
+        outer.pack(fill=tk.X, padx=18, pady=(0, 14))
         inner = tk.Frame(outer, bg=COLORS["bg_surface"])
-        inner.pack(fill=tk.BOTH, expand=True, padx=20, pady=16)
+        inner.pack(fill=tk.BOTH, expand=True, padx=22, pady=18)
         tk.Label(inner, text=title, font=(FONT_FAMILY, 12, "bold"),
                  bg=COLORS["bg_surface"], fg=COLORS["text_primary"]).pack(anchor="w")
         if description:
-            tk.Label(inner, text=description, font=(FONT_FAMILY, 9), justify=tk.LEFT,
+            tk.Label(inner, text=description, font=(FONT_FAMILY, 10), justify=tk.LEFT,
                      wraplength=900, bg=COLORS["bg_surface"],
-                     fg=COLORS["text_explain"]).pack(anchor="w", pady=(2, 8))
+                     fg=COLORS["text_secondary"]).pack(anchor="w", pady=(3, 8))
         body = tk.Frame(inner, bg=COLORS["bg_surface"])
         body.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
         return body
@@ -1532,16 +1558,19 @@ class Gizmo:
                                       if e.widget.winfo_toplevel() is self.root else None))
 
         head = tk.Frame(body, bg=COLORS["bg_deep"])
-        head.pack(fill=tk.X, padx=16, pady=(14, 10))
+        head.pack(fill=tk.X, padx=18, pady=(16, 12))
         self._button(head, "⚙", self.open_settings, pad=10,
                      tip="Settings — microphone for the recorder, default Whisper language. "
                          "Saved beside gizmo.py, kept between sessions.").pack(side=tk.RIGHT)
+        self._button(head, "Open Fizgig", self.open_fizgig, kind="accent",
+                     tip="Open the Fizgig app (it uses the one already running if there is one), to caption "
+                         "and train on what you cut here.").pack(side=tk.RIGHT, padx=(0, 8))
         tk.Label(head, text="Gizmo", font=(FONT_FAMILY, 22, "bold"),
                  bg=COLORS["bg_deep"], fg=COLORS["text_primary"]).pack(anchor="w")
         tk.Label(head, text="Cut training clips, voice segments and song sections Fizgig will "
                             "accept — sized, with the sound sorted out, and voice and music captioned.",
-                 font=(FONT_FAMILY, 11), bg=COLORS["bg_deep"],
-                 fg=COLORS["text_secondary"]).pack(anchor="w")
+                 font=(FONT_FAMILY, 11), bg=COLORS["bg_deep"], fg=COLORS["text_secondary"],
+                 wraplength=760, justify=tk.LEFT).pack(anchor="w")
 
         # Two modes, one window: video clips and voice segments share the queue-then-export
         # rhythm but nothing else, so each gets its own tab rather than a mode toggle whose

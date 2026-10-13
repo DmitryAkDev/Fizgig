@@ -129,6 +129,17 @@
             <p>Resize, convert to PNG, and optionally face-crop your training images. Optional: skip straight to
               Captions if your images are already prepared.</p>
           </div>
+          <div class="section-card" id="gizmoCard" style="display:none">
+            <div class="card-title">Working from video or audio?</div>
+            <div class="card-desc">Gizmo cuts training clips, voice segments and song sections. Video: scrub to a moment, pick a
+              length, save - frame rate, frame count, sizing and sound all come out on spec. Audio: open a recording, scrub the
+              waveform, caption the voice (with optional Whisper transcription) and export ready training segments. Still images
+              need none of this.</div>
+            <div class="card-content">
+              <div class="field-row"><button class="btn btn-primary" id="gizmoOpen">🎬🎙 Open Gizmo</button>
+                <span class="field-hint" id="gizmoNote">opens in its own window on this computer - Fizgig keeps running</span></div>
+            </div>
+          </div>
           <div class="section-card">
             <div class="card-title">Training folder</div>
             <div class="card-desc">Everything below happens inside the training folder from the Start tab: prepared
