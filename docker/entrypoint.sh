@@ -163,17 +163,19 @@ stopping and restarting the pod. Anything outside /workspace does not.
 NOTE
 fi
 
-# fetch_models defaults to <repo>/models, which puts 32 GB of weights INSIDE the git clone that
+# fetch_models defaults to <repo>/user_data/models, which puts 32 GB of weights INSIDE the git clone that
 # this script runs `git reset --hard` on every boot. Point it at /workspace/models instead, next
 # to the datasets and outputs, so it survives a re-clone and is where anyone would look for it.
-if [ ! -L "$APP_DIR/models" ]; then
-    if [ -d "$APP_DIR/models" ] && [ -n "$(ls -A "$APP_DIR/models" 2>/dev/null)" ]; then
+MODELS_LINK="$APP_DIR/user_data/models"
+if [ ! -L "$MODELS_LINK" ]; then
+    if [ -d "$MODELS_LINK" ] && [ -n "$(ls -A "$MODELS_LINK" 2>/dev/null)" ]; then
         # Models already downloaded to the old location — move rather than orphan them.
         log "Moving existing models to /workspace/models"
-        mv "$APP_DIR/models"/* /workspace/models/ 2>/dev/null || true
+        mv "$MODELS_LINK"/* /workspace/models/ 2>/dev/null || true
     fi
-    rm -rf "$APP_DIR/models"
-    ln -s /workspace/models "$APP_DIR/models"
+    rm -rf "$MODELS_LINK"
+    mkdir -p "$APP_DIR/user_data"
+    ln -s /workspace/models "$MODELS_LINK"
 fi
 
 # Report the disk the models actually land on. Getting this wrong is expensive and silent: if the

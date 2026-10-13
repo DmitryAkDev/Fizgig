@@ -17,10 +17,11 @@ USER_DATA = os.path.join(BASE_DIR, "user_data")
 PREFS_FILE = os.path.join(USER_DATA, "prefs.json")
 LAST_USED_FILE = os.path.join(USER_DATA, "last_used.json")       # the training folder and its trigger words
 PRESETS_DIR = os.path.join(USER_DATA, "presets")
+MODELS_DIR = os.path.join(USER_DATA, "models")              # where Download models for me puts them
 
 # what Fizgig 7 kept in its folder -> where it lives now
 _MOVES = (
-    ("prefs.json", "prefs.json"), (".last_used.json", "last_used.json"), ("presets", "presets"),
+    ("prefs.json", "prefs.json"), (".last_used.json", "last_used.json"), ("models", "models"), ("presets", "presets"),
     ("profiles", "profiles"), ("cache", "cache"), ("dataset", "dataset"), ("gizmo_settings.json", "gizmo_settings.json"),
     ("rocm_env.bat", "rocm_env.bat"), ("rocm_env.sh", "rocm_env.sh"), ("web_state.json", "web_state.json"),
     (".fizgig_web_queue.json", "web_queue.json"), (".fizgig_runs.json", "runs.json"),
@@ -77,6 +78,15 @@ def _repoint_prefs():
     except (OSError, ValueError):
         return
     changed = False
+    # a model downloaded into the old models folder: its path follows the folder in
+    old_models = os.path.normcase(os.path.join(BASE_DIR, "models"))
+    for key, v in list(prefs.items()):
+        if not isinstance(v, str) or not v.strip():
+            continue
+        full = os.path.normpath(os.path.join(BASE_DIR, v.strip()))
+        if os.path.normcase(full).startswith(old_models + os.sep):
+            prefs[key] = os.path.join(MODELS_DIR, full[len(old_models) + 1:]).replace("\\", "/")
+            changed = True
     for key, old in _PREF_DIRS:
         v = str(prefs.get(key) or "").strip()
         if v and os.path.normcase(os.path.normpath(os.path.join(BASE_DIR, v))) == \

@@ -152,7 +152,7 @@ def ensure_lora(pref_key, filename, url, probe_key, min_size, label, replaces=Fa
                                                                 or os.path.basename(current) == filename):
             log(f"{label}: already present ({current})")
             return current
-        models_dir = os.path.join(repo_dir, "models")
+        models_dir = os.path.join(repo_dir, "user_data", "models")
         dest = os.path.join(models_dir, filename)
         if not (os.path.isfile(dest) and _valid_safetensors(dest, probe_key, min_size)):
             os.makedirs(models_dir, exist_ok=True)

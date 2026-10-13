@@ -413,7 +413,7 @@ def fetch_tool(spec, log=print, dry_run=False):
 def fetch(families, models_dir=None, repo_dir=REPO_DIR, token=None, include_optional=False,
           log=print, dry_run=False):
     """Fetch every asset for the named families. Returns True if nothing failed."""
-    models_dir = os.path.abspath(models_dir or os.path.join(repo_dir, "models"))
+    models_dir = os.path.abspath(models_dir or os.path.join(repo_dir, "user_data", "models"))
     if os.path.normcase(os.path.abspath(repo_dir)) == os.path.normcase(REPO_DIR):
         from fizgig import user_data
         user_data.migrate()
