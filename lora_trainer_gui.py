@@ -6541,19 +6541,11 @@ class LoRATrainerGUI:
             return False
 
     def _refmod_ref_cache_dirs(self):
-        """The '-refs' sibling of each dataset folder's cache folder — the same rule the TOML
-        builder uses (<cache root>/<folder>-<hash>, or the image folder itself when no root is
-        set), for every [[datasets]] block (Multi Concept adds folders; the reference pass
-        suffixes them all)."""
-        try:
-            folders = [f for f in self._dataset_folders() if f]
-        except Exception:
-            folders = []
-        if not folders:
-            img = self.image_folder_var.get().strip()
-            folders = [img] if img else []
+        """The '-refs' sibling of the training folder's cache folder - the same rule the TOML builder uses
+        (<cache root>/<folder>-<hash>, or the image folder itself when no root is set)."""
+        img = self.image_folder_var.get().strip()
         root = self.prefs_vars["cache_dir"].get().strip() if "cache_dir" in self.prefs_vars else ""
-        return _refmod.ref_cache_dirs(folders, root, self._cache_dir_for)
+        return _refmod.ref_cache_dirs([img] if img else [], root, self._cache_dir_for)
 
     def _refmod_plain_encode(self) -> bool:
         """RefMod at Steps 0: a plain encode of the references. Nothing trains, so the run
@@ -29730,7 +29722,9 @@ class LoRATrainerGUI:
     def _rms_describe_job(self, job):
         mods = ", ".join(f"{n}@{s:.2f}" for n, s in job["describe"]) or "no mods"
         fc = job["frame_curve"]
-        s = f"{mods} · retention {job['retention']:.2f} · frame {fc[0]}/{fc[1]}/{fc[2]:.2f}"
+        s = f"{mods} · retention {job['retention']:.2f}"
+        if fc:                                      # none with Numbered references
+            s += f" · frame {fc[0]}/{fc[1]}/{fc[2]:.2f}"
         if job["step_curve"]:
             sc = job["step_curve"]
             s += f" · step {sc[0]}/{sc[1]}/{sc[2]:.2f}"
@@ -31286,6 +31280,11 @@ class LoRATrainerGUI:
             except ValueError:
                 return
 
+            if self._is_refmod_arch() and not is_jsonl and not is_video:
+                # RefMod's own dataset (as the web UI writes it), not the H3 tab's hidden dataset settings
+                _root = self.prefs_vars["cache_dir"].get().strip() if "cache_dir" in self.prefs_vars else ""
+                return dataset_name, _refmod.dataset_toml(data_dir, megapixels, ".txt", _root, "0.25",
+                                                          self._cache_dir_for)
             _fdesc = self._family_desc()
             if _fdesc is not None and not is_jsonl and not is_video:
                 from fizgig.families import launch       # driver-system families: the launch plan's TOML
@@ -31757,7 +31756,8 @@ class LoRATrainerGUI:
         except ValueError:
             blocks_swap = None
         _name, _name_error = self._tidy_lora_name()
-        errors.extend(checks.run(v, blocks_swap=blocks_swap, swap_max=config["blocks_swap_max"], arch_label=arch,
+        errors.extend(checks.run({**v, "RESUME_TRAINING": ""} if config.get("is_refmod") else v,   # RefMod never resumes
+                                 blocks_swap=blocks_swap, swap_max=config["blocks_swap_max"], arch_label=arch,
                                  name_error=_name_error))
 
         # The training folder must exist and its photos (and clips) be captioned. A RefMod plain encode (Steps 0)
@@ -31984,8 +31984,8 @@ class LoRATrainerGUI:
         # /text. Read the resume path from the entry (the live source of truth at this point).
         _resume_entry = self.entries.get("RESUME_TRAINING")
         # An armed FT continuation is a resume too — same cache, same frozen dataset.
-        _is_resuming_clear = bool((_resume_entry and _resume_entry.get().strip())
-                                  or self._ft_resume_active())
+        _is_resuming_clear = bool(((_resume_entry and _resume_entry.get().strip())
+                                   or self._ft_resume_active()) and not self._is_refmod_arch())
         cache_dir = self.dataset_cache_dir_var.get().strip()
         if cache_dir and os.path.isdir(cache_dir) and not _is_resuming_clear:
             try:
@@ -32190,8 +32190,8 @@ class LoRATrainerGUI:
 
         # On resume, skip cache preparation entirely — the cache is already built from the
         # original launch. An armed FT continuation counts: it is the same run continuing.
-        is_resuming = bool(self.settings.get("RESUME_TRAINING", "").strip()
-                           or self._ft_resume_active())
+        is_resuming = bool((self.settings.get("RESUME_TRAINING", "").strip()
+                            or self._ft_resume_active()) and not self._is_refmod_arch())
         _fdesc = self._family_desc()
         if _fdesc is not None:
             from fizgig.families import launch as _launch
@@ -32432,7 +32432,8 @@ class LoRATrainerGUI:
         noise window (the script's defaults). Never a LoRA run."""
         _caching = bool(getattr(self, "enable_cache_var", None) and self.enable_cache_var.get())
         return _refmod.maker_command(
-            self._venv_python(), FIZGIG_DIR, self.settings, self._krea2_pref("minimax_dit"),
+            self._venv_python(), FIZGIG_DIR, {**self.settings, "DATASET_MEGAPIXELS": self.dataset_megapixels_var.get()},
+            self._krea2_pref("minimax_dit"),
             self._krea2_pref("minimax_ref_dit"), self._krea2_pref("minimax_audio_vae"),
             self._refmod_ref_cache_dirs() if self._refmod_ref_pass_needed() else (), _caching, self.update_console)
 
