@@ -846,6 +846,42 @@ def _run_samples(folder, name):
         return []
 
 
+def _zip_file(prefix, files) -> str:
+    """files [(path, name in the zip)] in one stored zip under .fizgig_web_zips (a day-old leftover cleared first)."""
+    import tempfile
+    import zipfile
+    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    os.makedirs(zdir, exist_ok=True)
+    for old in os.scandir(zdir):
+        try:
+            if time.time() - old.stat().st_mtime > 86400:
+                os.remove(old.path)
+        except OSError:
+            pass
+    fd, out = tempfile.mkstemp(prefix=prefix, suffix=".zip", dir=zdir)
+    os.close(fd)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as z:
+        for p, arc in files:
+            z.write(p, arc)
+    return out
+
+
+def dataset_zip(folder, captions_only, ext) -> str:
+    """A training folder in one zip, for taking it home from a pod: its pictures, clips and songs with their captions
+    (and Fizgig's own notes on it - look scores, exclusions), or the captions alone. The folder's own files only:
+    removed/ and excluded_by_look/ stay behind."""
+    try:
+        entries = [e for e in os.scandir(folder) if e.is_file()]
+    except OSError:
+        raise ValueError("That folder isn't there.")
+    ext = ext.lower()
+    keep = [e for e in entries if e.name.lower().endswith(ext) or (not captions_only and (
+        os.path.splitext(e.name)[1].lower() in MEDIA or re.fullmatch(r"fizgig_\w+\.json", e.name)))]
+    if not keep:
+        raise ValueError(f"No {ext} captions in that folder." if captions_only else "That folder is empty.")
+    return _zip_file("dataset_", [(e.path, e.name) for e in sorted(keep, key=lambda e: e.name)])
+
+
 def samples_zip(folder, name) -> str:
     """The run's previews in one zip (stored, not compressed: pictures and songs don't shrink), for downloading."""
     import zipfile
@@ -2273,6 +2309,21 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 try:
                     os.remove(zpath)             # sent (or abandoned): it was only ever for this download
+                except OSError:
+                    pass
+        if path == "/api/datasets/zip":            # a training folder (or its captions) to download
+            folder = (qs.get("folder") or [""])[0]
+            caps = (qs.get("captions") or ["0"])[0] == "1"
+            try:
+                zpath = dataset_zip(folder, caps, captions.caption_ext((qs.get("ext") or [""])[0]))
+            except ValueError as e:
+                return self.json({"error": str(e)}, 404)
+            stem = re.sub(r'[\\/:*?"<>|]+', "_", os.path.basename(os.path.normpath(folder)) or "dataset")
+            try:
+                return self._stream(zpath, filename=f"{stem}_{'captions' if caps else 'dataset'}.zip")
+            finally:
+                try:
+                    os.remove(zpath)
                 except OSError:
                     pass
         if path == "/api/download":

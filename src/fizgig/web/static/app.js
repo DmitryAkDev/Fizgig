@@ -4592,6 +4592,10 @@ async function loadCaptions() {
   }
   pollCaptions();
   $("captionExt").value = capExt();         // the files this tab writes and reads are the ones training reads
+  const zipUrl = (caps) => `/api/datasets/zip?folder=${encodeURIComponent(S.imageFolder || "")}&captions=${caps ? 1 : 0}` +
+    `&ext=${encodeURIComponent(capExt())}&t=${encodeURIComponent(TOKEN)}`;
+  $("dsZip").href = zipUrl(false); $("dsZipCaps").href = zipUrl(true);
+  for (const id of ["dsZip", "dsZipCaps"]) $(id).style.display = S.imageFolder ? "" : "none";
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}`);
