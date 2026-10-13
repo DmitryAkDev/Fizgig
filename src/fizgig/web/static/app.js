@@ -82,6 +82,7 @@ async function boot() {
   if (st.tab) showTab(st.tab);
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
+  $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
