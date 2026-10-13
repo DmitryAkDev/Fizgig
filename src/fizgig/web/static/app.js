@@ -82,6 +82,7 @@ async function boot() {
   if (st.tab) showTab(st.tab);
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
+  podLocalInit();                                             // in the app window on a pod: this computer's folders
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
   setInterval(loadCheckpoints, 15000);
@@ -5524,7 +5525,8 @@ async function uploadResumable(params, file, onProgress) {
   }
   let offset = st.have || 0, tries = 0, last = null;
   while (true) {
-    const piece = file.slice(offset, Math.min(file.size, offset + PIECE));
+    const end = Math.min(file.size, offset + PIECE);
+    const piece = file.read ? await file.read(offset, end) : file.slice(offset, end);
     try {
       const r = await sendFile(`/api/upload/chunk?${q({...params, offset, total: file.size})}`, piece,
         (sent) => onProgress(offset + sent));
@@ -5543,6 +5545,62 @@ async function uploadResumable(params, file, onProgress) {
     }
   }
 }
+
+// ---- From this computer: a pod's page in the Fizgig app window lists the training folders on the computer the
+// window runs on (app_window.py's Api, read-only, training folders only) and sends one up with the upload above
+const appBridge = () => (window.pywebview && window.pywebview.api && window.pywebview.api.local_datasets) ?
+  window.pywebview.api : null;
+const pageIsElsewhere = () => !["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname);
+
+async function podLocalInit() {
+  const api_ = appBridge();
+  if (!api_ || !pageIsElsewhere()) return;
+  const card = $("podLocalCard");
+  card.style.display = "";
+  let r;
+  try { r = await api_.local_datasets(); } catch (e) { $("podLocalStatus").textContent = String(e.message || e); return; }
+  const host = $("podLocalGrid");
+  const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(1) + " GB" : Math.max(1, Math.round(n / 2 ** 20)) + " MB";
+  host.replaceChildren(...(r.datasets || []).map((d) => {
+    const total = d.pictures + d.clips + d.songs;
+    const what = [d.pictures && `${d.pictures} picture${d.pictures === 1 ? "" : "s"}`,
+      d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
+      .filter(Boolean).join(" · ");
+    const send = el("button", {class: "btn btn-sm btn-primary", text: "Send to this pod", onclick: () => podLocalSend(d, send)});
+    return el("div", {class: "dataset-card", title: d.path},
+      el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
+        d.thumbs.length ? d.thumbs.map((src) => el("img", {alt: "", src})) :
+          el("span", {class: "dataset-kind", text: d.songs ? "♪" : d.clips ? "▶" : ""})),
+      el("div", {class: "dataset-meta"}, el("b", {text: d.name}), el("span", {text: `${what} · ${mb(d.bytes)}`}),
+        el("span", {class: d.captioned >= total ? "ok" : "warn",
+          text: d.captioned >= total ? "all captioned" : `${d.captioned} of ${total} captioned`}),
+        el("div", {class: "dataset-actions"}, send)));
+  }));
+  $("podLocalStatus").textContent = (r.datasets || []).length ? "" :
+    `No training folders on this computer yet (${r.root}).`;
+}
+
+async function podLocalSend(d, btn) {
+  const api_ = appBridge();
+  const say = (t, bad) => { $("podLocalStatus").textContent = t; $("podLocalStatus").classList.toggle("bad", !!bad); };
+  btn.disabled = true;
+  try {
+    const files = await api_.local_files(d.path);
+    const CHUNK = 2 * 2 ** 20;                 // what one bridge read carries
+    const local = files.map((f) => ({name: f.name, size: f.size, lastModified: f.mtime * 1000,
+      async read(a, b) {
+        const parts = [];
+        for (let o = a; o < b; o += CHUNK) {
+          const b64 = await api_.read_local(d.path, f.name, o, Math.min(CHUNK, b - o));
+          parts.push(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+        }
+        return new Blob(parts);
+      }}));
+    await uploadFiles(local, {name: d.name, say});
+  } catch (e) { say(String(e.message || e), true); }
+  btn.disabled = false;
+}
+window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
 
 // one file as the request body, reporting bytes sent (fetch can't report upload progress)
 function sendFile(url, file, onProgress) {

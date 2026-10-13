@@ -180,11 +180,25 @@ def main():
         import webview
 
         class Api:
-            """All a page in the window can ask of it - a pod's page included - is to come back to this computer."""
+            """What a page in the window - a pod's page included - can ask of it: to come back to this computer, and
+            to read this computer's training folders (read-only, those folders only: local_bridge) so a pod's page
+            can send one up with its own upload."""
             def home(self):
                 # after this call has returned to the page: pywebview hands the page a reply, and the page must
                 # still be there for it
                 threading.Timer(0.05, lambda: window.load_url(home)).start()
+
+            def local_datasets(self):
+                from fizgig.web import local_bridge
+                return local_bridge.local_datasets()
+
+            def local_files(self, folder):
+                from fizgig.web import local_bridge
+                return local_bridge.local_files(folder)
+
+            def read_local(self, folder, name, offset, n):
+                from fizgig.web import local_bridge
+                return local_bridge.read_local(folder, name, offset, n)
 
         geom = _prefs().get("app_window") or {}
         first = _last_pod(port) or url
