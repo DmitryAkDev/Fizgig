@@ -827,6 +827,30 @@ def dataset_toml(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- the plan
+def multi_concept_problems(desc, inputs):
+    """Multi Concept ticked (inputs["multiconcept"], the web form's): each extra subject folder becomes its own
+    [[datasets]] block, so it has to be there, be its own folder and carry its own captions (the desktop's checks)."""
+    if not (desc.multi_concept and inputs.get("multiconcept")):
+        return []
+    norm = lambda f: f.lower().replace("\\", "/").rstrip("/")
+    seen, out = {norm(_s(inputs.get("image_folder")))}, []
+    extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)]
+    if not extra:
+        out.append("Multi Concept is on but no second subject folder is set - pick one, or turn the mode off.")
+    ext = _s(inputs.get("caption_ext")) or ".txt"
+    for f in extra:
+        if norm(f) in seen:
+            out.append(f"Multi Concept: {f} is the same folder as another subject - each needs its own folder.")
+            continue
+        seen.add(norm(f))
+        if not os.path.isdir(f):
+            out.append(f"Multi Concept: folder does not exist: {f}")
+        elif not any(fn.lower().endswith(ext.lower()) for fn in os.listdir(f)):
+            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training - each "
+                       f"subject needs its own trigger word in every caption, or they will blend.")
+    return out
+
+
 def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
 
@@ -843,6 +867,7 @@ def start_problems(desc, inputs):
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
     out += checks.learning_rate_range(v)
+    out += multi_concept_problems(desc, v)
     if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
         try:
             lr = float(v.get("LEARNING_RATE"))

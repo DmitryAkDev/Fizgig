@@ -50,6 +50,7 @@ DEFAULTS = {
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
+    "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "",
     "FAMILY_EDIT_DIR": "", "FAMILY_EDIT_REF": "", "FAMILY_EDIT_CAPTION": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
@@ -158,6 +159,10 @@ def slider_sources(desc):
             if s in SLIDER_SOURCES]
 
 
+MULTICONCEPT_HINT = ("Each folder needs its own trigger word, in every caption: that is the only thing telling the "
+                     "subjects apart. Caption and prep every folder yourself first; this box is training-only.")
+
+
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
     pictures = bool({"photo", "clip"} & set(desc.media))     # sizes and megapixels only mean something for pictures
@@ -232,8 +237,8 @@ def form(desc):
     if desc.loss_watch:
         params += [
             _row("KREA2_LOSS_WATCH", "Detect problem images (per-image loss tracking)", "check",
-                 "Its Problem Images window (thumbnails and verdicts) is in the desktop app; here the run's log reports "
-                 "what it finds."),
+                 "Each image's verdict, with its thumbnail and its caption to fix, is under the run's Per-image "
+                 "loss in Runs & outputs."),
             _row("KREA2_PER_IMAGE_LR", "Per-image adaptive LR (throttle stuck images, boost healthy learned ones)",
                  "check"),
             _row("KREA2_WARMUP_LOOK", "Warm up look outliers (unusual angles ease in at low LR - needs a Look "
@@ -249,6 +254,13 @@ def form(desc):
         params.append(_row("FAMILY_FAST_ID", "Fast Identity Mode", "check",
                            f"Trains only the identity blocks ({a}-{b}): about 1.5x faster."))
     params += by_section("training", "after", "lora")
+    if desc.multi_concept:          # the desktop's box: a click applies the family's recipe (still editable)
+        params += [
+            _row("FAMILY_MULTICONCEPT", "Multi Concept - a second subject in its own folder", "check",
+                 " ".join(t for t in (MULTICONCEPT_HINT, desc.multi_concept_hint) if t),
+                 sets={"true": dict(desc.multi_concept_defaults)} if desc.multi_concept_defaults else None),
+            _row("FAMILY_CONCEPT_DIR", "Subject 2 folder", "folder", upload=True, start="data"),
+        ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",
                            desc.training_adapter_note))
@@ -279,7 +291,7 @@ def form(desc):
             prompt_row("FAMILY_SLIDER_BASE", "Base prompt"),
             prompt_row("FAMILY_SLIDER_POS", "Positive prompt"),
             prompt_row("FAMILY_SLIDER_NEG", "Negative prompt"),
-            _row("FAMILY_SLIDER_GUIDANCE", "Guidance", default=str(desc.slider_guidance)),
+            _row("FAMILY_SLIDER_GUIDANCE", "Guidance", default=f"{desc.slider_guidance:g}"),
             _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check") if desc.slider_ultra_blocks else None,
         ])
     if desc.finetune:
@@ -330,6 +342,8 @@ def form(desc):
         _row("METADATA_DESCRIPTION", "Description"), _row("METADATA_LICENSE", "License"),
         _row("METADATA_TAGS", "Tags"),
         _row("METADATA_TRIGGER_PHRASE", "Trigger phrase", hint="Blank uses the captions' trigger word."),
+        _row("METADATA_THUMBNAIL", "Thumbnail", "path", "Blank embeds the latest preview; type off for none.",
+             upload=True, start="output"),
         _row("ENABLE_CACHE", "Prepare the cache before training", "check"),
     ], collapsed=True)
 
@@ -364,6 +378,13 @@ def form(desc):
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
+        _row("SAMPLE_REFERENCE", "Reference", "path",
+             f"Optional - fed through {desc.display_name}'s text encoder vision path so previews become visually "
+             "aware of it ('prompt from a picture', not a pixel edit). Leave empty for normal previews."
+             if desc.reference_kind == "vision" else
+             "Optional - every preview edits this photo with its prompt, at the photo's shape. Leave empty for normal "
+             "previews. An Edit LoRA run previews on the photo set on its own card instead.",
+             upload=True, start="data") if desc.reference_kind else None,
         # a picture size only for a model that makes pictures (ACE-Step's previews are songs: the launcher then
         # uses the description's own preview size)
         _row("SAMPLE_WIDTH", "Width", "choice", choices=SIZES, default=str(desc.preview_width)) if pictures else None,
@@ -462,6 +483,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
         hidden |= {"CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH"}
     if kind != "standard":
         hidden.add("FAMILY_FAST_ID")
+    if not values.get("FAMILY_MULTICONCEPT"):
+        hidden.add("FAMILY_CONCEPT_DIR")
     kn = _kind_notes(desc)
     if len(kinds(desc)) > 1:
         notes["FAMILY_KIND"] = kn.get(kind, ("", ""))[1] or KIND_HINTS.get(kind, "")
@@ -595,12 +618,14 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "width": s("SAMPLE_WIDTH"),
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or
                  str(desc.preview_cfg), "negative": s("SAMPLE_NEGATIVE"), "seed": s("SAMPLE_SEED"),
-                 "at_first": b("SAMPLE_AT_FIRST"), "prompts": s("SAMPLE_PROMPT").splitlines(), "reference": "",
+                 "at_first": b("SAMPLE_AT_FIRST"), "prompts": s("SAMPLE_PROMPT").splitlines(), "reference": s("SAMPLE_REFERENCE"),
                  "strengths": list(desc.preview_strengths) if desc.preview_strengths and
                  v.get("SAMPLE_STRENGTHS", True) else [],
                  **({"checkpoint": b("SAMPLE_CHECKPOINT"), "checkpoint_cache": s("CACHE_SAMPLE_MODEL") or "auto",
                      "int8": bool(inference_int8)} if desc.train_preview_checkpoint else {})},
         samples_dir=samples_dir, edit_caption=s("FAMILY_EDIT_CAPTION"),
+        multiconcept=b("FAMILY_MULTICONCEPT") and desc.multi_concept,
+        extra_folders=[s("FAMILY_CONCEPT_DIR")] if b("FAMILY_MULTICONCEPT") and s("FAMILY_CONCEPT_DIR") else [],
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     return d
