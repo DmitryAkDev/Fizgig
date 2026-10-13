@@ -5244,6 +5244,20 @@ function wirePods() {
   });
 }
 
+// ---- About: the version, how this install updates, and a newer release when there is one (the desktop's) -------
+function showAbout(a) {
+  $("aboutVersion").textContent = "Version " + a.version;
+  $("aboutUpdate").textContent = a.update;
+  const r = a.release || {}, newer = r.status === "update_available";
+  $("aboutRelease").replaceChildren(...(newer ? [el("div", {class: "about-banner"},
+    el("strong", {text: `⬆ Fizgig ${r.tag} is available`}),
+    el("div", {class: "field-hint", text: `You're on ${a.version}. ${a.update}`}),
+    el("a", {href: "https://github.com/shootthesound/Fizgig/releases/latest", target: "_blank", rel: "noopener",
+      text: "📖 Read the release notes"}))] : []));
+  $("aboutBtn").classList.toggle("update", newer);
+  $("aboutBtn").querySelector("span").textContent = newer ? "⬆ Update Available" : "About";
+}
+
 // ---- login -------------------------------------------------------------------------------------------------
 function showLogin() { $("loginModal").classList.add("active"); $("loginPassword").focus(); }
 async function login() {
@@ -5587,12 +5601,24 @@ function wire() {
   $("datasetsReload").addEventListener("click", loadDatasets);
   $("aboutBtn").addEventListener("click", async () => {
     $("aboutModal").classList.add("active");
-    try {
-      const a = await api("/api/about");
-      $("aboutVersion").textContent = "Version " + a.version;
-      $("aboutUpdate").textContent = a.update;
-    } catch (e) { /* the box still reads well without them */ }
+    try { showAbout(await api("/api/about")); } catch (e) { /* the box still reads well without them */ }
   });
+  $("aboutCheck").addEventListener("click", async () => {      // the desktop's Check for updates
+    $("aboutCheckSay").textContent = "Checking…";
+    await api("/api/about?check=1").catch(() => null);
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const a = await api("/api/about").catch(() => null);
+      if (a && !a.release.running) {
+        showAbout(a);
+        $("aboutCheckSay").textContent = {up_to_date: "You're on the latest release.", update_available: "",
+          unknown: "Couldn't check (offline, or not a git checkout)."}[a.release.status] || "";
+        return;
+      }
+    }
+    $("aboutCheckSay").textContent = "";
+  });
+  setTimeout(() => api("/api/about").then(showAbout).catch(() => {}), 20000);   // the start-up check's answer
   $("datasetsSearch").addEventListener("input", debounce(renderDatasets, 200));
   loadDatasets();
   $("outFizgigOnly").addEventListener("change", loadOutputs);

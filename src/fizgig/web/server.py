@@ -2158,8 +2158,11 @@ class Handler(BaseHTTPRequestHandler):
             text, ok = image_loss.read_caption(run.get("image_folder"), (qs.get("key") or [""])[0],
                                                captions.caption_ext((qs.get("ext") or [""])[0]))
             return self.json({"caption": text, "folder_ok": ok})
-        if path == "/api/about":
-            return self.json(about_info())
+        if path == "/api/about":                     # ?check=1: look for a newer release again (the About box's)
+            from fizgig.web import update_check
+            if (qs.get("check") or [""])[0] == "1":
+                update_check.start()
+            return self.json({**about_info(), "release": update_check.status()})
         if path == "/api/datasets":
             return self.json(list_datasets())
         if path == "/api/upload/status":
@@ -3135,6 +3138,7 @@ def run_server(host, port=None, password=None, password_arg=False):
             update_prefs({"web_port": str(port)})
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
     _restore_pause()                                   # a run paused before the restart can still be resumed
+    __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
