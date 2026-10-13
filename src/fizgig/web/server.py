@@ -1934,6 +1934,9 @@ class Handler(BaseHTTPRequestHandler):
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
         if path in ("/logo.jpg", "/icon.png"):
             return self._file(os.path.join(BASE_DIR, path[1:]))
+        if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # Add to Home Screen (no login:
+            return self._file(os.path.join(STATIC_DIR, path[1:]),                 # a phone fetches it without one)
+                              "application/manifest+json" if path.endswith(".webmanifest") else None)
         if not path.startswith("/api/") or not self._api_ok(qs):
             return None if path.startswith("/api/") else self.json({"error": "not found"}, 404)
 
