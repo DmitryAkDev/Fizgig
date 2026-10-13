@@ -1851,10 +1851,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         self._send(200, data, ctype or mimetypes.guess_type(path)[0] or "application/octet-stream")
 
-    def _stream(self, path, attachment=True, filename=None):
+    def _stream(self, path, attachment=True, filename=None, keep=False):
         """A file sent in pieces (a fine-tune checkpoint is ~10 GB; it never sits in memory), honouring a byte
         range: a player dragged along a song or clip asks for "Range: bytes=N-" and gets just that (206), and a
-        dropped download can carry on where it stopped. attachment: a download (else played in the page)."""
+        dropped download can carry on where it stopped. attachment: a download (else played in the page). keep: the
+        address names this exact file (a render's gen, a file's modified time), so the browser may keep it - a clip
+        played, looped or played again is not fetched again."""
         try:
             size = os.path.getsize(path)
             f = open(path, "rb")
@@ -1887,7 +1889,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             if attachment:
                 self.send_header("Content-Disposition", f'attachment; filename="{name}"')
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "private, max-age=86400" if keep and not attachment else "no-store")
             self.end_headers()
             left = end - start + 1
             try:
@@ -2043,8 +2045,10 @@ class Handler(BaseHTTPRequestHandler):
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p:
                 return self.json({"error": "no picture yet"}, 404)
-            dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # Save Tweaked WAV: a download
-            return self._stream(p, attachment=bool(dl), filename=dl or None)
+            dl = re.sub(r'[\\/:*?"<>|]+', "_", (qs.get("dl") or [""])[0])        # a Save / Download button
+            if dl:                                    # the name the page asks for, with the file's own extension
+                dl = os.path.splitext(dl)[0] + os.path.splitext(p)[1]
+            return self._stream(p, attachment=bool(dl), filename=dl or None, keep=bool((qs.get("gen") or [""])[0]))
         if path == "/api/studio/peaks":             # a song's waveform for the player's strip
             p = studio.image((qs.get("which") or [""])[0], (qs.get("gen") or [""])[0])
             if not p or not p.lower().endswith(".wav"):
@@ -2322,7 +2326,8 @@ class Handler(BaseHTTPRequestHandler):
             p = (qs.get("path") or [""])[0]
             if os.path.splitext(p)[1].lower() not in MEDIA or not os.path.isfile(p):
                 return self.json({"error": "not a picture, sound or clip"}, 404)
-            return self._stream(p, attachment=False)       # in pieces, with byte ranges: songs and clips seek
+            # in pieces, with byte ranges: songs and clips seek; kept by the browser when the page names its time
+            return self._stream(p, attachment=False, keep=bool((qs.get("v") or [""])[0]))
         if path == "/api/checkpoints":
             return self._checkpoints((qs.get("dir") or [""])[0])
         if path == "/api/outputs":

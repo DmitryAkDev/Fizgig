@@ -2804,7 +2804,9 @@ function renderOutputs() {
 // as before
 const fmtSecs = (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 function mediaFor(it, eager) {
-  const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
+  // its modified time in the address: the browser keeps what it fetched (a clip played again isn't downloaded again)
+  const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}` +
+    (p === it.path && it.time ? `&v=${encodeURIComponent(it.time)}` : "");
   const kind = it.name.split(".").pop().toLowerCase();
   if (["wav", "mp3", "flac", "m4a"].includes(kind)) {
     // nothing downloads until it plays (a page of songs is hundreds of MB); the length comes from the server
@@ -4444,6 +4446,7 @@ async function studioPoll() {
       if (kind === "audio" && has) songLoad(w, q(w + "_media"), st.shown, st.act && st.act[w] ? q(w + "_act") : "");
     }
     studioMetrics();
+    studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`;
   }
@@ -4464,6 +4467,23 @@ async function studioPoll() {
   if (st.saved && st.saved.out !== S.st.savedShown) { S.st.savedShown = st.saved.out; studioSavedSay(st.saved); }
   const active = st.state === "loading" || st.rendering || st.pending;
   if ($("tab-studio").classList.contains("active")) S.st.poll = setTimeout(studioPoll, active ? 400 : 2000);
+}
+
+// Download original / Download tweaked: the pair as rendered (a still's picture, a clip's mp4); songs have their
+// own Save in the song player
+function studioDownloads(st, q) {
+  const kind = S.st.layout && S.st.layout.kind, row = $("stDownloads");
+  const on = kind !== "audio" && !!st.shown;
+  row.style.display = on ? "" : "none";
+  if (!on) return;
+  const lora = ($("stPrimary").value.trim().split(/[\\/]/).pop() || "render").replace(/\.safetensors$/i, "");
+  const seed = ($("stSeed").value || "").trim();
+  for (const [w, id, word] of [["baseline", "stDlBase", "original"], ["tweaked", "stDlTweak", "tweaked"]]) {
+    const video = kind === "video" && st.media && st.media[w];
+    const name = `${lora}_${word}${seed ? "_seed" + seed : ""}${video ? ".mp4" : ".png"}`;
+    $(id).href = q(video ? w + "_media" : w) + "&dl=" + encodeURIComponent(name);
+    $(id).setAttribute("download", name);
+  }
 }
 
 function studioNoLoraPane(st) {
