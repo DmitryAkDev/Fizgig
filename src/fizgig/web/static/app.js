@@ -1153,7 +1153,10 @@ async function loadGallery() {
   if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
   const sel = $("galleryRun");
   sel.innerHTML = "";
-  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? " (this run)" : "")}));
+  // "this run" while it trains (here or in the desktop app); once it has ended it is the last run
+  const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state) ||
+    (R.desktop && (R.desktop.running || ["running", "pausing"].includes(R.desktop.state))));
+  for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? (liveNow ? " (this run)" : " (last run)") : "")}));
   sel.value = run;
   $("galleryControls").style.display = g.runs.length ? "" : "none";
   const view = S.galleryView || "list";
