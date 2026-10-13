@@ -319,6 +319,11 @@ def main():
     try:
         import webview
         _unhook_requests()
+        # clips decode on the CPU in this window: the first clip played froze the window (pointer included) while
+        # WebView2 brought up the GPU's video decoder, on more than one machine; Fizgig's previews are small clips
+        # the CPU decodes with ease. (pywebview's own flag is kept: this variable stands in for its arguments.)
+        os.environ.setdefault("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                              "--disable-features=ElasticOverscroll --disable-accelerated-video-decode")
 
         class Api:
             """What a page in the window - a pod's page included - can ask of it: to come back to this computer, and
