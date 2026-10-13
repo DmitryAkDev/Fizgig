@@ -2558,9 +2558,15 @@ function lossGraph(data) {
     draw();
   };
   for (const i of [smooth, log, clip, lrOn]) i.addEventListener("input", redraw);
+  // what each line and mark is
+  const key = (cls, text) => el("span", {class: "lg-key"}, el("i", {class: "lg-sw " + cls}), text);
+  const legend = el("div", {class: "lg-legend"},
+    key("lg-sw-raw", "loss at each step"), key("lg-sw-smooth", "smoothed loss"),
+    hasLr ? key("lg-sw-lr", "learning rate (right-hand scale)") : null,
+    key("lg-sw-best", "lowest smoothed loss"), key("lg-sw-epoch", "start of an epoch (e1, e2…)"));
   box.append(el("div", {class: "field-row loss-graph-ctl"},
     el("span", {class: "field-label", text: "Smoothing:"}), smooth, ctl("Log scale", log), ctl("Clip outliers", clip),
-    hasLr ? ctl("Learning rate", lrOn) : null), svgHost, read);
+    hasLr ? ctl("Learning rate", lrOn) : null), svgHost, legend, read);
 
   function draw() {
     // drawn at the width it has, so the text stays its own size on a phone
@@ -2615,7 +2621,14 @@ function lossGraph(data) {
     // the lowest smoothed point
     let bi = 0;
     sm.forEach((v, i) => { if (v < sm[bi]) bi = i; });
-    svg.append(mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"}));
+    const best = mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"});
+    const bt = mk("title", {}); bt.textContent = `Lowest smoothed loss: ${sm[bi].toFixed(4)} at step ${pts[bi][0]}`;
+    best.append(bt);
+    svg.append(best);
+    const axisT = (x, text, cls, anchor) => { const t = mk("text", {x, y: T + 2, class: "lg-axis " + cls, "text-anchor": anchor,
+      "dominant-baseline": "hanging"}); t.textContent = text; svg.append(t); };
+    axisT(4, "loss", "lg-axis-title", "start");
+    if (hasLr && set.lr && lrPts.length > 1) axisT(W - 4, "LR", "lg-axis-title lg-lr-axis", "end");
     const cursor = mk("line", {y1: T, y2: H - B, class: "lg-cursor", style: "display:none"});
     svg.append(cursor);
     const say = (i) => read.textContent = `Step ${pts[i][0]} · epoch ${pts[i][1]} · loss ${pts[i][2].toFixed(4)} ` +
