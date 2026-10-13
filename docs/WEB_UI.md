@@ -33,11 +33,19 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 **Fizgig App (new look).bat** on Windows, `run_fizgig_app.sh` on Linux (or `python lora_trainer_gui.py --app`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv). The classic app (`run_fizgig.bat`) is unchanged; the two share settings, presets, run history and the queue.
 
+## On your phone's home screen
+
+Open Fizgig in your phone's browser (your computer's address, or a pod's) and use **Add to Home Screen** (Safari's Share menu) or **Install app** (Chrome's menu): it then opens from its own icon, full-screen, without the browser's bars. It is the same page, so it needs Fizgig running and logs in as the browser does.
+
 ## The queue
 
-**Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails or is stopped holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. A paused run is waited for: **Resume** it and the queue carries on after it finishes. The Resume button is still there after a restart, and a fine-tune resumes from its last checkpoint for the rotations it has left. Two queued runs can't save into the same files: give each its own LoRA name.
+**Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails or is stopped holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. A paused run is waited for: **Resume** it and the queue carries on after it finishes. The Resume button is still there after a restart, and a fine-tune resumes from its last checkpoint for the rotations it has left. Two queued runs can't save into the same files: give each its own LoRA name. **Edit** on a queued run loads its settings into the form; change what you like and **Save to queue** puts them back in its place (**Cancel edit** leaves it as it was).
 
 The web UI's queue is its own; the desktop app keeps its queue, shown below it read-only (change it in the desktop app). One run trains at a time across both: each queue waits while the other app is training or making captions, and says so.
+
+## While a run trains
+
+The run card shows the run's progress, time left and log, and a **loss graph** that fills in as it trains: every step's loss (faint) with a smoothed line over it, the epochs marked, the lowest point, and the learning rate when Adaptive LR moves it. Drag **Smoothing**, tick **Log scale** or **Clip outliers** (one spike no longer flattens the rest), and point at the graph for a step's figures; the settings are remembered. **Sample now** makes the previews after the current step instead of waiting for the epoch to end (they show with the others, under the epoch in progress), and **Save now** saves the LoRA as it is, as `<name>-stepNNNNNNN.safetensors` beside its checkpoints. Both work on a run started in the desktop app too; a fine-tune saves and previews at whole rotations only, so it doesn't offer them.
 
 ## Runs started in the desktop app
 
@@ -105,13 +113,13 @@ The Captions tab has the desktop app's captioning tools, run on the machine runn
 - **Caption All (AI)** with Qwen3-VL (when the Krea 2 text encoder is set in Preferences) or Florence-2, with the same tasks, trigger word, length and Overwrite choice as the desktop. **Edit instructions…** changes what Qwen3-VL is told for a task; the edit is shared with the desktop app and the trainer's auto-recaption. **Static Caption All** gives every file just the trigger word.
 - The model stays loaded between batches, so **Re-caption** on a single file is quick; **Unload Model** frees its memory, and it unloads itself before any run starts (here or in the desktop app).
 - **Caption every song** (ACE-Step), **Bilingual** (adds a Chinese translation to each caption) and **Find & Replace** with a preview.
-- The captions below can be searched and are shown 40 at a time; edit any of them and press Save.
+- The captions below can be searched and sorted, a page at a time (Per page, or Go to page); edit any of them and press Save. **⬇ Folder (.zip)** downloads the training folder - its pictures, clips and songs with their captions - and **⬇ Captions only** just the captions: the easy way to take a captioned dataset home from a pod.
 
 With a run training, captioning only starts if the card has room for it beside the run.
 
 ## Runs & outputs
 
-**Runs** lists every training run started in the web UI or the desktop app, newest first: how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). The history lives in `.fizgig_runs.json` in the Fizgig folder.
+**Runs** lists every training run started in the web UI or the desktop app, newest first: how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). **Loss graph** shows the run's loss at every step (as on the run card), and **Notes** keeps your own notes on the run, saved as you type. The history lives in `.fizgig_runs.json` in the Fizgig folder.
 
 Below that, **Saved files** lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model in the web UI and the desktop app, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
 
