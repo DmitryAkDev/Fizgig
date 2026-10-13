@@ -115,7 +115,7 @@ Settings are read at launch. Pause → Resume relaunches with your current setti
 
 ## Video and sound: how do I…
 
-**…train on video clips?** Cut them with **Gizmo** (launch it from the Image Prep tab, or the *Launch Gizmo* .bat), which exports clips already on H3's spec. Drop them into the training folder next to your images and caption them on the **Captions tab** like a photo. **Photos, clips and voice recordings all train together in the same folder**: no settings, no separate runs.
+**…train on video clips?** Cut them with **Gizmo** (launch it from the Image Prep tab, or `Gizmo.bat`), which exports clips already on H3's spec. Drop them into the training folder next to your images and caption them on the **Captions tab** like a photo. **Photos, clips and voice recordings all train together in the same folder**: no settings, no separate runs.
 
 **…make clips from my footage?** Open Gizmo, drop a video on it, scrub to a moment, pick a length, *Add to queue*. Repeat, then *Export queue*.
 

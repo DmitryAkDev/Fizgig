@@ -17,7 +17,8 @@ import sys
 import subprocess
 import traceback
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+LAUNCH_DIR = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(LAUNCH_DIR))      # Fizgig's folder (this file lives in src/launch)
 VENV_PYTHONW = os.path.join(HERE, "venv", "Scripts", "pythonw.exe")
 LOG = os.path.join(HERE, "launch_error.log")
 
@@ -80,6 +81,7 @@ except Exception:
     pass
 
 sys.path.insert(0, HERE)
+sys.path.insert(0, LAUNCH_DIR)                           # the splash beside this file
 
 
 def _start_with_splash():

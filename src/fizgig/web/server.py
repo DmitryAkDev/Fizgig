@@ -3279,7 +3279,7 @@ def _follow_parent(pid):
             os._exit(0)
 
 
-def run_server(host, port=None, password=None, password_arg=False):
+def run_server(host, port=None, password=None, password_arg=False, open_browser=False):
     """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
     nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
     8081: it is the port its proxy forwards."""
@@ -3305,6 +3305,9 @@ def run_server(host, port=None, password=None, password_arg=False):
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
+    if open_browser:                           # Fizgig in browser: the page, once this is listening
+        import webbrowser
+        threading.Timer(0.5, webbrowser.open, args=(f"http://127.0.0.1:{port}/",)).start()
     def _term(*_a):                            # a service manager's stop: end the run with it, as Ctrl+C does
         raise KeyboardInterrupt
     try:
@@ -3329,6 +3332,8 @@ def main(argv=None):
                                                  "password)")
     ap.add_argument("--port", type=int, default=None, help="Port to serve on (default: the one in Preferences, "
                                                             "8081 at first; a taken one moves to the next free one)")
+    ap.add_argument("--open", action="store_true", help="Open the web UI in the browser once it is up (and if "
+                                                         "Fizgig is running already, just open it)")
     ap.add_argument("--password", default=None, help="Login password, 8 characters or more (default: "
                                                      "FIZGIG_PASSWORD, then on a pod VNC_PASSWORD, then the one in "
                                                      "Preferences)")
@@ -3347,7 +3352,15 @@ def main(argv=None):
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
         sys.exit("Listening beyond localhost needs a password: set one in Preferences > Web UI (web_password in "
                  "prefs.json), or use FIZGIG_PASSWORD or --password.")
-    run_server(host, a.port, password=pwd, password_arg=bool(a.password))
+    if a.open and not on_pod():
+        from fizgig.web.port import is_fizgig
+        running = a.port or saved_port(load_prefs())
+        if is_fizgig(running):                 # Fizgig is up already (the app window's, say): the browser on it
+            import webbrowser
+            print(f"Fizgig is already running on port {running}: opening it.")
+            webbrowser.open(f"http://127.0.0.1:{running}/")
+            return
+    run_server(host, a.port, password=pwd, password_arg=bool(a.password), open_browser=a.open and not on_pod())
 
 
 if __name__ == "__main__":

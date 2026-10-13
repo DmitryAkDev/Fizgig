@@ -111,8 +111,8 @@ git clone https://github.com/shootthesound/Fizgig.git
 cd Fizgig
 ```
 
-- **Windows (NVIDIA):** double-click `install_fizgig.bat`, launch with `run_fizgig.bat`, update with `update_fizgig.bat`.
-- **Linux (NVIDIA):** `python install_fizgig.py`, then `./run_fizgig.sh`.
+- **Windows (NVIDIA):** double-click `install_fizgig.bat`, then launch with `Fizgig.bat` (its own window) or `Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`. The classic desktop app is `Fizgig Classic.bat`.
+- **Linux (NVIDIA):** `python install_fizgig.py`, then `./fizgig.sh` or `./fizgig_browser.sh` (the classic app: `./fizgig_classic.sh`).
 - **AMD ROCm:** see [docs/INSTALL.md](docs/INSTALL.md).
 
 Model files download from the **Preferences** tab: one **Download models for me** button per model.

@@ -7,7 +7,7 @@ Pull requests are welcome — bug fixes, features, docs, pod/RunPod improvements
 - **Your authorship is preserved.** PRs are merged with a real GitHub merge: your name on the
   commit, the green Merged badge, and contribution-graph credit. Accepted work is also
   credited by @handle in the release notes, and substantial contributions go in
-  [CONTRIBUTORS.md](CONTRIBUTORS.md).
+  [CONTRIBUTORS.md](../docs/CONTRIBUTORS.md).
 - **A real review.** PRs here get read properly — including adversarial testing where it's
   warranted — and feedback comes as review comments or fixups to your branch, never as a
   silent rewrite of your work.

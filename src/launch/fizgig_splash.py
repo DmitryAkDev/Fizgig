@@ -15,7 +15,7 @@ import os
 import tkinter as tk
 from tkinter import ttk
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # Fizgig's folder
 
 # Mirrors lora_trainer_gui.COLORS / FONT_FAMILY — keep in step by hand.
 _BG_DEEP = "#1E2530"

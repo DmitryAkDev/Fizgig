@@ -22,7 +22,7 @@ Logging in on a pod, tick **Keep me logged in on this device** and it remembers 
 
 In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too. The card has links to it: one for this computer, and one with its network address for your phone or other computers.
 
-To run the web UI on its own, without the desktop app, open a terminal in the Fizgig folder and run:
+To run the web UI on its own, double-click **Fizgig in browser.bat** (`./fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
 
 ```
 venv\Scripts\python lora_trainer_gui.py --web      (Windows)
@@ -33,7 +33,7 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 ## As a desktop app window
 
-**Fizgig App (new look).bat** on Windows, `run_fizgig_app.sh` on Linux (or `python lora_trainer_gui.py --app`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv). The classic app (`run_fizgig.bat`) is unchanged; the two share settings, presets, run history and the queue.
+**Fizgig.bat** on Windows, `fizgig.sh` on Linux (or `python lora_trainer_gui.py --app`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv). The classic app (`Fizgig Classic.bat`) is unchanged; the two share settings, presets, run history and the queue.
 
 ## On your phone's home screen
 

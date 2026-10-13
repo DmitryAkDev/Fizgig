@@ -67,7 +67,7 @@ Your model paths, output LoRAs, caches, presets and the venv are left alone. `up
 
 ### Windows (NVIDIA, one-click)
 
-Double-click `install_fizgig.bat`. It creates a venv, installs CUDA 12.8 PyTorch and all dependencies, pre-downloads the InsightFace models, and verifies CUDA is visible to PyTorch. Launch with `run_fizgig.bat`; update with `update_fizgig.bat`.
+Double-click `install_fizgig.bat`. It creates a venv, installs CUDA 12.8 PyTorch and all dependencies, pre-downloads the InsightFace models, and verifies CUDA is visible to PyTorch. Launch with `Fizgig.bat` (its own window) or `Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`. The classic desktop app is `Fizgig Classic.bat`.
 
 ### Windows (AMD ROCm)
 
@@ -123,8 +123,7 @@ Linux ROCm cache scripts import `fizgig.rocm.cache_exit` only when `FIZGIG_GPU_B
 
 ```bash
 python install_fizgig.py
-chmod +x run_fizgig.sh
-./run_fizgig.sh
+./fizgig.sh            # its own window (./fizgig_browser.sh: in your web browser)
 ```
 
 Run it from your system Python, not a conda environment (`conda deactivate` first): conda bundles its own Tk, which can't see the system's fonts, so the app comes up with missing text. The installer refuses when conda is active; `FIZGIG_ALLOW_CONDA=1` overrides it.

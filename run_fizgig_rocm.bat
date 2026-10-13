@@ -72,4 +72,4 @@ if defined BNB_ROCM_VERSION (
     echo [AMD-ROCm] BNB_ROCM_VERSION unset ^(bitsandbytes selects DLL^)  ROCM_PATH=%ROCM_PATH%
 )
 
-start "" /b wscript //nologo //b "%~dp0run_silent.vbs"
+start "" /b wscript //nologo //b "%~dp0src\launch\run_silent.vbs"
