@@ -4977,8 +4977,9 @@ function podsDraw() {
   box.replaceChildren(...S.pods.list.map((p) => {
     const st = p._starting && p.state !== "ready" ? "starting" : p.state;
     const [label, tone] = POD_STATE[st] || [st, "muted"];
-    const sub = [p.gpu, p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== p.name ? p.id : "",
-      !p.id ? p.url : ""].filter(Boolean).join(" · ");
+    const title = p.name || p.id || p.url;
+    const sub = [p.gpu, p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
+      !p.id && p.url !== title ? p.url : ""].filter(Boolean).join(" · ");
     const btns = [];
     if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
       onclick: () => podOpen(p)}));
@@ -4993,7 +4994,7 @@ function podsDraw() {
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
     return el("div", {class: "pod-row"},
       el("span", {class: `pod-dot ${tone}`}),
-      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: p.name || p.id || p.url}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: title}),
         el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`})),
       el("div", {class: "pod-btns"}, ...btns));
   }));

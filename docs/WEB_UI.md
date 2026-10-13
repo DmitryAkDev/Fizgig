@@ -8,6 +8,14 @@ The pod starts Fizgig by itself. In the pod's **Connect** menu, open **HTTP port
 
 From there everything works in the browser: download the models (Preferences), upload your training data (Start tab), train, watch the previews and download the results.
 
+## Pods: a rented GPU from your own Fizgig
+
+The **Pods** tab in Fizgig on your own computer opens your RunPod pods. Add a pod by pasting its ID (the code under its name on RunPod's Pods page) or its address; the address of a Fizgig on another computer on your network works too. Each pod shows whether it's ready, still starting, or stopped. **Open** takes the Fizgig window to the pod (in a browser, it opens a tab): it's the same app, running on the pod's GPU, with a **← This computer** button at the top right to come back. Close the window on a pod and it opens on that pod next time, if the pod is still running.
+
+With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), your Fizgig pods are listed without adding them, and **Start and open** / **Stop** work from the tab: a stopped pod starts and opens by itself once its Fizgig answers, usually within a minute. The key is saved on your computer only. No pod yet? The tab's **Deploy Fizgig on RunPod** button opens the template.
+
+Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.
+
 ## On your own computer
 
 In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too. The card has links to it: one for this computer, and one with its network address for your phone or other computers.

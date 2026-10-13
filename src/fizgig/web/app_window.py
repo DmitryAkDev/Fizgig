@@ -15,6 +15,7 @@ import os
 import secrets
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 
@@ -181,7 +182,9 @@ def main():
         class Api:
             """All a page in the window can ask of it - a pod's page included - is to come back to this computer."""
             def home(self):
-                window.load_url(home)
+                # after this call has returned to the page: pywebview hands the page a reply, and the page must
+                # still be there for it
+                threading.Timer(0.05, lambda: window.load_url(home)).start()
 
         geom = _prefs().get("app_window") or {}
         first = _last_pod(port) or url

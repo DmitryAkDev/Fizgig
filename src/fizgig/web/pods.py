@@ -185,5 +185,6 @@ def listing(prefs, key):
         states = dict(zip([r["url"] for r in live], ex.map(probe, [r["url"] for r in live])))
     for r in items:
         r["state"] = states.get(r["url"], "stopped" if r.get("account") and not r.get("running") else "off")
-    items.sort(key=lambda r: (r["state"] != "ready", -(r.get("last") or 0), (r.get("name") or "").lower()))
+    rank = {"ready": 0, "waiting": 1, "stopped": 2, "off": 3}
+    items.sort(key=lambda r: (rank.get(r["state"], 3), -(r.get("last") or 0), (r.get("name") or "").lower()))
     return {"pods": items, "error": err, "deploy": DEPLOY}
