@@ -5,6 +5,10 @@ It uses the web UI already running on the saved port when there is one (the desk
 on this computer and stops it when the window closes. Its own server logs the window in with a one-time key, so a web
 password guards the network, not this window. Size and place are remembered (prefs.json "app_window"). Without a
 pywebview engine on the machine it opens the web UI in the default browser instead and says how to get the window.
+
+The window can also show a pod (the Pods tab sends it there): on any page but this computer's it adds a bar with
+"← This computer", whatever version of Fizgig the pod runs, and names the pod in the title. The one thing a pod's
+page can ask of the window is to come back here. Closed on a pod, it opens on that pod next time if it's up.
 """
 import json
 import os
@@ -41,6 +45,18 @@ def _remember(geom):
         pass
 
 
+def _remember_last(url):
+    p = _prefs()
+    p["app_last_url"] = url
+    tmp = PREFS_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(p, f, indent=2)
+        os.replace(tmp, PREFS_FILE)
+    except OSError:
+        pass
+
+
 def _icon(profile):
     """Fizgig's icon for the window: icon.png, made an .ico for Windows (which takes nothing else)."""
     png = os.path.join(BASE_DIR, "icon.png")
@@ -57,6 +73,65 @@ def _icon(profile):
         return ico
     except Exception:
         return None
+
+
+# the bar a pod's page gets inside the window (added by the window, so a pod on older Fizgig gets it too)
+_BAR_JS = r"""
+(function () {
+  if (document.getElementById('fizgigAppBar')) return;
+  var b = document.createElement('div');
+  b.id = 'fizgigAppBar';
+  b.style.cssText = 'position:fixed;top:10px;right:14px;z-index:2147483647;display:flex;align-items:center;gap:10px;' +
+    'max-width:60vw;padding:5px 6px 5px 14px;border-radius:999px;background:#5B21B6;color:#F0F4F8;' +
+    'font:13px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  var t = document.createElement('span');
+  t.textContent = '☁ On ' + %s;
+  t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+  var h = document.createElement('button');
+  h.textContent = '← This computer';
+  h.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:4px 12px;cursor:pointer;' +
+    'font:600 13px Segoe UI,system-ui,sans-serif';
+  h.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
+  b.appendChild(t); b.appendChild(h);
+  document.body.appendChild(b);
+})();
+"""
+
+
+def _where(url):
+    """'pod <id>' for a pod's address, else its host:port."""
+    from urllib.parse import urlparse
+    u = urlparse(url or "")
+    host = u.hostname or ""
+    if host.endswith(".proxy.runpod.net"):
+        return "pod " + host.split("-")[0]
+    return u.netloc or url
+
+
+def _pod_name(url):
+    """The name the Pods tab saved it under, else where it is."""
+    for p in _prefs().get("app_pods") or []:
+        if isinstance(p, dict) and p.get("url") == url and p.get("name"):
+            return f"{p['name']} ({_where(url)})"
+    return _where(url)
+
+
+def _is_local(url, port):
+    from urllib.parse import urlparse
+    u = urlparse(url or "")
+    return u.hostname in ("127.0.0.1", "localhost") and (u.port or 80) == port
+
+
+def _last_pod(port):
+    """The pod the window was closed on, if Fizgig on it answers now (a stopped pod: this computer instead)."""
+    url = str(_prefs().get("app_last_url") or "")
+    if not url or _is_local(url, port):
+        return ""
+    try:
+        from fizgig.web.pods import probe
+        return url if probe(url, timeout=5) == "ready" else ""
+    except Exception:
+        return ""
 
 
 def _start_server(port, key):
@@ -99,16 +174,46 @@ def main():
             _stop(own)
             sys.exit("Fizgig's web UI did not start. Run `python lora_trainer_gui.py --web` to see why.")
     url = f"http://127.0.0.1:{port}/" + (f"?app_key={key}" if key else "")
+    home = f"http://127.0.0.1:{port}/"
     try:
         import webview
+
+        class Api:
+            """All a page in the window can ask of it - a pod's page included - is to come back to this computer."""
+            def home(self):
+                window.load_url(home)
+
         geom = _prefs().get("app_window") or {}
+        first = _last_pod(port) or url
         window = webview.create_window(
-            "Fizgig", url, width=int(geom.get("width") or 1440), height=int(geom.get("height") or 920),
-            x=geom.get("x"), y=geom.get("y"), min_size=(380, 600), text_select=True, confirm_close=False)
+            "Fizgig", first, width=int(geom.get("width") or 1440), height=int(geom.get("height") or 920),
+            x=geom.get("x"), y=geom.get("y"), min_size=(380, 600), text_select=True, confirm_close=False,
+            js_api=Api())
+        if first != url:
+            # its own server's one-time login, for when it comes back here: the key's cookie first, then the pod
+            home = url
+
+        def loaded():
+            try:
+                cur = window.get_current_url() or ""
+                if _is_local(cur, port):
+                    window.set_title("Fizgig")
+                    return
+                name = _pod_name(cur)
+                window.set_title(f"Fizgig — {name}")
+                window.evaluate_js(_BAR_JS % json.dumps(name))
+            except Exception:
+                pass
+        window.events.loaded += loaded
 
         def keep():
             try:
                 _remember({"width": window.width, "height": window.height, "x": window.x, "y": window.y})
+            except Exception:
+                pass
+            try:
+                cur = window.get_current_url() or ""
+                _remember_last("" if _is_local(cur, port) else cur.split("#")[0])
             except Exception:
                 pass
         window.events.closing += keep

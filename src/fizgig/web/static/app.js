@@ -79,6 +79,7 @@ async function boot() {
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   if (st.tab) showTab(st.tab);
   wire();
+  $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
   setInterval(loadCheckpoints, 15000);
@@ -4948,11 +4949,113 @@ async function browse(path) {
   }
 }
 
+// ---- Pods: rented GPUs running Fizgig, opened from here (the app window goes there; a browser opens a tab) -------
+S.pods = {list: [], timer: 0, waitFor: ""};
+const inApp = () => !!window.pywebview;
+const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - Fizgig answers in a minute or two", "warn"],
+  stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"]};
+
+async function podsLoad(quiet) {
+  if (!quiet) $("podsNote").textContent = "Checking your pods...";
+  let r;
+  try { r = await api("/api/pods"); } catch (e) { $("podsNote").textContent = e.message; return; }
+  S.pods.list = r.pods || [];
+  S.pods.key = r.key_saved;
+  $("podKeyNote").textContent = r.key_saved ? "Key saved: your Fizgig pods are listed above." : "";
+  podsDraw();
+  $("podsNote").textContent = r.error ? r.error : (S.pods.list.length ? "" :
+    "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key.");
+  // keep checking while one is on its way up, and open it when it's ready if asked to
+  clearTimeout(S.pods.timer);
+  if (S.pods.list.some((p) => p.state === "waiting" || p._starting)) S.pods.timer = setTimeout(() => podsLoad(true), 6000);
+  const w = S.pods.waitFor && S.pods.list.find((p) => p.url === S.pods.waitFor);
+  if (w && w.state === "ready") { S.pods.waitFor = ""; podOpen(w); }
+}
+
+function podsDraw() {
+  const box = $("podsList");
+  box.replaceChildren(...S.pods.list.map((p) => {
+    const st = p._starting && p.state !== "ready" ? "starting" : p.state;
+    const [label, tone] = POD_STATE[st] || [st, "muted"];
+    const sub = [p.gpu, p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== p.name ? p.id : "",
+      !p.id ? p.url : ""].filter(Boolean).join(" · ");
+    const btns = [];
+    if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
+      onclick: () => podOpen(p)}));
+    else if (p.state === "waiting" || p._starting) btns.push(el("button", {class: "btn btn-sm",
+      text: S.pods.waitFor === p.url ? "Opens when ready..." : "Open when ready", onclick: () => {
+        S.pods.waitFor = p.url; podsDraw(); }}));
+    if (p.account && !p.running && S.pods.key) btns.push(el("button", {class: "btn btn-primary btn-sm",
+      text: "Start and open", onclick: () => podStart(p)}));
+    if (p.account && p.running && S.pods.key) btns.push(el("button", {class: "btn btn-sm", text: "Stop",
+      title: "Stop the pod (it stops billing for the GPU; its files stay on its volume)", onclick: () => podStop(p)}));
+    if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
+      onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
+    return el("div", {class: "pod-row"},
+      el("span", {class: `pod-dot ${tone}`}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: p.name || p.id || p.url}),
+        el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`})),
+      el("div", {class: "pod-btns"}, ...btns));
+  }));
+}
+
+function podOpen(p) {
+  api("/api/pods/opened", {url: p.url, name: p.name || ""}).catch(() => {});
+  if (inApp()) location.href = p.url;                 // the window goes there; ← This computer comes back
+  else window.open(p.url, "_blank", "noopener");
+}
+
+async function podStart(p) {
+  try {
+    await api("/api/pods/start", {id: p.id, gpus: p.gpus || 1});
+    p._starting = true; S.pods.waitFor = p.url; podsDraw();
+    $("podsNote").textContent = `Starting ${p.name || p.id}: it opens here when Fizgig answers (usually a minute or two).`;
+    setTimeout(() => podsLoad(true), 4000);
+  } catch (e) { $("podsNote").textContent = e.message; }
+}
+
+async function podStop(p) {
+  try {
+    await api("/api/pods/stop", {id: p.id});
+    $("podsNote").textContent = `${p.name || p.id} is stopping. Its files stay on its volume for next time.`;
+    setTimeout(() => podsLoad(true), 4000);
+  } catch (e) { $("podsNote").textContent = e.message; }
+}
+
+function wirePods() {
+  $("podsReload").addEventListener("click", () => podsLoad());
+  const add = async () => {
+    try {
+      const r = await api("/api/pods/add", {text: $("podAddText").value, name: $("podAddName").value});
+      $("podAddText").value = ""; $("podAddName").value = "";
+      $("podAddNote").textContent = r.state === "ready" ? "Added. It's ready: press Open." :
+        r.state === "waiting" ? "Added. Fizgig on it isn't answering yet (still starting): it shows Ready when it is." :
+        "Added, but nothing answers there yet. A stopped pod needs starting on RunPod (or here, with your API key).";
+      podsLoad(true);
+    } catch (e) { $("podAddNote").textContent = e.message; }
+  };
+  $("podAdd").addEventListener("click", add);
+  $("podAddText").addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+  $("podKeySave").addEventListener("click", async () => {
+    $("podKeyNote").textContent = "Checking the key with RunPod...";
+    try {
+      const r = await api("/api/pods/key", {key: $("podKey").value});
+      $("podKey").value = "";
+      $("podKeyNote").textContent = `Key saved. ${r.found} Fizgig pod${r.found === 1 ? "" : "s"} on your account.`;
+      podsLoad(true);
+    } catch (e) { $("podKeyNote").textContent = e.message; }
+  });
+  $("podKeyClear").addEventListener("click", async () => {
+    await api("/api/pods/key", {key: ""}).catch(() => {});
+    $("podKeyNote").textContent = "Key removed."; podsLoad(true);
+  });
+}
+
 // ---- login -------------------------------------------------------------------------------------------------
 function showLogin() { $("loginModal").classList.add("active"); $("loginPassword").focus(); }
 async function login() {
   const r = await fetch("/api/login", {method: "POST", headers: {"X-Fizgig-Token": TOKEN, "Content-Type": "application/json"},
-    body: JSON.stringify({password: $("loginPassword").value})});
+    body: JSON.stringify({password: $("loginPassword").value, remember: $("loginRemember").checked})});
   if (r.ok) { $("loginModal").classList.remove("active"); boot(); }
   else $("loginError").textContent = (await r.json().catch(() => ({}))).error || "Wrong password.";
 }
@@ -4975,6 +5078,7 @@ function showTab(name) {
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
+  if (name === "pods") podsLoad();
   api("/api/state", {tab: name}).catch(() => {});
 }
 
@@ -5356,6 +5460,7 @@ function wire() {
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", () => start("/api/resume"));
   $("loginButton").addEventListener("click", login);
+  wirePods();
   $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 }
 

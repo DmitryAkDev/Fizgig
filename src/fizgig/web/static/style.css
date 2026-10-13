@@ -1855,3 +1855,25 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 #tab-extract .ex-ft-hint { margin: -2px 0 8px; }
 #exFtRanks { display: inline-flex; flex-wrap: wrap; gap: 6px 18px; }
 #exFtRanks .checkbox-label { margin: 0; }
+
+/* ---- Pods: rented GPUs running Fizgig ---- */
+.tab-item[data-tab="pods"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17.5 19a4.5 4.5 0 0 0 0-9h-1.3A7 7 0 1 0 4 15.3'/%3E%3Cpath d='M8 19h9.5'/%3E%3C/svg%3E"); }
+.pods-list { display: flex; flex-direction: column; gap: 8px; }
+.pod-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg-inset);
+  border: 1px solid var(--border); border-radius: 8px; }
+.pod-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; background: var(--text-muted); }
+.pod-dot.ok { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.pod-dot.warn { background: var(--warning); animation: podPulse 1.4s ease-in-out infinite; }
+@keyframes podPulse { 50% { opacity: .35; } }
+.pod-main { flex: 1; min-width: 0; }
+.pod-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pod-main .field-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pod-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.pods-deploy { display: inline-flex; margin-top: 0; }
+.login-remember { margin-top: 10px; }
+@media (max-width: 760px) { .runpod-btn.pods-deploy { order: 0; border-radius: 8px; padding: 9px 12px; }
+  .runpod-btn.pods-deploy span { display: inline; } }
+@media (max-width: 640px) {
+  .pod-row { flex-wrap: wrap; }
+  .pod-btns { width: 100%; justify-content: flex-start; }
+}

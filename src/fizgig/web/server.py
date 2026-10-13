@@ -53,7 +53,8 @@ MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 
 TOKEN = secrets.token_urlsafe(24)       # this server's session token, placed in the page it serves
-_SESSION_KEY = [secrets.token_urlsafe(24)]      # the logins' key: replaced by Log out everywhere
+_SESSION_KEY = [""]          # the logins' key, kept in prefs.json so a login outlives a restart; Log out everywhere
+                             # replaces it
 
 _lock = threading.Lock()
 _login_lock = threading.Lock()
@@ -181,6 +182,23 @@ def _write_json(path, data):
 
 def load_prefs() -> dict:
     return _read_json(PREFS_FILE)
+
+
+_skey_lock = threading.Lock()
+
+
+def _session_key() -> str:
+    with _skey_lock:
+        if not _SESSION_KEY[0]:
+            k = str(load_prefs().get("web_session_key") or "")
+            if len(k) < 24:
+                k = secrets.token_urlsafe(32)
+                try:
+                    update_prefs({"web_session_key": k})
+                except OSError:
+                    pass                     # a read-only folder: logins last until the server stops
+            _SESSION_KEY[0] = k
+        return _SESSION_KEY[0]
 
 
 def update_prefs(changes: dict):
@@ -321,6 +339,44 @@ def _setups():
             if isinstance(d, dict) and d.get("fizgig_repair_setup"):
                 out.append((os.path.getmtime(p), {"name": f[:-5], "family": d.get("family", "")}))
     return [x for _t, x in sorted(out, key=lambda t: -t[0])]
+
+
+def _pods_post(what, b):
+    from fizgig.web import pod_stop, pods
+    if on_pod():
+        raise ValueError("The Pods tab is for the Fizgig on your own computer.")
+    p = load_prefs()
+    if what == "add":
+        rows = pods.add(p, str(b.get("text") or ""), str(b.get("name") or ""))
+        update_prefs({"app_pods": rows})
+        return {"ok": True, "pod": rows[0], "state": pods.probe(rows[0]["url"])}
+    if what == "forget":
+        update_prefs({"app_pods": pods.forget(p, str(b.get("url") or ""))})
+        return {"ok": True}
+    if what == "opened":
+        update_prefs({"app_pods": pods.touch(p, str(b.get("url") or ""), str(b.get("name") or ""))})
+        return {"ok": True}
+    if what == "key":                        # checked against RunPod before it is kept
+        key = str(b.get("key") or "").strip()
+        if key:
+            found = pods.account(key)
+            update_prefs({"runpod_api_key": key})
+            return {"ok": True, "found": len(found)}
+        update_prefs({"runpod_api_key": ""})
+        return {"ok": True, "found": 0}
+    key = pod_stop.api_key(p)
+    if what in ("start", "stop"):
+        if not key:
+            raise ValueError("Starting and stopping pods from here needs your RunPod API key (below).")
+        pid = str(b.get("id") or "")
+        if not pods.POD_ID.match(pid):
+            raise ValueError("No such pod.")
+        if what == "start":
+            pods.start(key, pid, int(b.get("gpus") or 1))
+        else:
+            pods.stop(key, pid)
+        return {"ok": True}
+    raise ValueError("Unknown pods action.")
 
 
 def _studio_post(what, b):
@@ -1603,7 +1659,13 @@ class Handler(BaseHTTPRequestHandler):
         return not self.local_only or host in LOCAL_HOSTS
 
     def _session(self):
-        return hmac.new((TOKEN + _SESSION_KEY[0]).encode(), (self.password or "").encode(), hashlib.sha256).hexdigest()
+        return hmac.new(_session_key().encode(), (self.password or "").encode(), hashlib.sha256).hexdigest()
+
+    def _cookie(self, remember=False):
+        """The login cookie: for 30 days on this device with Keep me logged in, else until the browser closes.
+        Secure through a pod's HTTPS proxy."""
+        return ("Set-Cookie", f"fizgig_session={self._session()}; Path=/; HttpOnly; SameSite=Strict"
+                              + ("; Max-Age=2592000" if remember else "") + ("; Secure" if on_pod() else ""))
 
     def _logged_in(self):
         if not self.password:
@@ -1643,7 +1705,7 @@ class Handler(BaseHTTPRequestHandler):
             # the Fizgig app window (fizgig/web/app_window.py) started this server: its one key logs it in, so the
             # web password guards the network, not the window on this computer
             key = os.environ.get("FIZGIG_APP_KEY", "")
-            extra = ([("Set-Cookie", f"fizgig_session={self._session()}; Path=/; HttpOnly; SameSite=Strict")]
+            extra = ([self._cookie()]
                      if key and self.password and hmac.compare_digest((qs.get("app_key") or [""])[0], key) else [])
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra=extra)
         if path in ("/app.js", "/style.css"):
@@ -1923,6 +1985,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/upload/root":
             return self.json({"root": uploads_root(), "set": bool(pref_path(load_prefs(), "input_dataset_dir")),
                               "local": self._local_viewer()})
+        if path == "/api/pods":                      # the Pods tab: saved pods + the account's, each probed
+            from fizgig.web import pod_stop, pods
+            if on_pod():
+                return self.json({"error": "The Pods tab is for the Fizgig on your own computer."}, 400)
+            p = load_prefs()
+            key = pod_stop.api_key(p)
+            return self.json({**pods.listing(p, key), "key_saved": bool(key)})
+        if path == "/api/pods/probe":                # one pod, while it starts
+            from fizgig.web import pods
+            url = (qs.get("url") or [""])[0]
+            if on_pod() or not url.startswith(("http://", "https://")):
+                return self.json({"error": "no"}, 400)
+            return self.json({"state": pods.probe(pods.parse(url)["url"])})
         if path == "/api/stats":
             with _lock:
                 return self.json(dict(_stats))
@@ -2109,7 +2184,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/login":
             if self.headers.get("X-Fizgig-Token") != TOKEN:
                 return self.json({"error": "Reload the page."}, 403)
-            pwd = str(self._body().get("password") or "")
+            self._body_cache = self._body()
+            pwd = str(self._body_cache.get("password") or "")
             if self.password:
                 # wrong guesses lock out only the device making them, for longer each time (1 s, 2 s, ... 60 s),
                 # forgotten after 15 minutes; nothing waits while holding the lock, so the owner's own login on
@@ -2134,8 +2210,7 @@ class Handler(BaseHTTPRequestHandler):
                                 _login_fails.pop(k, None)
                         return self.json({"error": "Wrong password."}, 401)
                     _login_fails.pop(ip, None)
-            return self.json({"ok": True}, extra=[("Set-Cookie", f"fizgig_session={self._session()}; Path=/; "
-                                                                 "HttpOnly; SameSite=Strict")])
+            return self.json({"ok": True}, extra=[self._cookie(remember=bool(self._body_cache.get("remember")))])
         if not self._api_ok():
             return None
         if path == "/api/upload":                    # a raw file body, not JSON
@@ -2312,7 +2387,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True}, extra=[("Set-Cookie", "fizgig_session=; Path=/; Max-Age=0; HttpOnly; "
                                                                      "SameSite=Strict")])
             if path == "/api/logout_all":                 # every device: a new key makes every login stale
-                _SESSION_KEY[0] = secrets.token_urlsafe(24)
+                _SESSION_KEY[0] = secrets.token_urlsafe(32)
+                update_prefs({"web_session_key": _SESSION_KEY[0]})
                 return self.json({"ok": True})
             if path == "/api/desktop/samples":         # preview settings changed here go to the desktop too
                 if b.get("family") == refmod.KEY:
@@ -2403,6 +2479,8 @@ class Handler(BaseHTTPRequestHandler):
                     exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
                 subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
                 return self.json({"ok": True})
+            if path.startswith("/api/pods/"):        # the Pods tab: add, forget, opened, API key, start, stop
+                return self.json(_pods_post(path[len("/api/pods/"):], b))
             if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
                 from fizgig.web import pod_stop
                 return self.json({"ok": pod_stop.cancel(append_log)})

@@ -37,6 +37,7 @@
           <button class="tab-item" data-tab="extract"><i></i><span>Extract</span></button>
           <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
+          <button class="tab-item" data-tab="pods" id="podsTabBtn" style="display:none"><i></i><span>Pods</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
           <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>
@@ -1316,6 +1317,58 @@
           </div>
           <div id="outRuns" style="display:none"></div>
         </section>
+        <section id="tab-pods" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Pods</h1>
+            <p>Train on a rented GPU from here. A pod runs Fizgig in the cloud; open it and it's this same app, on a
+              bigger card, while your own computer stays free. Closing it doesn't stop a run.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Your pods</span><button class="btn btn-sm" id="podsReload">Reload</button></div>
+            <div class="card-content">
+              <div id="podsList" class="pods-list"></div>
+              <div class="field-hint" id="podsNote"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Add a pod</div>
+            <div class="card-desc">Paste the pod's ID (the code under its name on RunPod's Pods page) or its address. The
+              address of a Fizgig on another computer on your network works too.</div>
+            <div class="card-content">
+              <div class="field-row"><input id="podAddText" class="w-path" placeholder="e.g. lx6csscwpfdfvd" spellcheck="false">
+                <input id="podAddName" class="w-combo-md" placeholder="name (optional)">
+                <button class="btn btn-primary" id="podAdd">Add</button></div>
+              <div class="field-hint" id="podAddNote"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">RunPod API key (optional)</div>
+            <div class="card-desc">With your key, your Fizgig pods are listed here by themselves (nothing to paste), and
+              you can start and stop them without opening RunPod. Make one at RunPod &gt; Settings &gt; API Keys. It is
+              saved on this computer only, in prefs.json.</div>
+            <div class="card-content">
+              <div class="field-row"><input id="podKey" type="password" class="w-path" autocomplete="off"
+                  placeholder="rpa_..." spellcheck="false">
+                <button class="btn" id="podKeySave">Save</button><button class="btn" id="podKeyClear">Remove</button>
+                <a class="btn" href="https://console.runpod.io/user/settings" target="_blank" rel="noopener">Get a key</a></div>
+              <div class="field-hint" id="podKeyNote"></div>
+            </div>
+          </div>
+          <div class="section-card pods-rent">
+            <div class="card-title">No pod yet?</div>
+            <div class="card-desc">Deploy Fizgig's RunPod template: it's ready to train, with nothing to install. An RTX
+              5090 (32 GB) is the pick: it trains Krea 2 with no block swap, so it costs less per finished LoRA than a
+              cheaper, slower card. Give it a 100 GB+ volume. When it has started, its ID is under its name on RunPod's
+              Pods page: paste it above, or add your API key and it appears by itself.</div>
+            <div class="card-content">
+              <div class="field-row"><a class="runpod-btn pods-deploy" id="podDeploy" target="_blank" rel="noopener"
+                  href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=faoq8ed6um&amp;ref=vkb387ep"><i></i><span>Deploy Fizgig on RunPod</span></a></div>
+              <div class="field-hint">The link is a referral one: it supports Fizgig's development at no extra cost to you.
+                <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md" target="_blank" rel="noopener">The pod guide</a></div>
+            </div>
+          </div>
+        </section>
+
         <section id="tab-prefs" class="tab-panel">
           <div class="tab-banner">
             <h1>Preferences</h1>
@@ -1435,11 +1488,13 @@
     <div class="modal-window" style="width: 380px;">
       <div class="modal-header"><span>Log in</span></div>
       <div class="modal-body">
-        <div class="card-desc">The web UI password. It was set in the desktop app's Preferences &gt; Web UI (or in
-          prefs.json). On a RunPod pod it is the pod's VNC_PASSWORD, the same one as its remote desktop; if you didn't
-          set one, it is printed in the pod's logs. No user name is needed.</div>
+        <div class="card-desc">Fizgig's password. On a RunPod pod it's the FIZGIG_PASSWORD (or VNC_PASSWORD) set in the
+          template, or, if none was set, the one printed in the pod's logs. On your own computer it's the one in
+          Preferences &gt; Web UI. No user name is needed.</div>
         <div class="field-row"><input type="password" id="loginPassword" class="w-path" autocomplete="current-password">
           <button class="btn btn-primary" id="loginButton">Log in</button></div>
+        <label class="checkbox-label login-remember"><input type="checkbox" id="loginRemember" checked> Keep me logged in on this device
+          (30 days)</label>
         <div class="field-hint" id="loginError"></div>
       </div>
     </div>
