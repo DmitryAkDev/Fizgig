@@ -1110,15 +1110,15 @@ function previewLabel(it) {
   return [`Epoch ${it.epoch}`, `Prompt ${it.idx + 1}`, it.strength != null && `strength ${it.strength}`]
     .filter(Boolean).join(" · ");
 }
-function previewFigure(it, prompts) {
+function previewFigure(it, prompts, eager) {
   const prompt = it.idx != null && prompts ? prompts[it.idx] : "";
-  return el("figure", {class: "gallery-item", title: it.name}, mediaFor(it),
+  return el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt}) : null,
       el("span", {class: "preview-file", text: it.name})));
 }
 
 // prompts as rows, epochs as columns (full-strength pictures; a slider's strip is its own picture)
-function previewGrid(items, prompts) {
+function previewGrid(items, prompts, eager) {
   const full = items.filter((it) => it.epoch != null && it.strength == null);
   const epochs = [...new Set(full.map((it) => it.epoch))].sort((a, b) => a - b);
   const idxs = [...new Set(full.map((it) => it.idx))].sort((a, b) => a - b);
@@ -1130,7 +1130,7 @@ function previewGrid(items, prompts) {
       el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
         prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i]}) : null),
       ...epochs.map((e) => { const it = at.get(e + ":" + i);
-        return el("td", {}, it ? el("figure", {class: "gallery-item", title: it.name}, mediaFor(it),
+        return el("td", {}, it ? el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
             prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)) : null); })));
   }
@@ -1169,8 +1169,12 @@ async function loadGallery() {
   if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) { likenessShow(dir, g.items, run, view); return; }
   host.innerHTML = "";
   host.classList.toggle("gallery-as-grid", view === "grid");
-  if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || []));
-  else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || []));
+  // the newest epoch's clips download at once (the ones you'll play); the rest when the pointer comes to them
+  const epochs = g.items.map((it) => it.epoch).filter((e) => e != null);
+  const top = epochs.length ? Math.max(...epochs) : null;
+  const eager = new Set((top != null ? g.items.filter((it) => it.epoch === top) : g.items.slice(0, 3)).slice(0, 8));
+  if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || [], eager));
+  else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || [], eager));
   S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
@@ -2799,7 +2803,7 @@ function renderOutputs() {
 // a song's waveform (the picture beside it with the same name) above its player, and its length; any other media
 // as before
 const fmtSecs = (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-function mediaFor(it) {
+function mediaFor(it, eager) {
   const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
   const kind = it.name.split(".").pop().toLowerCase();
   if (["wav", "mp3", "flac", "m4a"].includes(kind)) {
@@ -2812,9 +2816,14 @@ function mediaFor(it) {
       it.duration != null ? el("span", {class: "song-len", text: fmtSecs(it.duration)}) : null);
     return el("div", {class: "song-media"}, wave, audio);
   }
-  // a clip shows its still (a preview's middle frame) until it plays, and fetches only its header beforehand
-  if (["mp4", "webm"].includes(kind)) return el("video", {controls: true, preload: "metadata", src: q(it.path),
-    ...(it.image ? {poster: q(it.image)} : {})});
+  // a clip shows its still (a preview's middle frame) until it plays. eager: it downloads now (the newest previews);
+  // else only its header, and the rest once the pointer (or keyboard) comes to it, so Play rarely waits on a pod
+  if (["mp4", "webm"].includes(kind)) {
+    const v = el("video", {controls: true, preload: eager ? "auto" : "metadata", src: q(it.path),
+      ...(it.image ? {poster: q(it.image)} : {})});
+    if (!eager) for (const ev of ["pointerenter", "focus"]) v.addEventListener(ev, () => { v.preload = "auto"; }, {once: true});
+    return v;
+  }
   return el("img", {loading: "lazy", src: q(it.path), alt: it.name});
 }
 const mediaLabel = (it) => it.name;
