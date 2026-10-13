@@ -2,7 +2,7 @@
 """Probe the installed PyTorch ROCm version and write rocm_env.bat / rocm_env.sh.
 
 bitsandbytes needs BNB_ROCM_VERSION to match the ROCm SDK bundled with the PyTorch wheel
-(e.g. 714 for ROCm 7.14, 715 for 7.15). run_fizgig_rocm.bat and run_fizgig_rocm.sh source these.
+(e.g. 714 for ROCm 7.14, 715 for 7.15). Launch Fizgig AMD.bat and launch_fizgig_amd.sh source these.
 
 With --experimental (Windows floating install): omit BNB_ROCM_VERSION so bitsandbytes
 auto-selects its highest matching lib (falls back with a warning if exact ROCm minor is

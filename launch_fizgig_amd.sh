@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fizgig launcher for AMD ROCm on Linux - mirrors run_fizgig_rocm.bat env tuning.
+# Fizgig launcher for AMD ROCm on Linux - mirrors Launch Fizgig AMD.bat env tuning.
 # HIGHLY EXPERIMENTAL: Linux AMD training is best-effort only.
 cd "$(dirname "$0")"
 

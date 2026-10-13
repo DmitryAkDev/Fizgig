@@ -1,5 +1,5 @@
 #!/bin/bash
-# Gizmo - cut training clips Fizgig will accept (the Linux twin of Gizmo.bat)
+# Gizmo - cut training clips Fizgig will accept (the Linux twin of Launch Gizmo.bat)
 cd "$(dirname "$0")"
 if [ ! -x venv/bin/python ]; then
     echo "Fizgig's Python environment is missing - run the installer first."

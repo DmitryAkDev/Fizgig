@@ -1,5 +1,5 @@
 @echo off
-rem Fizgig in its own app window. In your web browser instead: "Fizgig in browser.bat".
+rem Fizgig in its own app window. In your web browser instead: "Launch Fizgig in browser.bat".
 cd /d "%~dp0"
 if not exist "venv\Scripts\python.exe" (
     echo Fizgig's Python environment is missing.

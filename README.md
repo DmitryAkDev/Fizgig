@@ -109,7 +109,7 @@ Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: 
 
 ## One app, wherever you are
 
-- **In its own window** (`Fizgig.bat`), or **in your browser** (`Fizgig in browser.bat`) — the same app either way.
+- **In its own window** (`Launch Fizgig.bat`), or **in your browser** (`Launch Fizgig in browser.bat`) — the same app either way.
 - **On your phone or another computer**: set a password in Preferences and open it over your network; add it to your phone's home screen and it opens like an app.
 - **On a rented GPU**: the **Pods** tab deploys a RunPod pod, opens it in the same window, and sends a training folder from your computer straight to it.
 - **Runs & outputs** keeps every run with its loss graph, notes, previews and checkpoints, and starts any of them again with the same settings.
@@ -131,8 +131,8 @@ git clone https://github.com/shootthesound/Fizgig.git
 cd Fizgig
 ```
 
-- **Windows (NVIDIA):** double-click `install_fizgig.bat`, then launch with `Fizgig.bat` (its own window) or `Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`.
-- **Linux (NVIDIA):** `python install_fizgig.py`, then `./fizgig.sh` or `./fizgig_browser.sh`.
+- **Windows (NVIDIA):** double-click `install_fizgig.bat`, then launch with `Launch Fizgig.bat` (its own window) or `Launch Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`.
+- **Linux (NVIDIA):** `python install_fizgig.py`, then `./launch_fizgig.sh` or `./launch_fizgig_browser.sh`.
 - **AMD ROCm:** see [docs/INSTALL.md](docs/INSTALL.md).
 
 Model files download from the **Preferences** tab: one **Download models for me** button per model.

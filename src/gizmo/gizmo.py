@@ -23,7 +23,7 @@ Two things it will NOT do, both on purpose:
   * It does not caption. Captioning happens in Fizgig afterwards, on the whole folder at once,
     which is also why muting is a filename suffix — there are no .txt files yet to keep in sync.
 
-Run: Gizmo.bat (or gizmo.sh, or Open Gizmo on Fizgig's Image Prep tab)
+Run: Launch Gizmo.bat (or launch_gizmo.sh, or Open Gizmo on Fizgig's Image Prep tab)
 """
 
 import os

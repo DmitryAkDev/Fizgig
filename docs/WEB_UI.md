@@ -20,7 +20,7 @@ Logging in on a pod, tick **Keep me logged in on this device** and it remembers 
 
 ## On your own computer
 
-Double-click **Fizgig.bat** for Fizgig in its own window (below), or **Fizgig in browser.bat** (`./fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
+Double-click **Launch Fizgig.bat** for Fizgig in its own window (below), or **Launch Fizgig in browser.bat** (`./launch_fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
 
 ```
 venv\Scripts\python fizgig.py --web      (Windows)
@@ -31,7 +31,7 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 ## In its own window
 
-**Fizgig.bat** on Windows, `fizgig.sh` on Linux (or `python fizgig.py`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv).
+**Launch Fizgig.bat** on Windows, `launch_fizgig.sh` on Linux (or `python fizgig.py`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv).
 
 ## On your phone's home screen
 

@@ -242,7 +242,7 @@ echo.
 echo ============================================================
 echo   Installation complete!
 echo.
-echo   Launch with: run_fizgig_rocm.bat
+echo   Start Fizgig with: Launch Fizgig AMD.bat
 echo   ^(sets ROCm tuning env vars before starting the GUI^)
 echo ============================================================
 goto :end
