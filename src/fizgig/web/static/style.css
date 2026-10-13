@@ -1093,6 +1093,7 @@ input[type="range"] {
   overflow-wrap: anywhere; }
 .field-hint { max-width: 100%; }
 .field-hint.warn { color: var(--warning); }
+#podsNote { color: var(--warning); }   /* the Pods tab's line under the list: a start that failed, a pod starting - read it */
 .modal-window { max-width: 94vw !important; box-sizing: border-box; }
 .checkpoint-name, .caption-card-title, .gallery-item figcaption { overflow-wrap: anywhere; }
 .problems { white-space: pre-wrap; overflow-wrap: anywhere; }
