@@ -5328,7 +5328,7 @@ async function browse(path) {
 // ---- Pods: rented GPUs running Fizgig, opened from here (the app window goes there; a browser opens a tab) -------
 S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
-const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - Fizgig answers in a minute or two", "warn"],
+const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"]};
 
 async function podsLoad(quiet) {
@@ -5390,7 +5390,8 @@ async function podStart(p) {
   try {
     await api("/api/pods/start", {id: p.id, gpus: p.gpus || 1});
     p._starting = true; S.pods.waitFor = p.url; podsDraw();
-    $("podsNote").textContent = `Starting ${p.name || p.id}: it opens here when Fizgig answers (usually a minute or two).`;
+    $("podsNote").textContent = `Starting ${p.name || p.id}: it opens here when it's ready. A pod can take a few minutes to start; if it isn't ` +
+      "ready after that, check it on RunPod (its Logs show what it's doing).";
     setTimeout(() => podsLoad(true), 4000);
   } catch (e) { $("podsNote").textContent = e.message; }
 }
