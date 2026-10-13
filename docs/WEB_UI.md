@@ -14,6 +14,8 @@ The **Pods** tab in Fizgig on your own computer opens your RunPod pods. Add a po
 
 With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), your Fizgig pods are listed without adding them, and **Start and open** / **Stop** work from the tab: a stopped pod starts and opens by itself once its Fizgig answers, usually within a minute. The key is saved on your computer only. No pod yet? The tab's **Deploy Fizgig on RunPod** button opens the template.
 
+On a pod in the Fizgig window, the Start tab's **From this computer** card lists the training folders on your own computer: **Send to this pod** uploads one, captions and all, and makes it the training folder. A dropped connection carries on where it stopped, and sending it again only sends what isn't there yet. (In a browser tab the card isn't there: use Upload a folder.)
+
 Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.
 
 ## On your own computer

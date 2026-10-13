@@ -92,6 +92,8 @@ Closing the browser tab does **not** stop training. Fizgig runs on the pod, so c
 
 ## Getting files in and out
 
+**From Fizgig on your own computer** (its Pods tab opens the pod in the Fizgig window): the Start tab's **From this computer** card sends any of your local training folders up in one click. Or upload a folder from the Start tab in any browser.
+
 **Port 8080** is a file manager rooted at `/workspace`. Drag a dataset folder in from your desktop,
 download finished LoRAs from `output_loras/` the same way. No terminal, no SSH keys.
 
