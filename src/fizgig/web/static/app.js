@@ -5711,21 +5711,39 @@ async function uploadFiles(picked, opts = {}) {
   const allBytes = files.reduce((a, f) => a + f.size, 0);
   const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(2) + " GB" : (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0) + " MB";
   const listTick = setInterval(() => loadDatasets(), 4000);   // the folder list above fills in as the files land
-  for (const [i, f] of [...files].entries()) {
-    say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
-    try {
-      const r = await uploadResumable({folder: name, name: tidyName(f.name)}, f, (sent, note) => say(
-        `Uploading ${i + 1} of ${files.length}: ${f.name}, ${mb(sent)} of ${mb(f.size)}` +
-        (note ? ` (${note})` : sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? " (unpacking…)" : "") +
-        ` · all files: ${Math.round(100 * (doneBytes + sent) / Math.max(1, allBytes))}% of ${mb(allBytes)}`));
-      doneBytes += f.size;
-      const d = r.data;
-      if (r.skipped) { already++; folder = folder || d.folder; continue; }
-      if (!r.ok) { failed.push(d.error || f.name); continue; }
-      folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped); replaced.push(...(d.replaced || []));
-      badname.push(...(d.badname || []));
-    } catch (e) { failed.push(`${f.name}: ${e.message}`); }
-  }
+  // three files at once: each file costs round trips through a pod's proxy (is it there? then its pieces), so one at a
+  // time spent much of its time waiting - several together keep the line busy
+  const queue = [...files], inFlight = new Map();       // file -> bytes sent so far
+  let done = 0;
+  const show = (f, note) => {
+    const sentNow = doneBytes + [...inFlight.values()].reduce((x, y) => x + y, 0);
+    say(`Uploading ${files.length} file${files.length === 1 ? "" : "s"}: ${done} done, ${inFlight.size} going` +
+      (f ? ` (${f.name}${note ? ", " + note : ""})` : "") +
+      ` · ${Math.round(100 * sentNow / Math.max(1, allBytes))}% of ${mb(allBytes)}`);
+  };
+  const worker = async () => {
+    for (let f; (f = queue.shift());) {
+      inFlight.set(f, 0);
+      show(f);
+      try {
+        const r = await uploadResumable({folder: name, name: tidyName(f.name)}, f, (sent, note) => {
+          inFlight.set(f, sent);
+          show(f, note || (sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? "unpacking…" : ""));
+        });
+        const d = r.data;
+        if (r.skipped) { already++; folder = folder || d.folder; }
+        else if (!r.ok) failed.push(d.error || f.name);
+        else {
+          folder = d.folder; saved += d.saved.length; skipped.push(...d.skipped); replaced.push(...(d.replaced || []));
+          badname.push(...(d.badname || []));
+        }
+      } catch (e) { failed.push(`${f.name}: ${e.message}`); }
+      inFlight.delete(f);
+      doneBytes += f.size; done++;
+      show();
+    }
+  };
+  await Promise.all(Array.from({length: Math.min(3, files.length)}, worker));
 
   clearInterval(listTick);
   let msg = saved || already ? `${saved} file${saved === 1 ? "" : "s"} uploaded` +
