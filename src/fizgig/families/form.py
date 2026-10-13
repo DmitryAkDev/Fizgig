@@ -394,7 +394,7 @@ def apply_preset(desc, values, preset):
     """The form's values with a preset applied, as the desktop's _apply_preset_values does: the family's aliases
     mapped first, the kind of training from its switches, a model-card option never taken from a preset."""
     p = dict(preset)
-    for old, new in dict(getattr(desc, "settings_aliases", None) or ()).items():
+    for new, old in dict(getattr(desc, "settings_aliases", None) or ()).items():    # {current key: old key}
         if old in p and new not in p:
             p[new] = p.pop(old)
     model_keys = {o.key for o in desc.options if o.tab == "model"}
