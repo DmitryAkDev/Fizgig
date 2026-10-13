@@ -3235,7 +3235,7 @@ function studioSlotThumb(cv, path, rect) {
 function studioCrop(path, initial, ok, cancel) {
   // the desktop's crop window: the photo fitted, a box locked to the clip's shape (W x H) - drag to move, drag a
   // corner to resize. ok([x0, y0, x1, y1] in the photo's pixels); cancel() leaves things as they were.
-  const W = Number($("stH3W").value) || 768, H = Number($("stH3H").value) || 640, aspect = W / H;
+  const W = Number($("stH3W").value) || 640, H = Number($("stH3H").value) || 768, aspect = W / H;
   const cv = $("cropCanvas"), ctx = cv.getContext("2d"), img = new Image();
   $("cropTitle").textContent = `Crop to the clip's shape (${W}×${H})`;
   img.onerror = () => { $("stStatus").textContent = "Couldn't open that photo."; if (cancel) cancel(); };
@@ -3323,7 +3323,7 @@ function studioExtra() {
   if (L.kind !== "video") return {};
   const V = L.video, f = V.scale_of[$("stH3Scale").value] || 1;
   const snap = (x) => f >= 0.999 ? x : Math.max(256, Math.floor(x * f / 32) * 32);
-  const w = snap(Number($("stH3W").value) || 768), h = snap(Number($("stH3H").value) || 640);
+  const w = snap(Number($("stH3W").value) || 640), h = snap(Number($("stH3H").value) || 768);
   const ref = !!V.references[$("stH3Model").value];
   const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,

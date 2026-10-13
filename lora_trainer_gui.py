@@ -19000,12 +19000,12 @@ class LoRATrainerGUI:
     _REPAIR_H3_DIMS = (512, 640, 768, 960, 1024, 1152, 1280, 1536)
 
     def _repair_h3_size(self):
-        """(width, height) from the Width / Height combos; 768 × 640 for anything unparseable."""
+        """(width, height) from the Width / Height combos; 640 × 768 for anything unparseable."""
         try:
             w = int(str(self.repair_h3_width_var.get()).strip())
             h = int(str(self.repair_h3_height_var.get()).strip())
         except (AttributeError, ValueError):
-            return 768, 640
+            return 640, 768
         return max(256, w // 32 * 32), max(256, h // 32 * 32)
 
     def _repair_h3_frames(self):
@@ -19708,10 +19708,10 @@ class LoRATrainerGUI:
         _len.pack(side=tk.LEFT, padx=(0, 12))
         _len.bind("<<ComboboxSelected>>", lambda e: self._on_repair_h3_clip_changed())
         _dims = [str(d) for d in self._REPAIR_H3_DIMS]
-        _w = str(self.last_used.get("repair_h3_width", "768"))
-        _h = str(self.last_used.get("repair_h3_height", "640"))
-        self.repair_h3_width_var = tk.StringVar(value=_w if _w in _dims else "768")
-        self.repair_h3_height_var = tk.StringVar(value=_h if _h in _dims else "640")
+        _w = str(self.last_used.get("repair_h3_width", "640"))
+        _h = str(self.last_used.get("repair_h3_height", "768"))
+        self.repair_h3_width_var = tk.StringVar(value=_w if _w in _dims else "640")
+        self.repair_h3_height_var = tk.StringVar(value=_h if _h in _dims else "768")
         ttk.Label(_l1, text="W:").pack(side=tk.LEFT, padx=(0, 4))
         self._repair_h3_width_combo = ttk.Combobox(
             _l1, textvariable=self.repair_h3_width_var, state="readonly", width=5, values=_dims)

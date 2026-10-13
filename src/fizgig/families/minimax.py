@@ -331,7 +331,7 @@ MINIMAX = FamilyDescription(
                  ("56 frames (~2.3s)", 56), ("73 frames (~3s)", 73), ("90 frames (~3.8s)", 90),
                  ("107 frames (~4.5s)", 107), ("124 frames (~5.2s)", 124)),
         default_length="22 frames (~1s)",
-        sizes=(512, 640, 768, 960, 1024, 1152, 1280, 1536), default_size=(768, 640),
+        sizes=(512, 640, 768, 960, 1024, 1152, 1280, 1536), default_size=(640, 768),
         scales=(("Full", 1.0), ("⅔", 2.0 / 3.0), ("½", 0.5)),
         checkpoints=(VideoCheckpoint("First/last frame (fl2va) — standard", "dit"),
                      VideoCheckpoint("Reference (ref2va)", "ref_dit", references=True)),
