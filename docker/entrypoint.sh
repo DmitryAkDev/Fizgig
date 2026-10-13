@@ -15,7 +15,13 @@ mkdir -p /workspace/.cache /workspace/.insightface
 # The web UI on a public URL is a shell on someone else's GPU. FIZGIG_PASSWORD (or VNC_PASSWORD, the older
 # templates' name) chooses it; with neither we generate one and print it, rather than leaving it open - a random
 # password in the logs is recoverable, an open port is not fixable after the fact.
+# A generated one is kept on the volume, so restarting the pod (which is how it updates) keeps the same password.
+PW_FILE="/workspace/.fizgig_password"
 PW="${FIZGIG_PASSWORD:-${VNC_PASSWORD:-}}"
+if [ -z "$PW" ] && [ -s "$PW_FILE" ]; then
+  PW="$(head -n 1 "$PW_FILE")"
+  log "Password (generated on this pod's first start, kept in $PW_FILE): ${PW}"
+fi
 if [ -z "$PW" ]; then
   # NOT `tr -dc ... </dev/urandom | head -c 12`: head exits at 12 bytes, tr takes SIGPIPE and returns 141, which
   # pipefail + set -e turn into an instant exit before the first log line. Reading a FIXED number of bytes breaks
@@ -23,6 +29,7 @@ if [ -z "$PW" ]; then
   _rand="$(head -c 512 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9')"
   PW="${_rand:0:12}"
   unset _rand
+  (umask 077; echo "$PW" > "$PW_FILE") || true
   log "No FIZGIG_PASSWORD set — generated one for this pod: ${PW}"
   log "Set FIZGIG_PASSWORD in the template to choose your own."
 fi
