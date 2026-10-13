@@ -1675,7 +1675,7 @@ function ryPtWords() {
 async function ryTravel(mode) {
   const p = RY_MODES[mode], v = (id) => $(p + id).value;
   const body = {mode, family: $("ryFamily").value, source: rySource(), single: $("rySingle").value.trim(),
-    i: royaleCurrent(), prompt: $("ryPrompt").value.trim(), seed: parseInt($("rySeed").value, 10) || 42,
+    i: royaleCurrent(), prompt: $("ryPrompt").value.trim(), seed: seedOf("rySeed"),
     setup_ref: $("ryRef").value.trim(), width: Number(v("W")), height: Number(v("H")), frames: Number(v("Frames"))};
   if (mode !== "strength") Object.assign(body, {ref: v("Ref").trim(), use_epoch: $(p + "UseEpoch").checked, ref_strength: v("RefStr"),
     ref_mp: v("Mp"), sequential: $(p + "Seq").checked});
@@ -1695,7 +1695,7 @@ async function rySheet() {
   try {
     const r = await api("/api/royale/travel", {mode: "sheet", family: $("ryFamily").value, source: rySource(),
       single: $("rySingle").value.trim(), i: royaleCurrent(), prompts: $("ryCPrompts").value, sheet_mode: $("ryCMode").value,
-      epochs: $("ryCEpochs").value, trigger: $("ryCTrigger").value.trim(), seed: parseInt($("ryCSeed").value, 10) || 42,
+      epochs: $("ryCEpochs").value, trigger: $("ryCTrigger").value.trim(), seed: seedOf("ryCSeed"),
       width: Number($("ryCW").value), height: Number($("ryCH").value), row_labels: $("ryCRows").checked, brand: $("ryCTag").checked});
     if (r.family !== $("ryFamily").value) await royaleFamily(r.family);
     $("ryCSheet").style.display = "none";
@@ -1837,8 +1837,8 @@ async function royaleScan() {
 async function royaleRender() {
   try {
     const r = await api("/api/royale/render", {family: $("ryFamily").value, folder: $("ryFolder").value.trim(),
-      prompt: $("ryPrompt").value.trim(), seed: parseInt($("rySeed").value, 10) || 42, ref: $("ryRef").value.trim(),
-      ref_strength: Number($("ryRefStr").value) || 1, width: Number($("ryW").value), height: Number($("ryH").value),
+      prompt: $("ryPrompt").value.trim(), seed: seedOf("rySeed"), ref: $("ryRef").value.trim(),
+      ref_strength: refStrength($("ryRefStr").value), width: Number($("ryW").value), height: Number($("ryH").value),
       max: $("ryMax").value});
     if (r.family !== $("ryFamily").value) {         // the checkpoints are another model's: follow them (as the desktop)
       await royaleFamily(r.family);
@@ -3928,9 +3928,17 @@ async function studioPresetApply(v) {
   $("stPreset").value = "";
 }
 
+// Royale's reference strength: 0 to 2 (0 = off), 1 when the box holds no number - as the desktop's
+function refStrength(t) { const x = Number(String(t).trim()); return String(t).trim() === "" || !isFinite(x) ? 1 : Math.max(0, Math.min(2, x)); }
+
+// a seed box: its number (0 is a seed too), 42 when it holds none
+function seedOf(id) { const n = parseInt($(id).value, 10); return Number.isFinite(n) ? n : 42; }
+
 function studioBulk(kind) {
   const L = S.st.layout;
-  const lo = Number($("stLuckyLo").value) || 0, hi = Number($("stLuckyHi").value) || 1.5;
+  // Min / Max as the desktop reads them: within the sliders' -3..3, a box that isn't a number its default, in order
+  const bound = (id, d) => { const t = $(id).value.trim(), x = Number(t); return t === "" || !isFinite(x) ? d : Math.max(-3, Math.min(3, x)); };
+  const [lo, hi] = [bound("stLuckyLo", 0), bound("stLuckyHi", 1.5)].sort((x, y) => x - y);
   const order = L.groups.flatMap((g) => g.blocks.map((b) => b.id));
   let rolled = 0;
   for (const [id, b] of Object.entries(S.st.blocks)) {
@@ -3982,7 +3990,7 @@ function studioState() {
   for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
   const res = Number($("stRes").value) || 768;
   const num = (id, d) => { const v = Number($(id).value); return isFinite(v) ? v : d; };
-  return {blocks, seed: parseInt($("stSeed").value, 10) || 42, prompt: $("stPrompt").value.trim(), preview_width: res,
+  return {blocks, seed: seedOf("stSeed"), prompt: $("stPrompt").value.trim(), preview_width: res,
     preview_height: res, ref_image_path: $("stRefRow").style.display === "none" ? "" : $("stRef").value.trim(),
     ref_megapixels: num("stRefMp", 1), ref_strength: num("stRefStr", 1), primary_scale: num("stPScale", 1),
     donor_scale: num("stDScale", 1)};

@@ -615,7 +615,7 @@ def _strip_trigger(prompt, trigger):
     if out.lower() == prompt.strip().lower():
         out = re.sub(rf"\b{re.escape(trigger)}\b", "", prompt, flags=re.IGNORECASE)
         out = re.sub(r"\s{2,}", " ", out).strip(" ,")
-    return out
+    return out or prompt                # a row that is only the trigger keeps it (an empty prompt is no picture)
 
 
 def cmd_royale_travel(c):

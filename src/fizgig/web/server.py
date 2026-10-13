@@ -381,7 +381,10 @@ def _studio_samples(desc):
         steps = spd[0] if live else desc.preview_steps
     if blank(cfg):
         cfg = f"{sp.settings.cfg:g}" if live else f"{desc.preview_cfg:g}"
-    return {"steps": str(steps), "cfg": str(cfg), "turbo": str(turbo), "negative": v.get("SAMPLE_NEGATIVE"),
+    neg = v.get("SAMPLE_NEGATIVE")
+    if neg is None:                     # never saved: the Samples tab's own default, as its box shows it
+        neg = desc.preview_negative or ""
+    return {"steps": str(steps), "cfg": str(cfg), "turbo": str(turbo), "negative": neg,
             "turbo_live": live, "turbo_name": sp.name if sp is not None else ""}
 
 
@@ -700,6 +703,22 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
         inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
                       resuming=True)
     return desc, inputs, launch.plan(desc, inputs)
+
+
+def _ref_strength(v):
+    """Royale's reference strength: 0 to 2 (0 = the reference off), 1 when there is none - as the desktop's."""
+    try:
+        return max(0.0, min(2.0, float(str(v).strip())))
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _seed(v, default):
+    """A seed from the page: its number (0 is a seed too), the default when there is none."""
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return default
 
 
 def _safe(name):
@@ -2755,10 +2774,10 @@ class Handler(BaseHTTPRequestHandler):
                 if problems:
                     raise ValueError(" ".join(problems))
                 captions.unload()
-                gen = studio.royale_render(desc, kw, settings, items, prompt, int(b.get("seed") or 42),
+                gen = studio.royale_render(desc, kw, settings, items, prompt, _seed(b.get("seed"), 42),
                                            int(b.get("width") or 512), int(b.get("height") or 512),
                                            ref=str(b.get("ref") or "") if desc.reference_kind else "",
-                                           ref_strength=float(b.get("ref_strength") or 1.0),
+                                           ref_strength=_ref_strength(b.get("ref_strength")),
                                            meta={"run": scan["run"], "family": desc.key, "folder": b.get("folder")})
                 return self.json({"ok": True, "gen": gen, "family": desc.key, "total": len(items)})
             if path == "/api/royale/travel":        # seed / strength / prompt travel, or the comparison sheet
@@ -2817,7 +2836,7 @@ class Handler(BaseHTTPRequestHandler):
                              anchor_str=num("anchor_str", 1.0, 0, 2),
                              label_disp=(f"Epoch {label}" if str(label).isdigit() else str(label)))
                     if mode == "seed":
-                        p.update(seed_a=int(b.get("seed_a") or 42), seed_b=int(b.get("seed_b") or 4242),
+                        p.update(seed_a=_seed(b.get("seed_a"), 42), seed_b=_seed(b.get("seed_b"), 4242),
                                  waypoints=max(2, int(b.get("waypoints") or 2)))
                         if p["seed_a"] == p["seed_b"] and p["waypoints"] <= 2:
                             raise ValueError("Start and end seed are the same - pick two different seeds, or raise "
