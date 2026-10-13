@@ -55,7 +55,7 @@ Without a password the web UI only opens on the machine it runs on. With one (8 
 
 When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then on a pod its `VNC_PASSWORD` (the Classic template's), then the one in Preferences.
 
-**Whoever has the password can use Fizgig and open files on that machine**, so treat it like a remote-desktop password: use one you don't use anywhere else (it is saved in `prefs.json` as plain text). The web UI speaks plain HTTP, which is fine on your home network but not across the internet: to reach it from outside, use a VPN such as Tailscale, or a pod (its proxy adds HTTPS), rather than forwarding the port on your router.
+**Whoever has the password can use Fizgig and open files on that machine**, so treat it like a remote-desktop password: use one you don't use anywhere else (it is saved in `user_data/prefs.json` as plain text). The web UI speaks plain HTTP, which is fine on your home network but not across the internet: to reach it from outside, use a VPN such as Tailscale, or a pod (its proxy adds HTTPS), rather than forwarding the port on your router.
 
 ## The port
 
@@ -185,7 +185,7 @@ With a password set, Preferences → Web UI has **Log out** (this device) and **
 
 ## prefs.json
 
-All of these settings live in `prefs.json` in the Fizgig folder (next to `fizgig.py`). Fizgig writes it; on a machine without it, create it yourself. A minimal example:
+All of these settings live in `user_data/prefs.json` in the Fizgig folder. Fizgig writes it; on a machine without it, create it yourself. A minimal example:
 
 ```json
 {
