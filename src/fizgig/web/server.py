@@ -180,8 +180,64 @@ def _write_json(path, data):
     os.replace(tmp, path)
 
 
+# the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
+PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "profiles", "cache_dir": "cache",
+                 "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
+                 "inference_int8": "1"}
+
+
+LAST_USED_FILE = os.path.join(BASE_DIR, ".last_used.json")    # the desktop's: the training folder, trigger words
+
+
+def load_last_used() -> dict:
+    """The desktop's .last_used.json: the training folder both apps show (from an old key if that is all there is,
+    as the desktop reads it) and each folder's trigger word."""
+    d = _read_json(LAST_USED_FILE)
+    if not d.get("image_folder"):
+        for k in ("caption_folder", "dataset_image_dir", "image_prep_source"):
+            if d.get(k):
+                d["image_folder"] = d[k]
+                break
+    return d
+
+
+def update_last_used(changes: dict):
+    with _lock:
+        d = _read_json(LAST_USED_FILE)
+        d.update(changes)
+        try:
+            _write_json(LAST_USED_FILE, d)
+        except OSError:
+            pass
+
+
+def _trigger_key(folder):
+    return os.path.normcase(os.path.abspath(folder)) if str(folder or "").strip() else ""
+
+
+def folder_trigger(folder) -> str:
+    """The training folder's trigger word (one per folder, shared with the desktop's Captions tab)."""
+    m = load_last_used().get("folder_triggers")
+    return str((m if isinstance(m, dict) else {}).get(_trigger_key(folder), "") or "")
+
+
+def set_folder_trigger(folder, word):
+    k = _trigger_key(folder)
+    if not k:
+        return
+    with _lock:
+        d = _read_json(LAST_USED_FILE)
+        m = d.get("folder_triggers") if isinstance(d.get("folder_triggers"), dict) else {}
+        m[k] = str(word or "").strip()
+        d["folder_triggers"] = m
+        try:
+            _write_json(LAST_USED_FILE, d)
+        except OSError:
+            pass
+
+
 def load_prefs() -> dict:
-    return _read_json(PREFS_FILE)
+    return {**PREF_DEFAULTS, **_read_json(PREFS_FILE)}
 
 
 _skey_lock = threading.Lock()
@@ -625,6 +681,9 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     values = dict(values or {})
     if resume:
         values["RESUME_TRAINING"] = resume
+    trig = folder_trigger(image_folder)
+    if trig:                                         # the folder's own trigger word (Captions tab)
+        values["CAPTION_TRIGGER_WORD"] = trig.rstrip(",").strip()
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
@@ -1811,7 +1870,13 @@ class Handler(BaseHTTPRequestHandler):
                               if on_pod() else None,
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
-            return self.json(load_state())
+            st = load_state()
+            shared = load_last_used().get("image_folder")
+            if shared:                               # the desktop's choice, if it made one since
+                st["image_folder"] = shared
+            return self.json(st)
+        if path == "/api/trigger":                   # the training folder's trigger word
+            return self.json({"word": folder_trigger((qs.get("folder") or [""])[0])})
         if path == "/api/fetch":
             return self.json(_fetch_status())
         if path == "/api/captions/options":
@@ -1931,7 +1996,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(tools.status("profile"))
         if path == "/api/profile/report":           # a Profiler report (the profiles folder's HTML)
             p = (qs.get("path") or [""])[0]
-            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or os.path.join(OUTPUT_DEFAULT, "profiles"))
+            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "profiles"))
             if not p.lower().endswith(".html") or not os.path.isfile(p) or                     os.path.commonpath([root, os.path.abspath(p)]) != root:
                 return self.json({"error": "not a report"}, 404)
             with open(p, "rb") as f:
@@ -2540,6 +2605,11 @@ class Handler(BaseHTTPRequestHandler):
                         st["values"] = vals
                         _write_json(STATE_FILE, st)
                 save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "tab", "captions", "prep")})
+                if isinstance(b.get("image_folder"), str) and b["image_folder"].strip():
+                    update_last_used({"image_folder": b["image_folder"].strip()})     # the desktop shows it too
+                return self.json({"ok": True})
+            if path == "/api/trigger":
+                set_folder_trigger(str(b.get("folder") or ""), str(b.get("word") or ""))
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
@@ -2843,7 +2913,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = {"family": desc.key, "lora": str(b.get("lora") or "").strip(), "mode": mode,
                        "prompt": str(b.get("prompt") or ""), "class_prompt": str(b.get("class_prompt") or ""),
                        "baselines": [str(x) for x in (b.get("baselines") or [])][:3], "size": int(b.get("size") or 768),
-                       "profiles_dir": pref_path(prefs, "profiles_dir") or os.path.join(OUTPUT_DEFAULT, "profiles"),
+                       "profiles_dir": pref_path(prefs, "profiles_dir") or os.path.join(BASE_DIR, "profiles"),
                        "plan": None, "settings": None}
                 if job["baselines"] and len(job["baselines"]) != 3:
                     raise ValueError("Pick exactly 3 photos of the subject (one alone carries its own framing into every score).")

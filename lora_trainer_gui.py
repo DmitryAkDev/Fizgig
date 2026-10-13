@@ -610,7 +610,11 @@ def load_last_used():
             if legacy_val:
                 defaults["image_folder"] = legacy_val
                 break
+    _LAST_USED_SEEN[0] = json.loads(json.dumps(defaults, default=str))
     return defaults
+
+
+_LAST_USED_SEEN = [None]          # as _PREFS_SEEN, for .last_used.json (the web UI shares the training folder)
 
 
 def save_last_used(data):
@@ -620,9 +624,12 @@ def save_last_used(data):
     reader falls back to defaults on a JSONDecodeError — so a crash mid-write used to
     silently blank the remembered paths, and the next auto-save persisted the blanks."""
     try:
+        mine = json.loads(json.dumps(data, default=str))
+        to_save = _changed_onto_disk(LAST_USED_FILE, mine, _LAST_USED_SEEN[0])
+        _LAST_USED_SEEN[0] = mine
         tmp = LAST_USED_FILE + ".tmp"
         with open(tmp, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+            json.dump(to_save, f, indent=2)
         os.replace(tmp, LAST_USED_FILE)
     except Exception:
         pass
@@ -933,6 +940,26 @@ def load_prefs() -> dict:
 _PREFS_SEEN = [None]
 
 
+def _changed_onto_disk(path, mine, seen):
+    """What to write to a settings file both apps write: what is on disk now, with only the keys this window changed
+    since it last read or wrote the file (seen) put over it - the web UI's changes meanwhile are kept."""
+    if seen is None:
+        return dict(mine)
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            disk = json.load(f)
+    except Exception:
+        return dict(mine)
+    if not isinstance(disk, dict):
+        return dict(mine)
+    out = dict(disk)
+    out.update({k: v for k, v in mine.items() if k not in disk or seen.get(k, object()) != v})
+    for k in seen:
+        if k not in mine:
+            out.pop(k, None)       # removed here (an old key retired)
+    return out
+
+
 def _prefs_snapshot(prefs: dict) -> dict:
     return json.loads(json.dumps({k: _serialize_pref_path(v) if k in _PORTABLE_DIR_KEYS and isinstance(v, str) else v
                                   for k, v in prefs.items()}, default=str))
@@ -1094,20 +1121,7 @@ def save_prefs(prefs: dict) -> None:
     if _persist_disabled():
         return
     mine = _prefs_snapshot(prefs)
-    seen = _PREFS_SEEN[0]
-    to_save = dict(mine)
-    if seen is not None:
-        try:
-            with open(PREFS_FILE, 'r', encoding='utf-8') as f:
-                disk = json.load(f)
-        except Exception:
-            disk = None
-        if isinstance(disk, dict):
-            to_save = dict(disk)
-            to_save.update({k: v for k, v in mine.items() if k not in disk or seen.get(k, object()) != v})
-            for k in seen:
-                if k not in mine:
-                    to_save.pop(k, None)       # removed here (an old key retired)
+    to_save = _changed_onto_disk(PREFS_FILE, mine, _PREFS_SEEN[0])
     _PREFS_SEEN[0] = mine
     try:
         # Atomic: a truncated prefs.json silently blanked every model path (the reader
@@ -8491,6 +8505,46 @@ class LoRATrainerGUI:
             if word and hasattr(self, "recaption_trigger_var"):
                 self.recaption_trigger_var.set(word)
         self.caption_trigger_var.trace_add("write", _fill_recaption_trigger)
+
+        def _folder_triggers():
+            try:                                     # fresh: the web UI may have set one since this window opened
+                with open(LAST_USED_FILE, encoding="utf-8") as f:
+                    d = json.load(f).get("folder_triggers")
+            except (OSError, ValueError, AttributeError):
+                d = None
+            return d if isinstance(d, dict) else dict(self.last_used.get("folder_triggers") or {})
+
+        def _trigger_key():
+            f = self.image_folder_var.get().strip()
+            return os.path.normcase(os.path.abspath(f)) if f else ""
+
+        def _folder_trigger(*_):                     # a folder chosen: its word (none yet: empty)
+            word = str(_folder_triggers().get(_trigger_key(), "") or "")
+            self._trigger_loading = True
+            try:
+                self.caption_trigger_var.set(word)
+                if hasattr(self, "recaption_trigger_var"):
+                    self.recaption_trigger_var.set(word.rstrip(",").strip())
+            finally:
+                self._trigger_loading = False
+
+        def _remember_trigger(*_):                   # typed: kept for this folder
+            k = _trigger_key()
+            if not k or getattr(self, "_trigger_loading", False):
+                return
+            m = _folder_triggers()
+            m[k] = self.caption_trigger_var.get().strip()
+            self.last_used["folder_triggers"] = m
+            self._save_last_used_paths()
+        self.caption_trigger_var.trace_add("write", _remember_trigger)
+        self.image_folder_var.trace_add("write", _folder_trigger)
+        _k0, _m0 = _trigger_key(), _folder_triggers()
+        _old = (self.recaption_trigger_var.get().strip() if hasattr(self, "recaption_trigger_var") else "")
+        if _k0 and _k0 not in _m0 and _old:          # the one word from before: this folder's now
+            _m0[_k0] = _old
+            self.last_used["folder_triggers"] = _m0
+            self._save_last_used_paths()
+        _folder_trigger()
         ttk.Entry(settings_card, textvariable=self.caption_trigger_var, width=40).grid(row=2, column=1, sticky=tk.W, pady=4)
         tk.Label(settings_card, text="(prepended to all captions)",
                  font=(FONT_FAMILY, 9), fg=COLORS["text_muted"], bg=COLORS["bg_surface"]).grid(

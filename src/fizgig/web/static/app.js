@@ -73,6 +73,7 @@ async function boot() {
   S.capSaved = st.captions || {};
   S.prepSaved = st.prep || {};
   $("imageFolder").value = S.imageFolder;
+  await loadTrigger();
   const sel = $("familySelect");
   sel.innerHTML = "";
   for (const f of S.schema.families) sel.append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
@@ -103,10 +104,24 @@ async function chooseFamily(key) {
       S.values.__preset = first.name;
     }
   }
+  if (S.trigger !== undefined) S.values.CAPTION_TRIGGER_WORD = S.trigger;     // the folder's, not the model's
   renderAll();
   await refreshState();
   saveState();
 }
+
+// the trigger word is the training folder's (both apps keep one per folder): the Captions tab's box and the
+// Training tab's auto-recaption box show it; typing in either keeps it for this folder
+async function loadTrigger() {
+  const r = await api("/api/trigger?folder=" + encodeURIComponent(S.imageFolder || "")).catch(() => ({word: ""}));
+  showTrigger(r.word || "");
+}
+function showTrigger(word) {
+  S.trigger = word.replace(/,+$/, "").trim();
+  $("capTrigger").value = word;
+  if (S.values) { S.values.CAPTION_TRIGGER_WORD = S.trigger; syncInputs(["CAPTION_TRIGGER_WORD"]); }
+}
+const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageFolder || "", word}).catch(() => {}), 500);
 
 function defaults() {
   const v = {};
@@ -290,6 +305,7 @@ function onValue(r, val) {
   S.values[r.key] = val;
   shareSamples([r.key]);
   if (r.key === "FAMILY_TURBO_STRENGTH") S.turboByUser = true;   // the steps / CFG it moves go to the desktop too
+  if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
   if (r.timesteps && r.timesteps[val]) {           // a Model Area with its own timestep window
@@ -1380,7 +1396,7 @@ async function loadRuns() {
           // a run recorded before it had a Turbo value: its steps and CFG follow the Turbo on now (refreshState)
           if (!("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
           S.all[S.family] = S.values;
-          if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; }
+          if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; await loadTrigger(); }
           renderSections("samples", $("samplesForm"));
           renderSections("training", $("trainingForm"));
           await refreshState();
@@ -4191,7 +4207,7 @@ async function loadCaptionOptions() {
     "training captions. Florence-2 downloads itself the first time." :
     "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL, which writes better training captions. " +
     "Florence-2 downloads itself the first time.";
-  if (saved.trigger !== undefined) $("capTrigger").value = saved.trigger;
+  if (S.trigger !== undefined) $("capTrigger").value = S.trigger;      // the training folder's word
   if (saved.overwrite !== undefined) $("capOverwrite").checked = saved.overwrite;
   if (saved.skipCjk !== undefined) $("capSkipCjk").checked = saved.skipCjk;
   if (saved.perPage) { $("capPerPage").value = saved.perPage; CAP_PAGE = Number(saved.perPage) || 12; }
@@ -4399,10 +4415,10 @@ function wireCaptions() {
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
   $("capTrigger").addEventListener("input", () => {
-    const word = $("capTrigger").value.trim().replace(/,+$/, "").trim();
-    if (!word) return;
-    S.values.CAPTION_TRIGGER_WORD = word;
+    S.trigger = $("capTrigger").value.trim().replace(/,+$/, "").trim();
+    S.values.CAPTION_TRIGGER_WORD = S.trigger;
     syncInputs(["CAPTION_TRIGGER_WORD"]);
+    saveTriggerSoon($("capTrigger").value.trim());
     saveStateSoon();
   });
   $("capEditInstr").addEventListener("click", () =>
@@ -5359,7 +5375,7 @@ function wire() {
     b.addEventListener("click", () => $(b.dataset.close).classList.remove("active")));
   $("familySelect").addEventListener("change", (e) => chooseFamily(e.target.value));
   const folder = $("imageFolder");
-  const setFolder = () => { S.imageFolder = folder.value.trim(); refreshStateSoon(); saveStateSoon(); };
+  const setFolder = () => { S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon(); };
   folder.addEventListener("change", setFolder);
   $("uploadFiles").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
   $("uploadDir").addEventListener("change", (e) => {

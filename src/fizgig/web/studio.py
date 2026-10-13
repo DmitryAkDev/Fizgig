@@ -190,7 +190,7 @@ def _profile(h):
     try:
         from fizgig.utils.lora_files import find_profile_for_hash
         from fizgig.web.server import load_prefs, pref_path
-        d = pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "output_loras", "profiles")
+        d = pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "profiles")
         prof = find_profile_for_hash(d, h)
         if not prof:
             return None

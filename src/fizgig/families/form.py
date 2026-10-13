@@ -245,8 +245,8 @@ def form(desc):
                  "Filter scan)", "check"),
             _row("KREA2_AUTO_RECAPTION", "Auto-recaption stuck images (Qwen3-VL rewrites the caption between "
                  "epochs)", "check", "Needs the Krea 2 text encoder set in Preferences."),
-            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption. Filled in from the Captions tab's "
-                 "trigger word."),
+            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption. The "
+                 "training folder's word, the same as the Captions tab's."),
         ]
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
@@ -419,7 +419,7 @@ def form(desc):
 # what a preset never carries (the desktop's): the Samples tab and the Turbo boxes are the model's own, a resume path
 # is one run's
 NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
-                  "RESUME_TRAINING")
+                  "RESUME_TRAINING", "CAPTION_TRIGGER_WORD")     # the trigger word is the training folder's
 # boxes a preset can't put an unknown value in (the desktop's _STRICT_COMBO_KEYS): the current choice stays
 STRICT_CHOICES = ("OPTIMIZER_TYPE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "LR_SCHEDULER", "NETWORK_TYPE")
 LEGACY_AREAS = {"All Layers": "Full Model", "Identity Blocks": "Identity",
