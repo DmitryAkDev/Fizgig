@@ -5770,6 +5770,17 @@ function lightboxShow(i) {
   $("lightbox").style.display = "";
 }
 function lightboxClose() { $("lightbox").style.display = "none"; $("lightboxImg").src = ""; }
+// a tile's thumbnail (/api/thumb, small and squashed) opens big as the picture itself (/api/media), as the Start tab's
+// dataset pictures do
+function fullPicture(src) {
+  try {
+    const u = new URL(src, location.href);
+    if (u.pathname === "/api/thumb" && u.searchParams.get("path"))
+      return `/api/media?path=${encodeURIComponent(u.searchParams.get("path"))}&t=${encodeURIComponent(TOKEN)}`;
+  } catch (e) { /* not a URL: as it is */ }
+  return src;
+}
+
 function wireLightbox() {
   document.addEventListener("click", (e) => {
     const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
@@ -5780,7 +5791,7 @@ function wireLightbox() {
       const fig = i.closest(".gallery-item, .caption-card");
       const cap = fig && fig.querySelector("figcaption, .caption-card-title");
       const label = cap ? [...cap.childNodes].map((n) => n.textContent).filter(Boolean).join(" · ") : "";
-      return {src: i.currentSrc || i.src, name: label || i.alt};
+      return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt};
     });
     lightboxShow(imgs.indexOf(img));
   });
