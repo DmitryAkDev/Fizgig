@@ -213,7 +213,8 @@ def _ensure_worker():
                 os.remove(os.path.join(OUT_DIR, f))
     except OSError:
         pass
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    from fizgig.web.server import gpu_env
+    env = gpu_env(dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1"))     # the Preferences GPU
     kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     proc = subprocess.Popen([sys.executable, "-m", "fizgig.scripts.studio_worker"], cwd=BASE_DIR,
                             env={**env, "PYTHONPATH": os.path.join(BASE_DIR, "src") + os.pathsep + BASE_DIR},

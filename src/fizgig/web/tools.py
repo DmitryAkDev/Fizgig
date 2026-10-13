@@ -52,8 +52,9 @@ def _start(kind, cmd, first_line, output=""):
     with _lock:
         if _J[kind]["state"] == "running":
             raise ValueError(f"A {'profile' if kind == 'profile' else 'extraction'} is running - wait for it to finish.")
-    env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",
-               PYTHONPATH=os.path.join(BASE_DIR, "src") + os.pathsep + BASE_DIR)
+    from fizgig.web.server import gpu_env
+    env = gpu_env(dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",           # the Preferences GPU
+                       PYTHONPATH=os.path.join(BASE_DIR, "src") + os.pathsep + BASE_DIR))
     kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     proc = subprocess.Popen(cmd, cwd=BASE_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, **kw)

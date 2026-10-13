@@ -242,12 +242,8 @@ def _reader(proc):
 def _env(prefs):
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1",
                PYTHONPATH=os.path.join(BASE_DIR, "src"))
-    want = str(prefs.get("cuda_device") or "").strip()
-    if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):
-        env["CUDA_VISIBLE_DEVICES"] = want
-        if want.isdigit():
-            env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")  # the same card as training (server._popen)
-    return env
+    from fizgig.web.server import gpu_env
+    return gpu_env(env, prefs)                       # the same card as training
 
 
 def _popen(cmd, prefs, stdin=False):

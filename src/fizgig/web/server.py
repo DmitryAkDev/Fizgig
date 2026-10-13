@@ -1079,13 +1079,7 @@ def _queue_starter(item):
 def _popen(cmd):
     """As the desktop's run_subprocess: UTF-8, unbuffered, the chosen GPU, its own process group (and below-normal
     priority on Windows, so the desktop stays smooth)."""
-    env = os.environ.copy()
-    env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-    want = str(load_prefs().get("cuda_device") or "").strip()
-    if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):  # one set where Fizgig was started wins, as the desktop
-        env["CUDA_VISIBLE_DEVICES"] = want
-    if env.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip().isdigit():
-        env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")      # a card number means the card nvidia-smi numbers so
+    env = gpu_env(dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1"))
     kw = {}
     if os.name == "nt":
         kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -1094,6 +1088,17 @@ def _popen(cmd):
         kw["start_new_session"] = True
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
+
+
+def gpu_env(env, prefs=None):
+    """env with the GPU chosen in Preferences (cuda_device), as the desktop app runs everything: one set where Fizgig
+    was started wins. Training, captions, Studio, Profiler and Extract all use it."""
+    want = str((prefs if prefs is not None else load_prefs()).get("cuda_device") or "").strip()
+    if want and not os.environ.get("CUDA_VISIBLE_DEVICES"):
+        env["CUDA_VISIBLE_DEVICES"] = want
+    if env.get("CUDA_VISIBLE_DEVICES", "").split(",")[0].strip().isdigit():
+        env.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")      # a card number means the card nvidia-smi numbers so
+    return env
 
 
 def _progress_dict(upd):
