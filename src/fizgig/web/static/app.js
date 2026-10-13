@@ -430,6 +430,7 @@ function renderPrefs() {
         await api("/api/prefs", {changes: {[key]: S.prefs[key]}});
         checkModels();
         refreshStateSoon();              // a preview file set or cleared: Samples follows it
+        captionModelsChanged();          // the Krea 2 text encoder: Captions' Qwen3-VL
       });
       const row = el("div", {class: "field-row"},
         el("span", {class: "field-label", text: (m.label || key) + (m.required ? " *" : "") + ":"}), input,
@@ -603,6 +604,7 @@ async function watchFetch() {
     renderPrefs();
     checkModels();
     refreshState();                    // a Turbo LoRA that just landed: Samples' steps and CFG follow it now
+    captionModelsChanged();            // a text encoder that just landed: Captions offers Qwen3-VL now
   }
   paintFetch();
   if (S.fetch.state === "running") S.fetchTimer = setTimeout(watchFetch, 1500);
@@ -4610,6 +4612,13 @@ async function pollCaptions() {
   else if (busy && Date.now() - (S.cap.liveAt || 0) > 5000) { S.cap.liveAt = Date.now(); captionsLive(); }
   S.cap.lastState = st.state;
   if (busy || document.querySelector("#tab-captions.active")) S.cap.timer = setTimeout(pollCaptions, busy ? 1500 : 5000);
+}
+
+// the caption models on offer follow Preferences (Qwen3-VL needs the Krea 2 text encoder): after a download or a
+// path change the Captions tab asks again - at once if it is open, else when it next opens
+function captionModelsChanged() {
+  S.cap.opts = null;
+  if (document.querySelector("#tab-captions.active")) loadCaptions();
 }
 
 async function loadCaptions() {
