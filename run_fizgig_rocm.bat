@@ -32,8 +32,8 @@ if exist "%~dp0venv\Scripts" set "PATH=%~dp0venv\Scripts;%PATH%"
 
 REM Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
 set "GPU_ARCH="
-if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0detect_gpu.py" (
-    for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
+if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0src\install\detect_gpu.py" (
+    for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0src\install\detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
 )
 set "IS_LEGACY_GPU=0"
 if defined GPU_ARCH (

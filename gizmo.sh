@@ -6,5 +6,5 @@ if [ ! -x venv/bin/python ]; then
     exit 1
 fi
 source venv/bin/activate
-python gizmo.py "$@" &
+python src/gizmo/gizmo.py "$@" &
 disown

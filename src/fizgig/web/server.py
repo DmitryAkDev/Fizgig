@@ -48,7 +48,7 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
 STATE_FILE = user_file("web_state.json")      # the web UI's own memory (git-ignored)
-DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+DATASET_DIR = user_file("dataset")          # each run's dataset TOML (written at Start)
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
 MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp3", ".flac", ".m4a", ".mp4",
          ".webm"}
@@ -1937,8 +1937,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/app.js", "/style.css"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
-        if path in ("/logo.jpg", "/icon.png"):
-            return self._file(os.path.join(BASE_DIR, path[1:]))
+        if path == "/icon.png":
+            return self._file(os.path.join(STATIC_DIR, "icon.png"))
+        if path == "/logo.jpg":
+            return self._file(os.path.join(BASE_DIR, "assets", "logo.jpg"))
         if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # Add to Home Screen (no login:
             return self._file(os.path.join(STATIC_DIR, path[1:]),                 # a phone fetches it without one)
                               "application/manifest+json" if path.endswith(".webmanifest") else None)
@@ -2814,9 +2816,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/gizmo/open":           # Gizmo, the clip / voice / music prep app, on this computer
                 if on_pod() or not self._local_viewer():
                     return self.json({"error": "Gizmo opens on the computer running Fizgig - use it there."}, 400)
-                script = os.path.join(BASE_DIR, "gizmo.pyw" if os.name == "nt" else "gizmo.py")
+                script = os.path.join(BASE_DIR, "src", "gizmo", "gizmo.pyw" if os.name == "nt" else "gizmo.py")
                 if not os.path.isfile(script):
-                    return self.json({"error": "gizmo.py is missing from your Fizgig folder - update Fizgig."}, 400)
+                    return self.json({"error": "Gizmo is missing from your Fizgig folder - update Fizgig."}, 400)
                 exe = sys.executable
                 if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
                     exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it

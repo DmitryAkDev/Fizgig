@@ -63,7 +63,7 @@ def _remember_last(url):
 
 def _icon(profile):
     """Fizgig's icon for the window: icon.png, made an .ico for Windows (which takes nothing else)."""
-    png = os.path.join(BASE_DIR, "icon.png")
+    png = os.path.join(BASE_DIR, "src", "fizgig", "web", "static", "icon.png")
     if not os.path.isfile(png):
         return None
     if os.name != "nt":

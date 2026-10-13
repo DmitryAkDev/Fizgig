@@ -14,4 +14,4 @@ if not exist "venv\Scripts\pythonw.exe" (
     exit /b 1
 )
 
-start "" "venv\Scripts\pythonw.exe" "gizmo.pyw"
+start "" "venv\Scripts\pythonw.exe" "src\gizmo\gizmo.pyw"

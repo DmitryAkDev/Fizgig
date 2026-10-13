@@ -128,13 +128,13 @@ python -m pip install --upgrade uv
 echo.
 echo Detecting AMD GPU architecture...
 set "arch="
-if not exist "detect_gpu.py" (
-    echo ERROR: detect_gpu.py not found in %~dp0
+if not exist "src\install\detect_gpu.py" (
+    echo ERROR: src\install\detect_gpu.py not found in %~dp0
     pause
     exit /b 1
 )
 
-for /f "delims=" %%A in ('python detect_gpu.py 2^>"%~dp0gpu_detect_debug.log"') do (
+for /f "delims=" %%A in ('python src\install\detect_gpu.py 2^>"%~dp0gpu_detect_debug.log"') do (
     if not "%%A"=="" set "arch=%%A"
 )
 

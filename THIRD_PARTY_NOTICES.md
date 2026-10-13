@@ -131,7 +131,7 @@ Copyright the comfyui-rocm authors (patientx and contributors).
 comfyui-rocm is a Windows ROCm build of ComfyUI. Fizgig's AMD ROCm Windows
 installer uses code from that project as follows:
 
-- `detect_gpu.py` — copied verbatim from comfyui-rocm's `detect_gpu.py`
+- `src/install/detect_gpu.py` — copied verbatim from comfyui-rocm's `detect_gpu.py`
   (AMD GPU → gfx architecture detection on Windows). **Unmodified.** This file
   is **GPL-3.0 only**; it is not relicensed under Apache-2.0.
 - `install_fizgig_rocm.bat` — Fizgig-authored installer that **calls**

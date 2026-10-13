@@ -56,8 +56,8 @@ export LD_LIBRARY_PATH
 
 # Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
 GPU_ARCH=""
-if [[ -x venv/bin/python && -f detect_gpu_linux.py ]]; then
-    GPU_ARCH="$(venv/bin/python detect_gpu_linux.py 2>/dev/null | tail -n1 | tr -d '[:space:]')" || true
+if [[ -x venv/bin/python && -f src/install/detect_gpu_linux.py ]]; then
+    GPU_ARCH="$(venv/bin/python src/install/detect_gpu_linux.py 2>/dev/null | tail -n1 | tr -d '[:space:]')" || true
 fi
 IS_LEGACY_GPU=0
 case "${GPU_ARCH}" in

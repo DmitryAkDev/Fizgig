@@ -104,7 +104,7 @@ def _ensure_windows_rocm_on_path() -> None:
 
 def detect_gfx_target() -> str | None:
     """Return gfx code (e.g. gfx1201) or None. Prefer detect_gpu*.py, then torch."""
-    script = SCRIPT_DIR / ("detect_gpu_linux.py" if sys.platform.startswith("linux") else "detect_gpu.py")
+    script = SCRIPT_DIR / "src" / "install" / ("detect_gpu_linux.py" if sys.platform.startswith("linux") else "detect_gpu.py")
     if script.is_file():
         try:
             out = subprocess.run(
