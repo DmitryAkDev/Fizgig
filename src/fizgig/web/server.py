@@ -592,7 +592,7 @@ def _refmod_plan(values, image_folder):
     return None, st, p
 
 
-def _plan(family_key, values, image_folder, resume=""):
+def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if family_key == refmod.KEY:
         return _refmod_plan(values, image_folder)
     desc = get_family(family_key)
@@ -614,6 +614,9 @@ def _plan(family_key, values, image_folder, resume=""):
         inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
         captioner=captioner if captioner and os.path.isfile(captioner) else "",
         caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+    if ft_continue:          # a paused fine-tune: from its checkpoint, for the rotations left (the cache is built)
+        inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
+                      resuming=True)
     return desc, inputs, launch.plan(desc, inputs)
 
 
@@ -853,16 +856,58 @@ def delete_run(run_id, confirm=False) -> dict:
     return {"ok": True}
 
 
-def latest_state(out_dir, name) -> str:
-    """The run's newest resumable state folder (<name>-NNNNNN-state), or ""."""
+PAUSED_FILE = ".fizgig_paused.json"       # in the run's output folder, as the desktop writes it
+
+
+def _record_pause(out_dir):
+    """A run that paused: its continuation point (a fine-tune's checkpoint, else its newest complete state folder),
+    written as the desktop's .fizgig_paused.json so the Resume survives a restart (of either app). False if there is
+    nothing to resume from."""
+    with _lock:
+        fam, values, folder, name = _run["family"], dict(_run["values"]), _run["image_folder"], _run["lora"]
+    desc = get_family(fam)
+    ft = bool(desc is not None and desc.finetune and form._kind(desc, values) == "finetune")
+    path = launch.latest_ft_checkpoint(out_dir, name) if ft else launch.latest_state(out_dir, name)
+    if not path:
+        return False
+    side = {"mode": "ft" if ft else "state", "state_path": path, "output_name": name,
+            "dataset_config": os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"),
+            "network_dim": str(values.get("NETWORK_DIM", "")), "network_alpha": str(values.get("NETWORK_ALPHA", "")),
+            "max_train_epochs": str(values.get("MAX_TRAIN_EPOCHS", "")), "run": None,
+            "web": {"family": fam, "values": values, "image_folder": folder}}
     try:
-        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)]
+        _write_json(os.path.join(out_dir, PAUSED_FILE), side)
     except OSError:
-        return ""
-    return os.path.join(out_dir, max(found)) if found else ""
+        pass
+    with _lock:
+        _run.update(resume=path, resume_mode=side["mode"])
+    return True
 
 
-def _start(family_key, values, image_folder, resume=""):
+def _restore_pause():
+    """At start-up: the last web run, if it paused (its record is still beside its saves), is paused again here."""
+    lr = load_state().get("last_run") or {}
+    values = lr.get("values") or {}
+    name = str(values.get("LORA_NAME") or "").strip()
+    out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
+    try:
+        with open(os.path.join(out_dir, PAUSED_FILE), encoding="utf-8") as f:
+            side = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not isinstance(side, dict):
+        return
+    path, mode = str(side.get("state_path") or ""), str(side.get("mode") or "state")
+    if (side.get("output_name") != name or not lr.get("family")
+            or not (os.path.isfile(path) if mode == "ft" else os.path.isdir(path))):
+        return
+    with _lock:
+        _run.update(state="paused", family=lr["family"], values=values, image_folder=lr.get("image_folder", ""),
+                    lora=name, output_dir=out_dir, resume=path, resume_mode=mode)
+    webqueue.hold("The last run is paused. Resume it: the queue carries on after it finishes.", for_pause=True)
+
+
+def _start(family_key, values, image_folder, resume="", ft_continue=None):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
         studio.stop_worker()
@@ -878,11 +923,12 @@ def _start(family_key, values, image_folder, resume=""):
         return {"error": "The desktop app's Captions tab has its caption model on the GPU. Press Unload Model there "
                          "(or Stop, if it is captioning), then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
-    desc, inputs, plan = _plan(family_key, values, image_folder, resume)
+    desc, inputs, plan = _plan(family_key, values, image_folder, resume, ft_continue)
     if plan.problems:
         return {"problems": plan.problems}
     out_dir = inputs["LORA_OUTPUT_DIR"]
-    for stale in (".pause_requested", ".sample_override.json"):          # as the desktop's Start clears them
+    # as the desktop's Start clears them; a resume's pause record is used up once its run launches
+    for stale in (".pause_requested", ".sample_override.json") + ((PAUSED_FILE,) if resume or ft_continue else ()):
         try:
             os.remove(os.path.join(out_dir, stale))
         except OSError:
@@ -895,10 +941,10 @@ def _start(family_key, values, image_folder, resume=""):
             f.write(text)
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
-                    values=dict(values), image_folder=image_folder, pause=False)
+                    values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
-                        resume=bool(resume))
+                        resume=bool(resume or ft_continue))
     with _lock:
         _run["history_id"] = hid
     for line in plan.console:
@@ -1018,6 +1064,10 @@ def _run_stages(stages, out_dir):
             return
     paused = ((os.path.exists(os.path.join(out_dir, ".pause_requested")) or _run["pause"])
               and _run.get("family") != refmod.KEY)                  # a RefMod finishes in one go
+    if paused and not _record_pause(out_dir):
+        append_log("\n[pause] No checkpoint or saved state was found after the pause, so there is nothing to resume "
+                   "from: treating the run as ended.\n")
+        paused = False
     with _lock:
         _run.update(state="paused" if paused else "completed", proc=None, stage="", ended_at=time.time())
     history.end(_run.get("history_id"), "paused" if paused else "finished", _run.get("progress"))
@@ -2005,7 +2055,7 @@ class Handler(BaseHTTPRequestHandler):
             with _lock:
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
-            r["resume"] = latest_state(r["output_dir"], r["lora"]) if r["lora"] else ""
+            r["resume"] = r.get("resume") if r["state"] == "paused" else ""
             d = live.desktop_state()
             r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
                                                    "percent", "last_result", "ack", "unresponsive", "progress",
@@ -2322,6 +2372,11 @@ class Handler(BaseHTTPRequestHandler):
                 webqueue.move(str(b.get("id") or ""), -1 if int(b.get("delta") or 0) < 0 else 1)
                 return self.json({"ok": True})
             if path == "/api/queue/start":
+                with _lock:
+                    paused = _run["state"] == "paused"
+                if paused:                              # as the desktop's Start next now: it would leave the run
+                    return self.json({"error": "A run is paused. Resume it first: the queue carries on after it "
+                                               "finishes."}, 400)
                 webqueue.release(_queue_starter)
                 return self.json({"ok": True})
             if path == "/api/queue/hold":
@@ -2351,19 +2406,33 @@ class Handler(BaseHTTPRequestHandler):
                                   "dataset_toml": plan.dataset_toml})
             if path == "/api/start":
                 return self.json(_start(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""))
-            if path == "/api/resume":
+            if path == "/api/resume":                    # as the desktop's Resume Training
                 with _lock:
-                    last = {k: _run[k] for k in ("family", "values", "image_folder", "lora", "output_dir")}
-                if not last["family"]:
-                    lr = load_state().get("last_run") or {}
-                    last = {"family": lr.get("family", ""), "values": lr.get("values") or {},
-                            "image_folder": lr.get("image_folder", ""),
-                            "lora": (lr.get("values") or {}).get("LORA_NAME", ""),
-                            "output_dir": (lr.get("values") or {}).get("LORA_OUTPUT_DIR") or default_output_dir()}
-                state = latest_state(last["output_dir"], last["lora"])
-                if not state:
-                    return self.json({"error": "No saved state to resume from in the output folder."}, 400)
-                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=state))
+                    last = {k: _run.get(k) for k in ("state", "family", "values", "image_folder", "resume",
+                                                     "resume_mode")}
+                if last["state"] != "paused" or not last["resume"]:
+                    return self.json({"error": "No paused run to resume."}, 400)
+                if last["resume_mode"] == "ft":
+                    if not os.path.isfile(last["resume"]):
+                        return self.json({"error": "The paused fine-tune's checkpoint isn't there any more: "
+                                                   + last["resume"]}, 400)
+                    v = last["values"] or {}
+                    left, done, cont = launch.ft_rotations_left(last["resume"], v.get("FAMILY_FT_ROTATIONS"),
+                                                                v.get("FAMILY_FT_ROTATE_EVERY"))
+                    if left <= 0:
+                        return self.json({"error": f"This fine-tune has already trained {done} rotation(s), and Train "
+                                                   f"for is {v.get('FAMILY_FT_ROTATIONS')}: "
+                                                   f"{os.path.basename(last['resume'])} is the finished model. To "
+                                                   f"train it further, raise Train for and press Resume again."}, 400)
+                    append_log(f"\n=== Resuming the fine-tune from {os.path.basename(last['resume'])}: {left} "
+                               f"rotation(s) left ===\n")
+                    return self.json(_start(last["family"], v, last["image_folder"],
+                                            ft_continue={"continue": cont, "rotations": left}))
+                if not os.path.isdir(last["resume"]):
+                    return self.json({"error": "The paused run's saved state isn't there any more: "
+                                               + last["resume"]}, 400)
+                append_log(f"\n=== Resuming from {last['resume']} ===\n")
+                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"]))
             if path == "/api/pause":
                 with _lock:
                     out, running = _run["output_dir"], _run["proc"] is not None and _run["proc"].poll() is None
@@ -2897,6 +2966,7 @@ def run_server(host, port=None, password=None, password_arg=False):
         if str(load_prefs().get("web_port") or "") != str(port):
             update_prefs({"web_port": str(port)})
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
+    _restore_pause()                                   # a run paused before the restart can still be resumed
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))

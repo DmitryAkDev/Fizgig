@@ -6,7 +6,8 @@ next queued run waits while the desktop app is training or making captions (and 
 one the same way).
 
 The queue moves on only after a run finishes. A run that fails, is stopped or pauses holds it (with the reason), and
-so does a restart of the web UI - nothing launches by surprise; Start queue carries on. server.py calls on_run_ended()
+so does a restart of the web UI - nothing launches by surprise; Start queue carries on. A paused run is waited for:
+the queue carries on after it is resumed and finishes, as the desktop's does. server.py calls on_run_ended()
 when a run ends and start_next() to launch; this module never touches the run itself.
 """
 import json
@@ -20,7 +21,7 @@ QUEUE_FILE = os.path.join(BASE_DIR, ".fizgig_web_queue.json")
 WAIT_S = 30                                   # how often a waiting queue looks again
 
 _lock = threading.Lock()
-_q = {"items": [], "held": False, "reason": "", "waiting": "", "timer": None}
+_q = {"items": [], "held": False, "reason": "", "waiting": "", "timer": None, "for_pause": False}
 
 
 def _save():
@@ -90,11 +91,12 @@ def move(item_id, delta):
             _save()
 
 
-def hold(reason):
+def hold(reason, for_pause=False):
+    """for_pause: held for a paused run, which the queue waits for - it carries on after that run finishes."""
     with _lock:
         _cancel_timer()
         if _q["items"]:
-            _q.update(held=True, reason=reason, waiting="")
+            _q.update(held=True, reason=reason, waiting="", for_pause=for_pause)
 
 
 def _cancel_timer():
@@ -117,20 +119,23 @@ def schedule(delay_s, starter):
 def release(starter):
     """Start queue: no longer held; the next run starts now if it can."""
     with _lock:
-        _q.update(held=False, reason="", waiting="")
+        _q.update(held=False, reason="", waiting="", for_pause=False)
     start_next(starter)
 
 
 def on_run_ended(result, lora, starter):
     """A web run ended: the next one starts shortly after a finish; anything else holds the queue, saying why."""
     if result == "finished":
+        with _lock:
+            if _q["for_pause"]:              # the paused run (resumed) is done: the queue carries on
+                _q.update(held=False, reason="", for_pause=False)
         schedule(10, starter)
     elif result == "failed":
         hold(f"The last run ({lora}) failed - check its log, then press Start queue to carry on.")
     elif result == "stopped":
         hold("You stopped the last run. Press Start queue to carry on with the next.")
     elif result == "paused":
-        hold("The last run is paused. Resume it, or press Start queue to start the next one instead.")
+        hold("The last run is paused. Resume it: the queue carries on after it finishes.", for_pause=True)
 
 
 def start_next(starter):

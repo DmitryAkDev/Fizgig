@@ -5455,7 +5455,8 @@ function wire() {
       pollRun();
     } catch (e) { $("runStatus").textContent = e.message; }
   });
-  $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun));
+  $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
+    .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));

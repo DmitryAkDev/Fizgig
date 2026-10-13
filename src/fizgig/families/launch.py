@@ -90,6 +90,64 @@ def ft_on(desc, inputs):
     return bool(desc.finetune and inputs.get("FAMILY_FT"))
 
 
+# ---- a paused run's continuation point (both apps' Resume) -------------------------------------------------------
+STATE_MARKERS = ("training_state.json", "random_states_0.pkl")   # written last: a state folder without one is a
+                                                                  # half-written save
+
+
+def latest_state(out_dir, name):
+    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or ""."""
+    try:
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)
+                 and any(os.path.isfile(os.path.join(out_dir, d, m)) for m in STATE_MARKERS)]
+    except OSError:
+        return ""
+    return os.path.join(out_dir, max(found)) if found else ""
+
+
+def latest_ft_checkpoint(out_dir, name):
+    """A fine-tune's newest checkpoint (<name>-NNNNNN.safetensors - a fine-tune has no state folders), or ""."""
+    try:
+        found = [f for f in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}\.safetensors", f)]
+    except OSError:
+        return ""
+    return os.path.join(out_dir, max(found)) if found else ""
+
+
+def ft_continuation(path):
+    """(next_window, epochs_done, n_windows) from a fine-tune checkpoint's metadata (the trainers stamp them); the
+    -NNNNNN in the file name wins for the epochs. Anything missing reads as 0."""
+    import json
+    import struct
+    md = {}
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            md = json.loads(f.read(n)).get("__metadata__") or {}
+    except (OSError, ValueError, struct.error):
+        pass
+    def num(k):
+        try:
+            return int(float(md.get(k) or 0))
+        except (TypeError, ValueError):
+            return 0
+    epochs = num("fizgig_ft_epochs_done")
+    m = re.search(r"-(\d{6})\.safetensors$", os.path.basename(path or ""))
+    if m:
+        epochs = int(m.group(1))
+    return num("fizgig_next_start_window"), epochs, num("fizgig_ft_n_windows")
+
+
+def ft_rotations_left(path, rotations, rotate_every):
+    """What a family fine-tune paused at path has left of `rotations` (whole rotations of its cycle), and the
+    continuation's FAMILY_FT_CONTINUE - as the desktop's Resume works it out."""
+    nxt, done, nw = ft_continuation(path)
+    per = max(1, _ft_int({"x": rotate_every}, "x", 1))
+    rot = max(1, _ft_int({"x": rotations}, "x", 1))
+    done_rot = round(done / (nw * per)) if nw else 0
+    return rot - done_rot, done_rot, {"checkpoint": path, "start_window": nxt, "epochs_done": done}
+
+
 def ft_reg_dir(desc, inputs):
     """A fine-tune's regularisation folder, when fine-tune is on and one is set (else "")."""
     return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) and getattr(desc, "ft_regularisation", True)         else ""

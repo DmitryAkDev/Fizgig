@@ -35,7 +35,7 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 ## The queue
 
-**Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails, is stopped or pauses holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. Two queued runs can't save into the same files: give each its own LoRA name.
+**Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails or is stopped holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. A paused run is waited for: **Resume** it and the queue carries on after it finishes. The Resume button is still there after a restart, and a fine-tune resumes from its last checkpoint for the rotations it has left. Two queued runs can't save into the same files: give each its own LoRA name.
 
 The web UI's queue is its own; the desktop app keeps its queue, shown below it read-only (change it in the desktop app). One run trains at a time across both: each queue waits while the other app is training or making captions, and says so.
 
