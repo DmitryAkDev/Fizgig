@@ -921,10 +921,21 @@ def load_prefs() -> dict:
     for key in _PORTABLE_DIR_KEYS:
         if key in prefs and isinstance(prefs[key], str):
             prefs[key] = _resolve_pref_path(prefs[key])
+    _PREFS_SEEN[0] = _prefs_snapshot(prefs)
     # On first run, persist defaults so prefs.json exists immediately.
     if first_run:
         save_prefs(prefs)
     return prefs
+
+
+# What this window last read from or wrote to prefs.json (as stored). save_prefs writes only what changed since then,
+# so a key the web UI saved meanwhile (a model path, the web password, the RunPod key, the Pods list) is kept.
+_PREFS_SEEN = [None]
+
+
+def _prefs_snapshot(prefs: dict) -> dict:
+    return json.loads(json.dumps({k: _serialize_pref_path(v) if k in _PORTABLE_DIR_KEYS and isinstance(v, str) else v
+                                  for k, v in prefs.items()}, default=str))
 
 
 def _persist_disabled() -> bool:
@@ -1082,12 +1093,22 @@ def save_prefs(prefs: dict) -> None:
     stored as relative strings so a cloned/moved repo finds its own defaults."""
     if _persist_disabled():
         return
-    to_save = {}
-    for key, value in prefs.items():
-        if key in _PORTABLE_DIR_KEYS and isinstance(value, str):
-            to_save[key] = _serialize_pref_path(value)
-        else:
-            to_save[key] = value
+    mine = _prefs_snapshot(prefs)
+    seen = _PREFS_SEEN[0]
+    to_save = dict(mine)
+    if seen is not None:
+        try:
+            with open(PREFS_FILE, 'r', encoding='utf-8') as f:
+                disk = json.load(f)
+        except Exception:
+            disk = None
+        if isinstance(disk, dict):
+            to_save = dict(disk)
+            to_save.update({k: v for k, v in mine.items() if k not in disk or seen.get(k, object()) != v})
+            for k in seen:
+                if k not in mine:
+                    to_save.pop(k, None)       # removed here (an old key retired)
+    _PREFS_SEEN[0] = mine
     try:
         # Atomic: a truncated prefs.json silently blanked every model path (the reader
         # swallows JSONDecodeError and falls back to defaults, then the next auto-save
