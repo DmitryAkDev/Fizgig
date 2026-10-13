@@ -4644,6 +4644,23 @@ async function capRun(path, body) {
   } catch (e) { $("capStatus").textContent = e.message; }
 }
 
+// while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
+async function captionsLive() {
+  if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
+  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}`)
+    .catch(() => null);
+  if (!r || !r.items) return;
+  const now = new Map(r.items.map((i) => [i.name, i]));
+  for (const it of S.cap.items) {
+    const n = now.get(it.name);
+    if (!n || (n.caption ?? "") === (it.caption ?? "")) continue;
+    const ta = it._ta, untouched = !ta || (document.activeElement !== ta && ta.value === (it.caption ?? ""));
+    if (!untouched) continue;
+    it.caption = n.caption;
+    if (ta) ta.value = n.caption ?? "";
+  }
+}
+
 async function pollCaptions() {
   clearTimeout(S.cap.timer);
   let st;
@@ -4664,6 +4681,7 @@ async function pollCaptions() {
   log.textContent = st.log.join("\n");
   if (atEnd) log.scrollTop = log.scrollHeight;
   if (S.cap.lastState && ["running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();
+  else if (busy && Date.now() - (S.cap.liveAt || 0) > 5000) { S.cap.liveAt = Date.now(); captionsLive(); }
   S.cap.lastState = st.state;
   if (busy || document.querySelector("#tab-captions.active")) S.cap.timer = setTimeout(pollCaptions, busy ? 1500 : 5000);
 }
@@ -4708,6 +4726,7 @@ function renderCaptions() {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     const ta = el("textarea", {rows: 4});
     ta.value = it.caption ?? "";
+    it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
     const save = el("button", {class: "btn btn-sm", text: "Save", onclick: async () => {
       await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
