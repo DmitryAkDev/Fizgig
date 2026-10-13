@@ -1,7 +1,7 @@
 """Run history: every training run the web UI or the desktop app starts, newest first - for the web UI's Runs &
 outputs tab (what ran, on what, how it ended, its previews and checkpoints, and its settings to start again with).
 
-One file both apps write (.fizgig_runs.json in the Fizgig folder, git-ignored): each change re-reads it under a lock
+One file both apps write (user_data/runs.json in the Fizgig folder, git-ignored): each change re-reads it under a lock
 file and writes it whole, so the two apps never lose each other's records. A record:
 
     {id, source: "web" | "desktop", family, lora, output_dir, image_folder, values (the settings), started_at,
@@ -12,8 +12,9 @@ import os
 import time
 import uuid
 
+from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-HISTORY_FILE = os.path.join(BASE_DIR, ".fizgig_runs.json")
+HISTORY_FILE = user_file("runs.json")
 KEEP = 300                                  # the newest runs kept
 
 

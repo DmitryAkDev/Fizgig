@@ -23,6 +23,7 @@ import webbrowser
 
 from fizgig.web.port import free_from, is_fizgig, listening, saved_port
 
+from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
 
@@ -410,7 +411,7 @@ def main():
             webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True   # Buy me a coffee, RunPod, the docs
         except Exception:
             pass
-        profile = os.path.join(BASE_DIR, ".fizgig_app_profile")
+        profile = user_file("app_profile")
         webview.start(private_mode=False, storage_path=profile, icon=_icon(profile))
     except Exception as e:
         # no engine here (a Linux machine without GTK/WebKit or Qt): the browser, and how to get the window

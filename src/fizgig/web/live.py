@@ -10,12 +10,13 @@ import json
 import os
 import time
 
+from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-LIVE_DESKTOP = os.path.join(BASE_DIR, ".fizgig_live_desktop.json")
-LIVE_WEB = os.path.join(BASE_DIR, ".fizgig_live_web.json")
-DESKTOP_CMD = os.path.join(BASE_DIR, ".fizgig_desktop_cmd.json")
-DESKTOP_LOG = os.path.join(BASE_DIR, ".fizgig_desktop_console.log")
-DESKTOP_SAMPLES = os.path.join(BASE_DIR, ".fizgig_desktop_samples.json")   # preview settings changed in the web UI
+LIVE_DESKTOP = user_file("live_desktop.json")
+LIVE_WEB = user_file("live_web.json")
+DESKTOP_CMD = user_file("desktop_cmd.json")
+DESKTOP_LOG = user_file("desktop_console.log")
+DESKTOP_SAMPLES = user_file("desktop_samples.json")   # preview settings changed in the web UI
 LAST_USED = os.path.join(BASE_DIR, ".last_used.json")
 # the preview settings the two apps share, per model: steps, CFG, every N epochs and the Turbo (strength, or H3's
 # steps and %). The web UI sends a change to the desktop app; the desktop keeps them in .last_used.json

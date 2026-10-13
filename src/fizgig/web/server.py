@@ -43,10 +43,11 @@ from fizgig.web.schema import get_schema
 logger = logging.getLogger("fizgig.web")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
-STATE_FILE = os.path.join(BASE_DIR, "web_state.json")      # the web UI's own memory (git-ignored)
+STATE_FILE = user_file("web_state.json")      # the web UI's own memory (git-ignored)
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
 MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp3", ".flac", ".m4a", ".mp4",
@@ -847,10 +848,10 @@ def _run_samples(folder, name):
 
 
 def _zip_file(prefix, files) -> str:
-    """files [(path, name in the zip)] in one stored zip under .fizgig_web_zips (a day-old leftover cleared first)."""
+    """files [(path, name in the zip)] in one stored zip under user_data/zips (a day-old leftover cleared first)."""
     import tempfile
     import zipfile
-    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    zdir = user_file("zips")
     os.makedirs(zdir, exist_ok=True)
     for old in os.scandir(zdir):
         try:
@@ -889,7 +890,7 @@ def samples_zip(folder, name) -> str:
     if not files:
         raise ValueError("This run has no previews.")
     import tempfile
-    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    zdir = user_file("zips")
     os.makedirs(zdir, exist_ok=True)
     for old in os.scandir(zdir):                  # one left by a download that never finished, a day on
         try:

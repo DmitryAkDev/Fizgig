@@ -19,8 +19,9 @@ import sys
 import threading
 import time
 
+from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-JOB_DIR = os.path.join(BASE_DIR, ".fizgig_web_caption")
+JOB_DIR = user_file("caption_jobs")
 
 FLORENCE_DEFAULT_MODEL = "MiaoshouAI/Florence-2-base-PromptGen"
 FLORENCE_MODELS = [FLORENCE_DEFAULT_MODEL, "microsoft/Florence-2-base", "microsoft/Florence-2-large"]
