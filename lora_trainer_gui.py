@@ -17961,10 +17961,13 @@ class LoRATrainerGUI:
             self.prefs_vars[pref_key].set(dirpath)
 
     def _reset_prefs(self):
-        if messagebox.askyesno("Reset Preferences", "Restore all paths to defaults?"):
-            for key, default in DEFAULT_PREFS.items():
+        # the settings (folders, inference), as the web UI's Reset: never the model files' paths
+        from fizgig.web.server import SETTING_PREFS
+        if messagebox.askyesno("Reset Preferences", "Put the folders and inference settings back to their defaults? "
+                                                    "Model file paths are kept."):
+            for key in SETTING_PREFS:
                 if key in self.prefs_vars:
-                    self.prefs_vars[key].set(default)
+                    self.prefs_vars[key].set(DEFAULT_PREFS.get(key, ""))
 
     def _open_prefs_file(self):
         if os.path.exists(PREFS_FILE):

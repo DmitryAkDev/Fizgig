@@ -236,6 +236,11 @@ def set_folder_trigger(folder, word):
             pass
 
 
+# the Preferences settings Reset to defaults puts back (the model files are never reset)
+SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
+                 "inference_blocks_to_swap", "inference_int8")
+
+
 def load_prefs() -> dict:
     return {**PREF_DEFAULTS, **_read_json(PREFS_FILE)}
 
@@ -1880,6 +1885,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
+                              "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
@@ -2598,10 +2605,14 @@ class Handler(BaseHTTPRequestHandler):
                 live.send_desktop(str(b.get("cmd") or ""))
                 return self.json({"ok": True})
             if path == "/api/prefs":
-                allowed = {k for d in training_families() for k in form.model_keys(d)} | {"cache_dir",
-                                                                                          "input_dataset_dir",
-                                                                                          "lora_output_dir"}
+                allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
+                    "input_dataset_dir"}
                 ch = b.get("changes") or {}
+                if b.get("reset"):                      # Reset to defaults: the settings, never the model files
+                    ch = {**{k: "" for k in SETTING_PREFS}, **{k: v for k, v in PREF_DEFAULTS.items()
+                                                                  if k in SETTING_PREFS}}
+                if "inference_int8" in ch:
+                    ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
                 if "cuda_device" in ch:
                     v = str(ch["cuda_device"] or "").strip()

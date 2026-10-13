@@ -67,6 +67,7 @@ async function boot() {
   S.pod = pr.pod;
   S.outputDefault = pr.output_default || "";
   S.outputPref = pr.lora_output_dir || "";
+  S.set = pr.settings || {}; S.setAbs = pr.abs || {};
   S.gpu = {chosen: pr.cuda_device || "", list: pr.gpus || [], envLocked: pr.gpu_env_locked};
   S.all = st.values || {};
   S.imageFolder = st.image_folder || "";
@@ -214,7 +215,8 @@ function renderRow(r) {
     if (input._other) row.append(input._other);
     let upStatus = null;
     if (r.kind === "path" || r.kind === "folder") {
-      const startAt = r.start === "output" ? (S.values.LORA_OUTPUT_DIR || "") :
+      const startAt = r.start === "lora" ? (S.set.input_lora_dir || S.values.LORA_OUTPUT_DIR || "") :
+        r.start === "output" ? (S.values.LORA_OUTPUT_DIR || "") :
         r.start === "data" ? ((S.uploadRoot && S.uploadRoot.root) || S.imageFolder) : S.imageFolder;
       row.append(el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
         pick(input.value || startAt, r.kind === "folder", (p) => { input.value = p; set(p); })}));
@@ -414,6 +416,8 @@ function renderPrefs() {
   host.append(webPortCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
+  host.append(foldersCard());
+  host.append(inferenceCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
@@ -434,11 +438,18 @@ function renderPrefs() {
         el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
           pick(input.value, false, (p) => { input.value = p; input.dispatchEvent(new Event("change")); })}));
       if (m.repo && m.path) {
-        row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: "Download",
+        row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: m.download_label || "Download",
           href: `https://huggingface.co/${m.repo}/blob/main/${m.path}`}));
       }
+      if (m.alt_repo && m.alt_path) {          // another build of the same file (the desktop's second link)
+        row.append(el("a", {class: "btn", target: "_blank", rel: "noopener", text: m.alt_label || "Download",
+          href: `https://huggingface.co/${m.alt_repo}/blob/main/${m.alt_path}`}));
+      }
       const hint = m.hint || m.note;
-      body.append(el("div", {class: "pref-file"}, row, hint ? el("div", {class: "field-hint", text: hint}) : null));
+      const dl = [m.repo && m.path ? (m.download_note || `~${m.size_gb || "?"} GB - ${m.repo} → ${m.path.split("/").pop()}`) : "",
+        m.alt_repo && m.alt_path ? m.alt_note : ""].filter(Boolean).join(" · ");
+      body.append(el("div", {class: "pref-file"}, row, hint ? el("div", {class: "field-hint", text: hint}) : null,
+        dl ? el("div", {class: "field-hint", text: dl}) : null));
     }
     const fetchBox = fetchRow(f);
     if (fetchBox) body.append(fetchBox);
@@ -446,8 +457,73 @@ function renderPrefs() {
       el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
         el("span", {text: f.prefs_title || ("Model Paths (" + f.display_name + ")")})), body));
   }
+  host.append(el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Reset"})),
+    el("div", {class: "card-content"}, el("div", {class: "field-row"}, el("button", {class: "btn", text: "Reset to defaults",
+      onclick: async (e) => {
+        if (e.target.dataset.sure !== "1") { e.target.dataset.sure = "1"; e.target.textContent = "Reset? Click again"; return; }
+        await api("/api/prefs", {reset: true});
+        const pr = await api("/api/prefs");
+        S.set = pr.settings || {}; S.setAbs = pr.abs || {}; S.outputPref = pr.lora_output_dir || ""; S.outputDefault = pr.output_default;
+        renderPrefs();
+      }})),
+      el("div", {class: "field-hint", text: "Puts the folders and inference settings above back to Fizgig's defaults. " +
+        "Model files, the web password and the RunPod key are kept."}))));
   paintFetch();
 }
+
+// a folder setting the two apps share (prefs.json): a box, Choose…, saved when it changes
+function settingRow(key, label, hint, placeholder) {
+  const input = el("input", {type: "text", class: "w-path", value: S.set[key] || "", placeholder: placeholder || ""});
+  const save = async () => {
+    try { await api("/api/prefs", {changes: {[key]: input.value.trim()}}); S.set[key] = input.value.trim(); }
+    catch (e) { note.textContent = e.message; }
+  };
+  const note = el("div", {class: "field-hint", text: hint});
+  input.addEventListener("change", save);
+  return el("div", {class: "pref-file"}, el("div", {class: "field-row"},
+    el("span", {class: "field-label", text: label}), input,
+    el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig", onclick: () =>
+      pick(input.value || S.setAbs[key] || "", true, (p) => { input.value = p; save(); })})), note);
+}
+
+function foldersCard() {
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Other folders"})),
+    el("div", {class: "card-content"},
+      settingRow("profiles_dir", "Profiles:", "Where the Profiler's reports go (Studio finds a LoRA's profile there).", "profiles inside Fizgig"),
+      settingRow("cache_dir", "Cache:", "Cached latents and text encodings: each training folder gets its own folder in here.", "cache inside Fizgig"),
+      settingRow("input_lora_dir", "LoRA loading:", "Where the pickers for LoRAs start: Studio, Royale, Profiler, Extract, Context LoRA."),
+      settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale."),
+      el("div", {class: "field-hint", text: "The same settings as the desktop app's Preferences > Output / Input Directories."})));
+}
+
+// the workbench tools' memory and speed (Studio, Royale, Profiler, Extract): the desktop's Inference Performance card
+const INFERENCE_SWAP = ["Auto (detect from GPU)", "0  (Distilled fp8: 16GB / Base: 24GB)", "4  (Distilled fp8: 14GB / Base: 20GB)",
+  "8  (Distilled fp8: 11GB / Base: 16GB)", "12 (Distilled fp8: 10GB / Base: 14GB)", "16 (Distilled fp8: 8GB / Base: 12GB)"];
+function inferenceCard() {
+  const cur = String(S.set.inference_blocks_to_swap || INFERENCE_SWAP[0]).trim();
+  const lead = (cur.match(/^\d+/) || [""])[0];
+  const swap = el("select", {class: "w-combo"});
+  for (const o of INFERENCE_SWAP) swap.append(el("option", {value: o, text: o}));
+  swap.value = INFERENCE_SWAP.find((o) => lead && o.startsWith(lead + " ")) || INFERENCE_SWAP[0];
+  swap.addEventListener("change", () => api("/api/prefs", {changes: {inference_blocks_to_swap: swap.value}})
+    .then(() => { S.set.inference_blocks_to_swap = swap.value; }));
+  const int8 = el("input", {type: "checkbox"});
+  int8.checked = String(S.set.inference_int8 ?? "1") !== "0";
+  int8.addEventListener("change", () => api("/api/prefs", {changes: {inference_int8: int8.checked}})
+    .then(() => { S.set.inference_int8 = int8.checked ? "1" : "0"; }));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Inference performance"})),
+    el("div", {class: "card-desc", text: "For Studio, Royale, the Profiler and Extract. Block swap moves blocks to the CPU " +
+      "between steps to save memory, at some speed. Training manages its own and ignores these."}),
+    el("div", {class: "card-content"},
+      el("div", {class: "field-row"}, el("span", {class: "field-label", text: "DiT block swap:"}), swap),
+      el("label", {class: "checkbox-label"}, int8, " INT8 fast inference (recommended)"),
+      el("div", {class: "field-hint", text: "On by default: same memory as fp8, near-identical pictures, previews only. " +
+        "Turn it off to use fp8."})));
+}
+
+// where the LoRA and reference pickers start (Preferences > Other folders, else what they used before)
+const loraStart = () => S.set.input_lora_dir || S.outputDefault;
+const refStart = () => S.set.input_ref_dir || S.imageFolder;
 
 // "Download models for me": the family's files + the helper models, paths filled in when they land
 function fetchRow(f) {
@@ -1763,7 +1839,7 @@ async function wireRoyaleTravel() {
   document.querySelectorAll("#ryTabs .ry-tab").forEach((b) => b.addEventListener("click", () => ryShowTool(b.dataset.ry)));
   const setSingle = (p) => { $("rySingle").value = p; ryRemember(); };
   const up = uploadButton({kind: "path", key: "ROYALE_SINGLE"}, $("rySingle"), setSingle);
-  $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || S.outputDefault, false, setSingle)}),
+  $("rySingleBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("rySingle").value || loraStart(), false, setSingle)}),
     up.btn, up.status);
   for (const [mode, p] of Object.entries(RY_MODES)) {
     $(p + "Go").addEventListener("click", () => ryTravel(mode));
@@ -1771,7 +1847,7 @@ async function wireRoyaleTravel() {
     sc.querySelector(".ry-scrub").addEventListener("input", () => ryScScrub(sc));
     sc.querySelectorAll(".ry-sc-save button").forEach((b) => b.addEventListener("click", () => ryScSave(sc, b.dataset.fmt)));
     if (mode !== "strength") {
-      $(p + "RefPick").addEventListener("click", () => pick($(p + "Ref").value || S.imageFolder, false, (x) => { $(p + "Ref").value = x; ryRemember(); }));
+      $(p + "RefPick").addEventListener("click", () => pick($(p + "Ref").value || refStart(), false, (x) => { $(p + "Ref").value = x; ryRemember(); }));
       $(p + "RefClear").addEventListener("click", () => { $(p + "Ref").value = ""; ryRemember(); });
       $(p + "UseEpoch").addEventListener("change", () => { for (const id of ["Ref", "RefPick", "RefClear"]) $(p + id).disabled = $(p + "UseEpoch").checked; });
     }
@@ -1944,9 +2020,9 @@ function wireRoyale() {
   $("ryFolder").addEventListener("change", () => { royaleScan(); remember(); });
   $("ryFolderPick").addEventListener("click", () => pick($("ryFolder").value || S.outputDefault, true, (p) => {
     $("ryFolder").value = p; royaleScan(); remember(); }));
-  $("ryRefPick").addEventListener("click", () => pick($("ryRef").value || S.imageFolder, false, (p) => { $("ryRef").value = p; remember(); }));
+  $("ryRefPick").addEventListener("click", () => pick($("ryRef").value || refStart(), false, (p) => { $("ryRef").value = p; remember(); }));
   $("ryRefClear").addEventListener("click", () => { $("ryRef").value = ""; remember(); });
-  $("ryLikePick").addEventListener("click", () => pick($("ryLikeRef").value || S.imageFolder, false, (p) => { $("ryLikeRef").value = p; remember(); }));
+  $("ryLikePick").addEventListener("click", () => pick($("ryLikeRef").value || refStart(), false, (p) => { $("ryLikeRef").value = p; remember(); }));
   $("ryLikeClear").addEventListener("click", () => { $("ryLikeRef").value = ""; remember(); });
   $("ryOutPick").addEventListener("click", () => pick($("ryOut").value, true, (p) => { $("ryOut").value = p; remember(); }));
   $("ryRender").addEventListener("click", royaleRender);
@@ -2089,7 +2165,7 @@ function wireProfiler() {
   $("pfLora").addEventListener("change", () => pfLora($("pfLora").value.trim(), true));
   const up = uploadButton({kind: "path", key: "PROFILER_LORA"}, $("pfLora"), (p) => pfLora(p, true));
   $("pfLoraBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
-    pick($("pfLora").value || S.outputDefault, false, (p) => pfLora(p, true))}), up.btn, up.status);
+    pick($("pfLora").value || loraStart(), false, (p) => pfLora(p, true))}), up.btn, up.status);
   const addPhoto = (p) => { if (S.pf.photos.length < 3 && !S.pf.photos.includes(p)) S.pf.photos.push(p); pfPhotosDraw(); pfRemember(); };
   const pup = uploadButton({kind: "path", key: "PROFILER_PHOTO"}, el("input", {type: "text"}), addPhoto);
   $("pfPhotoBtns").replaceChildren(el("button", {class: "btn btn-sm", text: "Add photo…", onclick: () => pick(S.imageFolder, false, addPhoto)}),
@@ -2251,7 +2327,7 @@ function wireExtract() {
   $("exSource").addEventListener("change", () => extractSource($("exSource").value.trim()));
   const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE"}, $("exSource"), extractSource);
   $("exSourceBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
-    pick($("exSource").value || S.outputDefault, false, extractSource)}), up.btn, up.status);
+    pick($("exSource").value || loraStart(), false, extractSource)}), up.btn, up.status);
   $("exOutPick").addEventListener("click", () => pick($("exOutDir").value, true, (p) => { $("exOutDir").value = p; }));
   $("exRun").addEventListener("click", extractRun);
   document.querySelectorAll("#exModes .ry-tab").forEach((b) => b.addEventListener("click", () => exMode(b.dataset.exmode)));
@@ -2281,7 +2357,7 @@ function mdWire() {
     el("textarea", {rows: 4, "data-key": "modelspec.description"})));
   const load = (p) => { $("mdPath").value = p; mdLoad(p); };
   const up = uploadButton({kind: "path", key: "METADATA_FILE"}, $("mdPath"), load);
-  $("mdPathBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("mdPath").value || S.outputDefault, false, load)}),
+  $("mdPathBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($("mdPath").value || loraStart(), false, load)}),
     up.btn, up.status);
   $("mdPath").addEventListener("change", () => mdLoad($("mdPath").value.trim()));
   const setThumb = async (p) => {
@@ -3614,7 +3690,7 @@ function wireStudioMetrics() {
     try { const d = stSaved(); d.metricsRef = p || ""; localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
     studioMetricsShow(); studioMetrics();
   };
-  $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || S.imageFolder, false, setRef));
+  $("stMetRefPick").addEventListener("click", () => pick(stSaved().metricsRef || refStart(), false, setRef));
   $("stMetRefClear").addEventListener("click", () => setRef(""));
 }
 
@@ -4159,13 +4235,13 @@ function wireStudio() {
   wireStudioSetups();
   $("stEqD").addEventListener("click", () => studioEq("donor", !S.st.eq.donor));
   $("stUnload").addEventListener("click", async () => { await api("/api/studio/reset", {}); S.st.ready = false; S.st.loadedKey = ""; studioPoll(); });
-  $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || S.outputDefault, false, (p) => { $("stPrimary").value = p; stRemember(); }));
+  $("stPrimaryPick").addEventListener("click", () => pick($("stPrimary").value || loraStart(), false, (p) => { $("stPrimary").value = p; stRemember(); }));
   $("stDonorPick").addEventListener("click", () => pick($("stDonor").value || $("stPrimary").value, false, (p) => { $("stDonor").value = p; stRemember();
     studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: p}).then(studioPoll).catch((e) => { $("stStatus").textContent = e.message; }); }));
   $("stDonorUnload").addEventListener("click", () => { $("stDonor").value = ""; stRemember(); studioDmixOff();
     if (S.st.ready) api("/api/studio/donor", {path: ""}).then(() => { studioPoll(); studioSchedule(); }); });
-  $("stRefPick").addEventListener("click", () => pick($("stRef").value || S.imageFolder, false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
+  $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioSchedule(); });
   $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioSchedule(); });
   for (const id of ["stSeed", "stRes", "stRefMp", "stRefStr", "stPScale", "stDScale"])
@@ -4844,7 +4920,7 @@ function rmWire() {
   $("rmFolderPick").addEventListener("click", () => pick($("rmFolder").value, true, (p) => { $("rmFolder").value = p; rmRescan(); }));
   $("rmFolder").addEventListener("change", () => rmRescan());
   $("rmRescan").addEventListener("click", () => rmRescan());
-  $("rmLoraPick").addEventListener("click", () => pick($("rmLora").value || S.outputDefault, false, (p) => { $("rmLora").value = p; rmLoraChanged(); }));
+  $("rmLoraPick").addEventListener("click", () => pick($("rmLora").value || loraStart(), false, (p) => { $("rmLora").value = p; rmLoraChanged(); }));
   $("rmLora").addEventListener("change", rmLoraChanged);
   $("rmLoraClear").addEventListener("click", () => { $("rmLora").value = ""; rmLoraChanged(); });
   $("rmAddRow").addEventListener("click", () => {
