@@ -118,6 +118,99 @@ def _bar(text, button, title, call, dismiss=False):
     return _BAR_JS.replace("__ARGS__", ", ".join(json.dumps(v) for v in (text, button, title, call, dismiss)))
 
 
+def _git(*args):
+    try:
+        r = subprocess.run(["git", "-C", BASE_DIR, *args], capture_output=True, text=True, timeout=5,
+                           creationflags=0x08000000 if os.name == "nt" else 0)
+        return r.returncode, r.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return 1, ""
+
+
+_BUILD = []
+
+
+def _build():
+    """This computer's build: the commit it runs ("" when it isn't a git checkout - then nothing is compared)."""
+    if not _BUILD:
+        code, out = _git("rev-parse", "HEAD")
+        _BUILD.append(out if code == 0 else "")
+    return _BUILD[0]
+
+
+def _update_how():
+    if os.name == "nt":
+        return "close Fizgig and run update_fizgig.bat (update_fizgig_rocm.bat on AMD), then open it again"
+    return "close Fizgig, run venv/bin/python update_fizgig.py in the Fizgig folder, then open it again"
+
+
+def build_verdict(pod_build):
+    """The rule: the window and the pod run the same build, or the pod's page is blocked with what to do. Which
+    side is behind decides it: a pod updates itself at each start; this computer with its updater."""
+    mine = _build()
+    if not mine:
+        return {"ok": True}
+    theirs = str(pod_build or "").strip()
+    if theirs == mine:
+        return {"ok": True}
+    title = "This computer and the pod run different builds of Fizgig"
+    mine_s, theirs_s = mine[:7], theirs[:7]
+    if theirs and _git("merge-base", "--is-ancestor", mine, theirs)[0] == 0 or (theirs and _git("cat-file", "-e", theirs + "^{commit}")[0] != 0):
+        # the pod's build is newer than this computer's, or one this computer has never seen
+        msg = (f"The pod runs build {theirs_s}, this computer build {mine_s}. Update Fizgig on this computer - "
+               f"{_update_how()} - and the two match.")
+    else:
+        said = f"The pod runs build {theirs_s}" if theirs else "The pod runs an older build"
+        msg = (f"{said}, this computer build {mine_s}. Restart the pod (stop it, then Start and open on the Pods "
+               "tab): a pod takes the newest Fizgig every time it starts.")
+    return {"ok": False, "title": title, "message": msg}
+
+
+# a page in the window that runs a different build from this computer: covered, with what to do and the way back
+_BLOCK_JS = r"""
+(function (title, message) {
+  if (document.getElementById('fizgigBuildBlock')) return;
+  var o = document.createElement('div');
+  o.id = 'fizgigBuildBlock';
+  o.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(10,14,20,.92);display:flex;' +
+    'align-items:center;justify-content:center;padding:16px;font:14px Segoe UI,system-ui,sans-serif;color:#F0F4F8';
+  var c = document.createElement('div');
+  c.style.cssText = 'max-width:560px;background:#1A2029;border:2px solid #F59E0B;border-radius:12px;padding:22px 24px';
+  var h = document.createElement('div');
+  h.textContent = title;
+  h.style.cssText = 'font-size:18px;font-weight:700;color:#F59E0B;margin-bottom:10px';
+  var p = document.createElement('div');
+  p.textContent = message;
+  p.style.cssText = 'line-height:1.5;margin-bottom:18px';
+  var b = document.createElement('button');
+  b.textContent = 'Switch to this computer';
+  b.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:6px 16px;cursor:pointer;' +
+    'font:600 14px Segoe UI,system-ui,sans-serif';
+  b.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
+  c.appendChild(h); c.appendChild(p); c.appendChild(b); o.appendChild(c);
+  document.body.appendChild(o);
+})(__ARGS__);
+"""
+
+# on a pod's page: its build (its About, once logged in), checked against this computer's
+_CHECK_JS = r"""
+(function () {
+  if (window.__fizgigBuildCheck) return;
+  window.__fizgigBuildCheck = true;
+  var tries = 0;
+  function ask() {
+    fetch('/api/about', {credentials: 'same-origin'}).then(function (r) {
+      if (!r.ok) throw new Error(r.status);
+      return r.json();
+    }).then(function (d) {
+      window.pywebview.api.build_check(d.commit || '');
+    }).catch(function () { if (++tries < 400) setTimeout(ask, 3000); });   // the login page first, then it answers
+  }
+  ask();
+})();
+"""
+
+
 def _where(url):
     """'pod <id>' for a pod's address, else its host:port."""
     from urllib.parse import urlparse
@@ -243,6 +336,16 @@ def main():
             def forget_pod(self):
                 left[0] = ""
 
+            def build(self):
+                return _build()
+
+            def build_check(self, pod_build):
+                v = build_verdict(pod_build)
+                if not v["ok"]:
+                    window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
+                                                         json.dumps(v["message"])))
+                return v
+
             def local_datasets(self):
                 from fizgig.web import local_bridge
                 return local_bridge.local_datasets()
@@ -281,6 +384,7 @@ def main():
                 window.set_title(f"Fizgig — {name}")
                 window.evaluate_js(_bar(f"☁ You're on {name}", "Switch to this computer",
                                         "Back to Fizgig on this computer (the pod keeps running)", "home"))
+                window.evaluate_js(_CHECK_JS)
             except Exception:
                 pass
         window.events.loaded += loaded

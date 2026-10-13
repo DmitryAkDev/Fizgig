@@ -1521,7 +1521,7 @@ def about_info() -> dict:
     else:
         how = ("To update: stop Fizgig (and its service, if it runs as one), then in the Fizgig folder run "
                "venv/bin/python update_fizgig.py" + (" --rocm" if rocm else "") + ", and start it again.")
-    return {"version": v or "unknown", "update": how}
+    return {"version": v or "unknown", "update": how, "commit": git("rev-parse", "HEAD")}  # the app window: same code?
 
 
 def _sweep_parts(folder, entries):

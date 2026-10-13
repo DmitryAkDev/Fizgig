@@ -5514,7 +5514,7 @@ function wirePods() {
 
 // ---- About: the version, how this install updates, and a newer release when there is one (the desktop's) -------
 function showAbout(a) {
-  $("aboutVersion").textContent = "Version " + a.version;
+  $("aboutVersion").textContent = "Version " + a.version + (a.commit ? ` · build ${a.commit.slice(0, 7)}` : "");
   $("aboutUpdate").textContent = a.update;
   const r = a.release || {}, newer = r.status === "update_available";
   $("aboutRelease").replaceChildren(...(newer ? [el("div", {class: "about-banner"},
@@ -5685,6 +5685,21 @@ async function podLocalSend(d, btn) {
   btn.disabled = false;
 }
 window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
+
+// the app window and a pod must run the same build (app_window.py blocks the page when they don't). A window from
+// before that check has no build() to ask: it is older than this pod, so the page says to update this computer
+function podBuildGuard() {
+  const a = window.pywebview && window.pywebview.api;
+  if (!a || !pageIsElsewhere() || a.build || $("fizgigBuildBlock")) return;
+  const o = el("div", {id: "fizgigBuildBlock", class: "build-block"},
+    el("div", {class: "build-block-card"},
+      el("div", {class: "build-block-title", text: "This computer and the pod run different builds of Fizgig"}),
+      el("p", {text: "Fizgig on this computer is older than the pod's. Update it - close Fizgig and run update_fizgig.bat " +
+        "(update_fizgig_rocm.bat on AMD; venv/bin/python update_fizgig.py on Linux or a Mac), then open it again."}),
+      a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null));
+  document.body.append(o);
+}
+window.addEventListener("pywebviewready", podBuildGuard);
 
 // one file as the request body, reporting bytes sent (fetch can't report upload progress)
 function sendFile(url, file, onProgress) {
