@@ -434,9 +434,9 @@ function renderPrefs() {
   S.fetchRows = {};
   for (const f of S.schema.families) {
     if (f.prefs_skip) continue;              // RefMod: MiniMax H3's files, on H3's card
-    // a model's card stays as you left it, open or shut, when the tab redraws (a download finishing); at first only
-    // the model the Training tab is on is open
-    if (!S.prefsOpen) S.prefsOpen = new Set([S.family]);
+    // a model's card stays as you left it, open or shut, when the tab redraws (a download finishing); they all start
+    // shut - you open the one you want
+    if (!S.prefsOpen) S.prefsOpen = new Set();
     const body = el("div", {class: "card-content" + (S.prefsOpen.has(f.key) ? "" : " collapsed")});
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
     for (const key of f.model_keys) {
