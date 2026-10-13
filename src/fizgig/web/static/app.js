@@ -37,16 +37,16 @@ async function api(path, body) {
 }
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
-// A picture from this server that failed to load (a busy moment: a long page asks for dozens at once) tries again,
-// twice, a moment apart - every grid of tiles at once, rather than broken images until a reload
+// A picture from this server that failed to load (a busy moment: a long page asks for dozens at once, or a file still
+// arriving) tries again, three times, further apart each time - rather than broken images until a reload
 document.addEventListener("error", (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.src.includes("/api/")) return;
   const u = new URL(img.src), n = Number(u.searchParams.get("retry") || 0);
-  if (n >= 2) return;
+  if (n >= 3) return;
   u.searchParams.set("retry", n + 1);
   const failed = img.src;                            // a pane given a new picture meanwhile keeps it
-  setTimeout(() => { if (img.src === failed) img.src = u.toString(); }, 700 * (n + 1));
+  setTimeout(() => { if (img.src === failed) img.src = u.toString(); }, [1500, 4000, 10000][n]);
 }, true);
 
 // ---- start-up ----------------------------------------------------------------------------------------------

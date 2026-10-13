@@ -1529,6 +1529,17 @@ def _sweep_parts(folder, entries):
                 pass
 
 
+def _settled(entry, names) -> bool:
+    """A file whole on disk, not one still arriving (an upload's .part beside it, or written in the last few seconds):
+    a tile's thumbnail of a half-written picture comes out broken."""
+    if f".{entry.name}.part" in names or f"{entry.name}.part" in names:
+        return False
+    try:
+        return time.time() - entry.stat().st_mtime > 10
+    except OSError:
+        return False
+
+
 def list_datasets() -> dict:
     """The folders in the training data folder (uploads_root()), newest first: what each holds (pictures, clips,
     songs, how many have a caption), when it last changed, and up to four pictures for its tile."""
@@ -1568,7 +1579,7 @@ def list_datasets() -> dict:
                 newest = max(newest, e.stat().st_mtime)
             except OSError:
                 pass
-            if kind == "pic" and len(thumbs) < 4:
+            if kind == "pic" and len(thumbs) < 4 and _settled(e, names):
                 thumbs.append(e.path)
         _sweep_parts(d.path, entries)
         if pics + clips + songs:
