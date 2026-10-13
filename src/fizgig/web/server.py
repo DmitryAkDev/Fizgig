@@ -2676,6 +2676,14 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/profile/stop":
                 from fizgig.web import tools
                 return self.json({"ok": tools.stop("profile")})
+            if path == "/api/extract/finetune":     # From a fine-tune: the LoRA a full fine-tune amounts to
+                from fizgig.web import tools
+                if _gpu_training():
+                    raise ValueError("A training run is using the GPU. Extract can run when it finishes.")
+                tools.run_finetune(str(b.get("base") or "").strip(), str(b.get("tuned") or "").strip(),
+                                   str(b.get("out_dir") or "").strip() or default_output_dir(),
+                                   str(b.get("name") or ""), b.get("ranks") or [])
+                return self.json({"ok": True})
             if path == "/api/extract/run":
                 from fizgig.web import tools
                 desc = next((d for d in tools.families() if d.key == b.get("family")), None)

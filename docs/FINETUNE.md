@@ -119,7 +119,7 @@ Full fine-tuning moves every weight, so a long run on a few subjects drifts the 
 
 ## Turn it back into a LoRA
 
-**Checkpoint to LoRA** opens from the **Checkpoint to LoRA…** button on the Training tab's fine-tune card, or runs outside the main window: `run_diff_to_lora.bat` in your Fizgig folder (or `python diff_to_lora_gui.py`; Linux/pods: `./run_diff_to_lora.sh`). Point it at the base model you started from and your fine-tuned checkpoint, and it extracts the difference as an ordinary kohya `.safetensors` at whichever ranks you tick — several at once, since one SVD per layer serves them all. It reads H3's int8 format natively.
+On the **Extract** tab, choose **From a fine-tune**. Point it at the base model you started from and your fine-tuned checkpoint, and it extracts the difference as an ordinary kohya `.safetensors` at whichever ranks you tick — several at once, since one SVD per layer serves them all. It reads H3's int8 format natively.
 
 - **Rank 64 was perceptually indistinguishable from the full ~26 GB checkpoint** at ~0.5 GB. Quality degrades smoothly at lower ranks.
 - In our testing, a LoRA **extracted** from a fine-tune came out better than a LoRA **trained directly** at the same or higher rank on the same dataset. A low-rank file can hold a solution that low-rank training struggles to find; the full-rank phase does the work and extraction is nearly free.

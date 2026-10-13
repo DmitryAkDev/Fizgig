@@ -2067,9 +2067,20 @@ function wireProfiler() {
 S.ex = {info: null, poll: null, wired: false};
 const EX_KEY = "fizgig_extract";
 const exSaved = () => { try { return JSON.parse(localStorage.getItem(EX_KEY) || "{}"); } catch (e) { return {}; } };
+const EX_FT_RANKS = [8, 16, 32, 64, 128, 256];
 function exRemember() {
   try { localStorage.setItem(EX_KEY, JSON.stringify({family: $("exFamily").value, source: $("exSource").value,
-    rank: $("exRank").value, preset: $("exPreset").value})); } catch (e) { /* private window */ }
+    rank: $("exRank").value, preset: $("exPreset").value, mode: S.ex.mode, ftBase: $("exFtBase").value,
+    ftTuned: $("exFtTuned").value, ftName: $("exFtName").value, ftOut: $("exFtOut").value,
+    ftRanks: [...$("exFtRanks").querySelectorAll("input:checked")].map((c) => Number(c.value))})); } catch (e) { /* private */ }
+}
+function exMode(mode) {
+  // From a LoRA (a LoRA reduced) or From a fine-tune (the old Checkpoint to LoRA app); one Run card for both
+  S.ex.mode = mode;
+  document.querySelectorAll("#exModes .ry-tab").forEach((b) => b.classList.toggle("active", b.dataset.exmode === mode));
+  document.querySelectorAll("#tab-extract .section-card[data-exmode]").forEach((c) => c.classList.toggle("ex-off", c.dataset.exmode !== mode));
+  $("exRun").textContent = mode === "ft" ? "Extract LoRAs" : "Extract LoRA";
+  exRemember();
 }
 
 async function extractOpen() {
@@ -2078,7 +2089,14 @@ async function extractOpen() {
   if (!S.ex.info) {
     if (sv.source) $("exSource").value = sv.source;
     if (sv.rank) $("exRank").value = sv.rank;
+    const on = new Set(sv.ftRanks || [32, 64]);
+    $("exFtRanks").replaceChildren(...EX_FT_RANKS.map((r) => { const c = el("input", {type: "checkbox", value: r, onchange: exRemember});
+      c.checked = on.has(r); return el("label", {class: "checkbox-label"}, c, " " + r); }));
+    for (const [id, k] of [["exFtBase", "ftBase"], ["exFtTuned", "ftTuned"], ["exFtName", "ftName"], ["exFtOut", "ftOut"]])
+      if (sv[k]) $(id).value = sv[k];
     await extractFamily(sv.family, sv.preset);
+    if (!$("exFtOut").value) $("exFtOut").value = $("exOutDir").value;
+    exMode(sv.mode === "ft" ? "ft" : "lora");
   }
   extractPoll();
 }
@@ -2139,6 +2157,18 @@ async function extractSource(p) {
 }
 
 async function extractRun() {
+  if (S.ex.mode === "ft") {
+    const ranks = [...$("exFtRanks").querySelectorAll("input:checked")].map((c) => Number(c.value));
+    try {
+      await api("/api/extract/finetune", {base: $("exFtBase").value.trim(), tuned: $("exFtTuned").value.trim(),
+        out_dir: $("exFtOut").value.trim(), name: $("exFtName").value.trim(), ranks});
+      $("exStatus").textContent = "Extracting…";
+      $("exDone").replaceChildren();
+      exRemember();
+      extractPoll();
+    } catch (e) { $("exStatus").textContent = e.message; }
+    return;
+  }
   const custom = $("exPreset").value === "Custom";
   const blocks = custom ? [...$("exCustom").querySelectorAll("input:checked")].map((c) => c.value) : [];
   if (custom && !blocks.length) { $("exStatus").textContent = "Custom is selected but no blocks are ticked."; return; }
@@ -2164,11 +2194,13 @@ async function extractPoll() {
   $("exBar").style.width = running ? (p && p[1] ? `${Math.round(100 * (p[0] + 1) / p[1])}%` : "100%") : st.state === "done" ? "100%" : "0";
   $("exBar").parentElement.classList.toggle("indeterminate", running && !(p && p[1]));
   $("exLog").textContent = st.log.join("\n");
-  if (running && p) $("exStatus").textContent = `SVD: ${p[0] + 1} of ${p[1]} layers…`;
+  if (running && p) $("exStatus").textContent = S.ex.mode === "ft" ? `SVD: layer ${p[0]} of ${p[1]}…` : `SVD: ${p[0] + 1} of ${p[1]} layers…`;
   if (st.state === "done") {
-    $("exStatus").textContent = `Saved ${st.output}`;
-    if (!$("exDone").children.length) $("exDone").append(el("a", {class: "btn btn-sm btn-primary", download: "", text: "Download",
-      href: `/api/download?path=${encodeURIComponent(st.output)}&t=${encodeURIComponent(TOKEN)}`}));
+    const outs = st.outputs && st.outputs.length ? st.outputs : [st.output];
+    $("exStatus").textContent = outs.length > 1 ? `Saved ${outs.length} LoRAs in ${outs[0].replace(/[\\/][^\\/]*$/, "")}` : `Saved ${outs[0]}`;
+    if (!$("exDone").children.length) for (const o of outs) $("exDone").append(el("a", {class: "btn btn-sm btn-primary", download: "",
+      text: outs.length > 1 ? "Download r" + ((o.match(/_r(\d+)\.safetensors$/i) || [])[1] || "") : "Download",
+      href: `/api/download?path=${encodeURIComponent(o)}&t=${encodeURIComponent(TOKEN)}`}));
   }
   if (st.state === "failed") $("exStatus").textContent = `The extraction failed: ${st.error}`;
   if (running && $("tab-extract").classList.contains("active")) S.ex.poll = setTimeout(extractPoll, 500);
@@ -2185,6 +2217,17 @@ function wireExtract() {
     pick($("exSource").value || S.outputDefault, false, extractSource)}), up.btn, up.status);
   $("exOutPick").addEventListener("click", () => pick($("exOutDir").value, true, (p) => { $("exOutDir").value = p; }));
   $("exRun").addEventListener("click", extractRun);
+  document.querySelectorAll("#exModes .ry-tab").forEach((b) => b.addEventListener("click", () => exMode(b.dataset.exmode)));
+  for (const [id, host] of [["exFtBase", "exFtBaseBtns"], ["exFtTuned", "exFtTunedBtns"]]) {
+    const set = (p) => { $(id).value = p; exRemember(); };
+    const up = uploadButton({kind: "path", key: "EXTRACT_" + id}, $(id), set);
+    $(host).replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () => pick($(id).value || S.outputDefault, false, set)}),
+      up.btn, up.status);
+    $(id).addEventListener("change", exRemember);
+  }
+  $("exFtName").addEventListener("change", exRemember);
+  $("exFtOut").addEventListener("change", exRemember);
+  $("exFtOutPick").addEventListener("click", () => pick($("exFtOut").value, true, (p) => { $("exFtOut").value = p; exRemember(); }));
 }
 
 // ---- Metadata: any .safetensors file's ModelSpec metadata, edited (the header rewritten; tensors untouched) ----

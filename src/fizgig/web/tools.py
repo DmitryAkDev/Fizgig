@@ -17,8 +17,8 @@ _lock = threading.Lock()
 
 
 def _job():
-    return {"state": "idle", "log": [], "progress": None, "text": "", "output": "", "error": "", "proc": None,
-            "started": 0.0, "result": None}
+    return {"state": "idle", "log": [], "progress": None, "text": "", "output": "", "outputs": [], "error": "",
+            "proc": None, "started": 0.0, "result": None}
 
 
 _J = {"extract": _job(), "profile": _job()}
@@ -75,6 +75,10 @@ def _line(kind, line):
             d = json.loads(body)
         except ValueError:
             return
+        if tag == "OUT":                         # a file the fine-tune extraction wrote (one per rank)
+            j["outputs"].append(d)
+            j["output"] = j["output"] or d
+            return
         if tag == "P":
             j["text"] = d.get("text", j["text"])
             if d.get("total"):
@@ -118,7 +122,7 @@ def _follow(kind, proc):
 
 def status(kind="extract"):
     with _lock:
-        return {k: _J[kind][k] for k in ("state", "log", "progress", "text", "output", "error", "result")}
+        return {k: _J[kind][k] for k in ("state", "log", "progress", "text", "output", "outputs", "error", "result")}
 
 
 def holding_gpu():
@@ -154,6 +158,26 @@ def run(desc, source, output, rank, preset="", blocks=None):
         cmd += ["--preset", preset]
     _start("extract", cmd, f"Extracting {os.path.basename(source)} at rank {rank} -> {output}", output)
     return output
+
+
+def run_finetune(base, tuned, out_dir, name, ranks):
+    """A full fine-tune as ordinary LoRAs: its difference from the base it started from, one file per rank from one
+    SVD pass (scripts/extract_finetune.py, the old Checkpoint to LoRA app's job). Never over a file: each name carries
+    the time."""
+    for path, what in ((base, "the base checkpoint"), (tuned, "the trained checkpoint")):
+        if not path or not os.path.isfile(path):
+            raise ValueError(f"Choose {what} (that file isn't there).")
+    if os.path.normcase(os.path.abspath(base)) == os.path.normcase(os.path.abspath(tuned)):
+        raise ValueError("The base and the trained checkpoint are the same file.")
+    ranks = sorted({int(r) for r in ranks if int(r) >= 1})
+    if not ranks:
+        raise ValueError("Tick at least one rank.")
+    os.makedirs(out_dir, exist_ok=True)
+    name = re.sub(r'[\\/:*?"<>|]+', "_", (name or "").strip()) or "extracted"
+    cmd = [sys.executable, "-m", "fizgig.scripts.extract_finetune", "--base", base, "--tuned", tuned, "--out-dir", out_dir,
+           "--name", name, "--ranks", ",".join(map(str, ranks))]
+    _start("extract", cmd, f"Extracting {os.path.basename(tuned)} against {os.path.basename(base)} at rank "
+                           f"{', '.join(map(str, ranks))} -> {out_dir}")
 
 
 # ---- Profiler ---------------------------------------------------------------------------------------------------

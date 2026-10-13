@@ -1153,10 +1153,34 @@
         <section id="tab-extract" class="tab-panel">
           <div class="tab-banner">
             <h1>Extract</h1>
-            <p>Distill an existing LoRA down to a lower rank: exact weight SVD, straight from the file - no model loaded.
-              A model with block groups can keep just one (identity, style+composition, details) or a hand-picked set.</p>
+            <p>Make a LoRA from a LoRA or from a full fine-tune: exact weight SVD, straight from the files - no model loaded.</p>
           </div>
-          <div class="section-card">
+          <div class="ry-tabs" id="exModes">
+            <button class="ry-tab" data-exmode="lora" title="A LoRA reduced to a lower rank, or to some of its blocks">From a LoRA</button>
+            <button class="ry-tab" data-exmode="ft" title="A full fine-tune as ordinary LoRAs: its difference from the base it started from">From a fine-tune</button>
+          </div>
+          <div class="section-card" data-exmode="ft">
+            <div class="card-title">Fine-tune to LoRA</div>
+            <div class="card-desc">Turn a full fine-tuned checkpoint into ordinary LoRAs you can share and stack, by extracting its
+              difference from the base it started from. Both files must be the same model. The base is whatever the fine-tune
+              started from: if you continued a run, it's the checkpoint you continued from.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Base checkpoint:</span>
+                <input type="text" id="exFtBase" class="w-path" placeholder="the model the fine-tune started from"><span id="exFtBaseBtns"></span></div>
+              <div class="field-row"><span class="field-label">Trained checkpoint:</span>
+                <input type="text" id="exFtTuned" class="w-path" placeholder="the fine-tune's checkpoint"><span id="exFtTunedBtns"></span></div>
+              <div class="field-row"><span class="field-label">Ranks:</span><span id="exFtRanks" class="st-inline"></span></div>
+              <div class="field-hint ex-ft-hint">One LoRA per ticked rank, all from a single SVD pass - four ranks cost about what one
+                does. Higher ranks stay closer to the fine-tune and make bigger files; on a three-subject Krea 2 run, 64 was
+                indistinguishable from the fine-tune.</div>
+              <div class="field-row"><span class="field-label">Name:</span>
+                <input type="text" id="exFtName" class="w-path" value="extracted">
+                <span class="field-hint">saved as &lt;name&gt;_&lt;time&gt;_r&lt;rank&gt;.safetensors</span></div>
+              <div class="field-row"><span class="field-label">Output folder:</span>
+                <input type="text" id="exFtOut" class="w-path"><button class="btn" id="exFtOutPick">Choose…</button></div>
+            </div>
+          </div>
+          <div class="section-card" data-exmode="lora">
             <div class="card-title">Source &amp; Output</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="exFamily" class="w-combo"></select>
@@ -1169,7 +1193,7 @@
                 <input type="text" id="exOutDir" class="w-path"><button class="btn" id="exOutPick">Choose…</button></div>
             </div>
           </div>
-          <div class="section-card" id="exPresetCard">
+          <div class="section-card" id="exPresetCard" data-exmode="lora">
             <div class="card-title">Preset</div>
             <div class="card-desc">Which blocks to keep. Custom picks them one by one.</div>
             <div class="card-content">
@@ -1177,7 +1201,7 @@
               <div id="exCustom" style="display:none"></div>
             </div>
           </div>
-          <div class="section-card">
+          <div class="section-card" data-exmode="lora">
             <div class="card-title">Options</div>
             <div class="card-desc">Target rank: the rank the extracted LoRA keeps (its strongest directions).</div>
             <div class="card-content">

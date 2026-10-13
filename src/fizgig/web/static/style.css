@@ -1848,3 +1848,10 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-song-btns .btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .st-song-time { margin-left: auto; font-size: 9pt; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .st-song-bar { display: block; width: 100%; height: 72px; background: var(--bg-deep); cursor: pointer; touch-action: none; }
+
+/* Extract: From a LoRA / From a fine-tune */
+#tab-extract .ry-tabs { margin: 0 0 12px; }
+#tab-extract .section-card[data-exmode].ex-off { display: none !important; }
+#tab-extract .ex-ft-hint { margin: -2px 0 8px; }
+#exFtRanks { display: inline-flex; flex-wrap: wrap; gap: 6px 18px; }
+#exFtRanks .checkbox-label { margin: 0; }
