@@ -351,12 +351,18 @@ async function refreshState() {
     row.style.display = hidden.has(k) ? "none" : "";
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
     const n = $("note_" + k);
-    if (n) n.textContent = S.state.notes[k] || "";
+    if (n) {
+      n.textContent = S.state.notes[k] || "";
+      const act = (S.state.actions || {})[k];      // a hint's one-click change (the desktop's: Use 1e-4)
+      if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
+        Object.assign(S.values, act.values); syncInputs(Object.keys(act.values)); refreshStateSoon(); saveStateSoon(); }}));
+    }
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";
   });
   turboFollow();
+  if (S.state.pending) setTimeout(refreshStateSoon, 2500);   // a note still being worked out (the fine-tune plan)
 }
 
 // Steps and CFG follow the Turbo LoRA, as the desktop's Samples tab: its own (Qwen: 8 steps, CFG 1) while it renders -
@@ -396,8 +402,12 @@ async function renderPresets() {
   if (list.user.length) sel.append(el("optgroup", {label: "Your presets"}, ...list.user.map((n) => el("option", {value: n, text: n}))));
   const names = [...list.builtin, ...list.user];
   sel.value = names.includes(S.values.__preset) ? S.values.__preset : "";
+  // the note a model gives one of its presets (MiniMax H3's rank 16: for larger datasets), beside the box
+  const note = () => { $("presetNote").textContent = (Object.fromEntries(S.fam.preset_notes || []))[sel.value] || ""; };
+  note();
   sel.onchange = async () => {
     const name = sel.value;
+    note();
     if (!name) return;
     S.values = (await api("/api/preset", {family: S.family, name, values: S.values})).values;
     S.values.__preset = name;

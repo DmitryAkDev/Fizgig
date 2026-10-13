@@ -2437,10 +2437,17 @@ class Handler(BaseHTTPRequestHandler):
                 spf = pref_path(prefs, sp.pref_key) if sp is not None and sp.pref_key else ""
                 ck = desc.preview_checkpoint()
                 ckf = pref_path(prefs, ck[0].pref_key) if ck else ""
-                return self.json(form.state(desc, b.get("values") or {}, b.get("image_folder") or "",
-                                            captioner=cap if cap and os.path.isfile(cap) else "",
-                                            speed_file=bool(spf and os.path.isfile(spf)),
-                                            checkpoint_file=bool(ckf and os.path.isfile(ckf))))
+                vals = b.get("values") or {}
+                st = form.state(desc, vals, b.get("image_folder") or "",
+                                captioner=cap if cap and os.path.isfile(cap) else "",
+                                speed_file=bool(spf and os.path.isfile(spf)),
+                                checkpoint_file=bool(ckf and os.path.isfile(ckf)))
+                if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
+                    from fizgig.web import ft_plan
+                    st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(
+                        desc, vals, pref_path(prefs, desc.pref_for("dit")),
+                        gpu_env(dict(os.environ, PYTHONPATH=os.path.join(BASE_DIR, "src")), prefs))
+                return self.json(st)
             if path == "/api/captions/write_all":     # Edit / Slider pairs: one line as every photo's caption
                 return self.json(write_all_captions(str(b.get("text") or "").strip(), str(b.get("folder") or ""),
                                                     str(b.get("ext") or ".txt").strip() or ".txt",

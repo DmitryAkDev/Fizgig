@@ -503,7 +503,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
     checkpoint (Klein's Distilled) is."""
-    hidden, disabled, notes, force = set(), set(), {}, {}
+    hidden, disabled, notes, force, actions = set(), set(), {}, {}, {}
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
     if speed_file and desc.samples_turbo_pace:     # H3 with its Turbo on renders at the Turbo row's steps
@@ -554,6 +554,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     lr_note = _lr_hint(desc, values, kind, image_folder)
     if lr_note:
         notes[lr_note[0]] = lr_note[1]
+        actions[lr_note[0]] = ({"label": "Use 1e-4 / 2e-4", "values": {"ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "2e-4"}}
+                               if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
     srcs = slider_sources(desc)
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
@@ -575,7 +577,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
         disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
-            "media": sorted(media), "turbo_file": bool(speed_file), "force": force}
+            "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions}
 
 
 _lr_counts = {}                     # folder -> (modified time, pictures)
