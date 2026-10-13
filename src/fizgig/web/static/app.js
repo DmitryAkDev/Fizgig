@@ -3432,7 +3432,8 @@ function songDur(side) {
   return pk ? pk.dur : 0;
 }
 function songPlaying() { const p = S.song.side && songPlayer(S.song.side); return !!(p && !p.paused); }
-function songNow() { const p = S.song.side && songPlayer(S.song.side); return p && p.getAttribute("src") ? p.currentTime : S.song.pos; }
+// where the song is: the player's own place, or - while a new render loads into it - the moment it left
+function songNow() { const p = S.song.side && songPlayer(S.song.side); return p && p.getAttribute("src") && p.readyState >= 1 ? p.currentTime : S.song.pos; }
 function songSpan() {
   // where Loop repeats: the section when one is set, else the whole song
   const d = songDur(), r = S.st.region;
@@ -3447,6 +3448,7 @@ function songLoad(side, url, gen, actUrl) {
   if (actUrl) fetch(actUrl, {headers: {"X-Fizgig-Token": TOKEN}}).then((r) => r.json())
     .then((a) => { if (S.song.src[side] === url) { S.song.act[side] = a; songDraw(); } }).catch(() => {});
   const p = songPlayer(side), heard = S.song.side === side, was = heard && songPlaying(), at = songNow();
+  if (heard) S.song.pos = at;                       // the playhead holds its place while the new version loads
   fetch(url.replace("/api/studio/image?", "/api/studio/peaks?"), {headers: {"X-Fizgig-Token": TOKEN}})
     .then((r) => r.json()).then((pk) => { if (S.song.src[side] === url) { S.song.peaks[side] = pk; songDraw(); } }).catch(() => {});
   p.src = url;
@@ -3454,7 +3456,9 @@ function songLoad(side, url, gen, actUrl) {
     const restart = side === "tweaked" && $("stSongRestart").checked;
     p.addEventListener("loadedmetadata", () => {
       p.currentTime = restart ? songSpan()[0] : Math.min(at, Math.max(0, p.duration - 0.05));
-      if (was || restart) p.play().catch(() => {});
+      // a new src paused the player, which ended the playhead's loop: start it again with the song
+      if (was || restart) p.play().then(() => { songMark(); songTick(); }).catch(() => {});
+      else songDraw();
     }, {once: true});
   }
   songMark();
