@@ -44,8 +44,8 @@ def user_file(name):
 
 
 def _park(src):
-    """Both places hold it: the old one is kept, out of the way, rather than lost."""
-    dest = os.path.join(USER_DATA, "from_fizgig_7", os.path.basename(src))
+    """Both places hold it: the old one is kept, out of the way and where it was (its folders too), not lost."""
+    dest = os.path.join(USER_DATA, "from_fizgig_7", os.path.relpath(src, BASE_DIR))
     if os.path.exists(dest):
         return
     os.makedirs(os.path.dirname(dest), exist_ok=True)
