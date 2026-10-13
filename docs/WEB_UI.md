@@ -4,7 +4,7 @@ Fizgig runs as a web page as well as a desktop app: on a pod, on a machine with 
 
 ## On a RunPod pod
 
-The pod starts the web UI by itself. In the pod's **Connect** menu, open **HTTP port 8081** and log in with the pod's password: the `VNC_PASSWORD` you set in the template, or, if you didn't set one, the password printed in the pod's logs ("generated one for this pod"). It is the same password as the remote desktop on port 6080; the web UI needs no user name.
+The pod starts Fizgig by itself. In the pod's **Connect** menu, open **HTTP port 8081** and log in with the pod's password: the `FIZGIG_PASSWORD` you set in the template, or, if you didn't set one, the password printed in the pod's logs (generated on its first start and kept after that). There's no user name. On a pod from the Classic template it's the same page and the same `VNC_PASSWORD` as the remote desktop on port 6080. [The pod guide](../docker/README.md) has both.
 
 From there everything works in the browser: download the models (Preferences), upload your training data (Start tab), train, watch the previews and download the results.
 
@@ -45,7 +45,7 @@ Without a password the web UI only opens on the machine it runs on. With one (8 
 - **By hand:** set `"web_password"` in `prefs.json` (see the example below).
 - **For one launch:** the `FIZGIG_PASSWORD` environment variable, or `--password` (an environment variable keeps it out of the process list).
 
-When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then on a pod its `VNC_PASSWORD`, then the one in Preferences.
+When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then on a pod its `VNC_PASSWORD` (the Classic template's), then the one in Preferences.
 
 **Whoever has the password can use Fizgig and open files on that machine**, so treat it like a remote-desktop password: use one you don't use anywhere else (it is saved in `prefs.json` as plain text). The web UI speaks plain HTTP, which is fine on your home network but not across the internet: to reach it from outside, use a VPN such as Tailscale, or a pod (its proxy adds HTTPS), rather than forwarding the port on your router.
 

@@ -2,8 +2,7 @@
 
 [**⚡ Deploy Fizgig on RunPod →**](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)
 
-The whole app in a browser tab — Training, Repair Studio, LoRA the Explorer, LoRA Royale, Profiler,
-Extract and the sample gallery. Nothing to install, and your own GPU stays free while it trains.
+Fizgig in your browser: the pod runs the app and you open it as a web page, from your computer or your phone. Training, Studio, LoRA Royale, Profiler, Extract and the sample gallery are all there. Nothing to install, and your own GPU stays free while it trains.
 
 *That link is a referral one — it supports Fizgig's development at no extra cost to you.*
 
@@ -30,7 +29,7 @@ a region with both, don't fight it. Take the Volume Disk and just stop rather th
 filesystem: by RunPod's own documentation they can't set file permission bits, don't support file
 locking or atomic rename, and aren't recommended for workloads that write heavily. Fizgig needs all
 three — git can't even create the checkout there, and training writes a checkpoint every epoch. Mount
-one at `/workspace` and the pod restarts every few seconds with a fresh password in the log each time.
+one at `/workspace` and the pod restarts every few seconds.
 Use a Volume Disk or a regional Network Volume.
 
 Either way, download the models once and every future session reuses them.
@@ -54,75 +53,40 @@ several times more for it.
 
 ## Logging in
 
-**Give it a few minutes first.** RunPod has to download the image before anything can start, and
-it's a big one. Until that finishes the links are dead — the pod looks ready, the ports are listed,
-and both give you nothing. That's normal on a first deploy; the **Logs** tab shows the download
-running.
-
-You're in business when the log reaches:
+**Give it a few minutes first.** RunPod downloads the image before anything starts, and until then the links give you nothing even though the pod looks ready. The **Logs** tab shows the download. You're ready when the log ends with the "Ready" banner:
 
 ```
-[fizgig] Starting KasmVNC display (1600x1400, resizes to your browser window)
-```
-
-| | Port | Username | Password |
-|---|---|---|---|
-| **Fizgig** | 6080 | `fizgig` | your `VNC_PASSWORD` |
-| **File manager** | 8080 | `admin` | the same one* |
-| **Web UI** | 8081 | none | your `VNC_PASSWORD` |
-
-\* One wrinkle: the file manager requires 12+ characters, so a shorter password gets zeros added
-to the end **for port 8080 only** (`mypass` becomes `mypass000000`). Pick a password of 12+
-characters and both logins are literally identical — no wrinkle.
-
-**Set your own password when you deploy.** On the deploy screen expand **Edit Template →
-Environment Variables**, add `VNC_PASSWORD`, and pick something 12+ characters. Then you already
-know it, and you never have to go looking.
-
-**Didn't set one?** Fizgig generates one per pod (already 12 characters, so it works everywhere
-as-is) and prints it at the **end of the log**, in the "Ready" banner:
-
-```
-[fizgig]  Your browser will ask for a username and password:
-[fizgig]      username: fizgig
+[fizgig]  Ready. Open the pod's HTTP port 8081 for Fizgig.
 [fizgig]      password: ...
 ```
 
-If the log looks like it stops short of that, switch to another tab and back — RunPod's log view
-sometimes needs a nudge before it shows the newest lines.
+In the pod's **Connect** menu, open **HTTP port 8081** and log in with that password. There's no user name.
+
+| | Port | Username | Password |
+|---|---|---|---|
+| **Fizgig** | 8081 | none | the pod's password |
+| **File manager** | 8080 | `admin` | the same one* |
+
+\* The file manager needs 12+ characters, so a shorter password gets zeros added to the end **for port 8080 only** (`mypass` becomes `mypass000000`). Pick 12+ characters and both logins are identical.
+
+**Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
 
 ### How the pod is secured
 
-Worth knowing, and worth writing down so it doesn't get "fixed" into something worse later.
+**Fizgig always needs a password on a pod.** There is no open mode: without `FIZGIG_PASSWORD` one is generated and printed in the log. An open Fizgig on a public URL is a shell on someone else's GPU. Wrong guesses are slowed down per visitor.
 
-**The desktop always needs a password.** There is no unauthenticated mode — if you don't set
-`VNC_PASSWORD`, one is generated for that pod and printed in the log. An open VNC on a public URL
-is a shell on someone else's GPU, so this one isn't optional.
+**SSH is off unless you ask for it.** Nothing listens on port 22 until `PUBLIC_KEY` is set, and then only your own key gets in. RunPod's "SSH Terminal Access" toggle sets it for you.
 
-**SSH is off unless you ask for it.** Port 22 is listed on the image as documentation, but nothing
-listens on it until `PUBLIC_KEY` is set, and then only your own key gets in. RunPod's "SSH Terminal
-Access" toggle sets that variable for you; on any other host you set it yourself.
-
-**Everything in the pod runs as root, deliberately.** A rented GPU has exactly one tenant — you —
-and logging in gives you a full desktop on it by design. Running the container as an unprivileged
-user would not change what you can do, would not help anyone who already had the password, and
-would break `/workspace` permissions on pods that already exist. The protection that matters here
-is the password on the door, not the user behind it.
+**Everything in the pod runs as root, deliberately.** A rented GPU has one tenant, you, and the password is what protects it. An unprivileged user would not change what a logged-in visitor can do and would break `/workspace` permissions on existing pods.
 
 ## First run
 
-**Browser only (no remote desktop):** open **port 8081**, log in, then Preferences → **⬇ Download models for me**, Start tab → **Upload a training folder**, and Training → **Start**. More in [the web UI guide](../docs/WEB_UI.md).
+1. Open **port 8081** and log in.
+2. **Preferences → ⬇ Download models for me.** Krea 2 is ~45 GB and needs no Hugging Face account; gated models (Klein) ask for a free token.
+3. **Start tab → Upload a training folder**, or drag a folder into `/workspace/datasets` on **port 8080**.
+4. **Training → Start.**
 
-**Or in the remote desktop:**
-
-1. Connect on **port 6080** and log in
-2. **Preferences → ⬇ Download models for me** — Krea 2 is ~45 GB and needs no HuggingFace account;
-   Klein is gated by Black Forest Labs and will ask for a free token
-3. Open **port 8080** and drag a dataset folder into `/workspace/datasets`
-4. **Start tab → Browse** → pick it, then **Training → Start**
-
-Closing the browser tab does **not** stop training. Fizgig runs on the pod — shut the tab, come back
-later, the run is still going.
+Closing the browser tab does **not** stop training. Fizgig runs on the pod, so close the tab, come back later (from your phone if you like) and the run is still going. Finished LoRAs download from the Training tab and the gallery. More in [the web UI guide](../docs/WEB_UI.md).
 
 ## Getting files in and out
 
@@ -160,7 +124,7 @@ Environment variables, set on the deploy screen under **Edit Template**:
 
 | Variable | Values | |
 |---|---|---|
-| `VNC_PASSWORD` | 12+ characters | Desktop *and* file manager. Generated per pod if unset. |
+| `FIZGIG_PASSWORD` | 12+ characters | Fizgig *and* the file manager. Generated on the first start if unset, then kept. (`VNC_PASSWORD`, the classic template's name, works too.) |
 | `HF_TOKEN` | `hf_…` | Only needed for Klein, which is gated. Krea 2 needs nothing. |
 | `FETCH_MODELS` | `krea2`, `klein`, `minimax`, `tools` — comma-separated | Download at boot instead of clicking the button in Preferences. `minimax` includes the Circlestone and both Ostris training adapters. `tools` is the Florence-2 captioner, the EN→ZH translator for bilingual captions, and the face model the Look Filter uses. |
 | `FIZGIG_REF` | branch or tag | Which Fizgig to run. Defaults to `master`, so the app updates itself at every pod start. |
@@ -168,22 +132,30 @@ Environment variables, set on the deploy screen under **Edit Template**:
 Nothing is compulsory — the defaults are the intended setup, and everything here can be done from
 inside the app instead.
 
-Three more exist for unusual cases: `FETCH_MODELS_EXTRA` passes extra flags to the downloader,
-`FIZGIG_REPO` points the pod at a fork, and `SCREEN_W`/`SCREEN_H` set the desktop's *starting* size
-(1600×1400) — which rarely matters, since it then resizes to your browser window.
+Two more exist for unusual cases: `FETCH_MODELS_EXTRA` passes extra flags to the downloader, and `FIZGIG_REPO` points the pod at a fork.
+
+## The classic template (remote desktop)
+
+For a while there are two templates. The one above is the new Fizgig in a browser tab. **[Fizgig Classic](CLASSIC_TEMPLATE_LINK)** is the previous pod: the classic desktop app in a remote desktop on port 6080, for anyone partway through a big job who wants to finish it on what they know.
+
+- **Logging in:** port **6080**, user `fizgig`, and the pod's `VNC_PASSWORD` (generated and printed in the log if you didn't set one; on Classic it changes each time the pod starts). The file manager is on 8080 as above, and the new web page on 8081 with the same password.
+- **First run:** Preferences → **⬇ Download models for me**, drag a dataset into `/workspace/datasets` on port 8080, then Start tab → **Browse** and **Training → Start**.
+- **Settings:** the same as above, with `VNC_PASSWORD` for the password and `SCREEN_W` / `SCREEN_H` for the desktop's starting size (1600×1400; it then resizes to your browser window).
+- **Moving over:** the two use the same `/workspace` layout, so a volume from a Classic pod works on the new one. Models, datasets, LoRAs and run history carry across.
+- **Pods you already have** keep the image they were made with and carry on as Classic pods. Deploy the new template when you want the new one.
 
 ## If something's wrong
 
 The **pod log** is the first place to look — every step is narrated there, including storage and the
-login details.
+password.
 
-- **Both links dead just after deploying** — it's still downloading the image. Wait for
-  `Starting KasmVNC display` in the log.
+- **Both links dead just after deploying** — it's still downloading the image. Wait for the
+  "Ready" banner in the log.
 - **Storage shows ~25 GB** — the volume didn't mount. Check the mount path is `/workspace`.
 - **Downloads fail with "no space left"** — same cause: models are landing on container disk.
 - **Your models vanished** — the pod was *terminated* rather than *stopped*. A Volume Disk goes
   with its pod; stop it instead, or use a Network Volume if you need to terminate.
-- **Restarts every few seconds, a new generated password each time** — `/workspace` is a Global
+- **Restarts every few seconds** — `/workspace` is a Global
   Volume, which git can't clone onto (see Storage above). Switch it for a Volume Disk or a regional
   Network Volume.
 
