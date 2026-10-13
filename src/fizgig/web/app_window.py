@@ -178,6 +178,34 @@ def _stop(proc):
             pass
 
 
+def _unhook_requests():
+    """pywebview's WebView2 window passes every request the page makes through Python on the window's UI thread
+    (for its request_sent / response_received events, which Fizgig doesn't use). A clip streams as many byte-range
+    requests, so playing one froze the window - the pointer included - while it loaded. The hook is taken off as
+    soon as WebView2 is ready."""
+    if os.name != "nt":
+        return
+    try:
+        from webview.platforms import edgechromium as ec
+    except Exception:
+        return
+    ready = ec.EdgeChrome.on_webview_ready
+    if getattr(ready, "_fizgig", False):
+        return
+
+    def on_ready(self, sender, args):
+        ready(self, sender, args)
+        try:
+            core = sender.CoreWebView2
+            core.WebResourceRequested -= self.on_web_resource_request
+            core.WebResourceResponseReceived -= self.on_web_resource_response
+            core.RemoveWebResourceRequestedFilter("*", ec.CoreWebView2WebResourceContext.All)
+        except Exception:
+            pass
+    on_ready._fizgig = True
+    ec.EdgeChrome.on_webview_ready = on_ready
+
+
 def main():
     port = saved_port(_prefs())
     own, key = None, ""
@@ -197,6 +225,7 @@ def main():
     home = f"http://127.0.0.1:{port}/"
     try:
         import webview
+        _unhook_requests()
 
         class Api:
             """What a page in the window - a pod's page included - can ask of it: to come back to this computer, and
