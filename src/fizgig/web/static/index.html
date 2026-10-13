@@ -1473,7 +1473,11 @@
         <div class="field-hint" id="pickerNewMsg"></div>
         <div id="pickerList" class="picker-list"></div>
       </div>
-      <div class="modal-footer"><button class="btn btn-primary" id="pickerChoose">Use this folder</button></div>
+      <div class="modal-footer"><span class="field-hint upload-status" id="pickerUpMsg"></span>
+        <label class="btn" id="pickerUpload" style="display:none"
+          title="A LoRA (or picture, clip or song) from the device you're using now, sent up to the machine running Fizgig and picked">
+          Upload from this device…<input type="file" id="pickerUpFile" hidden accept=".safetensors,image/*,.mp4,audio/*,.m4a"></label>
+        <button class="btn btn-primary" id="pickerChoose">Use this folder</button></div>
     </div>
   </div>
 

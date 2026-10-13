@@ -5379,6 +5379,9 @@ async function pick(start, dirOnly, done) {
   $("pickerNew").style.display = dirOnly ? "" : "none";           // a folder can be made where one is chosen
   $("pickerNewRow").style.display = "none";
   $("pickerNewMsg").textContent = "";
+  // a file not on the machine running Fizgig (a pod, another computer's server): upload it from here instead
+  $("pickerUpload").style.display = !dirOnly && pageIsElsewhere() ? "" : "none";
+  $("pickerUpMsg").textContent = "";
   $("pickerModal").classList.add("active");
   await browse(start || "");
 }
@@ -5945,6 +5948,22 @@ function wire() {
   document.querySelector('[data-pick="imageFolder"]').addEventListener("click", () =>
     pick(folder.value, true, (p) => { folder.value = p; setFolder(); }));
   $("pickerChoose").addEventListener("click", () => { $("pickerModal").classList.remove("active"); pickDone($("pickerPath").value); });
+  // Upload from this device…: into Fizgig's uploads folder there (as a form box's Upload… does), then picked
+  $("pickerUpFile").addEventListener("change", async () => {
+    const f = $("pickerUpFile").files[0], say = (t, bad) => { $("pickerUpMsg").textContent = t; $("pickerUpMsg").classList.toggle("bad", !!bad); };
+    $("pickerUpFile").value = "";
+    if (!f) return;
+    const mb = (n) => (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0);
+    $("pickerUpload").classList.add("disabled");
+    try {
+      const res = await uploadResumable({single: 1, folder: "", name: tidyName(f.name)}, f,
+        (sent, note) => say(`Uploading ${f.name}: ${mb(sent)} of ${mb(f.size)} MB` + (note ? ` (${note})` : "")));
+      if (!res.ok) return say(res.data.error || "Upload failed.", true);
+      $("pickerModal").classList.remove("active");
+      pickDone(res.data.path);
+    } catch (e) { say(`${f.name}: ${e.message}`, true); }
+    finally { $("pickerUpload").classList.remove("disabled"); }
+  });
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
   // New folder: made in the folder on show, then opened (Use this folder picks it)
   const newRow = (on) => { $("pickerNewRow").style.display = on ? "" : "none"; if (on) $("pickerNewName").focus(); };

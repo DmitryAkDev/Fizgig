@@ -1168,6 +1168,7 @@ input[type="range"] {
 
 /* a disabled button looks it (Stop with nothing running) */
 .btn:disabled, .btn[disabled] { opacity: 0.4; cursor: default; filter: grayscale(0.6); }
+.btn.disabled { opacity: 0.4; pointer-events: none; }       /* a label-button busy uploading */
 /* links on dark cards (licence pages, Create a token) */
 .section-card a:not(.btn), .modal-window a:not(.btn) { color: var(--queue-blue); }
 .section-card a:not(.btn):hover { color: var(--queue-blue-hover); }
