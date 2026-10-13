@@ -411,13 +411,54 @@ def form(desc):
     return {"sections": sections, "presets": [{"name": n, "values": dict(v)} for n, v in (desc.presets or ())]}
 
 
-def apply_preset(desc, values, preset):
+# what a preset never carries (the desktop's): the Samples tab and the Turbo boxes are the model's own, a resume path
+# is one run's
+NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
+                  "RESUME_TRAINING")
+# boxes a preset can't put an unknown value in (the desktop's _STRICT_COMBO_KEYS): the current choice stays
+STRICT_CHOICES = ("OPTIMIZER_TYPE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "LR_SCHEDULER", "NETWORK_TYPE")
+LEGACY_AREAS = {"All Layers": "Full Model", "Identity Blocks": "Identity",
+                "Style+Composition Blocks": "Style+Composition", "Details Blocks": "Details"}
+
+
+def _not_in_preset(k):
+    return k.startswith("SAMPLE_") or k in NOT_IN_PRESETS
+
+
+def apply_preset(desc, values, preset, whole=False):
     """The form's values with a preset applied, as the desktop's _apply_preset_values does: the family's aliases
-    mapped first, the kind of training from its switches, a model-card option never taken from a preset."""
+    mapped first, the kind of training from its switches, a model-card option never taken from a preset, nor the
+    Samples tab or a resume path (whole: a run's own record, Samples included), a strict box only given a value it
+    offers, and a Model Area's own timesteps unless the preset has some."""
     p = dict(preset)
     for new, old in dict(getattr(desc, "settings_aliases", None) or ()).items():    # {current key: old key}
         if old in p and new not in p:
             p[new] = p.pop(old)
+    if "MINIMAX_MULTICONCEPT" in p and "FAMILY_MULTICONCEPT" not in p:
+        p["FAMILY_MULTICONCEPT"] = p.pop("MINIMAX_MULTICONCEPT")
+    if "MINIMAX_CONCEPT_DIRS" in p:                      # a list (one folder today)
+        dirs = p.pop("MINIMAX_CONCEPT_DIRS") or []
+        dirs = [dirs] if isinstance(dirs, str) else list(dirs)
+        p["FAMILY_CONCEPT_DIR"] = str(dirs[0]).strip() if dirs else ""
+    if not whole:
+        p = {k: v for k, v in p.items() if not _not_in_preset(k)}
+    rows = {r["key"]: r for sec in form(desc)["sections"] for r in sec["rows"] if r}
+    for k in STRICT_CHOICES:
+        if k in p and k in rows and rows[k].get("choices"):
+            opts, v = [str(c) for c in rows[k]["choices"]], str(p[k])
+            v = v if v in opts else next((c for c in opts if c.split(" ")[0] == v.split(" ")[0]), None)
+            if v is None:
+                p.pop(k)                                 # not offered here: the current choice stays
+            else:
+                p[k] = v
+    if "TARGET_LAYERS" in p and desc.train_areas:
+        names = [a[0] for a in desc.train_areas]
+        area = LEGACY_AREAS.get(str(p["TARGET_LAYERS"]), str(p["TARGET_LAYERS"]))
+        p["TARGET_LAYERS"] = area if area in names + ["Custom"] else names[0]
+        ts = rows.get("TARGET_LAYERS", {}).get("timesteps", {}).get(p["TARGET_LAYERS"])
+        if ts:                                           # the area's window, unless the preset has its own
+            p.setdefault("MIN_TIMESTEP", ts[0])
+            p.setdefault("MAX_TIMESTEP", ts[1])
     model_keys = {o.key for o in desc.options if o.tab == "model"}
     out = {**values, **{k: v for k, v in p.items() if k not in model_keys}}
     labels = dict(kinds(desc))
@@ -433,13 +474,17 @@ def apply_preset(desc, values, preset):
 
 def to_preset(desc, values):
     """The form's values as a saved preset, in the desktop's format (presets/<model>/<name>.json): its settings by
-    the same keys, the kind of training as FAMILY_EDIT / FAMILY_SLIDER / FAMILY_FT, and none of the Base Model card's
-    options (a preset never carries those, as on the desktop)."""
+    the same keys, the kind of training as FAMILY_EDIT / FAMILY_SLIDER / FAMILY_FT, Multi Concept's folder as the
+    desktop's list, and none of the Base Model card's options, the Samples tab or a resume path (as on the
+    desktop)."""
     model_keys = {o.key for o in desc.options if o.tab == "model"}
     kind = _kind(desc, values)
     out = {k: v for k, v in values.items() if not k.startswith("__") and k not in model_keys and k != "FAMILY_KIND"
+           and not _not_in_preset(k) and k != "FAMILY_CONCEPT_DIR"
            and not (k == "LORA_OUTPUT_DIR" and not str(v or "").strip())}      # an empty folder = the default
     out.update(FAMILY_EDIT=kind == "edit", FAMILY_SLIDER=kind == "slider", FAMILY_FT=kind == "finetune")
+    if desc.multi_concept:
+        out["MINIMAX_CONCEPT_DIRS"] = [str(values.get("FAMILY_CONCEPT_DIR") or "").strip()]
     return out
 
 
@@ -448,10 +493,12 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
-def state(desc, values, image_folder="", captioner="", speed_file=False):
-    """What the current values hide, grey out or note (see the module docstring). captioner: the shared captioner's
-    file when it is set and on disk (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk."""
-    hidden, disabled, notes = set(), set(), {}
+def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False):
+    """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
+    (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
+    (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
+    checkpoint (Klein's Distilled) is."""
+    hidden, disabled, notes, force = set(), set(), {}, {}
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
     if speed_file and desc.samples_turbo_pace:     # H3 with its Turbo on renders at the Turbo row's steps
@@ -475,6 +522,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
         disabled.add("LEARNING_RATE")
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
+        force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
+        if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off
+            disabled.discard("LEARNING_RATE")
+            hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
         notes["OPTIMIZER_TYPE"] = "automagic3 sets its own learning rate: Adaptive LR, per-image LR and the look " \
                                   "warm-up are off."
     hidden |= {s for s, k in (("edit", "edit"), ("slider", "slider"), ("finetune", "finetune")) if k != kind}
@@ -516,8 +567,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False):
             (disabled if o.always_shown else hidden).add(o.key)
             if o.always_shown and o.unmet_notes:
                 notes[o.key] = o.unmet_notes[1] if len(o.unmet_notes) > 1 else o.unmet_notes[0]
+    if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
+        disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
-            "media": sorted(media), "turbo_file": bool(speed_file)}
+            "media": sorted(media), "turbo_file": bool(speed_file), "force": force}
 
 
 _lr_counts = {}                     # folder -> (modified time, pictures)

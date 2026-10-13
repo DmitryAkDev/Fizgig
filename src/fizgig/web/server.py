@@ -448,9 +448,9 @@ def _studio_post(what, b):
         return {"ok": True}
     if what in ("preset_save", "preset_load"):
         key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(b.get("family") or ""))
-        name = re.sub(r"[^A-Za-z0-9 _-]+", "", str(b.get("name") or "")).strip()
-        if not name or name.startswith("✨"):
-            raise ValueError("Give the preset a name (letters, numbers, spaces, _ and -).")
+        name = str(b.get("name") or "").strip()        # any name a file can have, as the desktop's
+        if not name or name.startswith("✨") or any(c in name for c in '<>:"/\\|?*') or name in (".", ".."):
+            raise ValueError('Give the preset a name (not < > : " / \\ | ? *).')
         path_ = os.path.join(STUDIO_PRESETS, key, name + ".json")
         if what == "preset_load":
             with open(path_, encoding="utf-8") as f:
@@ -2297,9 +2297,12 @@ class Handler(BaseHTTPRequestHandler):
                 cap = pref_path(prefs, "krea2_text_encoder")
                 sp = desc.preview_speed()
                 spf = pref_path(prefs, sp.pref_key) if sp is not None and sp.pref_key else ""
+                ck = desc.preview_checkpoint()
+                ckf = pref_path(prefs, ck[0].pref_key) if ck else ""
                 return self.json(form.state(desc, b.get("values") or {}, b.get("image_folder") or "",
                                             captioner=cap if cap and os.path.isfile(cap) else "",
-                                            speed_file=bool(spf and os.path.isfile(spf))))
+                                            speed_file=bool(spf and os.path.isfile(spf)),
+                                            checkpoint_file=bool(ckf and os.path.isfile(ckf))))
             if path == "/api/preset/save":            # Save preset: the desktop's format and folder
                 desc = _preset_family(b.get("family", ""))
                 name = str(b.get("name") or "").strip()
@@ -2397,7 +2400,8 @@ class Handler(BaseHTTPRequestHandler):
                 vals = rec.get("values") or {}
                 if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
                     mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
-                    vals = {**form.apply_preset(desc, {}, vals), **{k: v for k, v in vals.items() if k in mk}}
+                    vals = {**form.apply_preset(desc, {}, vals, whole=True),
+                            **{k: v for k, v in vals.items() if k in mk}}
                 return self.json({"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""})
             if path == "/api/plan":
                 _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
