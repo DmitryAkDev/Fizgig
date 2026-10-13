@@ -10,7 +10,7 @@ Fizgig in your browser: the pod runs the app and you open it as a web page, from
 
 ## Storage
 
-**Give it 300 GB (the template's default), mounted at `/workspace`.** One model's files are 30-45 GB,
+**Give it 300 GB (the template's default), mounted at `/workspace`.** Each model's files run to tens of GB,
 so a few models, your datasets and their LoRAs fill 200 GB quickly; 100 GB is the least that works for one.
 
 Then the one thing to know: **stopping a pod keeps everything; terminating it does not.** Stop
