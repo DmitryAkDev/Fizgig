@@ -2551,7 +2551,9 @@ function lossGraph(data) {
     hasLr ? ctl("Learning rate", lrOn) : null), svgHost, read);
 
   function draw() {
-    const W = 800, H = 240, L = 54, R = hasLr && set.lr ? 54 : 12, T = 10, B = 26;
+    // drawn at the width it has, so the text stays its own size on a phone
+    const W = Math.max(300, Math.round(svgHost.clientWidth || 800)), H = W < 600 ? 220 : 240;
+    const L = 54, R = hasLr && set.lr ? 54 : 12, T = 10, B = 26;
     const xs = pts.map((p) => p[0]);
     const x0 = xs[0], x1 = xs[xs.length - 1];
     const tf = (v) => (set.log ? Math.log10(Math.max(v, 1e-8)) : v);
@@ -2619,7 +2621,10 @@ function lossGraph(data) {
     svgHost.replaceChildren(svg);
     base();
   }
-  draw();
+  requestAnimationFrame(draw);               // once it is on the page and has a width
+  let lastW = 0;
+  new ResizeObserver(() => { const w = svgHost.clientWidth; if (w && Math.abs(w - lastW) > 8) { lastW = w; draw(); } })
+    .observe(svgHost);
   return box;
 }
 
