@@ -5939,9 +5939,10 @@ function wire() {
     "they show with the others, under the epoch in progress."));
   $("btnSaveNow").addEventListener("click", () => now("save", "The LoRA is saved after the current step, as " +
     "<name>-step<step>.safetensors beside its checkpoints."));
-  $("loginButton").addEventListener("click", login);
   wirePods();
-  $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 }
 
+// the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()
+$("loginButton").addEventListener("click", login);
+$("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
 boot();
