@@ -43,10 +43,11 @@ from fizgig.web.schema import get_schema
 logger = logging.getLogger("fizgig.web")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
+from fizgig import user_data  # noqa: E402
+PREFS_FILE = user_data.PREFS_FILE
 STATE_FILE = user_file("web_state.json")      # the web UI's own memory (git-ignored)
 DATASET_DIR = user_file("dataset")          # each run's dataset TOML (written at Start)
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
@@ -178,12 +179,12 @@ def _write_json(path, data):
 
 
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
-PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "profiles", "cache_dir": "cache",
+PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
                  "inference_int8": "1"}
 
 
-LAST_USED_FILE = os.path.join(BASE_DIR, ".last_used.json")    # the desktop's: the training folder, trigger words
+LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
 
 
 def load_last_used() -> dict:
@@ -273,7 +274,7 @@ def pref_path(prefs, key) -> str:
     return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(BASE_DIR, v))
 
 
-PRESETS_DIR = os.path.join(BASE_DIR, "presets")
+PRESETS_DIR = user_data.PRESETS_DIR
 
 
 class _RefModPresets:
@@ -353,7 +354,7 @@ def save_state(changes: dict):
 
 
 # ---- runs -------------------------------------------------------------------------------------------------------
-STUDIO_PRESETS = os.path.join(BASE_DIR, "presets", "repair_studio")
+STUDIO_PRESETS = os.path.join(user_data.PRESETS_DIR, "repair_studio")
 
 
 def _studio_desc(key):
@@ -757,7 +758,7 @@ def output_folders() -> list:
     for vals in (load_state().get("values") or {}).values():
         if isinstance(vals, dict) and vals.get("LORA_OUTPUT_DIR"):
             found.append(vals["LORA_OUTPUT_DIR"])
-    desk = _read_json(os.path.join(BASE_DIR, ".last_used.json")).get("lora_output_dirs")
+    desk = _read_json(LAST_USED_FILE).get("lora_output_dirs")      # the old desktop app's per-model folders
     if isinstance(desk, dict):
         found += [v for v in desk.values() if isinstance(v, str) and v]
     with _lock:
@@ -1940,7 +1941,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/icon.png":
             return self._file(os.path.join(STATIC_DIR, "icon.png"))
         if path == "/logo.jpg":
-            return self._file(os.path.join(BASE_DIR, "assets", "logo.jpg"))
+            return self._file(os.path.join(BASE_DIR, "docs", "assets", "logo.jpg"))
         if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # Add to Home Screen (no login:
             return self._file(os.path.join(STATIC_DIR, path[1:]),                 # a phone fetches it without one)
                               "application/manifest+json" if path.endswith(".webmanifest") else None)
@@ -2008,7 +2009,7 @@ class Handler(BaseHTTPRequestHandler):
             fams = rms.families()
             want = (qs.get("family") or [""])[0]
             desc = next((d for d in fams if d.key == want), fams[0] if fams else None)
-            return self.json(rms.info(desc, _read_json(os.path.join(BASE_DIR, ".last_used.json"))))
+            return self.json(rms.info(desc, _read_json(LAST_USED_FILE)))
         if path == "/api/refmod/scan":
             from fizgig.web import refmod_studio as rms
             return self.json(rms.scan((qs.get("folder") or [""])[0].strip(), (qs.get("lora") or [""])[0].strip()))
@@ -2100,7 +2101,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(tools.status("profile"))
         if path == "/api/profile/report":           # a Profiler report (the profiles folder's HTML)
             p = (qs.get("path") or [""])[0]
-            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "profiles"))
+            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or user_file("profiles"))
             if not p.lower().endswith(".html") or not os.path.isfile(p) or                     os.path.commonpath([root, os.path.abspath(p)]) != root:
                 return self.json({"error": "not a report"}, 404)
             with open(p, "rb") as f:
@@ -3095,7 +3096,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = {"family": desc.key, "lora": str(b.get("lora") or "").strip(), "mode": mode,
                        "prompt": str(b.get("prompt") or ""), "class_prompt": str(b.get("class_prompt") or ""),
                        "baselines": [str(x) for x in (b.get("baselines") or [])][:3], "size": int(b.get("size") or 768),
-                       "profiles_dir": pref_path(prefs, "profiles_dir") or os.path.join(BASE_DIR, "profiles"),
+                       "profiles_dir": pref_path(prefs, "profiles_dir") or user_file("profiles"),
                        "plan": None, "settings": None}
                 if job["baselines"] and len(job["baselines"]) != 3:
                     raise ValueError("Pick exactly 3 photos of the subject (one alone carries its own framing into every score).")
@@ -3284,6 +3285,7 @@ def main(argv=None):
                                                      "FIZGIG_PASSWORD, then on a pod VNC_PASSWORD, then the one in "
                                                      "Preferences)")
     a = ap.parse_args(argv)
+    user_data.migrate()                       # Fizgig 7's loose files into user_data, before anything reads them
     # a pod: its VNC_PASSWORD, the remote desktop's, so one password opens both. Elsewhere VNC_PASSWORD is ignored (a
     # stray one would open the web UI to the network while Preferences says no password).
     saved = str(load_prefs().get("web_password") or "").strip()

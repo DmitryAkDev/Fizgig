@@ -17,14 +17,14 @@ export FIZGIG_GPU_BACKEND=rocm
 
 # BNB_ROCM_VERSION / ROCM_PATH / HIP_PATH - write_rocm_env.py
 # (install / first launch only; re-run write_rocm_env.py after a pull if rocm_env.sh is stale).
-if [[ -f rocm_env.sh ]]; then
-    # shellcheck source=rocm_env.sh
-    source rocm_env.sh
+if [[ -f user_data/rocm_env.sh ]]; then
+    # shellcheck source=user_data/rocm_env.sh
+    source user_data/rocm_env.sh
 elif [[ -x venv/bin/python ]]; then
     venv/bin/python write_rocm_env.py >/dev/null 2>&1 || true
-    if [[ -f rocm_env.sh ]]; then
-        # shellcheck source=rocm_env.sh
-        source rocm_env.sh
+    if [[ -f user_data/rocm_env.sh ]]; then
+        # shellcheck source=user_data/rocm_env.sh
+        source user_data/rocm_env.sh
     fi
 fi
 

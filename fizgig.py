@@ -18,6 +18,9 @@ if (sys.platform != "win32" and not os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
 os.environ.setdefault("KMP_BLOCKTIME", "0")
 os.environ.setdefault("OMP_WAIT_POLICY", "PASSIVE")
 
+from fizgig import user_data  # noqa: E402
+user_data.migrate()                       # Fizgig 7's loose files into user_data (once; nothing to do after)
+
 
 def main():
     if "--web" in sys.argv[1:]:

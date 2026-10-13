@@ -50,7 +50,9 @@ def main():
     if d is None:
         sys.exit(f"no family {a.family!r}")
     prefs = {}
-    pp = os.path.join(REPO, "prefs.json")
+    from fizgig import user_data
+    user_data.migrate()
+    pp = user_data.PREFS_FILE
     if os.path.exists(pp):
         prefs = json.load(open(pp, encoding="utf-8"))
     te = a.text_encoder or prefs.get(d.pref_for("text_encoder") or "", "")

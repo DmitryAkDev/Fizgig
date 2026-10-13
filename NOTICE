@@ -7,7 +7,7 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
-This product includes third-party software. See THIRD_PARTY_NOTICES.md for the
+This product includes third-party software. See docs/THIRD_PARTY_NOTICES.md for the
 full list of components and their licenses:
   - musubi-tuner (kohya-ss/musubi-tuner) — Apache-2.0
   - ai-toolkit (Ostris, LLC) — MIT

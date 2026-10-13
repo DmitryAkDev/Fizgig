@@ -1,6 +1,6 @@
 @echo off
 REM Fizgig ROCm Windows installer.
-REM Uses detect_gpu.py (GPL-3.0, from comfyui-rocm - see THIRD_PARTY_NOTICES.md)
+REM Uses detect_gpu.py (GPL-3.0, from comfyui-rocm - see docs/THIRD_PARTY_NOTICES.md)
 REM and ROCm-wheel install patterns adapted from comfyui-rocm install.bat:
 REM   https://github.com/patientx/comfyui-rocm
 setlocal enabledelayedexpansion
@@ -134,7 +134,8 @@ if not exist "src\install\detect_gpu.py" (
     exit /b 1
 )
 
-for /f "delims=" %%A in ('python src\install\detect_gpu.py 2^>"%~dp0gpu_detect_debug.log"') do (
+if not exist "%~dp0user_data" mkdir "%~dp0user_data"
+for /f "delims=" %%A in ('python src\install\detect_gpu.py 2^>"%~dp0user_data\gpu_detect_debug.log"') do (
     if not "%%A"=="" set "arch=%%A"
 )
 

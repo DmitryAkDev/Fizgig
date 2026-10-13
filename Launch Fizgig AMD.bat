@@ -14,11 +14,11 @@ set "FIZGIG_GPU_BACKEND=rocm"
 REM BNB_ROCM_VERSION / ROCM_PATH / HIP_PATH - written by
 REM install_fizgig_rocm.bat / write_rocm_env.py (not on every launch; re-run write_rocm_env.py
 REM after a pull if rocm_env.bat is stale).
-if exist "%~dp0rocm_env.bat" (
-    call "%~dp0rocm_env.bat"
+if exist "%~dp0user_data\rocm_env.bat" (
+    call "%~dp0user_data\rocm_env.bat"
 ) else if exist "%~dp0venv\Scripts\python.exe" (
     "%~dp0venv\Scripts\python.exe" "%~dp0write_rocm_env.py" >nul 2>&1
-    if exist "%~dp0rocm_env.bat" call "%~dp0rocm_env.bat"
+    if exist "%~dp0user_data\rocm_env.bat" call "%~dp0user_data\rocm_env.bat"
 )
 REM Pinned installs set BNB_ROCM_VERSION in rocm_env.bat. Floating --experimental leaves it
 REM unset so bitsandbytes picks its highest matching DLL (override: set BNB_ROCM_VERSION).

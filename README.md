@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=yrz0l6URGGk"><img src="assets/logo.jpg" alt="Fizgig LoRA & Fine-tune Studio — watch the full video tutorial" width="600"></a>
+  <a href="https://www.youtube.com/watch?v=yrz0l6URGGk"><img src="docs/assets/logo.jpg" alt="Fizgig LoRA & Fine-tune Studio — watch the full video tutorial" width="600"></a>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/RELEASE_NOTES_v7.3.0.md"><img src="assets/fizgig_meets_music.jpg" alt="Fizgig meets music" width="700"></a>
+  <a href="docs/RELEASE_NOTES_v7.3.0.md"><img src="docs/assets/fizgig_meets_music.jpg" alt="Fizgig meets music" width="700"></a>
 </p>
 
 > ### 📰 Latest news
@@ -59,7 +59,7 @@ A trainer and workbench for image, video and music models, in its own window on 
 Memory plans itself: precision, block swap and previews size to your free VRAM, and if a preview can't fit, training keeps going. Fizgig loads kohya, PEFT, OneTrainer, AI-Toolkit and LyCORIS LoRAs, and saves `.safetensors` that drop straight into ComfyUI. Free and open source.
 
 <!-- SCREENSHOT PLACEHOLDER: The Training tab: a run in progress with its loss graph, previews and checkpoints
-<p align="center"><img src="assets/screenshots/training.png" alt="The Training tab: a run in progress with its loss graph, previews and checkpoints" width="800"></p>
+<p align="center"><img src="docs/assets/screenshots/training.png" alt="The Training tab: a run in progress with its loss graph, previews and checkpoints" width="800"></p>
 -->
 
 ## Supported models
@@ -87,7 +87,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Extract** — shrink any LoRA to a lower rank.
 
 <!-- SCREENSHOT PLACEHOLDER: Repair Studio: the per-block sliders beside the baseline and tweaked previews
-<p align="center"><img src="assets/screenshots/repair_studio.png" alt="Repair Studio: the per-block sliders beside the baseline and tweaked previews" width="800"></p>
+<p align="center"><img src="docs/assets/screenshots/repair_studio.png" alt="Repair Studio: the per-block sliders beside the baseline and tweaked previews" width="800"></p>
 -->
 
 ## Training features
@@ -115,7 +115,7 @@ Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: 
 - **Runs & outputs** keeps every run with its loss graph, notes, previews and checkpoints, and starts any of them again with the same settings.
 
 <!-- SCREENSHOT PLACEHOLDER: The Pods tab, and a pod open in the Fizgig window with its 'Switch to this computer' bar
-<p align="center"><img src="assets/screenshots/pods.png" alt="The Pods tab, and a pod open in the Fizgig window with its 'Switch to this computer' bar" width="800"></p>
+<p align="center"><img src="docs/assets/screenshots/pods.png" alt="The Pods tab, and a pod open in the Fizgig window with its 'Switch to this computer' bar" width="800"></p>
 -->
 
 More: [docs/WEB_UI.md](docs/WEB_UI.md).
@@ -152,7 +152,7 @@ Work down through the numbered tabs:
 5. **Training** — pick a model and a preset, click **Start Training**.
 
 <!-- SCREENSHOT PLACEHOLDER: The Start tab: the model picker and the training folder
-<p align="center"><img src="assets/screenshots/start.png" alt="The Start tab: the model picker and the training folder" width="800"></p>
+<p align="center"><img src="docs/assets/screenshots/start.png" alt="The Start tab: the model picker and the training folder" width="800"></p>
 -->
 
 **Tip: give one sample prompt something your dataset doesn't have,** such as a specific pose, angle or setting that none of your photos show (for example "looking over her shoulder from a low angle" when your photos are all straight-on portraits). Early epochs follow it. When a LoRA starts to overtrain, that is the first thing to fail: the previews drift back to your dataset's framing even though the prompt asks for something else. The last epoch that still follows it is a good one to keep.
@@ -188,7 +188,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 
 ## License
 
-Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to use, modify, and redistribute, including commercially, with attribution and no warranty. Third-party components under compatible permissive licenses (and other terms where noted) are listed in **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)**.
+Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to use, modify, and redistribute, including commercially, with attribution and no warranty. Third-party components under compatible permissive licenses (and other terms where noted) are listed in **[THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)**.
 
 The **Automagic v3 optimizer**, the Krea 2 **MMDiT backbone and flow-matching sampler**, and Ostris's MiniMax H3 **training adapter** all come from **[@ostris](https://github.com/ostris)** — the first two from [AI-Toolkit](https://github.com/ostris/ai-toolkit) under the MIT licence, the adapter downloaded as a model rather than bundled. The default H3 training adapter comes from **[circlestone-labs](https://huggingface.co/circlestone-labs)**, also downloaded as a model. Anima's model code is adapted from kohya-ss's [sd-scripts](https://github.com/kohya-ss/sd-scripts) under the Apache licence, and Z-Image's from Tongyi-MAI's [reference implementation](https://github.com/Tongyi-MAI/Z-Image), also Apache.
 

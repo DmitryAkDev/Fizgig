@@ -73,6 +73,12 @@ except Exception:
     pass
 
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))                 # src: Fizgig's user_data module
+try:
+    from fizgig import user_data
+    user_data.migrate(log=None)                          # Fizgig 7's gizmo_settings.json into user_data
+except Exception:
+    pass
 try:
     runpy.run_path(os.path.join(HERE, "gizmo.py"), run_name="__main__")
 except (SystemExit, KeyboardInterrupt):

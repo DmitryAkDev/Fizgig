@@ -16,7 +16,7 @@ import threading
 from fizgig.minimax import refmod_meta as rm
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-PRESETS_DIR = os.path.join(BASE_DIR, "presets", "refmod_studio")       # the desktop's setups
+PRESETS_DIR = os.path.join(__import__("fizgig.user_data", fromlist=["x"]).PRESETS_DIR, "refmod_studio")
 CURVES_DIR = os.path.join(PRESETS_DIR, "curves")                       # and its curve presets
 
 SWEEPS = ("Retention 0 · 0.15 · 0.4 · 0.7 · 1", "Seeds ×4", "Frame-curve directions ×5", "Step-curve directions ×5",

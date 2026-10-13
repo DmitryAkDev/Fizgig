@@ -117,8 +117,12 @@ python3 "$APP_DIR/uv_install_deps.py" "$APP_DIR/requirements.txt" "$VIRTUAL_ENV"
 # Point the portable output dirs at the volume. Model paths are left alone: fetch_models writes
 # those itself, and overwriting them here would stomp a path the user set by hand.
 python3 - <<'PY'
-import json, os
-p = "/workspace/Fizgig/prefs.json"
+import json, os, sys
+sys.path.insert(0, "/workspace/Fizgig/src")
+from fizgig import user_data
+user_data.migrate()                  # a volume from Fizgig 7: its prefs and state into user_data first
+p = user_data.PREFS_FILE
+os.makedirs(os.path.dirname(p), exist_ok=True)
 prefs = {}
 if os.path.exists(p):
     try:

@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 
-from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 QUEUE_FILE = user_file("web_queue.json")
 WAIT_S = 30                                   # how often a waiting queue looks again

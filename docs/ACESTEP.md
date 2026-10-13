@@ -44,7 +44,7 @@ fzgchip, chiptune, 8-bit, upbeat, robotic vocals | [verse] / Jump jump, coins in
 
 Leave out the lyrics for an instrumental. The Samples tab sets the preview length (60 seconds by default).
 
-![Repair Studio with a song LoRA and a donor](../assets/ace_repair_studio.png)
+![Repair Studio with a song LoRA and a donor](assets/ace_repair_studio.png)
 
 Repair Studio plays songs in place of pictures: a baseline, the tweaked version and the song with no LoRA, side by side, keeping your place when you switch. Its built-in mixes (**✨Demo Slider Adjustment**, **✨Early Epoch Improver**, **✨Make it more full**) are good starting points. Extract reduces a LoRA's rank as it does for every model.
 

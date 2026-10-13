@@ -138,7 +138,7 @@ def rocm_deps():
             fail("Failed to install the bitsandbytes wheel.")
     # Refresh the launcher env. Stay --experimental unless rocm_env.bat pins BNB_ROCM_VERSION.
     experimental = True
-    env_bat = os.path.join(HERE, "rocm_env.bat")
+    env_bat = os.path.join(HERE, "user_data", "rocm_env.bat")
     if os.path.exists(env_bat):
         experimental = "bnb_rocm_version=" not in open(env_bat, encoding="utf-8", errors="replace").read().lower()
     if experimental:

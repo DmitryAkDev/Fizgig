@@ -803,12 +803,13 @@ python -m pip install --upgrade uv
 echo
 echo "Detecting AMD GPU architecture..."
 ARCH=""
+mkdir -p user_data
 if [[ ! -f src/install/detect_gpu_linux.py ]]; then
     echo "ERROR: src/install/detect_gpu_linux.py not found."
     exit 1
 fi
 
-if ! ARCH="$(python src/install/detect_gpu_linux.py 2>gpu_detect_debug.log)"; then
+if ! ARCH="$(python src/install/detect_gpu_linux.py 2>user_data/gpu_detect_debug.log)"; then
     echo "ERROR: GPU detection failed or unsupported AMD GPU."
     cat gpu_detect_debug.log 2>/dev/null || true
     exit 1

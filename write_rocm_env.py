@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-OUT_BAT = SCRIPT_DIR / "rocm_env.bat"
-OUT_SH = SCRIPT_DIR / "rocm_env.sh"
+OUT_BAT = SCRIPT_DIR / "user_data" / "rocm_env.bat"
+OUT_SH = SCRIPT_DIR / "user_data" / "rocm_env.sh"
 DEFAULT_BNB_LINUX = "714"  # libbitsandbytes_rocm714.so - matches stable repo.amd.com torch
 DEFAULT_BNB_WIN = "715"  # Windows 0xDELUXA wheel / pinned multi-arch torch (+rocm7.15)
 
@@ -262,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         if gfx:
             bat_lines.append(f'REM GPU gfx target: {gfx}')
         bat_lines.append("")
+        OUT_BAT.parent.mkdir(exist_ok=True)
         OUT_BAT.write_text("\r\n".join(bat_lines), encoding="utf-8")
         bnb_msg = "BNB_ROCM_VERSION unset" if omit_bnb else f"BNB_ROCM_VERSION={bnb}"
         extra = f"  gfx={gfx}" if gfx else ""
@@ -287,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         if gfx:
             sh_lines.append(f"# GPU gfx target: {gfx}")
         sh_lines.append("")
+        OUT_SH.parent.mkdir(exist_ok=True)
         OUT_SH.write_text("\n".join(sh_lines), encoding="utf-8")
         bnb_msg = "BNB_ROCM_VERSION unset" if omit_bnb else f"BNB_ROCM_VERSION={bnb}"
         extra = f"  gfx={gfx}" if gfx else ""

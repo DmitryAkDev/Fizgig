@@ -23,9 +23,10 @@ import webbrowser
 
 from fizgig.web.port import free_from, is_fizgig, listening, saved_port
 
-from fizgig.web.paths import user_file  # noqa: E402  (the web UI's own files: user_data/)
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
+from fizgig import user_data  # noqa: E402
+PREFS_FILE = user_data.PREFS_FILE
 
 
 def _prefs():
@@ -301,6 +302,7 @@ def _unhook_requests():
 
 
 def main():
+    user_data.migrate()                       # Fizgig 7's loose files into user_data, before the prefs are read
     port = saved_port(_prefs())
     own, key = None, ""
     if not is_fizgig(port):
