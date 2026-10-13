@@ -10,5 +10,5 @@ if not exist "venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
-"venv\Scripts\python.exe" lora_trainer_gui.py --web --open %*
+"venv\Scripts\python.exe" fizgig.py --web --open %*
 pause

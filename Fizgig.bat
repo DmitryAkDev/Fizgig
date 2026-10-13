@@ -1,6 +1,5 @@
 @echo off
-rem Fizgig in its own app window. In your web browser instead: "Fizgig in browser.bat". The old
-rem desktop app: "Fizgig Classic.bat".
+rem Fizgig in its own app window. In your web browser instead: "Fizgig in browser.bat".
 cd /d "%~dp0"
 if not exist "venv\Scripts\python.exe" (
     echo Fizgig's Python environment is missing.
@@ -9,4 +8,4 @@ if not exist "venv\Scripts\python.exe" (
     pause
     exit /b 1
 )
-start "" "venv\Scripts\pythonw.exe" lora_trainer_gui.py --app
+start "" "venv\Scripts\pythonw.exe" fizgig.py

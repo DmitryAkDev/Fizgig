@@ -25,15 +25,15 @@ In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start th
 To run the web UI on its own, double-click **Fizgig in browser.bat** (`./fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
 
 ```
-venv\Scripts\python lora_trainer_gui.py --web      (Windows)
-venv/bin/python lora_trainer_gui.py --web          (Linux)
+venv\Scripts\python fizgig.py --web      (Windows)
+venv/bin/python fizgig.py --web          (Linux)
 ```
 
 That copy keeps running until you close its terminal. It needs no screen and no Tkinter, so it runs on a headless server too (see [On a server](#on-a-server)).
 
 ## As a desktop app window
 
-**Fizgig.bat** on Windows, `fizgig.sh` on Linux (or `python lora_trainer_gui.py --app`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv). The classic app (`Fizgig Classic.bat`) is unchanged; the two share settings, presets, run history and the queue.
+**Fizgig.bat** on Windows, `fizgig.sh` on Linux (or `python fizgig.py`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv).
 
 ## On your phone's home screen
 
@@ -143,7 +143,7 @@ After=network-online.target
 User=fizgig
 WorkingDirectory=/opt/Fizgig
 EnvironmentFile=/opt/Fizgig/fizgig-web.env
-ExecStart=/opt/Fizgig/venv/bin/python lora_trainer_gui.py --web --port 8090
+ExecStart=/opt/Fizgig/venv/bin/python fizgig.py --web --port 8090
 Restart=on-failure
 
 [Install]
@@ -188,7 +188,7 @@ fizgig.example.com {
 }
 ```
 
-with Fizgig started as `lora_trainer_gui.py --web --host 127.0.0.1 --port 8090` and its password in `FIZGIG_PASSWORD`. Behind your own proxy every visitor reaches Fizgig from the proxy's address, so the wrong-password lockout counts them together (on a RunPod pod it tells visitors apart).
+with Fizgig started as `fizgig.py --web --host 127.0.0.1 --port 8090` and its password in `FIZGIG_PASSWORD`. Behind your own proxy every visitor reaches Fizgig from the proxy's address, so the wrong-password lockout counts them together (on a RunPod pod it tells visitors apart).
 
 ## Logging out
 

@@ -21,7 +21,7 @@ _model_lock = threading.Lock()
 
 def faces_available() -> bool:
     try:
-        from face_utils import is_face_detection_available
+        from fizgig.face_utils import is_face_detection_available
         return bool(is_face_detection_available())
     except Exception:
         return False
@@ -31,7 +31,7 @@ def _face_detector():
     global _detector
     with _model_lock:
         if _detector is None:
-            from face_utils import FaceDetector
+            from fizgig.face_utils import FaceDetector
             _detector = FaceDetector()
     return _detector
 
@@ -86,7 +86,7 @@ def test_faces(path, face_label):
     """Test face detection on one photo: the picture with the faces boxed (the chosen one green) as a JPEG data URL,
     and each face found. Writes nothing."""
     from PIL import Image
-    from face_utils import draw_face_boxes
+    from fizgig.face_utils import draw_face_boxes
     if not os.path.isfile(path):
         raise ValueError("That picture isn't there.")
     det = _face_detector()
@@ -118,7 +118,7 @@ def _embed(path):
         with _model_lock:
             if key not in _embed_cache:
                 if _embedder is None:
-                    from face_utils import FaceEmbedder
+                    from fizgig.face_utils import FaceEmbedder
                     _embedder = FaceEmbedder()
                 try:
                     _embed_cache[key] = _embedder.embed(path)
@@ -140,7 +140,7 @@ def embed_face_box(path):
             return None, None
         with _model_lock:
             if _embedder is None:
-                from face_utils import FaceEmbedder
+                from fizgig.face_utils import FaceEmbedder
                 _embedder = FaceEmbedder()
             _embedder._ensure_loaded()
             faces = _embedder._app.get(bgr)

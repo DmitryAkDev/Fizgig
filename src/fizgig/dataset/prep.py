@@ -290,7 +290,7 @@ class Prep:
         self.log(f"\n--- Summary ---\nConverted: {converted} | Skipped: {skipped} | Errors: {errors}\n")
 
     def face_crop_only(self, source, output, area, face_mode, face_padding, replace):
-        from face_utils import crop_to_face
+        from fizgig.face_utils import crop_to_face
         self.log(f"Mode: Face Crop Only ({face_mode}, padding {face_padding}%)\n\n")
         converted = skipped = errors = face_crops = no_face = 0
         for filepath in image_files(source):
@@ -341,7 +341,7 @@ class Prep:
     def auto_prep(self, source, output, area, face_mode, face_padding, replace):
         """Resize the originals AND cut a face close-up from each HIGH-RES original (before it is overwritten or
         moved)."""
-        from face_utils import crop_to_face
+        from fizgig.face_utils import crop_to_face
         self.log("Mode: Auto Prep (Face Crops)\n")
         self.log(f"Face target: {face_mode}, padding: {face_padding}%\n")
         self.log(f"Output: {output}\n\n")

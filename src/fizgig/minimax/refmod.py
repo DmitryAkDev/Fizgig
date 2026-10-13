@@ -235,7 +235,7 @@ def reference_face_centres(refs, image_dirs, face_sizes: Optional[dict] = None) 
         _root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         if _root not in _sys.path:
             _sys.path.insert(0, _root)
-        from face_utils import FaceDetector
+        from fizgig.face_utils import FaceDetector
         from PIL import Image as _Image
         det = FaceDetector()
         _avail = getattr(det, "available", True)

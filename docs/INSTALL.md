@@ -67,7 +67,7 @@ Your model paths, output LoRAs, caches, presets and the venv are left alone. `up
 
 ### Windows (NVIDIA, one-click)
 
-Double-click `install_fizgig.bat`. It creates a venv, installs CUDA 12.8 PyTorch and all dependencies, pre-downloads the InsightFace models, and verifies CUDA is visible to PyTorch. Launch with `Fizgig.bat` (its own window) or `Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`. The classic desktop app is `Fizgig Classic.bat`.
+Double-click `install_fizgig.bat`. It creates a venv, installs CUDA 12.8 PyTorch and all dependencies, pre-downloads the InsightFace models, and verifies CUDA is visible to PyTorch. Launch with `Fizgig.bat` (its own window) or `Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`.
 
 ### Windows (AMD ROCm)
 

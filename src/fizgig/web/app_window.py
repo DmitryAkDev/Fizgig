@@ -1,4 +1,4 @@
-"""Fizgig as a desktop app window around the web UI (`lora_trainer_gui.py --app`), through pywebview: Windows'
+"""Fizgig as a desktop app window around the web UI (`fizgig.py`), through pywebview: Windows'
 WebView2, GTK/WebKit or Qt on Linux, WebKit on macOS - no browser, no address bar.
 
 It uses the web UI already running on the saved port when there is one (the desktop app's, say), else starts its own
@@ -254,7 +254,7 @@ def _start_server(port, key):
                FIZGIG_APP_PARENT=str(os.getpid()))            # the server stops if this window's process goes
     kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
           if os.name == "nt" else {"start_new_session": True})
-    return subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "lora_trainer_gui.py"), "--web", "--port",
+    return subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
                              str(port)], cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, **kw)
 
@@ -314,7 +314,7 @@ def main():
             time.sleep(0.25)
         if not is_fizgig(port):
             _stop(own)
-            sys.exit("Fizgig's web UI did not start. Run `python lora_trainer_gui.py --web` to see why.")
+            sys.exit("Fizgig's web UI did not start. Run `python fizgig.py --web` to see why.")
     url = f"http://127.0.0.1:{port}/" + (f"?app_key={key}" if key else "")
     home = f"http://127.0.0.1:{port}/"
     try:

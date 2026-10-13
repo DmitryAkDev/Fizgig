@@ -34,7 +34,7 @@ def _auto_swap():
 def _embedder():
     """(embed_path, embed_pil) on one face model: the largest face's ArcFace embedding (the desktop's
     _ff_embed_cached / _repair_embed_pil)."""
-    from face_utils import FaceEmbedder
+    from fizgig.face_utils import FaceEmbedder
     fe = FaceEmbedder()
 
     def embed_pil(pil):

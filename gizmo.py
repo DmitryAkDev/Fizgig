@@ -1482,14 +1482,14 @@ class Gizmo:
               padding=[("selected", (18, 8)), ("!selected", (18, 8))])
 
     def open_fizgig(self):
-        """The Fizgig app's window (lora_trainer_gui.py --app: the web UI in its own window, joining one already
+        """The Fizgig app's window (fizgig.py: the web UI in its own window, joining one already
         running). Its own process, so closing Gizmo leaves it open."""
         here = os.path.dirname(os.path.abspath(__file__))
         exe = sys.executable
         if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
             exe = os.path.join(os.path.dirname(exe), "pythonw.exe")   # no console window beside the app
         try:
-            subprocess.Popen([exe, os.path.join(here, "lora_trainer_gui.py"), "--app"], cwd=here,
+            subprocess.Popen([exe, os.path.join(here, "fizgig.py")], cwd=here,
                              creationflags=_NO_WINDOW)
         except OSError as e:
             messagebox.showerror("Gizmo", f"Couldn't open Fizgig: {e}")

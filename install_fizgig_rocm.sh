@@ -932,7 +932,7 @@ echo "============================================================"
 echo "  Installation complete!"
 echo
 echo "  Launch with: ./run_fizgig_rocm.sh"
-echo "  (fizgig.sh / fizgig_classic.sh are the upstream launchers — no ROCm env; do not use for AMD training)"
+echo "  (fizgig.sh / fizgig_browser.sh are the upstream launchers — no ROCm env; do not use for AMD training)"
 echo
 echo "  NOTE: Linux AMD ROCm is highly experimental — crashes and GPU resets are common."
 echo "============================================================"

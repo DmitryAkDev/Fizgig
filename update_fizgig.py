@@ -215,7 +215,7 @@ def main():
         msvc_check()
     print()
     print("Update complete! Launch with run_fizgig_rocm.bat" if rocm else
-          "Update complete! Run Fizgig with Fizgig.bat (or Fizgig in browser.bat; the classic app is Fizgig Classic.bat)")
+          "Update complete! Run Fizgig with Fizgig.bat (its own window) or Fizgig in browser.bat")
 
 
 if __name__ == "__main__":

@@ -258,7 +258,7 @@ child=0
 stopping=0
 trap 'stopping=1; [ "$child" -gt 0 ] && kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
 while true; do
-  python3 lora_trainer_gui.py --web &
+  python3 fizgig.py --web &
   child=$!
   set +e
   wait "$child"

@@ -7,4 +7,4 @@ if [ ! -x venv/bin/python ]; then
     exit 1
 fi
 source venv/bin/activate
-exec python lora_trainer_gui.py --web --open "$@"
+exec python fizgig.py --web --open "$@"

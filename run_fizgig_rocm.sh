@@ -8,7 +8,7 @@ source venv/bin/activate
 
 export MIOPEN_FIND_MODE=2
 export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
-# Allocator: upstream GUI honours FIZGIG_NO_EXPANDABLE=1 (A/B opt-out, lora_trainer_gui.py).
+# Allocator: upstream GUI honours FIZGIG_NO_EXPANDABLE=1 (A/B opt-out, fizgig.py).
 export FIZGIG_NO_EXPANDABLE=1
 export PYTORCH_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
@@ -104,5 +104,5 @@ else
     echo "[AMD-ROCm] BNB_ROCM_VERSION unset (bitsandbytes selects lib)  ROCM_PATH=${ROCM_PATH:-}"
 fi
 
-python lora_trainer_gui.py &
+python fizgig.py &
 disown
