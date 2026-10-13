@@ -66,8 +66,8 @@
             <div class="field-hint">Your LoRA and everything else under /workspace stays on the volume for next time.</div></div>
         </div>
         <div class="section-card warning-card" id="outdatedBanner" style="display:none">
-          <div class="card-content">Fizgig was updated while this web UI kept running: restart the web UI (Preferences &gt;
-            Web UI in the desktop app, or close and reopen the Fizgig window), then reload this page. Until then some
+          <div class="card-content">Fizgig was updated while this web UI kept running: restart the web UI (close and reopen
+            the Fizgig window, or Fizgig in browser), then reload this page. Until then some
             new parts won't work.</div>
         </div>
         <section id="tab-start" class="tab-panel active">
@@ -464,7 +464,6 @@
                 <span class="field-hint" id="runStatus"></span>
               </div>
               <div class="field-hint" id="runNowSay"></div>
-              <div class="field-hint" id="runSource"></div>
               <div id="problems" class="problems"></div>
               <pre class="console-terminal" id="console"></pre>
             </div>
@@ -479,12 +478,6 @@
               <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
                 <button class="btn" id="webQueueHold">Hold</button></div>
             </div>
-          </div>
-          <div class="section-card" id="queueCard" style="display:none">
-            <div class="card-title">Queue (desktop app)</div>
-            <div class="card-desc">Runs waiting in the desktop app's queue, in order. Each starts there when the one
-              before it finishes. Add, reorder or remove them in the desktop app.</div>
-            <div class="card-content"><div id="queueList" class="checkpoint-list"></div></div>
           </div>
           <div class="section-card">
             <div class="card-title">Checkpoints</div>
@@ -1326,7 +1319,7 @@
         <section id="tab-outputs" class="tab-panel">
           <div class="tab-banner">
             <h1>Runs &amp; outputs</h1>
-            <p>Every run you've started here or in the desktop app, newest first: how it went, its previews and
+            <p>Every run you've started, newest first: how it went, its previews and
               checkpoints, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
               output folders. Download sends a file to
               the device you're using now. Very large fine-tunes come off faster another way: on a pod, through the file

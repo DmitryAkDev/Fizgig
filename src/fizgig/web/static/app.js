@@ -263,24 +263,6 @@ function renderRow(r) {
   return wrap;
 }
 
-// preview settings the two apps share per model (fizgig/web/live.py SHARED_SAMPLE_KEYS): a change here goes to the
-// desktop app too - its boxes if it's open, its saved settings if not
-const SHARED_SAMPLE_KEYS = ["SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_EVERY_N_EPOCHS", "FAMILY_TURBO_STRENGTH",
-  "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"];
-S.toDesktop = {};
-const sendDesktopSoon = debounce(() => {
-  for (const [family, values] of Object.entries(S.toDesktop))
-    api("/api/desktop/samples", {family, values}).catch(() => {});
-  S.toDesktop = {};
-}, 800);
-function shareSamples(keys) {
-  const k = keys.filter((x) => SHARED_SAMPLE_KEYS.includes(x));
-  if (!k.length) return;
-  const m = S.toDesktop[S.family] = S.toDesktop[S.family] || {};
-  for (const x of k) m[x] = S.values[x];
-  sendDesktopSoon();
-}
-
 // Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's
 function blockPicker(r, wrap) {
   const sel = () => ({...(S.values[r.key] || {})});
@@ -309,8 +291,6 @@ function blockPicker(r, wrap) {
 
 function onValue(r, val) {
   S.values[r.key] = val;
-  shareSamples([r.key]);
-  if (r.key === "FAMILY_TURBO_STRENGTH") S.turboByUser = true;   // the steps / CFG it moves go to the desktop too
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
@@ -389,8 +369,6 @@ function turboFollow() {
   for (const k of moved) S.values[k] = want[k];
   S.values.__turbo_live = live;
   syncInputs(moved);
-  if (S.turboByUser) shareSamples(moved);
-  S.turboByUser = false;
   saveStateSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);
@@ -867,13 +845,6 @@ async function check() {
 }
 
 async function start(path) {
-  const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
-  if (S.mode === "desktop" && cmd) {              // the desktop app's run: its own buttons do the work
-    S.ackBefore = (S.run.desktop && S.run.desktop.ack && S.run.desktop.ack.at) || 0;   // the PC's clock, not ours
-    try { await api("/api/desktop", {cmd}); $("runStatus").textContent = "Sent to the desktop app…"; }
-    catch (e) { $("runStatus").textContent = e.message; }
-    return setTimeout(pollRun, 1200);
-  }
   try {
     const r = await api(path, path === "/api/start" ? runBody() : {});
     showProblems(r.problems);
@@ -892,69 +863,26 @@ async function pollRun() {
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
-  const d = r.desktop;
-  // the desktop app's run shows here whenever this page has none of its own going
-  const deskBusy = d && (d.running || ["running", "pausing"].includes(d.state));
-  // a run paused there is on show too, but the GPU is free: Start still begins a run here
-  const deskPaused = d && !deskBusy && d.state === "paused";
-  // ...and a run it just finished stays on show (Finished / Failed / Stopped) until either side starts another
-  const deskDone = d && !deskBusy && !deskPaused && d.last_result && d.last_result.at > (r.ended_at || 0);
-  const mode = !live && (deskBusy || deskPaused || deskDone) ? "desktop" : "web";
-  if (mode !== S.mode) switchConsole(mode);
-  if (mode === "desktop") {
-    const res = deskDone ? {finished: "completed", failed: "failed", stopped: "stopped"}[d.last_result.result] : null;
-    const state = res || d.state;
-    const label = RUN_LABELS[state] || state;
-    S.run.output_dir = d.output_dir;          // previews and checkpoints follow the desktop's run
-    const when = deskDone ? " · " + new Date(d.last_result.at * 1000).toLocaleTimeString() : "";
-    $("runStatus").textContent = `${label}: ${(deskDone ? d.last_result.lora : d.lora) || "(unnamed)"}` +
-      (deskDone ? when : d.stage ? " · " + d.stage : "");
-    const ack = d.ack && S.ackBefore !== undefined && d.ack.at > S.ackBefore ? " " + d.ack.note : "";
-    $("runSource").textContent = (deskPaused ?
-      `This is a run paused in the desktop app (${d.family}), not your settings above: ${d.lora} in ` +
-      `${d.output_dir}. Resume carries it on; Start Training begins your run here instead - nothing is ` +
-      "using the GPU while it's paused." : deskDone ?
-      `The last run started in the desktop app (${d.family}) ended. Its previews and checkpoints are below; ` +
-      "Start begins a new run here." :
-      `This run was started in the desktop app (${d.family}). Pause, Stop and Resume here work on it. Start is ` +
-      "off until it finishes, so the two don't share the GPU." +
-      (d.unresponsive ? " The desktop app isn't answering right now (busy for a moment?), so Pause, Stop and " +
-        "Resume wait until it does." : "")) + ack;
-    $("runBadge").textContent = label;
-    $("runBadge").dataset.state = state;
-    $("runCardBadge").textContent = label;
-    $("runCardBadge").dataset.state = state;
-    showProgress(deskDone ? d.last_result.progress : d.progress, state, deskDone ? d.last_result.lora : d.lora,
-      deskDone ? "" : d.stage);
-    $("btnStart").disabled = !(deskDone || deskPaused);
-    $("btnPause").disabled = !(d.running && d.state === "running");
-    $("btnStop").disabled = !d.running;
-    $("btnResume").style.display = !d.running && d.state === "paused" ? "" : "none";
-  } else {
-    const label = RUN_LABELS[r.state] || r.state;
-    $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
-    $("runSource").textContent = d ? "The desktop app is open too. A run started there shows here." : "";
-    $("runBadge").textContent = label;
-    $("runBadge").dataset.state = r.state;
-    $("runCardBadge").textContent = label;
-    $("runCardBadge").dataset.state = r.state;
-    showProgress(r.progress, r.state, r.lora, r.stage);
-    $("btnStart").disabled = live;
-    $("btnPause").disabled = !r.running;
-    // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
-    const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
-    $("btnPause").style.display = runFam.no_pause ? "none" : "";
-    $("btnStop").disabled = !live;
-    $("btnResume").style.display = !live && r.resume ? "" : "none";
-  }
-  renderQueue(r.queue || []);
+  const label = RUN_LABELS[r.state] || r.state;
+  $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
+  $("runBadge").textContent = label;
+  $("runBadge").dataset.state = r.state;
+  $("runCardBadge").textContent = label;
+  $("runCardBadge").dataset.state = r.state;
+  showProgress(r.progress, r.state, r.lora, r.stage);
+  $("btnStart").disabled = live;
+  $("btnPause").disabled = !r.running;
+  // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
+  const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
+  $("btnPause").style.display = runFam.no_pause ? "none" : "";
+  $("btnStop").disabled = !live;
+  $("btnResume").style.display = !live && r.resume ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
-  runLossTick(live || (d && (d.running || d.state === "running")));
+  runLossTick(live);
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
   const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
-  const nowOk = mode === "desktop" ? !!(d && d.running && d.state === "running") :
-    !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
+  const nowOk = !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
   for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
   if (!nowOk) $("runNowSay").textContent = "";
 }
@@ -995,53 +923,10 @@ function renderWebQueue(q) {
       }})))));
 }
 
-function renderQueue(items) {
-  $("queueCard").style.display = items.length ? "" : "none";
-  const host = $("queueList");
-  host.innerHTML = "";
-  items.forEach((q, i) => host.append(el("div", {class: "checkpoint-row"},
-    el("span", {class: "checkpoint-name", text: `${i + 1}. ${q.name}`}),
-    el("span", {class: "field-hint", text: `${q.family} · ${q.folder}${q.queued_at ? " · queued " + q.queued_at : ""}`}))));
-}
-
-// the console shows this page's run (streamed) or the desktop app's (its console copy, polled)
-function switchConsole(mode) {
-  S.mode = mode;
-  $("console").textContent = "";
-  clearTimeout(S.deskLogTimer);
-  if (mode === "desktop") {
-    S.deskOffset = 0;
-    pollDesktopLog();
-  } else if (S.logSrc) {
-    S.logSrc.close();
-    S.logSince = 0;
-    followLog();
-  }
-  loadGallery(); loadCheckpoints();
-}
-
-async function pollDesktopLog() {
-  if (S.mode !== "desktop") return;
-  try {
-    const first = !S.deskOffset;
-    const r = await api("/api/desktop/log?offset=" + (S.deskOffset || 0) + (first ? "&tail=1" : ""));
-    const out = $("console");
-    if (r.offset < (S.deskOffset || 0)) out.textContent = "";        // a new run started the copy again
-    if (r.text) {
-      const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
-      out.textContent = (out.textContent + r.text).slice(-200000);
-      if (atEnd) out.scrollTop = out.scrollHeight;
-    }
-    S.deskOffset = r.offset;
-  } catch (e) { /* the server restarts */ }
-  S.deskLogTimer = setTimeout(pollDesktopLog, 1500);
-}
-
 function followLog() {
   const src = S.logSrc = new EventSource(`/api/log?since=${S.logSince}&t=${encodeURIComponent(TOKEN)}`);
   const out = $("console");
   src.onmessage = (e) => {
-    if (S.mode === "desktop") return;
     S.logSince = Number(e.lastEventId) || S.logSince;
     const line = JSON.parse(e.data);
     if (line === "\u0000clear\n") { out.textContent = ""; return; }   // a new run: its own log from here
@@ -1100,9 +985,8 @@ function showProgress(p, state, name, extraNote) {
   $("runWhen").textContent = (p && p.note) || "";
 }
 
-// the run on show: the one training (here or in the desktop app), else the LoRA name in the form
-const currentRunName = () => (S.mode === "desktop" && S.run.desktop ? S.run.desktop.lora : S.run.lora) ||
-  S.values.LORA_NAME || "";
+// the run on show: the one training, else the LoRA name in the form
+const currentRunName = () => S.run.lora || S.values.LORA_NAME || "";
 
 // what a preview is, from its name (the server reads it): "Epoch 4 · Prompt 1 · strength 0.5"
 function previewLabel(it) {
@@ -1154,9 +1038,8 @@ async function loadGallery() {
   if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
   const sel = $("galleryRun");
   sel.innerHTML = "";
-  // "this run" while it trains (here or in the desktop app); once it has ended it is the last run
-  const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state) ||
-    (R.desktop && (R.desktop.running || ["running", "pausing"].includes(R.desktop.state))));
+  // "this run" while it trains; once it has ended it is the last run
+  const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state));
   for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? (liveNow ? " (this run)" : " (last run)") : "")}));
   sel.value = run;
   $("galleryControls").style.display = g.runs.length ? "" : "none";
@@ -3099,8 +2982,8 @@ async function studioOpen() {
     let r;
     try { r = await api("/api/studio/families"); }
     catch (e) {                                 // a server started before Studio existed: the page is newer than it
-      $("stStatus").textContent = "This web UI was started before Studio was added: restart it (Preferences > Web UI " +
-        "in the desktop app, or close and reopen the Fizgig window), then reload this page.";
+      $("stStatus").textContent = "This web UI was started before Studio was added: restart it (close and reopen " +
+        "the Fizgig window, or Fizgig in browser), then reload this page.";
       return;
     }
     const sel = $("stFamily");

@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
-from fizgig.web import captions, history, live
+from fizgig.web import captions, history
 from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
@@ -149,11 +149,6 @@ def _poll_stats_loop():
                           ram_peak=max(_stats["ram_peak"], ru), **extra)
             mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
                     "lora": _run["lora"], "output_dir": _run["output_dir"]}
-        cs = captions.status()                   # the desktop app won't start a run beside a caption job
-        mine["captioning"] = cs["state"] in ("loading", "running", "translating")
-        live.write(live.LIVE_WEB, mine)          # the desktop app reads this before starting a run
-        if captions.model_loaded() and captions.status()["state"] == "loaded" and live.busy(live.desktop_state()):
-            captions.unload()                    # the desktop app is training: give it the caption model's memory
         time.sleep(1.0)
 
 
@@ -396,10 +391,9 @@ def _studio_samples(desc):
 
 
 def _gpu_training():
-    """A training run (here or in the desktop app) is using the GPU: Repair Studio waits for it."""
+    """A training run is using the GPU: Repair Studio waits for it."""
     with _lock:
-        web = _run["proc"] is not None and _run["proc"].poll() is None
-    return web or live.busy(live.desktop_state())
+        return _run["proc"] is not None and _run["proc"].poll() is None
 
 
 STUDIO_SETUPS = os.path.join(STUDIO_PRESETS, "setups")      # the desktop's Save / Load Setup folder
@@ -768,9 +762,6 @@ def output_folders() -> list:
         found += [v for v in desk.values() if isinstance(v, str) and v]
     with _lock:
         found.append(_run.get("output_dir") or "")
-    d = live.desktop_state()
-    if d and d.get("output_dir"):
-        found.append(d["output_dir"])
     out, seen = [], set()
     for f in found:
         f = pref_path({"x": f}, "x") if f else ""
@@ -966,9 +957,6 @@ def delete_run(run_id, confirm=False) -> dict:
         web_live = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
         if web_live and same(_run["output_dir"], _run["lora"]):
             return {"error": "That run is training now. Stop it first."}
-    d = live.desktop_state()
-    if d and live.busy(d) and same(d.get("output_dir"), d.get("lora")):
-        return {"error": "That run is training in the desktop app now. Stop it there first."}
     found = run_outputs(folder, name) if folder and name else {"checkpoints": [], "states": [], "previews": [],
                                                               "bytes": 0}
     if not confirm:
@@ -1066,14 +1054,8 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
-    if live.busy(live.desktop_state()):
-        return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
-    dk = live.desktop_state() or {}
-    if dk.get("captioning") or dk.get("caption_loaded"):
-        return {"error": "The desktop app's Captions tab has its caption model on the GPU. Press Unload Model there "
-                         "(or Stop, if it is captioning), then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
     desc, inputs, plan = _plan(family_key, values, image_folder, resume, ft_continue)
     if plan.problems:
@@ -1111,14 +1093,11 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
 
 def _queue_starter(item):
     """For webqueue.start_next: (True, "") once the item's run has started; (False, "wait: ...") while the GPU is
-    busy elsewhere (this run, the desktop app, a caption job); (False, why) when it can't start."""
+    busy elsewhere (this run, a caption job); (False, why) when it can't start."""
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return False, "wait: a run is training here"
-    dk = live.desktop_state() or {}
-    if live.busy(dk):
-        return False, "wait: the desktop app is training - the next run starts when it finishes"
-    if dk.get("captioning") or captions.status()["state"] in ("loading", "running", "translating"):
+    if captions.status()["state"] in ("loading", "running", "translating"):
         return False, "wait: captions are being made - the next run starts when they finish"
     try:
         r = _start(item["family"], item["values"], item.get("image_folder") or "")
@@ -1126,7 +1105,7 @@ def _queue_starter(item):
         return False, str(e)
     if r.get("ok"):
         return True, ""
-    if r.get("error") and ("desktop app" in r["error"] or "Captions are" in r["error"]):
+    if r.get("error") and "Captions are" in r["error"]:
         return False, "wait: " + r["error"]
     return False, r.get("error") or "; ".join(r.get("problems") or ["it couldn't start"])
 
@@ -1781,11 +1760,11 @@ def _fetch_watch(proc):
 
 
 def _caption_gpu_check(need_gb):
-    """With a run training (here or in the desktop app), a caption job only starts when the card has room for it
-    beside the run (the desktop app's rule: what the job needs + 3 GB)."""
+    """With a run training, a caption job only starts when the card has room for it beside the run (what the job
+    needs + 3 GB)."""
     with _lock:
         mine = _run["proc"] is not None and _run["proc"].poll() is None
-    if not (mine or live.busy(live.desktop_state())):
+    if not mine:
         return
     g = _chosen_gpu(list_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device"))
     free = (g["total_gb"] - g["used_gb"]) if g else 0.0
@@ -2226,11 +2205,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/runs/loss":                 # a run's loss by step (the loss graph); live=1: the run going now
             from fizgig.training import step_log
             if (qs.get("live") or [""])[0] == "1":
-                d = live.desktop_state()
                 with _lock:
                     folder, name = _run["output_dir"], _run["lora"]
-                if d and live.busy(d):           # the desktop app's run, when that is the one training
-                    folder, name = d.get("output_dir") or "", d.get("lora") or ""
             else:
                 rec = history.get((qs.get("id") or [""])[0]) or {}
                 folder, name = rec.get("output_dir") or "", rec.get("lora") or ""
@@ -2294,18 +2270,10 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
             r["resume"] = r.get("resume") if r["state"] == "paused" else ""
-            d = live.desktop_state()
-            r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
-                                                   "percent", "last_result", "ack", "unresponsive", "progress",
-                                                   "started_at")} if d else None)
-            r["queue"] = live.queue_summary() if d else []
             r["web_queue"] = webqueue.status()
             from fizgig.web import pod_stop
             r["pod_stop"] = pod_stop.status()
             return self.json(r)
-        if path == "/api/desktop/log":
-            text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0), tail=bool(qs.get("tail")))
-            return self.json({"text": text, "offset": nxt})
         if path == "/api/log":
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
         if path == "/api/browse":
@@ -2719,9 +2687,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
                 with _lock:
                     out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
-                d = live.desktop_state()
-                if not out and d and d.get("running"):
-                    out = d.get("output_dir") or ""
                 if not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
                 side = os.path.join(out, ".sample_override.json")
@@ -2742,9 +2707,6 @@ class Handler(BaseHTTPRequestHandler):
                 with _lock:
                     running = _run["proc"] is not None and _run["proc"].poll() is None and _run["stage"] == "Training"
                     out, fam, vals = _run["output_dir"], _run["family"], dict(_run["values"])
-                d = live.desktop_state()
-                if not running and d and d.get("running") and d.get("state") == "running":
-                    out, fam, vals, running = d.get("output_dir") or "", d.get("family") or "", {}, True
                 if not running or not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
                 desc = get_family(fam)
@@ -2778,23 +2740,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logout_all":                 # every device: a new key makes every login stale
                 _SESSION_KEY[0] = secrets.token_urlsafe(32)
                 update_prefs({"web_session_key": _SESSION_KEY[0]})
-                return self.json({"ok": True})
-            if path == "/api/desktop/samples":         # preview settings changed here go to the desktop too
-                if b.get("family") == refmod.KEY:
-                    return self.json({"ok": True})     # a mod has no previews
-                desc = get_family(b.get("family", ""))
-                if desc is None:
-                    return self.json({"error": "unknown family"}, 400)
-                vals = b.get("values") or {}
-                if live.read_fresh(live.LIVE_DESKTOP):
-                    live.send_desktop_samples(desc.key, vals)
-                else:
-                    live.write_samples_to_last_used(desc.key, desc.gui_label, vals)
-                return self.json({"ok": True})
-            if path == "/api/desktop":
-                if not live.read_fresh(live.LIVE_DESKTOP):          # commands need the app itself answering
-                    return self.json({"error": "The desktop app isn't open."}, 400)
-                live.send_desktop(str(b.get("cmd") or ""))
                 return self.json({"ok": True})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
@@ -3321,7 +3266,6 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     finally:
         _stop()
         captions.unload()
-        live.remove(live.LIVE_WEB)
         srv.server_close()
 
 
