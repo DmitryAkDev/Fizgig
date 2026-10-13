@@ -434,7 +434,10 @@ function renderPrefs() {
   S.fetchRows = {};
   for (const f of S.schema.families) {
     if (f.prefs_skip) continue;              // RefMod: MiniMax H3's files, on H3's card
-    const body = el("div", {class: "card-content" + (f.key === S.family ? "" : " collapsed")});
+    // a model's card stays as you left it, open or shut, when the tab redraws (a download finishing); at first only
+    // the model the Training tab is on is open
+    if (!S.prefsOpen) S.prefsOpen = new Set([S.family]);
+    const body = el("div", {class: "card-content" + (S.prefsOpen.has(f.key) ? "" : " collapsed")});
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
     for (const key of f.model_keys) {
       const m = files.get(key) || {label: key, note: "", hint: ""};
@@ -465,7 +468,10 @@ function renderPrefs() {
     const fetchBox = fetchRow(f);
     if (fetchBox) body.append(fetchBox);
     host.append(el("div", {class: "section-card"},
-      el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
+      el("div", {class: "card-title collapsible-header", onclick: () => {
+        body.classList.toggle("collapsed");
+        S.prefsOpen[body.classList.contains("collapsed") ? "delete" : "add"](f.key);
+      }},
         el("span", {text: f.prefs_title || ("Model Paths (" + f.display_name + ")")})), body));
   }
   host.append(el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Reset"})),
@@ -610,6 +616,7 @@ async function watchFetch() {
   try { S.fetch = await api("/api/fetch"); } catch (e) { return; }
   if (was === "running" && S.fetch.state !== "running") {
     S.prefs = (await api("/api/prefs")).models || {};    // the fetcher wrote the new paths
+    if (S.prefsOpen && S.fetch.family) S.prefsOpen.add(S.fetch.family);   // its card open, showing how it ended
     renderPrefs();
     checkModels();
   }
@@ -5644,6 +5651,7 @@ async function uploadFiles(picked, opts = {}) {
   const skipped = [], failed = [], replaced = [], badname = [];
   const allBytes = files.reduce((a, f) => a + f.size, 0);
   const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(2) + " GB" : (n / 2 ** 20).toFixed(n < 10 * 2 ** 20 ? 1 : 0) + " MB";
+  const listTick = setInterval(() => loadDatasets(), 4000);   // the folder list above fills in as the files land
   for (const [i, f] of [...files].entries()) {
     say(`Uploading ${i + 1} of ${files.length}: ${f.name}`);
     try {
@@ -5660,6 +5668,7 @@ async function uploadFiles(picked, opts = {}) {
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
 
+  clearInterval(listTick);
   let msg = saved || already ? `${saved} file${saved === 1 ? "" : "s"} uploaded` +
     (already ? `, ${already} already there (same size, skipped)` : "") + ` in ${folder}.` +
     (opts.done ? " It is filled in above." : " That is now the training folder.") : "Nothing was saved.";
