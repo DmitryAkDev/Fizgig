@@ -1342,12 +1342,12 @@ def _media_size(path):
     return _sizes[key]
 
 
-REMOVED_DIR = "removed_images"
+REMOVED_DIR = "removed"           # the desktop's Remove folder
 
 
 def remove_from_dataset(folder, name, ext):
     """Take a file out of the training set without deleting it: it, its caption (and a song's waveform picture) move
-    into <folder>/removed_images/. Returns the names moved, for Undo."""
+    into <folder>/removed/. Returns the names moved, for Undo."""
     folder = os.path.abspath(folder)
     src = os.path.join(folder, os.path.basename(name))
     if not os.path.isfile(src) or os.path.dirname(src) != folder:
@@ -1373,7 +1373,7 @@ def remove_from_dataset(folder, name, ext):
 
 
 def restore_to_dataset(folder, moved):
-    """Undo a removal: [[original name, name in removed_images]] back where they were (never over a file there)."""
+    """Undo a removal: [[original name, name in removed]] back where they were (never over a file there)."""
     folder = os.path.abspath(folder)
     back = []
     for orig, there in moved or ():
@@ -3003,7 +3003,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not uri:
                     raise ValueError("Could not read that picture.")
                 return self.json({"uri": uri})
-            if path == "/api/captions/remove":       # out of the training set, into removed_images/ (never deleted)
+            if path == "/api/captions/remove":       # out of the training set, into removed/ (never deleted)
                 return self.json({"moved": remove_from_dataset(str(b.get("folder") or ""), str(b.get("name") or ""),
                                                                captions.caption_ext(b.get("ext")))})
             if path == "/api/captions/restore":
@@ -3011,9 +3011,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/captions/save":
                 folder, name, text = b.get("folder", ""), b.get("name", ""), b.get("text", "")
                 stem = os.path.splitext(os.path.basename(name))[0]
-                ext = str(b.get("ext") or ".txt")
-                if not re.fullmatch(r"(\.[A-Za-z0-9_]{1,12})?\.(txt|caption|tags)", ext):
-                    return self.json({"error": "A caption file ends in .txt, .caption or .tags."}, 400)
+                ext = captions.caption_ext(b.get("ext"))     # the Caption Extension, as every caption route reads it
                 if not stem or not os.path.isdir(folder):
                     return self.json({"error": "bad folder or file"}, 400)
                 with open(os.path.join(folder, stem + ext), "w", encoding="utf-8") as f:

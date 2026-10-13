@@ -147,16 +147,16 @@
               images land there, ready for the Captions tab and training.</div>
             <div class="card-content"><div class="field-hint" id="prepFolder"></div></div>
           </div>
-          <div class="section-card">
+          <div class="section-card" id="gizmoAway" style="display:none">
             <div class="card-title">Working from video or audio?</div>
             <div class="card-desc">Gizmo cuts training clips and voice segments: frame rate, frame count, sizing and
-              sound come out on spec, with optional Whisper transcription for voice. It opens in its own window, so
-              it runs in the desktop app only: on the Fizgig computer, open the desktop app's Image Prep tab and
-              press Open Gizmo. Video and voice training are MiniMax H3 only; still images need none of this.</div>
+              sound come out on spec, with optional Whisper transcription for voice. It opens in its own window on the
+              computer running Fizgig, so it isn't offered on this page: use it in Fizgig on your own computer (Image
+              Prep, Open Gizmo), then upload what it makes. Still images need none of this.</div>
           </div>
           <div class="section-card" id="prepAudioOnly" style="display:none">
             <div class="card-desc">🎙 Audio-only training set: this tab prepares images, and voice recordings need none
-              of it. Segments are cut, captioned and sized in Gizmo's audio tab (desktop app); your files here are
+              of it. Segments are cut, captioned and sized in Gizmo's audio tab; your files here are
               already ready to train.</div>
           </div>
           <div id="prepMain">
@@ -357,7 +357,9 @@
                   <option>96</option><option>200</option></select></div>
               <div class="field-row"><button class="btn btn-sm" id="capPrev">‹ Prev</button>
                 <span class="field-hint" id="captionsSummary"></span>
-                <button class="btn btn-sm" id="capNext">Next ›</button></div>
+                <button class="btn btn-sm" id="capNext">Next ›</button>
+                <span class="field-label">Go to page:</span><input type="text" id="capGoto" class="w-num">
+                <button class="btn btn-sm" id="capGo">Go</button></div>
             </div>
           </div>
           <div class="captions-grid" id="captionsGrid"></div>

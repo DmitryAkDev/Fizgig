@@ -4369,7 +4369,7 @@ function renderCaptions() {
     const media = mediaFor(it);
     const card = el("div", {class: "caption-card"});
     const remove = el("button", {class: "btn btn-sm", text: "Remove",
-      title: "Take it out of the training set: it and its caption move into the folder's removed_images subfolder (nothing is deleted).",
+      title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
     const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
     card.append(media, el("div", {class: "caption-card-body"},
@@ -4381,7 +4381,7 @@ function renderCaptions() {
 }
 
 async function capRemove(it, card, status) {
-  // out of the training set (into removed_images/), with an Undo on the spot
+  // out of the training set (into removed/), with an Undo on the spot
   const folder = S.imageFolder;
   try {
     const r = await api("/api/captions/remove", {folder, name: it.name, ext: $("captionExt").value.trim() || ".txt"});
@@ -4392,7 +4392,7 @@ async function capRemove(it, card, status) {
         S.cap.items.push(it); S.cap.items.sort((a, b) => a.name.localeCompare(b.name)); renderCaptions();
       } catch (e) { note.textContent = e.message; }
     }});
-    const note = el("span", {class: "field-hint", text: `${it.name} moved to removed_images.`});
+    const note = el("span", {class: "field-hint", text: `${it.name} moved to removed.`});
     card.replaceChildren(el("div", {class: "caption-card-body caption-removed"}, note, el("div", {class: "field-row"}, undo)));
     $("captionsSummary").textContent = `${S.cap.items.length} files · ${it.name} removed`;
   } catch (e) { status.textContent = e.message; }
@@ -4415,6 +4415,11 @@ async function findReplace(apply) {
 
 function wireCaptions() {
   $("captionsReload").addEventListener("click", loadCaptions);
+  // the box is the Training tab's Caption Extension (one setting, as in the desktop app): a change here is that
+  $("captionExt").addEventListener("change", () => {
+    S.values.DATASET_CAPTION_EXT = $("captionExt").value.trim() || ".txt";
+    syncInputs(["DATASET_CAPTION_EXT"]); saveStateSoon(); loadCaptions();
+  });
   $("capModel").addEventListener("change", () => { fillTasks(); onCapTask(); });
   $("capPerPage").addEventListener("change", () => {
     CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
@@ -4452,6 +4457,13 @@ function wireCaptions() {
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
   $("capNext").addEventListener("click", () => { S.cap.page++; renderCaptions(); });
+  const goto = () => {                          // the desktop's Go to page: a number, kept within the pages there are
+    const n = parseInt($("capGoto").value, 10);
+    if (!Number.isFinite(n)) return;
+    S.cap.page = Math.max(0, n - 1); $("capGoto").value = ""; renderCaptions(); window.scrollTo(0, 0);
+  };
+  $("capGo").addEventListener("click", goto);
+  $("capGoto").addEventListener("keydown", (e) => { if (e.key === "Enter") goto(); });
 }
 
 // ---- RefMod Toolkit (the desktop tab's): mods, how they apply, a render beside the same seed without them ----------
@@ -5460,7 +5472,9 @@ function wire() {
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
   // Gizmo is a window on the Fizgig computer: offered only to a page open there (not a phone, not a pod)
-  $("gizmoCard").style.display = S.uploadRoot && S.uploadRoot.local && !S.onPod ? "" : "none";
+  const gizmoHere = !!(S.uploadRoot && S.uploadRoot.local && !S.onPod);
+  $("gizmoCard").style.display = gizmoHere ? "" : "none";
+  $("gizmoAway").style.display = gizmoHere ? "none" : "";
   $("gizmoOpen").addEventListener("click", async () => {
     try { await api("/api/gizmo/open", {}); $("gizmoNote").textContent = "Gizmo is opening in its own window."; }
     catch (e) { $("gizmoNote").textContent = e.message; }
