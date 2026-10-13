@@ -426,10 +426,13 @@
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
                 <button class="btn" id="btnQueue" title="Checked like Start, then lined up: it starts when the runs before it finish">Add to queue</button>
                 <button class="btn btn-warning" id="btnPause">Pause</button>
+                <button class="btn" id="btnSampleNow" style="display:none" title="Make the previews now, after the current training step, without waiting for the epoch to end">Sample now</button>
+                <button class="btn" id="btnSaveNow" style="display:none" title="Save the LoRA as it is now, after the current training step (as name-stepNNNNNNN.safetensors)">Save now</button>
                 <button class="btn btn-primary" id="btnResume">Resume</button>
                 <button class="btn btn-danger" id="btnStop">Stop</button>
                 <span class="field-hint" id="runStatus"></span>
               </div>
+              <div class="field-hint" id="runNowSay"></div>
               <div class="field-hint" id="runSource"></div>
               <div id="problems" class="problems"></div>
               <pre class="console-terminal" id="console"></pre>

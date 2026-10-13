@@ -1295,6 +1295,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # the web UI's loss graph: each step's loss, numbered across a resume / a fine-tune's continuation
     step_off = ftr.epochs_done * steps_per_epoch if ftr is not None else 0
     steplog = StepLog(output_dir, output_name, start_step=step_off + global_step)
+    for _w in ("sample", "save"):          # a request left from an earlier run is not this one's
+        take_request(output_dir, _w)
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step

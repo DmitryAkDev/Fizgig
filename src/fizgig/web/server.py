@@ -1040,7 +1040,8 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None):
         return {"problems": plan.problems}
     out_dir = inputs["LORA_OUTPUT_DIR"]
     # as the desktop's Start clears them; a resume's pause record is used up once its run launches
-    for stale in (".pause_requested", ".sample_override.json") + ((PAUSED_FILE,) if resume or ft_continue else ()):
+    for stale in (".pause_requested", ".sample_override.json", ".sample_now", ".save_now") + (
+            (PAUSED_FILE,) if resume or ft_continue else ()):
         try:
             os.remove(os.path.join(out_dir, stale))
         except OSError:
@@ -2613,6 +2614,23 @@ class Handler(BaseHTTPRequestHandler):
                                                + last["resume"]}, 400)
                 append_log(f"\n=== Resuming from {last['resume']} ===\n")
                 return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"]))
+            if path == "/api/run/now":               # Sample now / Save now: a request the trainer takes after a step
+                what = str(b.get("what") or "")
+                if what not in ("sample", "save"):
+                    raise ValueError("Unknown request.")
+                with _lock:
+                    running = _run["proc"] is not None and _run["proc"].poll() is None and _run["stage"] == "Training"
+                    out, fam, vals = _run["output_dir"], _run["family"], dict(_run["values"])
+                d = live.desktop_state()
+                if not running and d and d.get("running") and d.get("state") == "running":
+                    out, fam, vals, running = d.get("output_dir") or "", d.get("family") or "", {}, True
+                if not running or not out:
+                    return self.json({"error": "Nothing is training right now."}, 400)
+                desc = get_family(fam)
+                if desc is not None and vals and form._kind(desc, vals) == "finetune":
+                    return self.json({"error": "A fine-tune saves and previews at whole rotations only."}, 400)
+                open(os.path.join(out, f".{what}_now"), "w").close()
+                return self.json({"ok": True})
             if path == "/api/pause":
                 with _lock:
                     out, running = _run["output_dir"], _run["proc"] is not None and _run["proc"].poll() is None

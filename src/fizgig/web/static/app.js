@@ -935,6 +935,13 @@ async function pollRun() {
   renderQueue(r.queue || []);
   renderWebQueue(r.web_queue || {items: []});
   runLossTick(live || (d && (d.running || d.state === "running")));
+  // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
+  const runDesc = S.schema.families.find((f) => f.key === r.family);
+  const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
+  const nowOk = mode === "desktop" ? !!(d && d.running && d.state === "running") :
+    !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
+  for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
+  if (!nowOk) $("runNowSay").textContent = "";
 }
 
 // the web UI's own queue: reorder, remove, start or hold
@@ -5808,6 +5815,12 @@ function wire() {
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", () => start("/api/resume"));
+  const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })
+    .catch((e) => { $("runNowSay").textContent = e.message; });
+  $("btnSampleNow").addEventListener("click", () => now("sample", "Previews are made after the current step - " +
+    "they show with the others, under the epoch in progress."));
+  $("btnSaveNow").addEventListener("click", () => now("save", "The LoRA is saved after the current step, as " +
+    "<name>-step<step>.safetensors beside its checkpoints."));
   $("loginButton").addEventListener("click", login);
   wirePods();
   $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
