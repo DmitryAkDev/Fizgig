@@ -5341,9 +5341,13 @@ async function podsLoad(quiet) {
   podsDraw();
   $("podsNote").textContent = r.error ? r.error : (S.pods.list.length ? "" :
     "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key.");
-  // keep checking while one is on its way up, and open it when it's ready if asked to
+  // keep checking while the tab is open: every 6 s while one is on its way up (and open it when it's ready if asked
+  // to), else every 30 s with an API key saved (a pod started or stopped on RunPod shows up by itself)
   clearTimeout(S.pods.timer);
-  if (S.pods.list.some((p) => p.state === "waiting" || p._starting)) S.pods.timer = setTimeout(() => podsLoad(true), 6000);
+  const starting = S.pods.list.some((p) => p.state === "waiting" || p._starting);
+  if (starting || S.pods.key) S.pods.timer = setTimeout(() => {
+    if ($("tab-pods").classList.contains("active")) podsLoad(true);
+  }, starting ? 6000 : 30000);
   const w = S.pods.waitFor && S.pods.list.find((p) => p.url === S.pods.waitFor);
   if (w && w.state === "ready") { S.pods.waitFor = ""; podOpen(w); }
 }
