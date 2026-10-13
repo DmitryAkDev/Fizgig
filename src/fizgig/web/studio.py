@@ -149,8 +149,12 @@ def _event(ev):
             else:
                 _S.update(donor=ev.get("donor", ""), status="Donor loaded. Enable it per block to mix it in."
                           if ev.get("donor") else "Donor unloaded.")
+        elif kind == "early" and _S.get("rendering"):     # H3's Show early: the tweaked pane's unfinished look
+            _S.update(early=ev.get("png", ""), early_gen=ev.get("gen", 0),
+                      status=f"Tweaked: pass {ev.get('step')} of {ev.get('n')}, unfinished - rendering the rest…")
         elif kind == "rendered":
             _S.update(rendering=False, progress=None, baseline=ev.get("baseline", ""), tweaked=ev.get("tweaked", ""),
+                      early="",
                       baseline_media=ev.get("baseline_media", ""), tweaked_media=ev.get("tweaked_media", ""),
                       baseline_act=ev.get("baseline_act", ""), tweaked_act=ev.get("tweaked_act", ""),
                       shown=ev.get("gen", 0), status="Ready.", error="", nolora_busy=bool(ev.get("nolora_pending")),
@@ -657,6 +661,7 @@ def status():
         d["act"] = {k: bool(_S.get(k + "_act")) for k in ("baseline", "tweaked")}
         d["nolora_gen"], d["nolora_busy"] = _S.get("nolora_gen", 0), bool(_S.get("nolora_busy"))
         d["pending"] = _S["pending"] is not None
+        d["early"] = _S.get("early_gen", 0) if _S.get("early") and _S.get("rendering") else 0
         d["log"] = _S["log"][-12:]                 # the worker's own lines (the engine's log), for when it goes wrong
     return d
 
@@ -664,7 +669,7 @@ def status():
 def image(which, gen):
     with _lock:
         p = _S.get(which) if which in ("baseline", "tweaked", "nolora", "baseline_media", "tweaked_media",
-                                       "nolora_media", "baseline_act", "tweaked_act") else ""
+                                       "nolora_media", "baseline_act", "tweaked_act", "early") else ""
     return p if p and os.path.isfile(p) else ""
 
 

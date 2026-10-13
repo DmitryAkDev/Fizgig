@@ -2916,6 +2916,7 @@ function studioKind(L, sv) {
   $("stH3Sound").checked = V.sound && h3.sound !== false;
   $("stH3Sound").disabled = !V.sound;
   $("stH3NoLora").checked = !!h3.nolora;
+  $("stH3Early").checked = h3.early !== false;
   S.st.kf = h3.kf || {};
   S.st.kfRect = h3.kfRect || {};
   studioSlots();
@@ -3053,7 +3054,8 @@ function studioH3Remember() {
     const d = stSaved();
     d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
       h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, kf: S.st.kf, kfRect: S.st.kfRect};
+      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, early: $("stH3Early").checked, kf: S.st.kf,
+      kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
 }
@@ -3071,7 +3073,7 @@ function studioExtra() {
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
-    nolora: $("stH3NoLora").checked},
+    nolora: $("stH3NoLora").checked, early: $("stH3Early").checked},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
 }
@@ -3706,7 +3708,7 @@ const ST_SETUP_MAP = [
   ["stH3Model", "repair_h3_model_var"], ["stH3Base", "repair_h3_base_var"], ["stH3Len", "repair_h3_frames_var"],
   ["stH3W", "repair_h3_width_var"], ["stH3H", "repair_h3_height_var"], ["stH3Scale", "repair_h3_dial_scale_var"],
   ["stH3Steps", "repair_h3_steps_var"], ["stH3Turbo", "repair_h3_turbo_var"], ["stH3Sound", "repair_h3_sound_var", "check"],
-  ["stH3NoLora", "repair_h3_nolora_var", "check"],
+  ["stH3NoLora", "repair_h3_nolora_var", "check"], ["stH3Early", "repair_h3_early_var", "check"],
   ["stPbOn", "repair_pb_on_var", "check"], ["stPromptB", "repair_prompt_b_var"], ["stPbBlend", "repair_pb_blend_var", "num"],
   ["stPbKeep", "repair_pb_keep_lyrics_var", "check"], ["stSrcOn", "repair_src_on_var", "check"],
   ["stSrcPath", "repair_src_path_var"], ["stSrcMode", "repair_src_mode_var", "srcmode"],
@@ -3904,12 +3906,21 @@ function studioSync(ids) {
 
 function studioActivity() {
   // a block the LoRA doesn't touch is greyed; the donor's rows show only with a donor
+  // (as the desktop: its controls off, and an absent primary block back at on / 1 so no stale edit rides along into a
+  // preset, a setup or the saved file)
+  let reset = false;
   document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
     const id = box.dataset.id;
-    box._rows[0].classList.toggle("absent", S.st.ready && !S.st.primaryBlocks.has(id));
+    const pAbsent = S.st.ready && !S.st.primaryBlocks.has(id), dAbsent = S.st.donor && !S.st.donorBlocks.has(id);
+    box._rows[0].classList.toggle("absent", pAbsent);
     box._rows[1].style.display = S.st.donor ? "" : "none";
-    box._rows[1].classList.toggle("absent", S.st.donor && !S.st.donorBlocks.has(id));
+    box._rows[1].classList.toggle("absent", dAbsent);
+    box._rows[0].querySelectorAll("input,button").forEach((i) => { i.disabled = pAbsent; });
+    box._rows[1].querySelectorAll("input,button").forEach((i) => { i.disabled = dAbsent; });
+    const b = S.st.blocks[id];
+    if (pAbsent && b && (!b.pe || b.ps !== 1)) { b.pe = true; b.ps = 1; reset = true; }
   });
+  if (reset) studioSync();
   document.querySelectorAll(".st-donor-only").forEach((x) => { x.style.display = S.st.donor ? "" : "none"; });
   $("stTargetDonor").disabled = !S.st.donor;
 }
@@ -3956,10 +3967,21 @@ function studioMasters() {
     };
     range.addEventListener("input", () => apply(Number(range.value)));
     range.addEventListener("change", studioCommit);
-    const b = (t, f) => el("button", {class: "btn btn-sm", text: t, onclick: () => { f(); studioCommit(); }});
+    const b = (t, f, title) => el("button", {class: "btn btn-sm", text: t, title: title || "", onclick: () => { f(); studioCommit(); }});
+    const balance = () => {              // the desktop's ⚖: the other side's category at 1 minus this one (0 to 1)
+      const v = Number(range.value), donor = (document.querySelector('input[name="stTarget"]:checked') || {}).value === "donor";
+      if (!(S.st.donorBlocks && S.st.donorBlocks.size) || v < 0 || v > 1) return;
+      for (const [id, c] of Object.entries(L.category_of)) {
+        if (c !== m.cat || S.st.locks.has(id)) continue;
+        if (donor) S.st.blocks[id].ps = Math.round((1 - v) * 100) / 100;
+        else Object.assign(S.st.blocks[id], {ds: Math.round((1 - v) * 100) / 100, de: true});
+      }
+      studioSync(); studioSchedule(true);
+    };
     host.append(el("div", {class: "st-row"}, el("span", {}), el("span", {}),
       el("span", {class: "st-label", style: `color:${m.color}`, text: m.label}), range, val,
-      el("span", {class: "st-btns"}, b("0", () => apply(0)), b("1", () => apply(1)), b("±", () => apply(-Number(range.value))))));
+      el("span", {class: "st-btns"}, b("0", () => apply(0)), b("1", () => apply(1)), b("±", () => apply(-Number(range.value))),
+        b("⚖", balance, "Balance: the other side (primary or donor) gets 1 minus this value, for values from 0 to 1"))));
     host.lastChild._cat = m.cat; host.lastChild._range = range; host.lastChild._val = val;
   }
 }
@@ -4126,9 +4148,21 @@ async function studioPoll() {
   $("stStart").textContent = S.st.ready ? "Update" : "Start";
   if (S.st.ready && !wasReady) {
     studioActivity();
-    if (!$("stOut").value) { const pth = st.primary; $("stOut").value = pth.replace(/\.safetensors$/i, "") + "_repaired.safetensors"; }
+    if (!$("stOut").value) S.st.autoOut = "";
     if (S.st.pendingFirst) { S.st.pendingFirst = false; studioCommit(); studioRender(); }
     if (S.st.pendingMix) studioSetupMix();
+  }
+  if (S.st.ready && st.primary && $("stOut").value === (S.st.autoOut ?? null)) {
+    // the save name the desktop suggests: <primary>_with_<donor> while donor blocks are on, else <primary>_repaired
+    // (only while the box still holds its own suggestion)
+    const stem = (p) => p.replace(/\.safetensors$/i, "");
+    const donorOn = st.donor && Object.values(S.st.blocks).some((b) => b.de);
+    S.st.autoOut = $("stOut").value = stem(st.primary) + (donorOn ? "_with_" + stem(st.donor.split(/[\\/]/).pop()) : "_repaired") + ".safetensors";
+  }
+  if (st.early && st.early !== S.st.earlyShown) {        // H3 Show early: the unfinished look, until the clip lands
+    S.st.earlyShown = st.early;
+    $("stTweakVid").style.display = "none"; $("stTweak").style.display = "";
+    $("stTweak").src = `/api/studio/image?which=early&gen=${st.early}&t=${encodeURIComponent(TOKEN)}`;
   }
   if (st.shown && st.shown !== S.st.shown) {
     S.st.shown = st.shown;
@@ -4219,6 +4253,7 @@ function wireStudio() {
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
   for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3NoLora"])
     $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
+  $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
   playTogether($("stPlayBothBtn"), () => {
