@@ -99,6 +99,19 @@ def start(source, family, lora, output_dir, image_folder, values, resume=False):
     return rec["id"]
 
 
+def set_notes(run_id, text):
+    """The run's notes (Runs & outputs): what you tried, what you thought of it."""
+    try:
+        with _Lock():
+            runs = _read()
+            for r in runs:
+                if r.get("id") == run_id:
+                    r["notes"] = str(text or "")[:20000]
+            _write(runs)
+    except OSError:
+        pass
+
+
 _curves = {}                                # run id -> [epoch on show, its last loss, [[epoch, loss], ...]]
 
 

@@ -63,14 +63,33 @@ def add(family, values, image_folder, lora, output_dir):
     return item
 
 
-def clashes(output_dir, lora):
-    """A queued run that would save into the same files (same output folder and LoRA name), or None."""
+def clashes(output_dir, lora, skip=""):
+    """A queued run that would save into the same files (same output folder and LoRA name), or None. skip: the item
+    being edited, which may of course keep its own name."""
     key = (os.path.normcase(os.path.abspath(output_dir or "")), (lora or "").lower())
     with _lock:
         for n, i in enumerate(_q["items"], 1):
-            if (os.path.normcase(os.path.abspath(i.get("output_dir") or "")), (i.get("lora") or "").lower()) == key:
+            if i["id"] != skip and (os.path.normcase(os.path.abspath(i.get("output_dir") or "")),
+                                    (i.get("lora") or "").lower()) == key:
                 return n
     return None
+
+
+def get(item_id):
+    with _lock:
+        return next((dict(i) for i in _q["items"] if i["id"] == item_id), None)
+
+
+def update(item_id, family, values, image_folder, lora, output_dir):
+    """A queued run's settings replaced (Edit on the queue): it keeps its place. False when it has gone (started)."""
+    with _lock:
+        for i in _q["items"]:
+            if i["id"] == item_id:
+                i.update(family=family, values=dict(values), image_folder=image_folder, lora=lora,
+                         output_dir=output_dir)
+                _save()
+                return True
+    return False
 
 
 def remove(item_id):

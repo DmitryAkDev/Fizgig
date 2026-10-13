@@ -966,7 +966,18 @@ function renderWebQueue(q) {
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      el("button", {class: "btn btn-sm", text: "Remove", onclick: () => api("/api/queue/remove", {id: it.id}).then(pollRun)})))));
+      el("button", {class: "btn btn-sm", text: "Edit", title: "Load its settings into the form; Save to queue puts them back in its place",
+        onclick: async () => {
+          try {
+            await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
+            queueEditing({id: it.id, n: i + 1});
+            $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.`;
+          } catch (e) { $("runStatus").textContent = e.message; }
+        }}),
+      el("button", {class: "btn btn-sm", text: "Remove", onclick: () => {
+        if (S.editQueue && S.editQueue.id === it.id) queueEditing(null);
+        api("/api/queue/remove", {id: it.id}).then(pollRun);
+      }})))));
 }
 
 function renderQueue(items) {
@@ -1485,19 +1496,7 @@ async function loadRuns() {
       title: "Loads this run's model, training folder and settings into the form (nothing starts until you press Start)",
       onclick: async () => {
         try {
-          const s = await api("/api/runs/settings", {id: run.id});
-          if (s.family !== S.family) await chooseFamily(s.family);
-          const kept = Object.fromEntries(Object.entries(s.values).filter(([, v]) => v != null));
-          S.values = {...S.values, ...kept};
-          // a run recorded before it had a Turbo value: its steps and CFG follow the Turbo on now (refreshState)
-          if (!("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
-          S.all[S.family] = S.values;
-          if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; await loadTrigger(); }
-          renderSections("samples", $("samplesForm"));
-          renderSections("training", $("trainingForm"));
-          await refreshState();
-          saveState();
-          showTab("training");
+          await loadIntoForm(await api("/api/runs/settings", {id: run.id}));
           $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});
@@ -1527,6 +1526,23 @@ async function loadRuns() {
       } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
     }});
     const alertRow = el("div", {class: "field-hint"});
+    // notes: what you tried and what you made of it, saved as you type
+    const notesBox = el("div", {class: "run-notes", style: "display:none"});
+    const notesBtn = el("button", {class: "btn btn-sm", text: run.notes ? "📝 Notes" : "Notes",
+      title: "Your notes on this run", onclick: () => {
+        if (notesBox.style.display !== "none") { notesBox.style.display = "none"; return; }
+        if (!notesBox.firstChild) {
+          const ta = el("textarea", {rows: 4, class: "w-path", placeholder: "What you tried, what you thought of it…"});
+          ta.value = run.notes || "";
+          const said = el("span", {class: "field-hint"});
+          const save = debounce(() => api("/api/runs/notes", {id: run.id, text: ta.value})
+            .then(() => { run.notes = ta.value; said.textContent = "Saved."; notesBtn.textContent = ta.value ? "📝 Notes" : "Notes"; })
+            .catch((e) => { said.textContent = e.message; }), 600);
+          ta.addEventListener("input", () => { said.textContent = ""; save(); });
+          notesBox.append(ta, said);
+        }
+        notesBox.style.display = "";
+      }});
     const lgBox = el("div", {style: "display:none"});
     const lgBtn = run.loss_graph ? el("button", {class: "btn btn-sm", text: "Loss graph",
       title: "The run's loss at every step: smoothing, log scale, the learning rate",
@@ -1555,7 +1571,8 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, again, del), delBox, alertRow, files, lgBox, ilBox));
+      el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, notesBtn, again, del), delBox, alertRow, notesBox, files,
+      lgBox, ilBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
     "the desktop app, is listed here with its results."}));
@@ -2616,6 +2633,29 @@ async function runLossTick(training) {
   const host = $("runLoss");
   if (!d || !d.points || d.points.length < 2) { host.replaceChildren(); return; }
   host.replaceChildren(lossGraph(d));
+}
+
+// a run's model, training folder and settings into the form (Start again, a queued run's Edit)
+async function loadIntoForm(s) {
+  if (s.family !== S.family) await chooseFamily(s.family);
+  const kept = Object.fromEntries(Object.entries(s.values || {}).filter(([, v]) => v != null));
+  S.values = {...S.values, ...kept};
+  // a run recorded before it had a Turbo value: its steps and CFG follow the Turbo on now (refreshState)
+  if (!("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
+  S.all[S.family] = S.values;
+  if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; await loadTrigger(); }
+  renderSections("samples", $("samplesForm"));
+  renderSections("training", $("trainingForm"));
+  await refreshState();
+  saveState();
+  showTab("training");
+}
+
+// a queued run being edited: Add to queue saves it back in its place
+function queueEditing(item) {
+  S.editQueue = item;
+  $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
+  $("btnQueueCancel").style.display = item ? "" : "none";
 }
 
 // a run's previews and checkpoints, from its output folder
@@ -5807,12 +5847,18 @@ function wire() {
   });
   $("btnQueue").addEventListener("click", async () => {
     try {
-      const r = await api("/api/queue/add", runBody());
+      const ed = S.editQueue;
+      const r = await api(ed ? "/api/queue/update" : "/api/queue/add", ed ? {...runBody(), id: ed.id} : runBody());
       showProblems(r.problems);
-      if (r.ok) $("runStatus").textContent = `Added to the queue (number ${r.position}).`;
+      if (r.ok) {
+        $("runStatus").textContent = ed ? `Saved: queued run ${r.position} has these settings now.` :
+          `Added to the queue (number ${r.position}).`;
+        queueEditing(null);
+      }
       pollRun();
     } catch (e) { $("runStatus").textContent = e.message; }
   });
+  $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));

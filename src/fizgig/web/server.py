@@ -2187,6 +2187,11 @@ class Handler(BaseHTTPRequestHandler):
                     step_log.loss_path(r.get("output_dir") or "", r.get("lora") or ""))
                 newest.add(key)
             return self.json({"runs": runs})
+        if path == "/api/queue/item":                # a queued run's settings, for Edit
+            it = webqueue.get((qs.get("id") or [""])[0])
+            if it is None:
+                return self.json({"error": "That run has left the queue."}, 404)
+            return self.json({k: it.get(k) for k in ("id", "family", "values", "image_folder", "lora")})
         if path == "/api/runs/loss":                 # a run's loss by step (the loss graph); live=1: the run going now
             from fizgig.training import step_log
             if (qs.get("live") or [""])[0] == "1":
@@ -2573,13 +2578,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"{name} is already there."}, 400)
                 os.makedirs(new)
                 return self.json({"ok": True, "path": new})
-            if path == "/api/queue/add":                # Add to queue: checked like Start, saved for later
-                fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""
+            if path in ("/api/queue/add", "/api/queue/update"):   # Add to queue (or a queued run edited): checked
+                fam, vals, folder = b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""  # like Start
+                editing = str(b.get("id") or "") if path == "/api/queue/update" else ""
+                if path == "/api/queue/update" and webqueue.get(editing) is None:
+                    return self.json({"error": "That run has left the queue (it started, or was removed) - add "
+                                               "this as a new one instead."}, 400)
                 desc, inputs, plan = _plan(fam, vals, folder)
                 if plan.problems:
                     return self.json({"problems": plan.problems})
                 out_dir, lora = inputs["LORA_OUTPUT_DIR"], inputs["LORA_NAME"]
-                n = webqueue.clashes(out_dir, lora)
+                n = webqueue.clashes(out_dir, lora, skip=editing)
                 with _lock:
                     live_clash = (_run["proc"] is not None and _run["proc"].poll() is None
                                   and os.path.normcase(os.path.abspath(_run["output_dir"] or "")) ==
@@ -2589,6 +2598,13 @@ class Handler(BaseHTTPRequestHandler):
                                       "one another LoRA name, or they'd overwrite each other's files." if n else
                                       f"The run going now saves as {lora} in that folder - give this one another LoRA "
                                       "name."}, 400)
+                if editing:
+                    if not webqueue.update(editing, fam, vals, folder, lora, out_dir):
+                        return self.json({"error": "That run has left the queue - add this as a new one instead."},
+                                         400)
+                    ids = [i["id"] for i in webqueue.status()["items"]]
+                    return self.json({"ok": True, "id": editing, "position": ids.index(editing) + 1
+                                      if editing in ids else 0})
                 item = webqueue.add(fam, vals, folder, lora, out_dir)
                 with _lock:
                     idle = not (_run["proc"] is not None and _run["proc"].poll() is None) and \
@@ -2596,6 +2612,9 @@ class Handler(BaseHTTPRequestHandler):
                 if idle and not webqueue.status()["held"]:
                     webqueue.start_next(_queue_starter)          # nothing running: it starts now (or waits, saying why)
                 return self.json({"ok": True, "id": item["id"], "position": len(webqueue.status()["items"])})
+            if path == "/api/runs/notes":
+                history.set_notes(str(b.get("id") or ""), str(b.get("text") or ""))
+                return self.json({"ok": True})
             if path == "/api/queue/remove":
                 webqueue.remove(str(b.get("id") or ""))
                 return self.json({"ok": True})
