@@ -836,17 +836,17 @@ def multi_concept_problems(desc, inputs):
     seen, out = {norm(_s(inputs.get("image_folder")))}, []
     extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)]
     if not extra:
-        out.append("Multi Concept is on but no second subject folder is set - pick one, or turn the mode off.")
+        out.append("Multi Concept is on but no second subject folder is set — pick one, or turn the mode off.")
     ext = _s(inputs.get("caption_ext")) or ".txt"
     for f in extra:
         if norm(f) in seen:
-            out.append(f"Multi Concept: {f} is the same folder as another subject - each needs its own folder.")
+            out.append(f"Multi Concept: {f} is the same folder as another subject — each needs its own folder.")
             continue
         seen.add(norm(f))
         if not os.path.isdir(f):
             out.append(f"Multi Concept: folder does not exist: {f}")
         elif not any(fn.lower().endswith(ext.lower()) for fn in os.listdir(f)):
-            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training - each "
+            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training — each "
                        f"subject needs its own trigger word in every caption, or they will blend.")
     return out
 
