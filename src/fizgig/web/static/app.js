@@ -1158,11 +1158,16 @@ async function loadGallery() {
   $("galleryControls").style.display = g.runs.length ? "" : "none";
   const view = S.galleryView || "list";
   document.querySelectorAll("#galleryView button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  // redrawn only when something changed (a new preview, another run or view), and never under a clip or song that
+  // is playing - the 15 s refresh used to rebuild the gallery and stop it
+  const sig = [run, view, ...g.items.map((it) => it.name + "@" + it.time)].join("|");
+  const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
+  if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) { likenessShow(dir, g.items, run, view); return; }
   host.innerHTML = "";
   host.classList.toggle("gallery-as-grid", view === "grid");
   if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || []));
   else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || []));
-  S.gal = {items: g.items, run};
+  S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
   $("galleryInfo").textContent = g.items.length ?
@@ -2803,7 +2808,9 @@ function mediaFor(it) {
       it.duration != null ? el("span", {class: "song-len", text: fmtSecs(it.duration)}) : null);
     return el("div", {class: "song-media"}, wave, audio);
   }
-  if (["mp4", "webm"].includes(kind)) return el("video", {controls: true, preload: "none", src: q(it.path)});
+  // a clip shows its still (a preview's middle frame) until it plays, and fetches only its header beforehand
+  if (["mp4", "webm"].includes(kind)) return el("video", {controls: true, preload: "metadata", src: q(it.path),
+    ...(it.image ? {poster: q(it.image)} : {})});
   return el("img", {loading: "lazy", src: q(it.path), alt: it.name});
 }
 const mediaLabel = (it) => it.name;

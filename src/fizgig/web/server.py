@@ -1360,16 +1360,22 @@ def run_prompts(out_dir, name) -> list:
 
 def pair_songs(entries):
     """[(name, path, extra), ...] with each song given the picture of the same name beside it (its waveform) and
-    its length, and those pictures left out as items of their own."""
+    its length, and those pictures left out as items of their own. A clip preview (MiniMax H3: <stem>.mp4 with its
+    middle frame as <stem>.png and its sound as <stem>.wav) is the one video, the picture its poster."""
+    stems_with_clip = {os.path.splitext(n)[0] for n, _, _ in entries if os.path.splitext(n)[1].lower() == ".mp4"}
     stems_with_song = {os.path.splitext(n)[0] for n, _, _ in entries if os.path.splitext(n)[1].lower() in _AUDIO}
     pics = {os.path.splitext(n)[0]: p for n, p, _ in entries if os.path.splitext(n)[1].lower() in _IMAGES}
     out = []
     for n, p, extra in entries:
         stem, ext = os.path.splitext(n)
         ext = ext.lower()
+        if stem in stems_with_clip and ext != ".mp4":
+            continue                                 # the clip's own still and sound: inside its video
         if ext in _IMAGES and stem in stems_with_song:
             continue                                 # shown on its song's card
         item = {"name": n, "path": p, **extra}
+        if ext == ".mp4" and pics.get(stem):
+            item["image"] = pics[stem]               # the clip's poster
         if ext in _AUDIO:
             item["image"] = pics.get(stem)
             item["duration"] = _audio_seconds(p)
