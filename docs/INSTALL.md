@@ -71,7 +71,7 @@ Double-click `install_fizgig.bat`. It creates a venv, installs CUDA 12.8 PyTorch
 
 ### Windows (AMD ROCm)
 
-Install a full **Python 3.12** first: the ROCm bitsandbytes wheel is cp312-only, and Fizgig's GUI needs Tkinter. Do not use the embeddable zip. Install from [Windows downloads](https://www.python.org/downloads/windows/):
+Install a full **Python 3.12** first: the ROCm bitsandbytes wheel is cp312-only, and Gizmo needs Tkinter. Do not use the embeddable zip. Install from [Windows downloads](https://www.python.org/downloads/windows/):
 
 - **Recommended** — [Python Install Manager](https://www.python.org/downloads/latest/pymanager) from the [Microsoft Store](https://apps.microsoft.com/detail/9NQ7512CXL7T), then `py install 3.12`.
 - **Alternative** — [python-3.12.10-amd64.exe](https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe); tick **Add python.exe to PATH** and **tcl/tk and IDLE**.

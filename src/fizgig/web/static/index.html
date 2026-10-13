@@ -438,8 +438,8 @@
               <select id="presets" class="w-combo preset-select"></select>
               <span class="field-hint" id="presetNote"></span>
               <button class="btn" id="presetSave">Save preset…</button>
-              <span class="field-hint">Ready-made settings for this model, then any you saved (here or in the desktop
-                app): picking one fills the form below.</span>
+              <span class="field-hint">Ready-made settings for this model, then any you saved: picking one fills
+                the form below.</span>
             </div><div id="presetSaveRow"></div></div>
           </div>
           <div id="trainingForm"></div>
@@ -615,10 +615,10 @@
                   (the first time takes a minute).</span></div>
               <div class="run-bar"><span id="stBar" style="width:0"></span></div>
               <div class="field-row st-setups"><span class="field-label">Setup:</span>
-                <select id="stSetupList" class="w-combo" title="Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering. The desktop's setups are here too.">
+                <select id="stSetupList" class="w-combo" title="Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.">
                   <option value="">Load a setup…</option></select>
                 <input type="text" id="stSetupName" class="w-num st-setup-name" placeholder="name">
-                <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later (here or on the desktop) or share.">Save setup</button>
+                <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later or share.">Save setup</button>
                 <span class="field-hint" id="stSetupMsg"></span></div>
             </div>
           </div>
@@ -1182,7 +1182,7 @@
                 <button class="btn btn-sm" id="rmSetupLoad">Load</button>
                 <input type="text" id="rmSetupName" class="w-num rm-name" placeholder="name">
                 <button class="btn btn-sm" id="rmSetupSave">Save</button>
-                <span class="field-hint">this whole tab (the desktop's files)</span></div>
+                <span class="field-hint">this whole tab</span></div>
               <div class="field-row"><span class="field-label">ComfyUI:</span><button class="btn" id="rmReadoutBtn">📋 ComfyUI settings</button>
                 <button class="btn btn-sm" id="rmReadoutCopy" style="display:none">Copy</button></div>
               <pre class="rm-readout" id="rmReadout" style="display:none"></pre>

@@ -1,6 +1,6 @@
 # Fizgig web UI
 
-Fizgig runs as a web page as well as a desktop app: on a pod, on a machine with no screen, or to set up and watch training from your phone or another computer. The page is built from the same family descriptions as the desktop app, so the same models, presets and settings appear in both.
+Fizgig is a web page: in its own app window on your computer, in your browser, on a pod, on a machine with no screen, or on your phone or another computer to set up and watch training.
 
 ## On a RunPod pod
 
@@ -20,9 +20,7 @@ Logging in on a pod, tick **Keep me logged in on this device** and it remembers 
 
 ## On your own computer
 
-In the desktop app: Preferences → Web UI → **Start web UI**. Tick **Start the web UI whenever Fizgig opens** to have it come up with the app. It stays up while the desktop app is open, and closing the desktop app closes it too. The card has links to it: one for this computer, and one with its network address for your phone or other computers.
-
-To run the web UI on its own, double-click **Fizgig in browser.bat** (`./fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
+Double-click **Fizgig.bat** for Fizgig in its own window (below), or **Fizgig in browser.bat** (`./fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
 
 ```
 venv\Scripts\python fizgig.py --web      (Windows)
@@ -31,7 +29,7 @@ venv/bin/python fizgig.py --web          (Linux)
 
 That copy keeps running until you close its terminal. It needs no screen and no Tkinter, so it runs on a headless server too (see [On a server](#on-a-server)).
 
-## As a desktop app window
+## In its own window
 
 **Fizgig.bat** on Windows, `fizgig.sh` on Linux (or `python fizgig.py`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv).
 
@@ -43,23 +41,15 @@ Open Fizgig in your phone's browser (your computer's address, or a pod's) and us
 
 **Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails or is stopped holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. A paused run is waited for: **Resume** it and the queue carries on after it finishes. The Resume button is still there after a restart, and a fine-tune resumes from its last checkpoint for the rotations it has left. Two queued runs can't save into the same files: give each its own LoRA name. **Edit** on a queued run loads its settings into the form; change what you like and **Save to queue** puts them back in its place (**Cancel edit** leaves it as it was).
 
-The web UI's queue is its own; the desktop app keeps its queue, shown below it read-only (change it in the desktop app). One run trains at a time across both: each queue waits while the other app is training or making captions, and says so.
-
 ## While a run trains
 
-The run card shows the run's progress, time left and log, and a **loss graph** that fills in as it trains: every step's loss (faint) with a smoothed line over it, the epochs marked, the lowest point, and the learning rate when Adaptive LR moves it. Drag **Smoothing**, tick **Log scale** or **Clip outliers** (one spike no longer flattens the rest), and point at the graph for a step's figures; the settings are remembered. **Sample now** makes the previews after the current step instead of waiting for the epoch to end (they show with the others, under the epoch in progress), and **Save now** saves the LoRA as it is, as `<name>-stepNNNNNNN.safetensors` beside its checkpoints. Both work on a run started in the desktop app too; a fine-tune saves and previews at whole rotations only, so it doesn't offer them.
-
-## Runs started in the desktop app
-
-While the desktop app is open, a run started there shows on the web UI's Training tab: its progress, log, previews and checkpoints, and the desktop app's queue below it. Pause, Stop and Resume on that page work on it, exactly as the desktop app's own buttons would, so you can start a run at your desk and check on it from your phone. Change the queue itself in the desktop app.
-
-A run started in the web UI shows only in the web UI. One run trains at a time: the web UI won't start a run while the desktop app is training, and the desktop app won't start one while the web UI is. If the desktop app started the web UI, closing the desktop app asks before it stops a run started in the web UI.
+The run card shows the run's progress, time left and log, and a **loss graph** that fills in as it trains: every step's loss (faint) with a smoothed line over it, the epochs marked, the lowest point, and the learning rate when Adaptive LR moves it. Drag **Smoothing**, tick **Log scale** or **Clip outliers** (one spike no longer flattens the rest), and point at the graph for a step's figures; the settings are remembered. **Sample now** makes the previews after the current step instead of waiting for the epoch to end (they show with the others, under the epoch in progress), and **Save now** saves the LoRA as it is, as `<name>-stepNNNNNNN.safetensors` beside its checkpoints. A fine-tune saves and previews at whole rotations only, so it doesn't offer them.
 
 ## The password
 
 Without a password the web UI only opens on the machine it runs on. With one (8 characters or more; a pod's own VNC password works at any length), it listens on every address and asks for it, so a phone, tablet or another computer on your network can open it.
 
-- **Desktop app:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only. If the web UI is running, it restarts with the new password when you press Enter or leave the box, and anyone logged in logs in again.
+- **Web UI:** Preferences → Web UI → Password. Leave it empty to keep the web UI on this machine only.
 - **By hand:** set `"web_password"` in `prefs.json` (see the example below).
 - **For one launch:** the `FIZGIG_PASSWORD` environment variable, or `--password` (an environment variable keeps it out of the process list).
 
@@ -69,11 +59,10 @@ When more than one is set, `--password` wins, then `FIZGIG_PASSWORD`, then on a 
 
 ## The port
 
-The web UI uses port **8081** unless that port is taken. When another program already uses it, Fizgig takes the nearest free port above (8082, 8083, …) and saves it, so every later launch uses that same port. The desktop app checks this when it starts, so its Preferences tab already shows the port the web UI will get.
+The web UI uses port **8081** unless that port is taken. When another program already uses it, Fizgig takes the nearest free port above (8082, 8083, …) and saves it, so every later launch uses that same port.
 
 To change the port:
 
-- **Desktop app:** Preferences → Web UI → Web UI port. A running web UI restarts on the new port when you press Enter or leave the box.
 - **Web UI:** Preferences → Web UI → Port. The new port is used the next time the web UI starts.
 - **By hand:** set `"web_port"` in `prefs.json` (see the example below), then start the web UI again.
 - **For one launch:** `--port 8090`. This uses that port only, stops with a message if it is taken, and does not change the saved one.
@@ -92,7 +81,7 @@ The training folder on the Start tab is a folder on the machine running Fizgig. 
 
 It takes pictures, `.mp4` clips, songs (`.wav`, `.mp3`, `.flac`, `.m4a`), caption `.txt` files, ACE-Step's `.json` song details, and `.zip` files, which are unpacked as they arrive. Anything else is left out and listed. Convert other video formats (`.mov`, `.webm`) to `.mp4` first.
 
-Uploads go into the desktop app's Preferences → Input Directories folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. Files go up in 8 MB pieces: a dropped connection carries on where it stopped, and uploading the same folder again skips the files already there (same name and size), so only what's missing is sent. The progress line shows the file and the whole batch. For a big dataset, uploading the files themselves is still gentler than one huge zip, which has to arrive in full before it is unpacked.
+Uploads go into the Preferences → Training data folder, in a folder with the name you typed. On a pod that is `/workspace/datasets`, on the volume. When it isn't set, they go into `training_data` inside the Fizgig folder. Uploading again with the same name adds to that folder. Files go up in 8 MB pieces: a dropped connection carries on where it stopped, and uploading the same folder again skips the files already there (same name and size), so only what's missing is sent. The progress line shows the file and the whole batch. For a big dataset, uploading the files themselves is still gentler than one huge zip, which has to arrive in full before it is unpacked.
 
 ### Other files and folders
 
@@ -102,18 +91,18 @@ Boxes that take a file or folder from your own data also have **Upload** beside 
 
 ## MiniMax H3 RefMod
 
-RefMod is in the web UI's model list, right after MiniMax H3, with the desktop app's RefMod card: Grid, References (with the token readout), Steps, Target MP, Clips, Description, Concept, the clip token cap and Audio support, its five presets, and H3's Training Base (Reference when its DiT is set). It runs on MiniMax H3's files and builds exactly the run the desktop app builds. A RefMod makes no previews and can't pause: it is made in one go. Judge a mod in the desktop app's RefMod Studio.
+RefMod is in the web UI's model list, right after MiniMax H3, with its RefMod card: Grid, References (with the token readout), Steps, Target MP, Clips, Description, Concept, the clip token cap and Audio support, its five presets, and H3's Training Base (Reference when its DiT is set). It runs on MiniMax H3's files. A RefMod makes no previews and can't pause: it is made in one go. Judge a mod in the desktop app's RefMod Studio.
 
 ## Image Prep
 
-The desktop app's Image Prep tab, in the browser: resize and convert to PNG, face close-ups, the What will happen summary, Test face detection on one photo, and the Look Consistency Filter (pick 3 baselines from the folder's pictures, scan, Auto-Suggest, mark, move the marked ones to `excluded_by_look`). It all runs on the Fizgig machine, on its CPU, with the same code the desktop app runs. Face tools need insightface there (`install_fizgig.py` adds it). Gizmo, for cutting video clips and voice segments, opens in its own window, so it stays in the desktop app.
+The Image Prep tab: resize and convert to PNG, face close-ups, the What will happen summary, Test face detection on one photo, and the Look Consistency Filter (pick 3 baselines from the folder's pictures, scan, Auto-Suggest, mark, move the marked ones to `excluded_by_look`). It all runs on the Fizgig machine, on its CPU. Face tools need insightface there (`install_fizgig.py` adds it). Gizmo, for cutting video clips and voice segments, opens in its own window, so it stays in the desktop app.
 
 ## Captions
 
-The Captions tab has the desktop app's captioning tools, run on the machine running Fizgig:
+The Captions tab's captioning tools run on the machine running Fizgig:
 
-- **Caption All (AI)** with Qwen3-VL (when the Krea 2 text encoder is set in Preferences) or Florence-2, with the same tasks, trigger word, length and Overwrite choice as the desktop. **Edit instructions…** changes what Qwen3-VL is told for a task; the edit is shared with the desktop app and the trainer's auto-recaption. **Static Caption All** gives every file just the trigger word.
-- The model stays loaded between batches, so **Re-caption** on a single file is quick; **Unload Model** frees its memory, and it unloads itself before any run starts (here or in the desktop app).
+- **Caption All (AI)** with Qwen3-VL (when the Krea 2 text encoder is set in Preferences) or Florence-2, with a choice of task, trigger word, length and Overwrite. **Edit instructions…** changes what Qwen3-VL is told for a task; the edit is shared with the trainer's auto-recaption. **Static Caption All** gives every file just the trigger word.
+- The model stays loaded between batches, so **Re-caption** on a single file is quick; **Unload Model** frees its memory, and it unloads itself before any run starts.
 - **Caption every song** (ACE-Step), **Bilingual** (adds a Chinese translation to each caption) and **Find & Replace** with a preview.
 - The captions below can be searched and sorted, a page at a time (Per page, or Go to page); edit any of them and press Save. **⬇ Folder (.zip)** downloads the training folder - its pictures, clips and songs with their captions - and **⬇ Captions only** just the captions: the easy way to take a captioned dataset home from a pod.
 
@@ -121,13 +110,13 @@ With a run training, captioning only starts if the card has room for it beside t
 
 ## Runs & outputs
 
-**Runs** lists every training run started in the web UI or the desktop app, newest first: how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). **Loss graph** shows the run's loss at every step (as on the run card), and **Notes** keeps your own notes on the run, saved as you type. The history lives in `user_data/runs.json` in the Fizgig folder.
+**Runs** lists every training run, newest first (runs from the old desktop app too): how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). **Loss graph** shows the run's loss at every step (as on the run card), and **Notes** keeps your own notes on the run, saved as you type. The history lives in `user_data/runs.json` in the Fizgig folder.
 
-Below that, **Saved files** lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model in the web UI and the desktop app, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
+Below that, **Saved files** lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
 
 ## Choosing the GPU
 
-On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is the same setting as the desktop app's GPU choice (`cuda_device` in `prefs.json`). A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.
+On a machine with more than one card, the web UI's Preferences has a **GPU** card: the card runs started from the web UI train on, and the one its memory meter shows. It is saved as `cuda_device` in `prefs.json`. A `CUDA_VISIBLE_DEVICES` set where Fizgig starts wins over it.
 
 ## On a server
 
@@ -196,7 +185,7 @@ With a password set, Preferences → Web UI has **Log out** (this device) and **
 
 ## prefs.json
 
-All of these settings live in `prefs.json` in the Fizgig folder (next to `lora_trainer_gui.py`). The desktop app writes it; on a machine without it, create it yourself. A minimal example:
+All of these settings live in `prefs.json` in the Fizgig folder (next to `fizgig.py`). Fizgig writes it; on a machine without it, create it yourself. A minimal example:
 
 ```json
 {

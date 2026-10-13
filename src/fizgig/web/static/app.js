@@ -493,8 +493,7 @@ function foldersCard() {
       settingRow("profiles_dir", "Profiles:", "Where the Profiler's reports go (Studio finds a LoRA's profile there).", "profiles inside Fizgig"),
       settingRow("cache_dir", "Cache:", "Cached latents and text encodings: each training folder gets its own folder in here.", "cache inside Fizgig"),
       settingRow("input_lora_dir", "LoRA loading:", "Where the pickers for LoRAs start: Studio, Royale, Profiler, Extract, Context LoRA."),
-      settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale."),
-      el("div", {class: "field-hint", text: "The same settings as the desktop app's Preferences > Output / Input Directories."})));
+      settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale.")));
 }
 
 // the workbench tools' memory and speed (Studio, Royale, Profiler, Extract): the desktop's Inference Performance card
@@ -621,8 +620,7 @@ function gpuPickCard() {
   sel.disabled = !!g.envLocked;
   const hint = el("div", {class: "field-hint", text: g.envLocked ?
     "CUDA_VISIBLE_DEVICES is set where Fizgig was started, and it wins over this setting." :
-    "The card every run started from here trains on, and the one the memory meter shows. The desktop app uses " +
-    "the same setting. A run already going keeps its card."});
+    "The card every run trains on, and the one the memory meter shows. A run already going keeps its card."});
   sel.addEventListener("change", async () => {
     try { await api("/api/prefs", {changes: {cuda_device: sel.value}}); g.chosen = sel.value; }
     catch (e) { hint.textContent = e.message; }
@@ -654,8 +652,7 @@ function outputFolderCard() {
     placeholder: "output_loras inside Fizgig"});
   const hint = el("div", {class: "field-hint", text: "Where a model's LoRAs and checkpoints go until you pick a " +
     "folder for it on the Training tab (that one is kept for that model; Reset to default comes back here). Leave " +
-    "it empty for output_loras inside Fizgig. The desktop app's Preferences > Output Directories > LoRA output is " +
-    "the same setting."});
+    "it empty for output_loras inside Fizgig."});
   const save = async () => {
     try {
       await api("/api/prefs", {changes: {lora_output_dir: input.value.trim()}});
@@ -684,8 +681,7 @@ function dataFolderCard() {
   };
   input.addEventListener("change", save);
   const hint = el("div", {class: "field-hint", text: "Where uploaded training data goes, each upload in its own folder " +
-    "inside it, and where the folder pickers start. Leave it empty for Fizgig's own training_data folder. The " +
-    "desktop app's Preferences > Input Directories > Training images is the same setting."});
+    "inside it, and where the folder pickers start. Leave it empty for Fizgig's own training_data folder."});
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "Training data folder"})),
     el("div", {class: "card-content"},
@@ -1477,7 +1473,7 @@ async function loadRuns() {
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
         el("b", {text: run.lora || "(unnamed)"}),
-        el("span", {class: "field-hint", text: `${famName(run.family)} · ${run.source === "desktop" ? "desktop app" : "web UI"}`})),
+        el("span", {class: "field-hint", text: famName(run.family) + (run.source === "desktop" ? " · the old desktop app" : "")})),
       el("div", {class: "field-hint", text: [run.image_folder && `Trained on ${run.image_folder}`,
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
@@ -1485,8 +1481,8 @@ async function loadRuns() {
       el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, notesBtn, again, del), delBox, alertRow, notesBox, files,
       lgBox, ilBox));
   }
-  if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
-    "the desktop app, is listed here with its results."}));
+  if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
+    "with its results."}));
 }
 
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
@@ -4224,7 +4220,7 @@ function studioPresetSaveOpen() {
     try {
       const r = await api("/api/studio/preset_save", {family: S.st.layout.key, name: name.value, blocks, overwrite: !!overwrite});
       if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
-      host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved (the desktop's Repair Studio lists it too).";
+      host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved.";
     } catch (e) { msg.textContent = e.message; }
   };
   host.append(el("div", {class: "field-row"}, name, el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
@@ -4534,7 +4530,7 @@ function openInstr() {
   $("capInstrBox").style.display = "";
   $("capInstr").value = t.instruction;
   $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
-    ". Saved here, it is used by the desktop app's Captions tab and by the trainer's auto-recaption too.";
+    ". Saved here, the trainer's auto-recaption uses it too.";
   $("capInstrStatus").textContent = "";
 }
 

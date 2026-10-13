@@ -64,7 +64,7 @@ MYMODEL = FamilyDescription(
     implementation="https://github.com/org/my-model",
 
     sampling=(SamplingSettings("Reference", steps=30, cfg=4.0, source="the model card"),),
-    workbench=("repair", "explorer", "profiler", "extract", "royale"),
+    workbench=("repair", "profiler", "extract", "royale"),
 )
 ```
 

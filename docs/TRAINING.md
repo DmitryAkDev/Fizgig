@@ -23,7 +23,7 @@ The LoRA output folder lives on the Training tab's Output section and is remembe
 
 ## Compatibility
 
-Loads kohya, PEFT, OneTrainer (OMI + legacy), AI-Toolkit, and LyCORIS (LoKR / LoHa) — auto-converted, and LoKR/LoHa run natively everywhere: Repair Studio, Profiler, Extract, Context LoRA. Repair Studio and Explorer save LoKR as LoKR, losslessly. Output is `.safetensors` that drops straight into ComfyUI.
+Loads kohya, PEFT, OneTrainer (OMI + legacy), AI-Toolkit, and LyCORIS (LoKR / LoHa) — auto-converted, and LoKR/LoHa run natively everywhere: Repair Studio, Profiler, Extract, Context LoRA. Repair Studio saves LoKR as LoKR, losslessly. Output is `.safetensors` that drops straight into ComfyUI.
 
 ## The workbench
 
@@ -33,9 +33,9 @@ Each tool works on a trained run's output **or any LoRA you've downloaded** — 
 
 A live slider per transformer block (32 on Klein, up to 50 + the token refiners on MiniMax H3) with a side-by-side preview that updates as you drag. **Turbo Preview** caches per-block activations so late-block edits redraw up to 97% faster; the baked save is always exact. Blend blocks from a second **donor** LoRA, balance the pair per block, condition previews on a reference photo, and save a `.safetensors` that works in ComfyUI at strength 1.0. On MiniMax H3 the previews are **clips with sound**, played side by side in the app, with a per-block library and first/last-frame conditioning — see [Repair Studio on H3](MINIMAX_H3.md#repair-studio-on-h3). Krea 2 has its own **✨Text fusion** presets — see [KREA2.md](KREA2.md#help-map-krea-2s-blocks).
 
-### LoRA the Explorer
+### Exploring variations
 
-Evolutionary discovery: the app mutates blocks and shows four variants — pick a favourite and it becomes the new baseline. Freeze what you like, set how far composition drifts, cycle seeds — and send any baseline to Repair Studio (and back) with one click. A **load strength** box sets the strength the LoRA is meant to be used at; it carries across every handoff between Repair Studio, LoRA the Explorer and back.
+Repair Studio's **🎲 I'm feeling lucky** rolls a new strength for each of the LoRA's blocks between your Min and Max (locked blocks keep theirs; Hold keeps each part of the model in its own safe range), renders it, and leaves the sliders where it landed: keep a roll you like, roll again or Undo, lock the blocks you like and roll the rest, or nudge single blocks from there. It does what the old desktop app's LoRA the Explorer did, on the same page as the fixing and saving. A **load strength** box sets the strength the LoRA is meant to be used at.
 
 ### LoRA Royale
 
