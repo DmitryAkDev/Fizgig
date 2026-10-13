@@ -1055,7 +1055,10 @@ def _restore_pause():
     webqueue.hold("The last run is paused. Resume it: the queue carries on after it finishes.", for_pause=True)
 
 
-def _start(family_key, values, image_folder, resume="", ft_continue=None):
+LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
+
+
+def _start(family_key, values, image_folder, resume="", ft_continue=None, note=""):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
         studio.stop_worker()
@@ -1096,6 +1099,9 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None):
                         resume=bool(resume or ft_continue))
     with _lock:
         _run["history_id"] = hid
+    append_log(LOG_CLEAR)                    # this run's log on a clean console
+    if note:
+        append_log(note + "\n")
     for line in plan.console:
         append_log(line + "\n")
     threading.Thread(target=_run_stages, args=(plan.stages, out_dir), daemon=True).start()
@@ -2678,15 +2684,15 @@ class Handler(BaseHTTPRequestHandler):
                                                    f"for is {v.get('FAMILY_FT_ROTATIONS')}: "
                                                    f"{os.path.basename(last['resume'])} is the finished model. To "
                                                    f"train it further, raise Train for and press Resume again."}, 400)
-                    append_log(f"\n=== Resuming the fine-tune from {os.path.basename(last['resume'])}: {left} "
-                               f"rotation(s) left ===\n")
                     return self.json(_start(last["family"], v, last["image_folder"],
-                                            ft_continue={"continue": cont, "rotations": left}))
+                                            ft_continue={"continue": cont, "rotations": left},
+                                            note=f"=== Resuming the fine-tune from {os.path.basename(last['resume'])}: "
+                                                 f"{left} rotation(s) left ==="))
                 if not os.path.isdir(last["resume"]):
                     return self.json({"error": "The paused run's saved state isn't there any more: "
                                                + last["resume"]}, 400)
-                append_log(f"\n=== Resuming from {last['resume']} ===\n")
-                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"]))
+                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"],
+                                        note=f"=== Resuming from {last['resume']} ==="))
             if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
                 with _lock:
                     out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""

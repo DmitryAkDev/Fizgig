@@ -1041,6 +1041,7 @@ function followLog() {
     if (S.mode === "desktop") return;
     S.logSince = Number(e.lastEventId) || S.logSince;
     const line = JSON.parse(e.data);
+    if (line === "\u0000clear\n") { out.textContent = ""; return; }   // a new run: its own log from here
     const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
     // a progress bar redraws itself with \r: keep only its latest state
     const text = out.textContent;
