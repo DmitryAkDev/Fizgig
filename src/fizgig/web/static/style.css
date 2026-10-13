@@ -1092,6 +1092,7 @@ input[type="range"] {
 .field-hint, .card-desc, .tab-banner p, #runStatus, #runSource, #uploadStatus, .fetch-msg { white-space: normal;
   overflow-wrap: anywhere; }
 .field-hint { max-width: 100%; }
+.field-hint.warn { color: var(--warning); }
 .modal-window { max-width: 94vw !important; box-sizing: border-box; }
 .checkpoint-name, .caption-card-title, .gallery-item figcaption { overflow-wrap: anywhere; }
 .problems { white-space: pre-wrap; overflow-wrap: anywhere; }

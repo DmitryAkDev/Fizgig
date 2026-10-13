@@ -717,12 +717,14 @@ function podCard() {
         el("button", {class: "btn btn-sm", text: "Clear", onclick: () => saveKey("")}), keySay),
       el("div", {class: "field-hint", text: "Make one at RunPod > Settings > API Keys. The key RunPod gives a pod by itself " +
         "can't stop pods. Saved in prefs.json on your volume, so it carries over to your next pod and stays out of any shared template."}),
+      P.storage ? el("div", {class: "field-hint" + (P.storage[1] ? " warn" : ""), text: P.storage[0]}) : null,
       el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the pod, not in your browser."})));
 }
 
 // the web UI's password (prefs web_password, the desktop's): empty = this machine only; set = other devices log in
 function webPasswordRows() {
-  if (S.onPod) return [el("div", {class: "field-hint", text: "Password: this pod's VNC password. Set VNC_PASSWORD in the template to choose it."})];
+  if (S.onPod) return [el("div", {class: "field-hint", text: "Password: this pod's FIZGIG_PASSWORD from the template, or the " +
+    "one the pod made up and printed in its log on its first start."})];
   const P = S.pw;
   const input = el("input", {type: "password", class: "w-path", autocomplete: "new-password",
     placeholder: P.saved ? "saved - type a new one to replace it" : "8 characters or more"});

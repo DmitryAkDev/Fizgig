@@ -21,6 +21,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -1095,6 +1096,23 @@ def _popen(cmd):
                             encoding="utf-8", errors="replace", env=env, cwd=BASE_DIR, **kw)
 
 
+def pod_storage():
+    """The pod volume's free space, as the desktop's RunPod card says it: (text, warn)."""
+    try:
+        u = shutil.disk_usage("/workspace")
+    except OSError:
+        return ["Storage: unavailable", False]
+    free, total = u.free / 1024 ** 3, u.total / 1024 ** 3
+    if total > 10000:                # a network volume shows the host's whole pool, not its quota
+        return ["Storage: /workspace is a network volume. Its size is set in RunPod and isn't visible from in "
+                "here - check usage in the RunPod dashboard.", False]
+    if total < 60:                   # container disk: the volume never mounted, and RunPod wipes it at a stop
+        return [f"Storage: only {free:.0f} GB free of {total:.0f} GB - that looks like container disk, not your "
+                "volume. Check the template's volume mount path is /workspace, or your files will vanish when the "
+                "pod stops.", True]
+    return [f"Storage: {free:.0f} GB free of {total:.0f} GB on /workspace", free < 40]
+
+
 def gpu_env(env, prefs=None):
     """env with the GPU chosen in Preferences (cuda_device), as the desktop app runs everything: one set where Fizgig
     was started wins. Training, captions, Studio, Profiler and Extract all use it."""
@@ -1897,7 +1915,8 @@ class Handler(BaseHTTPRequestHandler):
                               "pod": {"stop_when_done": str(p.get("runpod_stop_when_done") or "0") == "1",
                                       "key_saved": bool(str(p.get("runpod_api_key") or "").strip()),
                                       "key_env": bool((os.environ.get("RUNPOD_STOP_API_KEY") or "").strip()),
-                                      "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id()}
+                                      "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id(),
+                                      "storage": pod_storage()}
                               if on_pod() else None,
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
