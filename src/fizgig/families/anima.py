@@ -136,8 +136,9 @@ ANIMA = FamilyDescription(
         ),
     ),
     preview_speed_lora="Anima Turbo LoRA v0.2",
-    # With the Turbo LoRA file set, previews render on it by default (strength 1, CFG 1) at 20 steps - Peter's setup
-    preview_speed_steps=20,
+    # With the Turbo LoRA file set, previews render on it by default (strength 1, CFG 1) at its card's 10 steps (Peter,
+    # 13 Oct: down from 20)
+    preview_speed_steps=10,
     preview_steps=20,
     preview_cfg=4.5,
     preview_negative=("worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, "
