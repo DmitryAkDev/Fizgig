@@ -189,7 +189,7 @@ fi
 if [ "$_total_gb" -lt 60 ]; then
     log "  WARN: that looks like the CONTAINER disk, not a volume. Krea 2 alone needs ~32 GB,"
     log "        and container disk is wiped when the pod stops. Check the template has a"
-    log "        Volume Disk of 100 GB+ AND a mount path of /workspace."
+    log "        Volume Disk of 300 GB (100 GB at least) AND a mount path of /workspace."
 fi
 
 # ---------------------------------------------------------------- optional model prefetch
