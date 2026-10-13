@@ -2340,8 +2340,9 @@ class Handler(BaseHTTPRequestHandler):
                 if desc is None:
                     return self.json({"error": "That run's model isn't available here."}, 400)
                 vals = rec.get("values") or {}
-                if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them
-                    vals = form.apply_preset(desc, {}, vals)
+                if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
+                    mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
+                    vals = {**form.apply_preset(desc, {}, vals), **{k: v for k, v in vals.items() if k in mk}}
                 return self.json({"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""})
             if path == "/api/plan":
                 _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")

@@ -6216,6 +6216,35 @@ class LoRATrainerGUI:
         from fizgig.families import launch
         return launch.problems(desc, self._family_launch_inputs(desc))
 
+    def _run_record_values(self, desc):
+        """The run's settings for the web UI's Start again: the preset's, plus what a preset leaves out - the Base
+        Model card's options and the Samples tab (by the web form's keys)."""
+        out = self._collect_preset_values()
+        if desc is None:
+            return out
+        try:
+            mc = {o.key: o for o in self._family_model_card_opts()}
+            for k, v in self._family_options_values(desc).items():
+                if k in mc:
+                    out[k] = bool(v) if mc[k].kind == "check" else v
+            g = lambda name: getattr(self, name).get() if getattr(self, name, None) is not None else None
+            sm = {"SAMPLE_ENABLED": g("sample_enabled_var"), "SAMPLE_EVERY_N_EPOCHS": g("sample_every_n_epochs_var"),
+                  "SAMPLE_WIDTH": g("sample_width_var"), "SAMPLE_HEIGHT": g("sample_height_var"),
+                  "SAMPLE_STEPS": g("sample_steps_var"), "SAMPLE_CFG_SCALE": g("sample_cfg_scale_var"),
+                  "SAMPLE_NEGATIVE": g("sample_negative_var"), "SAMPLE_SEED": g("sample_seed_var"),
+                  "SAMPLE_AT_FIRST": g("sample_at_first_var"), "SAMPLE_REFERENCE": g("sample_ref_image_var"),
+                  "SAMPLE_STRENGTHS": g("sample_strengths_var"),
+                  "SAMPLE_PROMPT": self.sample_prompt_text.get("1.0", tk.END).strip()}
+            if desc.train_preview_checkpoint:
+                sm.update(SAMPLE_CHECKPOINT=g("use_distilled_samples_var"), CACHE_SAMPLE_MODEL=g("cache_sample_model_var"))
+            for k in ("FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"):
+                if k in self.entries:
+                    sm[k] = self.entries[k].get()
+            out.update({k: v for k, v in sm.items() if v is not None})
+        except Exception:
+            pass
+        return out
+
     def _collect_preset_values(self):
         """Snapshot every user-editable value on the Training tab into a preset dict.
 
@@ -33065,7 +33094,7 @@ class LoRATrainerGUI:
                     self._live_hist = _hist.start(
                         "desktop", _d.key if _d is not None else self.architecture_var.get(),
                         str(self.settings.get("LORA_NAME", "") or ""), str(self.settings.get("LORA_OUTPUT_DIR", "") or ""),
-                        self.image_folder_var.get().strip(), self._collect_preset_values(),
+                        self.image_folder_var.get().strip(), self._run_record_values(_d),
                         resume=bool(getattr(self, "_live_resuming", False)))
                     self._live_resuming = False
                 except Exception:
