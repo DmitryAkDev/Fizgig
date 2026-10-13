@@ -780,7 +780,7 @@ def output_folders() -> list:
     return out
 
 
-_CKPT = re.compile(r"^(.*)-(\d{6})$")
+_CKPT = re.compile(r"^(.*)-(?:(\d{6})|step(\d{7}))$")   # an epoch's checkpoint, or a Save now (-step0001234)
 
 
 def list_outputs(fizgig_only=True) -> dict:
@@ -807,7 +807,7 @@ def list_outputs(fizgig_only=True) -> dict:
                 continue
             stem = e.name[:-len(".safetensors")]
             m = _CKPT.match(stem)
-            base, epoch = (m.group(1), int(m.group(2))) if m else (stem, None)
+            base, epoch = (m.group(1), int(m.group(2)) if m.group(2) else None) if m else (stem, None)
             r = runs.setdefault((folder, base), {"name": base, "folder": folder, "files": [], "time": 0})
             r["files"].append({"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
                                "epoch": epoch, "kind": "finetune" if meta.get("fizgig_finetune") else "lora"})
@@ -948,6 +948,11 @@ def delete_run(run_id, confirm=False) -> dict:
             shutil.rmtree(p)
         except OSError:
             failed.append(p)
+    try:                                       # its loss graph's steps
+        from fizgig.training import step_log
+        os.remove(step_log.loss_path(folder, name))
+    except OSError:
+        pass
     try:                                       # a pause record for this run would offer a Resume that can't work
         side = os.path.join(folder, ".fizgig_paused.json")
         with open(side, encoding="utf-8") as f:
@@ -2135,10 +2140,29 @@ class Handler(BaseHTTPRequestHandler):
             runs = history.runs()[:200]
             from fizgig.web import image_loss
             owners = image_loss.owner_runs(runs)
-            for r in runs:                       # per-image loss charts: a family with the loss watch, and its log
+            from fizgig.training import step_log
+            newest = set()                       # a run's loss file is its name's: only the newest such run owns it
+            for r in runs:
+                key = (os.path.normcase(os.path.abspath(r.get("output_dir") or ".")), (r.get("lora") or "").lower())
                 d = get_family(r.get("family") or "")
                 r["image_loss"] = bool(owners.get(r.get("id")) and d is not None and getattr(d, "loss_watch", False))
+                r["loss_graph"] = key not in newest and os.path.isfile(
+                    step_log.loss_path(r.get("output_dir") or "", r.get("lora") or ""))
+                newest.add(key)
             return self.json({"runs": runs})
+        if path == "/api/runs/loss":                 # a run's loss by step (the loss graph); live=1: the run going now
+            from fizgig.training import step_log
+            if (qs.get("live") or [""])[0] == "1":
+                d = live.desktop_state()
+                with _lock:
+                    folder, name = _run["output_dir"], _run["lora"]
+                if d and live.busy(d):           # the desktop app's run, when that is the one training
+                    folder, name = d.get("output_dir") or "", d.get("lora") or ""
+            else:
+                rec = history.get((qs.get("id") or [""])[0]) or {}
+                folder, name = rec.get("output_dir") or "", rec.get("lora") or ""
+            data = step_log.read(step_log.loss_path(folder, name)) if folder and name else None
+            return self.json(data or {"points": [], "epochs": [], "steps": 0})
         if path == "/api/runs/image_loss":           # one run's per-image residuals by epoch (the loss watch's)
             from fizgig.web import image_loss
             run = history.get((qs.get("id") or [""])[0])

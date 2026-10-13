@@ -934,6 +934,7 @@ async function pollRun() {
   }
   renderQueue(r.queue || []);
   renderWebQueue(r.web_queue || {items: []});
+  runLossTick(live || (d && (d.running || d.state === "running")));
 }
 
 // the web UI's own queue: reorder, remove, start or hold
@@ -1519,6 +1520,15 @@ async function loadRuns() {
       } catch (e) { delBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
     }});
     const alertRow = el("div", {class: "field-hint"});
+    const lgBox = el("div", {style: "display:none"});
+    const lgBtn = run.loss_graph ? el("button", {class: "btn btn-sm", text: "Loss graph",
+      title: "The run's loss at every step: smoothing, log scale, the learning rate",
+      onclick: async () => {
+        if (lgBox.style.display !== "none") { lgBox.style.display = "none"; return; }
+        lgBox.style.display = ""; lgBox.textContent = "Loading…";
+        try { lgBox.replaceChildren(lossGraph(await api("/api/runs/loss?id=" + encodeURIComponent(run.id)))); }
+        catch (e) { lgBox.replaceChildren(el("div", {class: "problems", text: e.message})); }
+      }}) : null;
     // per-image loss (a family with the loss watch, when the run kept its log)
     const ilBox = el("div", {class: "il-box", style: "display:none"});
     const ilBtn = run.image_loss ? el("button", {class: "btn btn-sm", text: "Per-image loss",
@@ -1538,7 +1548,7 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, showFiles, ilBtn, again, del), delBox, alertRow, files, ilBox));
+      el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, again, del), delBox, alertRow, files, lgBox, ilBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
     "the desktop app, is listed here with its results."}));
@@ -2482,6 +2492,123 @@ function lossChart(curve) {
   svg.append(t);
   return el("div", {class: "loss-chart-box"}, svg, el("span", {class: "field-hint",
     text: `Loss by epoch: ${ys[0]} → ${ys[ys.length - 1]} · lowest ${best[1]} at epoch ${best[0]}`}));
+}
+
+// ---- the loss graph: a run's loss at every step (the trainer's .fizgig_loss_<name>.jsonl), with smoothing, a log
+// scale and outliers clipped - its settings kept in this browser
+const LG_KEY = "fizgig_lossgraph";
+const lgSet = () => { try { return {smooth: 0.9, log: false, clip: true, lr: true, ...JSON.parse(localStorage.getItem(LG_KEY) || "{}")}; } catch (e) { return {smooth: 0.9, log: false, clip: true, lr: true}; } };
+const lgSave = (s) => { try { localStorage.setItem(LG_KEY, JSON.stringify(s)); } catch (e) { /* private window */ } };
+
+function lossGraph(data) {
+  const box = el("div", {class: "loss-graph"});
+  const pts = (data && data.points || []).filter((p) => isFinite(p[2]));
+  if (pts.length < 2) {
+    box.append(el("div", {class: "field-hint", text: "The loss graph fills in as the run trains (a point a step)."}));
+    return box;
+  }
+  const set = lgSet();
+  const svgHost = el("div", {class: "loss-graph-plot"});
+  const read = el("div", {class: "field-hint loss-graph-read"});
+  const ctl = (label, input) => el("label", {class: "checkbox-label"}, input, " " + label);
+  const smooth = el("input", {type: "range", min: "0", max: "0.99", step: "0.01", value: set.smooth});
+  const log = el("input", {type: "checkbox"}); log.checked = set.log;
+  const clip = el("input", {type: "checkbox"}); clip.checked = set.clip;
+  const lrOn = el("input", {type: "checkbox"}); lrOn.checked = set.lr;
+  const hasLr = pts.some((p) => p[3] != null);
+  const redraw = () => {
+    Object.assign(set, {smooth: Number(smooth.value), log: log.checked, clip: clip.checked, lr: lrOn.checked});
+    lgSave(set);
+    draw();
+  };
+  for (const i of [smooth, log, clip, lrOn]) i.addEventListener("input", redraw);
+  box.append(el("div", {class: "field-row loss-graph-ctl"},
+    el("span", {class: "field-label", text: "Smoothing:"}), smooth, ctl("Log scale", log), ctl("Clip outliers", clip),
+    hasLr ? ctl("Learning rate", lrOn) : null), svgHost, read);
+
+  function draw() {
+    const W = 800, H = 240, L = 54, R = hasLr && set.lr ? 54 : 12, T = 10, B = 26;
+    const xs = pts.map((p) => p[0]);
+    const x0 = xs[0], x1 = xs[xs.length - 1];
+    const tf = (v) => (set.log ? Math.log10(Math.max(v, 1e-8)) : v);
+    // the smoothed line: an exponential moving average, run forward from the first step
+    const sm = [];
+    let a = null;
+    for (const p of pts) { a = a === null ? p[2] : set.smooth * a + (1 - set.smooth) * p[2]; sm.push(a); }
+    let ys = pts.map((p) => p[2]).concat(sm);
+    if (set.clip && pts.length > 20) {              // the 1st-99th percentile: one spike doesn't flatten the rest
+      const s = pts.map((p) => p[2]).sort((u, v) => u - v);
+      ys = [s[Math.floor(s.length * 0.01)], s[Math.ceil(s.length * 0.99) - 1]].concat(sm);
+    }
+    let y0 = Math.min(...ys.map(tf)), y1 = Math.max(...ys.map(tf));
+    if (y1 - y0 < 1e-9) { y0 -= 0.5; y1 += 0.5; }
+    const X = (x) => L + (W - L - R) * (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0));
+    const Y = (v) => T + (H - T - B) * (1 - (Math.min(Math.max(tf(v), y0), y1) - y0) / (y1 - y0));
+    const ns = "http://www.w3.org/2000/svg";
+    const mk = (tag, attrs) => { const n = document.createElementNS(ns, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
+    const svg = mk("svg", {viewBox: `0 0 ${W} ${H}`, class: "loss-graph-svg"});
+    // epochs along the bottom: a faint line at each epoch's first step, labels thinned to fit
+    const eps = (data.epochs || []).filter((e) => e[1] >= x0 && e[1] <= x1);
+    const every = Math.max(1, Math.ceil(eps.length / 12));
+    eps.forEach((e, i) => {
+      svg.append(mk("line", {x1: X(e[1]), x2: X(e[1]), y1: T, y2: H - B, class: "lg-epoch"}));
+      if (i % every === 0) { const t = mk("text", {x: X(e[1]) + 2, y: H - 8, class: "lg-axis"}); t.textContent = `e${e[0]}`; svg.append(t); }
+    });
+    // the loss axis: three ticks
+    for (const f of [0, 0.5, 1]) {
+      const v = y0 + (y1 - y0) * f, yy = T + (H - T - B) * (1 - f);
+      svg.append(mk("line", {x1: L, x2: W - R, y1: yy, y2: yy, class: "lg-grid"}));
+      const t = mk("text", {x: L - 6, y: yy + 4, class: "lg-axis", "text-anchor": "end"});
+      t.textContent = (set.log ? 10 ** v : v).toPrecision(3);
+      svg.append(t);
+    }
+    svg.append(mk("polyline", {class: "lg-raw", points: pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[2]).toFixed(1)}`).join(" ")}));
+    svg.append(mk("polyline", {class: "lg-smooth", points: pts.map((p, i) => `${X(p[0]).toFixed(1)},${Y(sm[i]).toFixed(1)}`).join(" ")}));
+    // the learning rate, on its own scale at the right (adaptive LR moves it)
+    const lrPts = pts.filter((p) => p[3] != null);
+    if (hasLr && set.lr && lrPts.length > 1) {
+      const lv = lrPts.map((p) => p[3]), l0 = Math.min(...lv), l1 = Math.max(...lv);
+      const LY = (v) => T + (H - T - B) * (l1 === l0 ? 0.5 : 1 - (v - l0) / (l1 - l0));
+      svg.append(mk("polyline", {class: "lg-lr", points: lrPts.map((p) => `${X(p[0]).toFixed(1)},${LY(p[3]).toFixed(1)}`).join(" ")}));
+      for (const [v, yy] of [[l1, T + 4], [l0, H - B]]) {
+        const t = mk("text", {x: W - R + 4, y: yy, class: "lg-axis lg-lr-axis"}); t.textContent = v.toExponential(1); svg.append(t);
+      }
+    }
+    // the lowest smoothed point
+    let bi = 0;
+    sm.forEach((v, i) => { if (v < sm[bi]) bi = i; });
+    svg.append(mk("circle", {cx: X(pts[bi][0]), cy: Y(sm[bi]), r: 4, class: "lg-best"}));
+    const cursor = mk("line", {y1: T, y2: H - B, class: "lg-cursor", style: "display:none"});
+    svg.append(cursor);
+    const say = (i) => read.textContent = `Step ${pts[i][0]} · epoch ${pts[i][1]} · loss ${pts[i][2].toFixed(4)} ` +
+      `(smoothed ${sm[i].toFixed(4)})` + (pts[i][3] != null ? ` · LR ${Number(pts[i][3]).toExponential(2)}` : "");
+    const base = () => read.textContent = `${data.steps} steps · lowest smoothed loss ${sm[bi].toFixed(4)} at step ` +
+      `${pts[bi][0]} (epoch ${pts[bi][1]})` + (data.stride > 1 ? ` · every ${data.stride}th step drawn` : "");
+    svg.addEventListener("pointermove", (ev) => {
+      const r = svg.getBoundingClientRect(), x = x0 + (x1 - x0) * Math.min(1, Math.max(0, ((ev.clientX - r.left) / r.width * W - L) / (W - L - R)));
+      let i = 0;
+      while (i < pts.length - 1 && pts[i + 1][0] <= x) i++;
+      cursor.setAttribute("x1", X(pts[i][0])); cursor.setAttribute("x2", X(pts[i][0])); cursor.style.display = "";
+      say(i);
+    });
+    svg.addEventListener("pointerleave", () => { cursor.style.display = "none"; base(); });
+    svgHost.replaceChildren(svg);
+    base();
+  }
+  draw();
+  return box;
+}
+
+// the run card's graph: the run training now (here or in the desktop app), every 10 s while it trains
+async function runLossTick(training) {
+  const now = Date.now();
+  if (!training && S.lossDone) return;
+  if (training && now - (S.lossAt || 0) < 10000) return;
+  S.lossAt = now; S.lossDone = !training;
+  const d = await api("/api/runs/loss?live=1").catch(() => null);
+  const host = $("runLoss");
+  if (!d || !d.points || d.points.length < 2) { host.replaceChildren(); return; }
+  host.replaceChildren(lossGraph(d));
 }
 
 // a run's previews and checkpoints, from its output folder

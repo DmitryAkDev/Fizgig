@@ -40,6 +40,7 @@ from fizgig.training.adaptive_lr import AdaptiveLR  # noqa: E402
 from fizgig.training.metadata import (build_metadata, latest_sample_image, refresh_checkpoint_thumbnail,  # noqa: E402
                                       resolve_title, sample_for_epoch, thumbnail_data_uri)
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs, validate_output_name  # noqa: E402
+from fizgig.training.step_log import StepLog, take_request  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -1291,6 +1292,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     gen = torch.Generator().manual_seed(seed + start_epoch)
     pause_flag = os.path.join(output_dir, ".pause_requested")
     recorder = LossRecorder()
+    # the web UI's loss graph: each step's loss, numbered across a resume / a fine-tune's continuation
+    step_off = ftr.epochs_done * steps_per_epoch if ftr is not None else 0
+    steplog = StepLog(output_dir, output_name, start_step=step_off + global_step)
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step
@@ -1434,6 +1438,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _update()
             global_step += 1
             recorder.add(epoch=epoch, step=i, loss=loss.item())
+            steplog.add(step_off + global_step, epoch + 1 + (ftr.epochs_done if ftr is not None else 0), loss.item(),
+                        None if global_step % 20 else      # the rate now and then (Automagic's averages it)
+                        learning_rate if optimizer is None else optimizer_lr(optimizer))
+            if pending == 0 and ftr is None:   # the web UI's Sample now / Save now, between optimizer steps
+                if take_request(output_dir, "save"):
+                    save_lora(os.path.join(output_dir, f"{output_name}-step{global_step:07d}.safetensors"), epoch + 1)
+                    logger.info(f"[save now] step {global_step} saved as {output_name}-step{global_step:07d}.safetensors")
+                if take_request(output_dir, "sample"):
+                    logger.info(f"[sample now] previews at step {global_step} (epoch {epoch + 1} in progress)")
+                    _tp = time.time()
+                    previews(epoch + 1)
+                    progress.start_t += time.time() - _tp
             watch.observe(epoch + 1, global_step, batch, _info.get("t", 0.5), loss.item())
             progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}", refresh=False)
             progress.update(1)
@@ -1446,6 +1462,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     f"lr={learning_rate if optimizer is None else optimizer_lr(optimizer):.3e}  "
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
+        steplog.flush()
         if adaptive:
             adaptive.epoch_boundary(epoch, recorder.moving_average, net.trainable_modules(), optimizer)
         # problem-image verdicts + queued caption fixes / auto-recaptions, re-encoded before the next epoch
@@ -1501,6 +1518,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             sys.exit(0)
 
     progress.close()
+    steplog.flush()
     final = os.path.join(output_dir, f"{output_name}.safetensors")
     if ftr is not None:
         optimizer = params = None

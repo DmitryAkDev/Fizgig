@@ -1880,3 +1880,19 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .pod-row { flex-wrap: wrap; }
   .pod-btns { width: 100%; justify-content: flex-start; }
 }
+
+/* the loss graph (app.js lossGraph): raw steps faint, the smoothed line bold, the learning rate thin and violet */
+.loss-graph { margin: 8px 0; }
+.loss-graph-ctl input[type=range] { width: 140px; }
+.loss-graph-plot { width: 100%; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 8px; }
+.loss-graph-svg { width: 100%; height: auto; display: block; touch-action: none; }
+.loss-graph-svg .lg-raw { fill: none; stroke: var(--text-muted); stroke-width: 1; opacity: 0.45; vector-effect: non-scaling-stroke; }
+.loss-graph-svg .lg-smooth { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.loss-graph-svg .lg-lr { fill: none; stroke: #8E7CC3; stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.loss-graph-svg .lg-grid, .loss-graph-svg .lg-epoch { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.loss-graph-svg .lg-epoch { opacity: 0.5; }
+.loss-graph-svg .lg-axis { fill: var(--text-muted); font-size: 11px; }
+.loss-graph-svg .lg-lr-axis { fill: #8E7CC3; }
+.loss-graph-svg .lg-best { fill: var(--success, #10B981); }
+.loss-graph-svg .lg-cursor { stroke: var(--text-secondary); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.loss-graph-read { min-height: 1.4em; }
