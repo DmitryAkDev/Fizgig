@@ -75,9 +75,10 @@ async function boot() {
   S.prepSaved = st.prep || {};
   $("imageFolder").value = S.imageFolder;
   await loadTrigger();
-  const sel = $("familySelect");
-  sel.innerHTML = "";
-  for (const f of S.schema.families) sel.append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
+  for (const sel of document.querySelectorAll(".family-pick")) {     // Start's, Samples' and Training's: one choice
+    sel.innerHTML = "";
+    for (const f of S.schema.families) sel.append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
+  }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   if (st.tab) showTab(st.tab);
   wire();
@@ -96,7 +97,7 @@ async function chooseFamily(key) {
   } catch (e) { /* keep what this page has */ }
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
-  $("familySelect").value = key;
+  for (const sel of document.querySelectorAll(".family-pick")) sel.value = key;
   if (S.all[key]) {
     S.values = {...defaults(), ...S.all[key]};
   } else {                              // a first visit takes the family's first preset, as the desktop does
@@ -5889,7 +5890,8 @@ function wire() {
     document.querySelector(".run-card").scrollIntoView({behavior: "smooth", block: "start"}), 50));
   document.querySelectorAll("[data-close]").forEach((b) =>
     b.addEventListener("click", () => $(b.dataset.close).classList.remove("active")));
-  $("familySelect").addEventListener("change", (e) => chooseFamily(e.target.value));
+  for (const sel of document.querySelectorAll(".family-pick"))
+    sel.addEventListener("change", (e) => chooseFamily(e.target.value));
   const folder = $("imageFolder");
   const setFolder = () => { S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon(); };
   folder.addEventListener("change", setFolder);

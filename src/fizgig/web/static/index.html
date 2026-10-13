@@ -78,10 +78,11 @@
           </div>
           <div class="section-card accent-card">
             <div class="card-title">Model</div>
-            <div class="card-desc">What you're training. The Samples, Training and Preferences tabs follow it.</div>
+            <div class="card-desc">What you're training. The Samples, Training and Preferences tabs follow it (Samples and
+              Training have the same picker).</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span>
-                <select id="familySelect" class="w-combo-lg"></select></div>
+                <select id="familySelect" class="w-combo-lg family-pick"></select></div>
               <div class="field-hint" id="familyNotes"></div>
             </div>
           </div>
@@ -393,6 +394,11 @@
             <h1>Samples</h1>
             <p>Previews made while the model trains, so you can watch it learn and pick the best checkpoint.</p>
           </div>
+          <div class="section-card">
+            <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
+              <select class="w-combo-lg family-pick"></select>
+              <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
+          </div>
           <div id="samplesForm"></div>
           <div class="section-card" id="galleryCard">
             <div class="card-title">Previews so far</div>
@@ -420,6 +426,11 @@
           <div class="tab-banner">
             <h1>Training</h1>
             <p>Pick a preset, adjust what you need, and start the run. Settings are read at launch.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
+              <select class="w-combo-lg family-pick"></select>
+              <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
           </div>
           <div class="section-card">
             <div class="card-title">Presets</div>
