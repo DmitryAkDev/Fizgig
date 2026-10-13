@@ -450,6 +450,7 @@ function renderPrefs() {
         S.prefs[key] = input.value.trim();
         await api("/api/prefs", {changes: {[key]: S.prefs[key]}});
         checkModels();
+        refreshStateSoon();              // a preview file set or cleared: Samples follows it
       });
       const row = el("div", {class: "field-row"},
         el("span", {class: "field-label", text: (m.label || key) + (m.required ? " *" : "") + ":"}), input,
@@ -623,6 +624,7 @@ async function watchFetch() {
     if (S.prefsOpen && S.fetch.family) S.prefsOpen.add(S.fetch.family);   // its card open, showing how it ended
     renderPrefs();
     checkModels();
+    refreshState();                    // a Turbo LoRA that just landed: Samples' steps and CFG follow it now
   }
   paintFetch();
   if (S.fetch.state === "running") S.fetchTimer = setTimeout(watchFetch, 1500);
