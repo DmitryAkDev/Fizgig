@@ -274,7 +274,9 @@ def form(desc):
             _row("FAMILY_EDIT_DIR", "Edited photos folder", "folder",
                  "The edited version of each photo in the training folder, under the same file name.", upload=True,
                  start="data"),
-            _row("FAMILY_EDIT_CAPTION", "Edit instruction", hint="What the edit does, written into each caption."),
+            _row("FAMILY_EDIT_CAPTION", "Edit instruction", hint="What the edit does, e.g. \"Apply my concert grade.\" "
+                 "Write captions saves it as the caption of every photo in the training (edited) folder.",
+                 action="write_captions"),
             _row("FAMILY_EDIT_REF", "Test photo", "path", "A photo the previews edit.", upload=True, start="data"),
         ])
     if desc.slider_training:
@@ -287,7 +289,10 @@ def form(desc):
             _row("FAMILY_SLIDER_DIR", "Second-look folder", "folder",
                  "The other end of the dial: one photo per training photo, same file names.", upload=True,
                  start="data"),
-            _row("FAMILY_SLIDER_CAPTION", "Second-look caption"),
+            _row("FAMILY_SLIDER_CAPTION", "Caption for every pair", hint="What the two photos of a pair have in "
+                 "common, leaving out the difference (\"a portrait photo of a person\" for a smile dial). Write "
+                 "captions saves it as the caption of every photo in the training (+1) folder.",
+                 action="write_captions"),
             prompt_row("FAMILY_SLIDER_BASE", "Base prompt"),
             prompt_row("FAMILY_SLIDER_POS", "Positive prompt"),
             prompt_row("FAMILY_SLIDER_NEG", "Negative prompt"),

@@ -228,6 +228,29 @@ def _preset_family(key):
     return _RefModPresets if key == refmod.KEY else get_family(key)
 
 
+def write_all_captions(text, folder, ext, overwrite=False):
+    """The desktop's Write captions: the typed line (an edit's instruction, a slider's shared description) as the
+    caption of every photo in the training folder. {exists, total} first when some already have one."""
+    if not text:
+        raise ValueError('Type the line first, e.g. "Apply my concert grade."')
+    if not os.path.isdir(folder):
+        raise ValueError("Set the training folder on the Start tab first.")
+    photos = sorted(f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in
+                    (".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+    if not photos:
+        raise ValueError(f"No photos in {folder}.")
+    if not ext.startswith("."):
+        ext = "." + ext
+    existing = [f for f in photos if os.path.exists(os.path.join(folder, os.path.splitext(f)[0] + ext))]
+    if existing and not overwrite:
+        return {"exists": len(existing), "total": len(photos)}
+    for f in photos:
+        with open(os.path.join(folder, os.path.splitext(f)[0] + ext), "w", encoding="utf-8") as fh:
+            fh.write(text)
+    append_log(f"[captions] wrote \"{text}\" as the caption of {len(photos)} photos in {folder}\n")
+    return {"ok": True, "written": len(photos)}
+
+
 def user_presets(desc) -> list:
     """The presets saved for this model, in either app (presets/<model's name>/<name>.json), by name."""
     d = os.path.join(PRESETS_DIR, desc.gui_label)
@@ -2303,6 +2326,10 @@ class Handler(BaseHTTPRequestHandler):
                                             captioner=cap if cap and os.path.isfile(cap) else "",
                                             speed_file=bool(spf and os.path.isfile(spf)),
                                             checkpoint_file=bool(ckf and os.path.isfile(ckf))))
+            if path == "/api/captions/write_all":     # Edit / Slider pairs: one line as every photo's caption
+                return self.json(write_all_captions(str(b.get("text") or "").strip(), str(b.get("folder") or ""),
+                                                    str(b.get("ext") or ".txt").strip() or ".txt",
+                                                    bool(b.get("overwrite"))))
             if path == "/api/preset/save":            # Save preset: the desktop's format and folder
                 desc = _preset_family(b.get("family", ""))
                 name = str(b.get("name") or "").strip()

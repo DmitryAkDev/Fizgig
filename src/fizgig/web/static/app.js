@@ -216,7 +216,25 @@ function renderRow(r) {
         title: "Back to the LoRA output folder in Preferences", onclick: () => { input.value = ""; set(""); }}));
     }
     if (r.suffix) row.append(el("span", {class: "field-hint", text: r.suffix}));
+    let actMsg = null;
+    if (r.action === "write_captions") {          // the typed line as every photo's caption (Edit, Slider pairs)
+      actMsg = el("div", {class: "field-hint"});
+      const write = async (overwrite) => {
+        try {
+          const res = await api("/api/captions/write_all", {text: input.value, folder: S.imageFolder,
+            ext: S.values.DATASET_CAPTION_EXT || ".txt", overwrite});
+          if (res.exists) {
+            actMsg.replaceChildren(document.createTextNode(`${res.exists} of the ${res.total} photos already have a ` +
+              "caption. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace them", onclick: () => write(true)}));
+            return;
+          }
+          actMsg.textContent = `Captions written for ${res.written} photos.`;
+        } catch (e) { actMsg.textContent = e.message; }
+      };
+      row.append(el("button", {class: "btn", text: "Write captions", onclick: () => write(false)}));
+    }
     wrap.append(row);
+    if (actMsg) wrap.append(actMsg);
     if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
