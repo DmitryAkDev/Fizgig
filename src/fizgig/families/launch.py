@@ -500,7 +500,6 @@ def train_command(desc, inputs, plan):
             cmd += ["--reg_lr_multiplier", f"{_ft_reg_mult(st):g}"]
         cont = st.get("FAMILY_FT_CONTINUE") or {}
         if cont.get("checkpoint"):
-            cmd[cmd.index("--dit") + 1] = cont["checkpoint"]
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
     # per-image loss watch (families/loss_watch.py), batch size 1 only
@@ -588,6 +587,9 @@ def train_command(desc, inputs, plan):
             cmd.append("--slider_pairs")
     if desc.options:
         cmd = _dedupe_flags(cmd + option_tokens(desc, st)[0])
+    cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
+    if cont.get("checkpoint"):       # after the options: a model option's own --dit (H3's reference base) is what the
+        cmd[cmd.index("--dit") + 1] = cont["checkpoint"]     # paused run started from; its checkpoint goes on
     return cmd
 
 
@@ -767,6 +769,10 @@ def dataset_toml(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- the plan
+def automagic(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+
+
 def start_problems(desc, inputs):
     """Everything Start refuses, in the order the desktop app lists it: the shared checks (fizgig.families.checks)
     with the family's own (problems) in their place. The dataset TOML is written by the plan itself, so only its
@@ -779,6 +785,14 @@ def start_problems(desc, inputs):
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
     out += checks.learning_rate_range(v)
+    if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
+        try:
+            lr = float(v.get("LEARNING_RATE"))
+        except (TypeError, ValueError):
+            lr = 0.0
+        if lr > 1e-3:
+            out.append(f"Automagic v3 starts at the Learning Rate you give and finds its own rate: {lr:g} is an AdamW "
+                       f"number. Use 1e-6 (its default) or at most 0.001.")
     out += checks.context_lora(v)
     raw_swap = str(v.get("blocks_swap") or "").strip()
     m = re.match(r"\d+", raw_swap)
@@ -860,6 +874,9 @@ def plan(desc, inputs):
     if folder and not os.path.isabs(folder):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
+    if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
+        inputs["ADAPTIVE_LR"] = False
+        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
     p = LaunchPlan(problems=start_problems(desc, inputs))
     if not p.problems:
         try:
