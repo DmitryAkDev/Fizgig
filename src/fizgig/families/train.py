@@ -230,23 +230,25 @@ def _small_card_previews():
 
 
 def _read_sample_override(output_dir):
-    """The GUI's live sample override (<output_dir>/.sample_override.json, written by the status-bar panel):
-    {prompt, seed, width, height} while a prompt is set, else None. The reference image field is Klein's and ignored."""
+    """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
+    web UI's Samples tab): {prompts, prompt (the first), seed, width, height} while a prompt is set, else None. A
+    "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field is ignored."""
     path = os.path.join(output_dir, ".sample_override.json")
     try:
         with open(path, encoding="utf-8") as f:
             d = json.load(f)
-        prompt = str(d.get("prompt", "")).strip()
-        if prompt:
-            return {"prompt": prompt, "seed": int(d.get("seed", 1234)), "width": int(d.get("width", 1024)),
-                    "height": int(d.get("height", 1024))}
+        prompts = d.get("prompts") if isinstance(d.get("prompts"), list) else [d.get("prompt", "")]
+        prompts = [str(p).strip() for p in prompts if str(p or "").strip() and not str(p).strip().startswith("#")]
+        if prompts:
+            return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
+                    "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024))}
     except (OSError, ValueError, TypeError):
         pass
     return None
 
 
-def _encode_override(driver, te_path, prompt, dit, device, parkable=True, references=None):
-    """Encode one override prompt mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
+def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
+    """Encode the override's prompts mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
     DiT waits on CPU for the encode (a block-swapped DiT is small enough to stay, and the driver picks a smaller
     encoder when VRAM is short)."""
     from fizgig.families import quant
@@ -263,8 +265,8 @@ def _encode_override(driver, te_path, prompt, dit, device, parkable=True, refere
             te = driver.load_text_encoder(te_path, device)
         try:
             if references:
-                return driver.encode_text_with_references(te, [prompt], [references])
-            return driver.encode_text(te, [prompt])
+                return driver.encode_text_with_references(te, list(prompts), [references] * len(prompts))
+            return driver.encode_text(te, list(prompts))
         finally:
             driver.unload_text_encoder(te)
             del te
@@ -1233,6 +1235,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             for st, k in parked:            # the next training step needs it back, whatever happened
                 st[k] = st[k].to(device)
 
+    ov_cache = [None, None]                  # the override's prompts and their encoding, kept while they don't change
+
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
         ov = _read_sample_override(output_dir)
@@ -1240,11 +1244,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info("[sample override] ignored - slider previews always show the slider's own prompt")
             ov = None
         if ov:
-            logger.info(f"[sample override] active - '{ov['prompt'][:60]}' seed={ov['seed']} {ov['width']}x{ov['height']}")
+            logger.info(f"[sample override] active - {len(ov['prompts'])} prompt(s), '{ov['prompt'][:60]}' "
+                        f"seed={ov['seed']} {ov['width']}x{ov['height']}")
             try:
-                conds = _encode_override(driver, te_path, ov["prompt"], dit, device, parkable=not swapped,
-                                         references=ref_imgs)
-                sd, prompts = ov["seed"], [ov["prompt"]]
+                if ov_cache[0] != ov["prompts"]:     # encoded again only when the prompts changed
+                    ov_cache[:] = [list(ov["prompts"]), _encode_override(driver, te_path, ov["prompts"], dit, device,
+                                                                         parkable=not swapped, references=ref_imgs)]
+                conds = ov_cache[1]
+                sd, prompts = ov["seed"], list(ov["prompts"])
                 if not ref_imgs:        # an edit keeps the reference's canvas: its latents are already encoded
                     w, h = ov["width"], ov["height"]
                     if lowmem and max(w, h) > 768:

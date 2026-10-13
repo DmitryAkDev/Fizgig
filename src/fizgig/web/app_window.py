@@ -7,8 +7,10 @@ password guards the network, not this window. Size and place are remembered (pre
 pywebview engine on the machine it opens the web UI in the default browser instead and says how to get the window.
 
 The window can also show a pod (the Pods tab sends it there): on any page but this computer's it adds a bar with
-"Switch to this computer", whatever version of Fizgig the pod runs, and names the pod in the title. The one thing a pod's
-page can ask of the window is to come back here. Closed on a pod, it opens on that pod next time if it's up.
+"Switch to this computer", whatever version of Fizgig the pod runs, and names the pod in the title; back here, a bar
+offers "Switch to the pod" (✕ hides it). A pod's page can ask the window to come back here, and read this computer's
+training folders to send one up (local_bridge: read-only, those folders only). Closed on a pod, it opens on that pod
+next time if it's up.
 """
 import json
 import os
@@ -76,28 +78,44 @@ def _icon(profile):
         return None
 
 
-# the bar a pod's page gets inside the window (added by the window, so a pod on older Fizgig gets it too)
+# the bar the window adds to a page (so a pod on older Fizgig gets it too): on a pod, where you are and the way back
+# here; back here, the pod you left and the way back to it (with a ✕ to put it away)
 _BAR_JS = r"""
-(function () {
-  if (document.getElementById('fizgigAppBar')) return;
+(function (text, button, title, call, dismiss) {
+  var old = document.getElementById('fizgigAppBar');
+  if (old) old.remove();
   var b = document.createElement('div');
   b.id = 'fizgigAppBar';
-  b.style.cssText = 'position:fixed;top:10px;right:14px;z-index:2147483647;display:flex;align-items:center;gap:10px;' +
+  // the top middle: clear of the page's own top-right buttons (a full-screen picture's close)
+  b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;' +
+    'align-items:center;gap:10px;' +
     'max-width:60vw;padding:5px 6px 5px 14px;border-radius:999px;background:#5B21B6;color:#F0F4F8;' +
     'font:13px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
   var t = document.createElement('span');
-  t.textContent = "☁ You're on " + %s;
+  t.textContent = text;
   t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
   var h = document.createElement('button');
-  h.textContent = 'Switch to this computer';
-  h.title = 'Back to Fizgig on this computer (the pod keeps running)';
+  h.textContent = button;
+  h.title = title;
   h.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:4px 12px;cursor:pointer;' +
     'font:600 13px Segoe UI,system-ui,sans-serif';
-  h.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
+  h.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api[call](); };
   b.appendChild(t); b.appendChild(h);
+  if (dismiss) {
+    var x = document.createElement('button');
+    x.textContent = '✕';
+    x.title = 'Hide this';
+    x.style.cssText = 'background:none;color:#F0F4F8;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
+    x.onclick = function () { b.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
+    b.appendChild(x);
+  }
   document.body.appendChild(b);
-})();
+})(__ARGS__);
 """
+
+
+def _bar(text, button, title, call, dismiss=False):
+    return _BAR_JS.replace("__ARGS__", ", ".join(json.dumps(v) for v in (text, button, title, call, dismiss)))
 
 
 def _where(url):
@@ -189,6 +207,13 @@ def main():
                 # still be there for it
                 threading.Timer(0.05, lambda: window.load_url(home)).start()
 
+            def to_pod(self):
+                if left[0]:
+                    threading.Timer(0.05, lambda: window.load_url(left[0])).start()
+
+            def forget_pod(self):
+                left[0] = ""
+
             def local_datasets(self):
                 from fizgig.web import local_bridge
                 return local_bridge.local_datasets()
@@ -211,15 +236,22 @@ def main():
             # its own server's one-time login, for when it comes back here: the key's cookie first, then the pod
             home = url
 
+        left = [""]                       # the pod this window was last on, for Switch to the pod
+
         def loaded():
             try:
                 cur = window.get_current_url() or ""
                 if _is_local(cur, port):
                     window.set_title("Fizgig")
+                    if left[0]:
+                        window.evaluate_js(_bar(f"☁ {_pod_name(left[0])} is still running", "Switch to the pod",
+                                                "Back to the pod's Fizgig", "to_pod", dismiss=True))
                     return
+                left[0] = cur.split("#")[0]
                 name = _pod_name(cur)
                 window.set_title(f"Fizgig — {name}")
-                window.evaluate_js(_BAR_JS % json.dumps(name))
+                window.evaluate_js(_bar(f"☁ You're on {name}", "Switch to this computer",
+                                        "Back to Fizgig on this computer (the pod keeps running)", "home"))
             except Exception:
                 pass
         window.events.loaded += loaded

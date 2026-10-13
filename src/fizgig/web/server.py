@@ -2687,6 +2687,25 @@ class Handler(BaseHTTPRequestHandler):
                                                + last["resume"]}, 400)
                 append_log(f"\n=== Resuming from {last['resume']} ===\n")
                 return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"]))
+            if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
+                with _lock:
+                    out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+                d = live.desktop_state()
+                if not out and d and d.get("running"):
+                    out = d.get("output_dir") or ""
+                if not out:
+                    return self.json({"error": "Nothing is training right now."}, 400)
+                side = os.path.join(out, ".sample_override.json")
+                prompts = [ln.strip() for ln in str(b.get("prompts") or "").splitlines() if ln.strip()]
+                if not b.get("on") or not prompts:
+                    try:
+                        os.remove(side)
+                    except OSError:
+                        pass
+                    return self.json({"ok": True, "on": False})
+                _write_json(side, {"prompts": prompts, "seed": _seed(b.get("seed"), 1234),
+                                   "width": _seed(b.get("width"), 1024), "height": _seed(b.get("height"), 1024)})
+                return self.json({"ok": True, "on": True})
             if path == "/api/run/now":               # Sample now / Save now: a request the trainer takes after a step
                 what = str(b.get("what") or "")
                 if what not in ("sample", "save"):

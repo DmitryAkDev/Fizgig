@@ -107,6 +107,7 @@ async function chooseFamily(key) {
     }
   }
   if (S.trigger !== undefined) S.values.CAPTION_TRIGGER_WORD = S.trigger;     // the folder's, not the model's
+  S.values.__SAMPLE_LIVE = false;            // a live preview change is for one run, never remembered
   renderAll();
   await refreshState();
   saveState();
@@ -308,6 +309,8 @@ function onValue(r, val) {
   S.values[r.key] = val;
   shareSamples([r.key]);
   if (r.key === "FAMILY_TURBO_STRENGTH") S.turboByUser = true;   // the steps / CFG it moves go to the desktop too
+  if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
+      ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
@@ -2647,6 +2650,19 @@ async function runLossTick(training) {
   if (!d || !d.points || d.points.length < 2) { host.replaceChildren(); return; }
   host.replaceChildren(lossGraph(d));
 }
+
+// the Samples tab's "Change the previews of the run going now": its prompts, seed and size go to the run as the
+// trainer's sample override while ticked (sent again on every change), and come off when it's unticked
+const sampleLiveSoon = debounce(async () => {
+  const v = S.values, note = $("note___SAMPLE_LIVE");
+  try {
+    const r = await api("/api/run/sample_override", {on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
+      seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT});
+    if (note) note.textContent = r.on ? "Sent: the run's next previews use these." : "The run is back on its own prompts.";
+  } catch (e) {
+    if (note) note.textContent = e.message;
+  }
+}, 700);
 
 // a run's model, training folder and settings into the form (Start again, a queued run's Edit)
 async function loadIntoForm(s) {

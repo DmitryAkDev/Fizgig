@@ -383,6 +383,10 @@ def form(desc):
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
+        _row("__SAMPLE_LIVE", "Change the previews of the run going now", "check",
+             "While this is ticked, the run training now makes its next previews from these prompts, seed and size - "
+             "change them whenever you like; new prompts are encoded again at its next preview. Untick to go back to "
+             "the run's own.") if pictures else None,
         _row("SAMPLE_REFERENCE", "Reference", "path",
              f"Optional - fed through {desc.display_name}'s text encoder vision path so previews become visually "
              "aware of it ('prompt from a picture', not a pixel edit). Leave empty for normal previews."
@@ -574,6 +578,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             (disabled if o.always_shown else hidden).add(o.key)
             if o.always_shown and o.unmet_notes:
                 notes[o.key] = o.unmet_notes[1] if len(o.unmet_notes) > 1 else o.unmet_notes[0]
+    try:                                         # CFG 1 or less renders without the negative: no box for it
+        if not desc.samples_cfg_free and float(str(values.get("SAMPLE_CFG_SCALE") or desc.preview_cfg)) <= 1.0:
+            hidden.add("SAMPLE_NEGATIVE")
+    except ValueError:
+        pass
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
         disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
