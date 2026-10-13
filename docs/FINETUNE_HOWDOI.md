@@ -198,7 +198,7 @@ the dataset at the same epoch, so the rotation's epoch-to-epoch shifts cancel ou
 Two exceptions, both deliberate: **(global) Adaptive LR** switches off when you pick
 Fine-tune — rotation boundaries look like instability to its plateau watcher — and
 **auto-recaption** is off under a fine-tune (its between-epoch caption re-encode isn't
-fine-tune-safe yet). Caption edits queued from the Problem Images window during a
+fine-tune-safe yet). Caption edits queued from the per-image loss view (Runs & outputs) during a
 fine-tune are held and apply in your next LoRA-mode run on that dataset.
 
 ## What are regularisation images, and what does LR × do?

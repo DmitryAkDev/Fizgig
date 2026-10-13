@@ -9,7 +9,7 @@ Everything on this page works on every model unless it says otherwise: [Klein 9B
 - **Live likeness scoring** — pick 3 dataset photos and every sample gets a colour-coded likeness badge (ArcFace, CPU — zero training-speed cost), with a per-epoch trend chart and best-epoch highlight, live while the run goes.
 - **Training Run Visualiser** — scrub the run epoch by epoch in the browser, Royale-style, with share-ready WebM/PNG export.
 - **Every epoch checkpoint carries its own preview as the thumbnail**, so file browsers and LoRA managers show what each epoch looks like.
-- A **live sample override** in the status bar changes the preview prompt, seed, size or reference mid-run, no restart. The status bar itself carries VRAM/RAM gauges with per-run peak markers.
+- **Change the previews of the run going now** (a tick on the Samples tab) changes the preview prompts, seed and size mid-run, no restart; **Sample now** and **Save now** on the run card render or save at the next step. The top bar carries VRAM/RAM gauges.
 
 ## Dataset prep
 

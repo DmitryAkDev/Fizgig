@@ -128,7 +128,7 @@ python install_fizgig.py
 
 Run it from your system Python, not a conda environment (`conda deactivate` first): conda bundles its own Tk, which can't see the system's fonts, so the app comes up with missing text. The installer refuses when conda is active; `FIZGIG_ALLOW_CONDA=1` overrides it.
 
-### VRAM status bar on AMD
+### The VRAM meter on AMD
 
 NVIDIA uses `pynvml` / `nvidia-smi`; the AMD readers (`vram_monitor.read_amd_gpu_vram`) run only as a fallback. Windows ROCm uses `typeperf`; Linux ROCm uses the **`amd-smi`** CLI when available ([AMD SMI / ROCm Core SDK](https://rocm.docs.amd.com/projects/amdsmi/en/latest/install/install.html), e.g. `sudo apt install amdrocm-amdsmi`), falling back to `rocm-smi`. Fizgig picks the GPU with the largest VRAM total and skips empty iGPU entries. Do not `pip install amdsmi` — the PyPI package is outdated.
 
