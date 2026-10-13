@@ -5389,7 +5389,7 @@ function podsDraw() {
 
 function podOpen(p) {
   api("/api/pods/opened", {url: p.url, name: p.name || ""}).catch(() => {});
-  if (inApp()) location.href = p.url;                 // the window goes there; ← This computer comes back
+  if (inApp()) location.href = p.url;                 // the window goes there; Switch to this computer comes back
   else window.open(p.url, "_blank", "noopener");
 }
 

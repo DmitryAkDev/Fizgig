@@ -7,7 +7,7 @@ password guards the network, not this window. Size and place are remembered (pre
 pywebview engine on the machine it opens the web UI in the default browser instead and says how to get the window.
 
 The window can also show a pod (the Pods tab sends it there): on any page but this computer's it adds a bar with
-"← This computer", whatever version of Fizgig the pod runs, and names the pod in the title. The one thing a pod's
+"Switch to this computer", whatever version of Fizgig the pod runs, and names the pod in the title. The one thing a pod's
 page can ask of the window is to come back here. Closed on a pod, it opens on that pod next time if it's up.
 """
 import json
@@ -86,10 +86,11 @@ _BAR_JS = r"""
     'max-width:60vw;padding:5px 6px 5px 14px;border-radius:999px;background:#5B21B6;color:#F0F4F8;' +
     'font:13px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
   var t = document.createElement('span');
-  t.textContent = '☁ On ' + %s;
+  t.textContent = "☁ You're on " + %s;
   t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
   var h = document.createElement('button');
-  h.textContent = '← This computer';
+  h.textContent = 'Switch to this computer';
+  h.title = 'Back to Fizgig on this computer (the pod keeps running)';
   h.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:4px 12px;cursor:pointer;' +
     'font:600 13px Segoe UI,system-ui,sans-serif';
   h.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
