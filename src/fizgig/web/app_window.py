@@ -86,6 +86,14 @@ _BAR_JS = r"""
 (function (text, button, title, call, dismiss) {
   var old = document.getElementById('fizgigAppBar');
   if (old) old.remove();
+  // room above the page for the bar (and a build note under it), so neither covers the page's own top line
+  var sp = document.getElementById('fizgigAppBarSpace');
+  if (!sp) {
+    sp = document.createElement('div');
+    sp.id = 'fizgigAppBarSpace';
+    sp.style.cssText = 'flex:none;height:54px';
+    document.body.insertBefore(sp, document.body.firstChild);
+  }
   var b = document.createElement('div');
   b.id = 'fizgigAppBar';
   // the top middle: clear of the page's own top-right buttons (a full-screen picture's close)
@@ -108,7 +116,7 @@ _BAR_JS = r"""
     x.textContent = '✕';
     x.title = 'Hide this';
     x.style.cssText = 'background:none;color:#F0F4F8;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
-    x.onclick = function () { b.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
+    x.onclick = function () { b.remove(); sp.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
     b.appendChild(x);
   }
   document.body.appendChild(b);
@@ -224,9 +232,11 @@ _NOTE_JS = r"""
   x.textContent = '✕';
   x.title = 'Hide this';
   x.style.cssText = 'background:none;color:#FCD34D;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
-  x.onclick = function () { n.remove(); };
+  var sp = document.getElementById('fizgigAppBarSpace');
+  x.onclick = function () { n.remove(); if (sp) sp.style.height = '54px'; };
   n.appendChild(t); n.appendChild(x);
   document.body.appendChild(n);
+  if (sp) sp.style.height = (n.offsetHeight + 66) + 'px';     // the bar and this note both clear of the page
 })(__ARGS__);
 """
 
