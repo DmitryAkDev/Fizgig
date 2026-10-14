@@ -6,7 +6,7 @@
 
 Fizgig ships as a ready-made cloud image: the whole app in a browser tab, not a cut-down web version. Drag datasets in and LoRAs out with the built-in file manager, download models in one click, and optionally have the pod shut itself down when training finishes. Models and datasets persist between sessions.
 
-**[⚡ Deploy on RunPod →](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)**  ·  [Read the guide first](../docker/README.md)  ·  Need the old pod? [Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)
+**[⚡ Deploy on RunPod →](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)**  ·  [Read the guide first](../docker/README.md)  ·  Need the old pod? [Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)
 
 ## Requirements
 
