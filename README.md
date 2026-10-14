@@ -110,7 +110,7 @@ Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: 
 - **The queue in sight**: what's training and what's up next sit in the sidebar on every tab; a held queue says why, with Start queue right there.
 - **On your phone or another computer**: set a password in Preferences and open it over your network; add it to your phone's home screen and it opens like an app.
 - **On your other computer's GPU**: train on your desktop's card from your laptop. Fizgig finds your other computers running it, and the **Pods** tab opens one as it does a pod ([how](docs/WEB_UI.md#your-other-computers-use-ones-gpu-from-another)).
-- **On a rented GPU**: the **Pods** tab deploys a RunPod pod, opens it in the same window (logged in for you), and sends a training folder from your computer straight to it.
+- **On a rented GPU**: the **Pods** tab finds the card that's cheapest per run among those RunPod has free right now, deploys it, opens the pod in the same window (logged in for you), and sends a training folder from your computer straight to it.
 - **Runs & outputs** keeps every run with its loss graph, notes, previews and checkpoints, and starts any of them again with the same settings.
 
 <p align="center">

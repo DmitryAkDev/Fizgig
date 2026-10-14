@@ -51,6 +51,10 @@ hour, a card that's slightly dearer but four times faster is much cheaper per fi
 H100 and A100 work but are poor value here — LoRA training never touches 80 GB, and you'd pay
 several times more for it.
 
+**Let Fizgig pick.** The **Rent a pod** card on the **Pods** tab of Fizgig on your own computer lists the cards RunPod has free right now (with your RunPod API key saved there), filtered by memory, cloud and a top price per hour, cheapest per run first. Tell it how long your run takes on a 5090 and each row shows roughly what the same run costs on that card. **Deploy** opens RunPod's page with that card and this template chosen; you add the volume and press Deploy there. The speeds are a rough guide from public benchmarks; the prices and stock are RunPod's own.
+
+<p align="center"><img src="../docs/assets/screenshots/rent_a_pod.png" alt="Rent a pod: RunPod's free cards, cheapest per run first, each with Deploy" width="800"></p>
+
 ## Logging in
 
 **Give it a few minutes first.** RunPod downloads the image before anything starts, and until then the links give you nothing even though the pod looks ready. The **Logs** tab shows the download. You're ready when the log ends with the "Ready" banner:
