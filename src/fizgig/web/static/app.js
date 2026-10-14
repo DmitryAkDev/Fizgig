@@ -62,6 +62,7 @@ async function boot() {
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
   S.hostName = pr.host_name || "";
+  if (S.podLocal && S.podLocal.list.length) podLocalDraw();   // drawn before login: now it can say where it sends to
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
