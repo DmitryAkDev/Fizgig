@@ -55,7 +55,9 @@ A trainer and workbench for image, video and music models, in its own window on 
 
 Memory plans itself: precision, block swap and previews size to your free VRAM, and if a preview can't fit, training keeps going. Fizgig loads kohya, PEFT, OneTrainer, AI-Toolkit and LyCORIS LoRAs, and saves `.safetensors` that drop straight into ComfyUI. Free and open source.
 
-<p align="center"><img src="docs/assets/screenshots/start.png" alt="The Start tab: the model, the training folder and your training data" width="800"></p>
+
+https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
+
 
 ## Supported models
 
