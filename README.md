@@ -138,7 +138,7 @@ Model files download from the **Preferences** tab: one **Download models for me*
 
 ### No GPU? Rent one
 
-The whole app runs in a browser tab on RunPod, with a file manager, one-click model downloads and an optional auto-stop when training finishes. **[⚡ Deploy on RunPod →](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** · [Guide](docker/README.md)
+The whole app runs in a browser tab on RunPod, with a drag-and-drop file manager for big datasets and fine-tunes (the **File manager** button in the sidebar), one-click model downloads and an optional auto-stop when training finishes. **[⚡ Deploy on RunPod →](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** · [Guide](docker/README.md)
 
 ## Getting started
 

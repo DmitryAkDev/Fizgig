@@ -20,6 +20,8 @@ With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), yo
 
 On a pod in the Fizgig window, the Start tab's **From this computer** card lists the training folders on your own computer: **Send to this pod** uploads one, captions and all, and makes it the training folder. A dropped connection carries on where it stopped, and sending it again only sends what isn't there yet. (In a browser tab the card isn't there: use Upload a folder.)
 
+On a pod, the sidebar's **File manager** button opens the pod's file manager (port 8080) in a new tab: drag folders in, take big files out, anywhere in `/workspace`. Log in as `admin` with the pod's password; if it refused that password as too common, the button's tooltip says what to use instead. The Start tab's upload card and Runs & outputs link to it too.
+
 Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.
 
 ## Your other computers: use one's GPU from another
