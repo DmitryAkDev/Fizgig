@@ -73,6 +73,8 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 
 **Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in: it reads `FIZGIG_PASSWORD` from the pod's settings on RunPod each time, never saving it. That's one more reason to set `FIZGIG_PASSWORD` on the deploy screen as a plain value: a password kept as a RunPod secret, or one the pod made up, you type yourself.
 
+<p align="center"><img src="../docs/assets/screenshots/pods.png" alt="The Pods tab: your pods and your other computers" width="800"></p>
+
 ### How the pod is secured
 
 **Fizgig always needs a password on a pod.** There is no open mode: without `FIZGIG_PASSWORD` one is generated and printed in the log. An open Fizgig on a public URL is a shell on someone else's GPU. Wrong guesses are slowed down per visitor.
@@ -95,6 +97,8 @@ Closing the browser tab does **not** stop training. Fizgig runs on the pod, so c
 ## Getting files in and out
 
 **From Fizgig on your own computer** (its Pods tab opens the pod in the Fizgig window): the Start tab's **From this computer** card sends any of your local training folders up in one click. Or upload a folder from the Start tab in any browser.
+
+<p align="center"><img src="../docs/assets/screenshots/from_this_computer.png" alt="From this computer: your own training folders on the pod's page, ready to send" width="800"></p>
 
 **Port 8080** is a file manager rooted at `/workspace`. Drag a dataset folder in from your desktop,
 download finished LoRAs from `output_loras/` the same way. No terminal, no SSH keys.
