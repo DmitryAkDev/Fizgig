@@ -156,6 +156,16 @@
             <div class="card-desc" id="modelWarningText"></div>
             <div class="card-content"><button class="btn btn-primary" data-goto="prefs">Open Preferences</button></div>
           </div>
+          <div class="section-card" id="phoneCard" style="display:none">
+            <div class="card-title">Open on your phone</div>
+            <div class="card-desc">Scan the code with your phone's camera: it opens this Fizgig already logged in, and
+              the phone stays logged in for 30 days, so you can keep an eye on a run from anywhere.</div>
+            <div class="card-content phone-row">
+              <div class="phone-qr" id="phoneQr"></div>
+              <div class="phone-side"><div class="field-hint" id="phoneNote"></div>
+                <div class="field-row" id="phoneBtns"></div></div>
+            </div>
+          </div>
         </section>
 
         <section id="tab-prep" class="tab-panel">
@@ -1617,6 +1627,7 @@
     <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
   </div>
 
+  <script src="/qrcode.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

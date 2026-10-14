@@ -1919,6 +1919,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .pod-main .field-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pod-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pods-deploy { display: inline-flex; margin-top: 0; }
+.phone-row { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+.phone-qr { width: 176px; height: 176px; flex: 0 0 176px; background: #FFFFFF; border-radius: 12px; padding: 8px;
+  box-sizing: border-box; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.phone-qr svg { width: 100%; height: 100%; display: block; transition: filter .25s; }
+.phone-qr.blurred svg { filter: blur(7px); opacity: .55; }
+.phone-qr .phone-msg { color: #1A2029; font-size: 13px; line-height: 1.4; text-align: center; padding: 6px; }
+.phone-side { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 10px; }
 .pick-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 12px; }
 .pick-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .pick-row label[hidden] { display: none; }

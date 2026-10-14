@@ -62,6 +62,28 @@ _SESSION_KEY = [""]          # the logins' key, kept in prefs.json so a login ou
 
 _lock = threading.Lock()
 _login_lock = threading.Lock()
+# Open on your phone: one-time passes in the QR code -> when made. Each opens the page logged in once, for a minute.
+_phone_passes: dict = {}
+PHONE_PASS_SECONDS = 60
+
+
+def _phone_pass_new() -> str:
+    now = time.time()
+    with _login_lock:
+        for k in [k for k, t in _phone_passes.items() if now - t > PHONE_PASS_SECONDS]:
+            del _phone_passes[k]
+        p = secrets.token_urlsafe(18)
+        _phone_passes[p] = now
+        return p
+
+
+def _phone_pass_take(p) -> bool:
+    """True once for a pass made in the last minute; it is gone after."""
+    with _login_lock:
+        t = _phone_passes.pop(p, None)
+    return t is not None and time.time() - t <= PHONE_PASS_SECONDS
+
+
 _login_fails: dict = {}    # client address -> (wrong guesses, locked until, last miss)
 _run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": "", "family": "", "values": {},
         "image_folder": "", "pause": False}
@@ -2023,10 +2045,13 @@ class Handler(BaseHTTPRequestHandler):
             key = os.environ.get("FIZGIG_APP_KEY", "")
             extra = ([self._cookie()]
                      if key and self.password and hmac.compare_digest((qs.get("app_key") or [""])[0], key) else [])
+            phone = (qs.get("phone") or [""])[0]
+            if phone and self.password and _phone_pass_take(phone):
+                extra = [self._cookie(remember=True)]
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra=extra)
         if path == "/welcome.mp4":                  # the welcome popup's tour (it ships with Fizgig: no network)
             return self._stream(os.path.join(STATIC_DIR, "welcome_v8.mp4"), attachment=False)  # ranged: it seeks
-        if path in ("/app.js", "/style.css"):
+        if path in ("/app.js", "/style.css", "/qrcode.js"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
         if path == "/icon.png":
@@ -2939,6 +2964,20 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/phone_link":           # Open on your phone: the QR code's address, with a one-time pass
+                if not self.password:
+                    return self.json({"error": "Set a password first (Preferences > Web UI)."}, 400)
+                from fizgig.web import pod_stop
+                from fizgig.web.port import lan_ip
+                if on_pod():
+                    pid = pod_stop.pod_id()
+                    base = f"https://{pid}-8081.proxy.runpod.net/" if pid else ""
+                else:
+                    ip = lan_ip()
+                    base = f"http://{ip}:{self.server.server_address[1]}/" if ip else ""
+                if not base:
+                    return self.json({"error": "This computer has no address on a network for a phone to open."}, 400)
+                return self.json({"url": base + "?phone=" + _phone_pass_new(), "seconds": 30})
             if path == "/api/restart":              # Restart now: a new password (or none) takes effect
                 if on_pod():
                     return self.json({"error": "A pod's password comes from its template: restart the pod."}, 400)
