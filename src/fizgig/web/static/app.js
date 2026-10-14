@@ -900,10 +900,9 @@ async function check() {
 async function start(path) {
   try {
     const r = await api(path, path === "/api/start" ? runBody() : {});
-    showProblems(r.problems);
-    if (r.error) $("runStatus").textContent = r.error;
+    showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     pollRun();
-  } catch (e) { $("runStatus").textContent = e.message; }
+  } catch (e) { showProblems([e.message]); }
 }
 
 // Resume: the paused run's own settings, unless the form now has another picture size for it (Target Megapixels,
@@ -918,8 +917,8 @@ async function resumeClick() {
   const say = diff.map((k) => `${SIZE_KEYS[k]} ${was[k] || "?"} → ${S.values[k]}`).join(", ");
   const go = (body) => async () => {
     box.style.display = "none";
-    try { const x = await api("/api/resume", body); showProblems(x.problems); if (x.error) $("runStatus").textContent = x.error; }
-    catch (e) { $("runStatus").textContent = e.message; }
+    try { const x = await api("/api/resume", body); showProblems(x.problems || (x.error ? [x.error] : [])); }
+    catch (e) { showProblems([e.message]); }
     pollRun();
   };
   box.replaceChildren(
