@@ -5694,6 +5694,9 @@ function pickDraw() {
     "Speeds are a rough guide from public benchmarks; prices and stock are RunPod's, from the last minute." + vol;
 }
 
+$("tabsToggle").addEventListener("click", () =>
+  tabsMenu(!$("tabsToggle").closest(".tab-strip-row").classList.contains("tabs-open")));
+
 function wirePods() {
   $("podsReload").addEventListener("click", () => podsLoad());
   for (const id of ["pickVram", "pickCloud", "pickMax", "pickHours"]) $(id).addEventListener("input", pickDraw);
@@ -5749,7 +5752,17 @@ async function login() {
 }
 
 // ---- tabs and wiring ---------------------------------------------------------------------------------------
+// a phone's menu button: open or fold the tabs (a desktop never shows the button)
+function tabsMenu(open) {
+  const row = $("tabsToggle").closest(".tab-strip-row");
+  row.classList.toggle("tabs-open", open);
+  $("tabsToggle").setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 function showTab(name) {
+  const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
+  if (tb) $("tabsToggleName").textContent = tb.textContent;
+  tabsMenu(false);
   document.querySelectorAll(".tab-item").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
     if (b.dataset.tab === name) b.scrollIntoView({block: "nearest", inline: "nearest"});
