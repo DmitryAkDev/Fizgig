@@ -21,7 +21,7 @@ PROXY = re.compile(r"^https?://([a-z0-9]+)-\d+\.proxy\.runpod\.net", re.I)
 MAX_SAVED = 20
 
 # runpodctl's own fields; FIELDS_MIN when RunPod rejects one of them
-FIELDS = "id name desiredStatus imageName costPerHr gpuCount ports machine { gpuDisplayName }"
+FIELDS = "id name desiredStatus imageName costPerHr gpuCount ports env machine { gpuDisplayName }"
 FIELDS_MIN = "id name desiredStatus imageName"
 
 
@@ -146,9 +146,39 @@ def account(key) -> list:
                     "running": str(p.get("desiredStatus") or "").upper() == "RUNNING",
                     "status": str(p.get("desiredStatus") or "").upper(),
                     "gpu": ((p.get("machine") or {}).get("gpuDisplayName")) or "",
-                    "gpus": int(p.get("gpuCount") or 1), "cost": float(p.get("costPerHr") or 0)})
+                    "gpus": int(p.get("gpuCount") or 1), "cost": float(p.get("costPerHr") or 0),
+                    "auto_login": bool(_env_password(p))})       # the app window logs you in (never the password itself)
     out.sort(key=lambda r: (not r["running"], r["name"].lower()))
     return out
+
+
+def login_password(key, url) -> str:
+    """The password a pod of this account logs in with, read from its settings on RunPod (FIZGIG_PASSWORD, else
+    VNC_PASSWORD - as the pod picks it), or "" when there's none to read: no key, not this account's pod, a RunPod
+    secret (the API gives its name, not its value), or one the pod made up itself. Asked fresh each time, never kept."""
+    pod_id = (parse(url) or {}).get("id") if url else ""
+    if not key or not pod_id:
+        return ""
+    try:
+        pods = ((_gql(key, "query { myself { pods { id env } } }", timeout=10).get("myself") or {}).get("pods")) or []
+    except ValueError:
+        return ""
+    return next((_env_password(p) for p in pods if p.get("id") == pod_id), "")
+
+
+def _env_password(pod) -> str:
+    env = {}
+    for e in pod.get("env") or []:
+        if isinstance(e, str) and "=" in e:
+            k, _, v = e.partition("=")
+            env[k.strip()] = v
+        elif isinstance(e, dict):
+            env[str(e.get("key") or "")] = str(e.get("value") or "")
+    for name in ("FIZGIG_PASSWORD", "VNC_PASSWORD"):
+        v = str(env.get(name) or "").strip()
+        if v:
+            return "" if "{{" in v else v          # a secret's reference: the pod uses it, the API won't say it
+    return ""
 
 
 def start(key, pod_id, gpus=1):

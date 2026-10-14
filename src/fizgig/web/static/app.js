@@ -5473,6 +5473,7 @@ function podsDraw() {
       other: "Different version: update both computers to open it"}[p.build] || "";
     const queued = p.queued ? `${p.queued} queued` + (p.queue_held ? " (held)" : "") : "";
     const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "", queued,
+      p.auto_login && inApp() ? "logs you in" : "",
       p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
       !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];

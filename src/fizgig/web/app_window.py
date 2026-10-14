@@ -199,6 +199,33 @@ _BLOCK_JS = r"""
 """
 
 # on a pod's page: its build (its About, once logged in), checked against this computer's
+# a pod of your account, opened in the window: its login filled in with the password from its RunPod settings, once.
+# Whatever happens the login box stays usable - if that password doesn't work, it says to type it.
+_LOGIN_JS = r"""
+(function (pw) {
+  var tries = 0;
+  function go() {
+    var m = document.getElementById('loginModal'), i = document.getElementById('loginPassword'),
+        b = document.getElementById('loginButton');
+    if (!m || !i || !b) { if (++tries < 40) setTimeout(go, 250); return; }   // the page is still coming
+    if (!m.classList.contains('active')) { if (++tries < 40) setTimeout(go, 250); return; }   // logged in already
+    i.value = pw;
+    var r = document.getElementById('loginRemember'); if (r) r.checked = true;
+    b.click();
+    setTimeout(function () {
+      if (m.classList.contains('active')) {
+        i.value = '';
+        var e = document.getElementById('loginError');
+        if (e) e.textContent = "Fizgig couldn't log you in to this pod by itself (its password isn't the one in its " +
+          "RunPod settings). Type its password here.";
+      }
+    }, 4000);
+  }
+  go();
+})(__PW__);
+"""
+
+
 _CHECK_JS = r"""
 (function () {
   if (window.__fizgigBuildCheck) return;
@@ -486,8 +513,22 @@ def main():
                                         "Switch to this computer", "Back to Fizgig on this computer ("
                                         + ("the pod" if _is_pod(cur) else name) + " keeps running)", "home"))
                 window.evaluate_js(_CHECK_JS)
+                if _is_pod(cur) and left[0] not in tried:
+                    tried.add(left[0])                    # once a window session: a refused one is left to you
+                    threading.Thread(target=_auto_login, args=(left[0],), daemon=True).start()
             except Exception:
                 pass
+
+        tried = set()
+
+        def _auto_login(pod):
+            try:
+                from fizgig.web import pod_stop, pods
+                pw = pods.login_password(pod_stop.api_key(_prefs()), pod)
+                if pw and (window.get_current_url() or "").startswith(pod.rstrip("/")):
+                    window.evaluate_js(_LOGIN_JS.replace("__PW__", json.dumps(pw)))
+            except Exception:
+                pass                                      # the login box as ever
         window.events.loaded += loaded
 
         def keep():
