@@ -755,7 +755,44 @@ function webPasswordRows() {
   input.addEventListener("change", () => input.value.trim() && save(input.value.trim()));
   say.textContent = base(); paint();
   return [el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Password:"}), input,
-    el("label", {class: "checkbox-label"}, show, " Show"), remove), say, links];
+    el("label", {class: "checkbox-label"}, show, " Show"), remove), say, links, firewallRow()];
+}
+
+// Windows Firewall, on the computer Fizgig runs on: is Fizgig let through on this network, and a button that lets it
+// (our two rules, private networks only; Windows asks for an administrator's OK). A page from elsewhere gets nothing.
+function firewallRow() {
+  const row = el("div", {class: "field-row", style: "display:none"});
+  const say = el("div", {class: "field-hint", style: "display:none"});
+  const box = el("div", {}, row, say);
+  const btn = el("button", {class: "btn btn-sm", text: "Allow on my network"});
+  const show = (d) => {
+    if (!d || d.windows === false || !S.pw.saved) { row.style.display = say.style.display = "none"; return; }
+    row.style.display = say.style.display = "";
+    if (d.error) { say.textContent = d.error; say.className = "field-hint warn"; return; }
+    const all = d.networks || [];
+    const nets = all.some((n) => n.lan) ? all.filter((n) => n.lan) : all;   // the home network, not a VPN's adapter
+    const pub = nets.filter((n) => n.category === "Public");
+    const ok = d.allowed && !d.blocked && !pub.length && nets.length;
+    row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
+    btn.textContent = d.allowed && !d.blocked ? "Allow again" : "Allow on my network";
+    const lines = [];
+    if (pub.length) lines.push(`Windows calls ${pub.map((n) => `"${n.name}"`).join(", ")} a Public network and lets no ` +
+      "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
+      "Ethernet > your network > Network profile type > Private.");
+    if (d.blocked) lines.push("Windows Firewall blocks Fizgig's Python (its question was cancelled once). Allow on my network takes that block off.");
+    if (!d.allowed) lines.push("Windows Firewall hasn't been told to let Fizgig in yet. Allow on my network adds two rules " +
+      `for private networks only: the web UI's port and the one other computers find Fizgig on. Windows asks for an administrator's OK.`);
+    if (ok) lines.push("✓ Allowed on your network: your other computers find this one in their Pods tab and can open it.");
+    say.textContent = lines.join(" ");
+    say.className = "field-hint" + (ok ? "" : " warn");
+  };
+  btn.onclick = async () => {
+    btn.disabled = true; say.textContent = "Waiting for Windows (it asks for an administrator's OK)..."; say.className = "field-hint";
+    try { show(await api("/api/lan/firewall", {})); } catch (e) { say.textContent = e.message; say.className = "field-hint warn"; }
+    btn.disabled = false;
+  };
+  api("/api/lan/firewall").then(show).catch(() => {});
+  return box;
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
@@ -5323,7 +5360,8 @@ async function browse(path) {
 S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
-  stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"]};
+  stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
+  blocked: ["Found, but it doesn't let this computer in yet: on that computer, Preferences > Web UI > Allow on my network", "warn"]};
 
 async function podsLoad(quiet) {
   if (!quiet) $("podsNote").textContent = "Checking your pods...";
@@ -5334,12 +5372,13 @@ async function podsLoad(quiet) {
   $("podKeyNote").textContent = r.key_saved ? "Key saved: your Fizgig pods are listed above." : "";
   podsDraw();
   $("podsNote").textContent = r.error ? r.error : (S.pods.list.length ? "" :
-    "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key.");
+    "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key. Fizgig on " +
+    "your other computers shows here by itself once it has a password and is allowed on your network (its Preferences > Web UI).");
   // keep checking while the tab is open: every 6 s while one is on its way up (and open it when it's ready if asked
   // to), else every 30 s with an API key saved (a pod started or stopped on RunPod shows up by itself)
   clearTimeout(S.pods.timer);
   const starting = S.pods.list.some((p) => p.state === "waiting" || p._starting);
-  if (starting || S.pods.key) S.pods.timer = setTimeout(() => {
+  S.pods.timer = setTimeout(() => {          // the network's Fizgigs come and go too: every 30 s regardless
     if ($("tab-pods").classList.contains("active")) podsLoad(true);
   }, starting ? 6000 : 30000);
   const w = S.pods.waitFor && S.pods.list.find((p) => p.url === S.pods.waitFor);
@@ -5352,8 +5391,12 @@ function podsDraw() {
     const st = p._starting && p.state !== "ready" ? "starting" : p.state;
     const [label, tone] = POD_STATE[st] || [st, "muted"];
     const title = p.name || p.id || p.url;
-    const sub = [p.gpu, p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
-      !p.id && p.url !== title ? p.url : ""].filter(Boolean).join(" · ");
+    const build = {mine: "Different version: update Fizgig on this computer to open it",
+      theirs: "Different version: update Fizgig on that computer to open it",
+      other: "Different version: update both computers to open it"}[p.build] || "";
+    const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "",
+      p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
+      !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];
     if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
       onclick: () => podOpen(p)}));
@@ -5367,7 +5410,7 @@ function podsDraw() {
     if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
     return el("div", {class: "pod-row"},
-      el("span", {class: `pod-dot ${tone}`}),
+      el("span", {class: `pod-dot ${build ? "warn" : tone}`}),
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: title}),
         el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`})),
       el("div", {class: "pod-btns"}, ...btns));
@@ -5375,7 +5418,7 @@ function podsDraw() {
 }
 
 function podOpen(p) {
-  api("/api/pods/opened", {url: p.url, name: p.name || ""}).catch(() => {});
+  api("/api/pods/opened", {url: p.url, name: p.name || "", lan_id: p.lan_id || ""}).catch(() => {});
   if (inApp()) location.href = p.url;                 // the window goes there; Switch to this computer comes back
   else window.open(p.url, "_blank", "noopener");
 }

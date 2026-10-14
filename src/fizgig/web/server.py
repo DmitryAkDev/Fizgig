@@ -23,6 +23,7 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -438,7 +439,8 @@ def _pods_post(what, b):
         update_prefs({"app_pods": pods.forget(p, str(b.get("url") or ""))})
         return {"ok": True}
     if what == "opened":
-        update_prefs({"app_pods": pods.touch(p, str(b.get("url") or ""), str(b.get("name") or ""))})
+        update_prefs({"app_pods": pods.touch(p, str(b.get("url") or ""), str(b.get("name") or ""),
+                                             str(b.get("lan_id") or ""))})
         return {"ok": True}
     if what == "key":                        # checked against RunPod before it is kept
         key = str(b.get("key") or "").strip()
@@ -2258,7 +2260,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "The Pods tab is for the Fizgig on your own computer."}, 400)
             p = load_prefs()
             key = pod_stop.api_key(p)
-            return self.json({**pods.listing(p, key), "key_saved": bool(key)})
+            return self.json({**pods.listing(p, key, update_prefs, about_info()["commit"]), "key_saved": bool(key)})
+        if path == "/api/lan/firewall":              # Preferences > Web UI: is Fizgig let through (Windows)?
+            from fizgig.web import lan
+            if not self._local_viewer():
+                return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
+            return self.json(lan.firewall_status(self.server.server_address[1]))
         if path == "/api/pods/probe":                # one pod, while it starts
             from fizgig.web import pods
             url = (qs.get("url") or [""])[0]
@@ -2825,6 +2832,14 @@ class Handler(BaseHTTPRequestHandler):
                     exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
                 subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
                 return self.json({"ok": True})
+            if path == "/api/lan/firewall":          # Allow on my network: Windows asks for an administrator's OK
+                from fizgig.web import lan
+                if not self._local_viewer():
+                    return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
+                try:
+                    return self.json(lan.firewall_allow(self.server.server_address[1]))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
             if path.startswith("/api/pods/"):        # the Pods tab: add, forget, opened, API key, start, stop
                 return self.json(_pods_post(path[len("/api/pods/"):], b))
             if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
@@ -3227,6 +3242,23 @@ def _follow_parent(pid):
             os._exit(0)
 
 
+def _lan_announce(port):
+    """What this Fizgig tells another computer's Pods tab: its name, GPU, port, build and whether it's training."""
+    from fizgig.web import lan
+    mid = lan.machine_id(load_prefs(), update_prefs)
+    about = about_info()
+
+    def info():
+        with _lock:
+            vt = _stats["vram"][1]
+            gpu = _stats["device_name"]
+            busy = _run["lora"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+        return {"id": mid, "name": socket.gethostname(), "port": port, "gpu": gpu if vt else "",
+                "vram_gb": round(vt / 2 ** 30) if vt else 0, "version": about["version"], "commit": about["commit"],
+                "busy": busy}
+    lan.start(info)
+
+
 def run_server(host, port=None, password=None, password_arg=False, open_browser=False):
     """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
     nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
@@ -3251,6 +3283,8 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
+    if password and not on_pod() and host not in ("127.0.0.1", "localhost", "::1"):
+        _lan_announce(port)                    # other computers' Pods tabs find this one by themselves
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
     if open_browser:                           # Fizgig in browser: the page, once this is listening

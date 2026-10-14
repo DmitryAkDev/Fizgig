@@ -146,7 +146,7 @@ def _update_how():
     return "close Fizgig, run venv/bin/python update_fizgig.py in the Fizgig folder, then open it again"
 
 
-def build_verdict(pod_build):
+def build_verdict(pod_build, pod=True):
     """The rule: the window and the pod run the same build, or the pod's page is blocked with what to do. Which
     side is behind decides it: a pod updates itself at each start; this computer with its updater."""
     mine = _build()
@@ -155,16 +155,20 @@ def build_verdict(pod_build):
     theirs = str(pod_build or "").strip()
     if theirs == mine:
         return {"ok": True}
-    title = "This computer and the pod run different builds of Fizgig"
+    other = "the pod" if pod else "that computer"
+    title = ("This computer and the pod run different builds of Fizgig" if pod else
+             "Your two computers run different builds of Fizgig")
     mine_s, theirs_s = mine[:7], theirs[:7]
     if theirs and _git("merge-base", "--is-ancestor", mine, theirs)[0] == 0 or (theirs and _git("cat-file", "-e", theirs + "^{commit}")[0] != 0):
         # the pod's build is newer than this computer's, or one this computer has never seen
-        msg = (f"The pod runs build {theirs_s}, this computer build {mine_s}. Update Fizgig on this computer - "
+        msg = (f"{other.capitalize()} runs build {theirs_s}, this computer build {mine_s}. Update Fizgig on this computer - "
                f"{_update_how()} - and the two match.")
     else:
-        said = f"The pod runs build {theirs_s}" if theirs else "The pod runs an older build"
-        msg = (f"{said}, this computer build {mine_s}. Restart the pod (stop it, then Start and open on the Pods "
-               "tab): a pod takes the newest Fizgig every time it starts.")
+        said = f"{other.capitalize()} runs build {theirs_s}" if theirs else f"{other.capitalize()} runs an older build"
+        msg = (f"{said}, this computer build {mine_s}. " + (
+            "Restart the pod (stop it, then Start and open on the Pods tab): a pod takes the newest Fizgig every time "
+            "it starts." if pod else "Update Fizgig on that computer (close it, run its updater, start it again), "
+            "then open it here again."))
     return {"ok": False, "title": title, "message": msg}
 
 
@@ -348,7 +352,11 @@ def main():
                 return _build()
 
             def build_check(self, pod_build):
-                v = build_verdict(pod_build)
+                try:
+                    url = window.get_current_url() or ""
+                except Exception:
+                    url = ""
+                v = build_verdict(pod_build, pod=".proxy.runpod.net" in url or not url)
                 if not v["ok"]:
                     window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
                                                          json.dumps(v["message"])))
