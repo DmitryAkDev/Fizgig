@@ -71,6 +71,18 @@ def _same_run(r, lora, output_dir):
             and norm(r.get("output_dir")) == norm(output_dir))
 
 
+def last_values(lora, output_dir):
+    """The settings the newest run with this LoRA name and folder last trained with, or None (not a run Fizgig
+    knows: a state folder from elsewhere)."""
+    try:
+        for r in reversed(_read()):
+            if _same_run(r, lora, output_dir):
+                return dict(r.get("values") or {})
+    except OSError:
+        pass
+    return None
+
+
 def start(source, family, lora, output_dir, image_folder, values, resume=False):
     """Record a run that is starting; returns its id. A resume carries on the paused run's own record (the newest
     paused one with the same LoRA name and folder, from either app) instead of listing the run twice."""
@@ -82,7 +94,8 @@ def start(source, family, lora, output_dir, image_folder, values, resume=False):
                     if _same_run(r, lora, output_dir):
                         if r.get("result") != "paused":
                             break
-                        r.update(result="running", ended_at=None, resumed_at=time.time())
+                        r.update(result="running", ended_at=None, resumed_at=time.time(),
+                                 values=values or r.get("values") or {})    # e.g. a new Target Megapixels
                         _write(runs)
                         return r["id"]
         except OSError:

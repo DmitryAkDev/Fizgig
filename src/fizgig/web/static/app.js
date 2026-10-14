@@ -888,6 +888,32 @@ async function start(path) {
   } catch (e) { $("runStatus").textContent = e.message; }
 }
 
+// Resume: the paused run's own settings, unless the form now has another picture size for it (Target Megapixels,
+// a clip family's clip size): then a choice - as it was, or at the new size (the cache is made again first, keeping
+// what still fits). Training at a bigger size for the last epochs, say.
+const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
+async function resumeClick() {
+  const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
+  const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
+    String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
+  if (!diff.length) { box.style.display = "none"; return start("/api/resume"); }
+  const say = diff.map((k) => `${SIZE_KEYS[k]} ${was[k] || "?"} → ${S.values[k]}`).join(", ");
+  const go = (body) => async () => {
+    box.style.display = "none";
+    try { const x = await api("/api/resume", body); showProblems(x.problems); if (x.error) $("runStatus").textContent = x.error; }
+    catch (e) { $("runStatus").textContent = e.message; }
+    pollRun();
+  };
+  box.replaceChildren(
+    el("span", {text: `The form's size differs from the run's (${say}). Resume:`}),
+    el("button", {class: "btn btn-sm btn-primary", text: "At the new size",
+      title: "Caches the pictures again at the new size first (what already fits is kept), then trains on from where it paused",
+      onclick: go(Object.fromEntries(diff.map((k) => [k, S.values[k]])))}),
+    el("button", {class: "btn btn-sm", text: "As it was", onclick: go({})}),
+    el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { box.style.display = "none"; }}));
+  box.style.display = "";
+}
+
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
                     completed: "Finished", failed: "Failed", stopped: "Stopped"};
 
@@ -6063,7 +6089,7 @@ function wire() {
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
-  $("btnResume").addEventListener("click", () => start("/api/resume"));
+  $("btnResume").addEventListener("click", resumeClick);
   const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })
     .catch((e) => { $("runNowSay").textContent = e.message; });
   $("btnSampleNow").addEventListener("click", () => now("sample", "Previews are made after the current step - " +

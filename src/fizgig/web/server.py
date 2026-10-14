@@ -706,7 +706,28 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if ft_continue:          # a paused fine-tune: from its checkpoint, for the rotations left (the cache is built)
         inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
                       resuming=True)
+    if resume or ft_continue or str(values.get("RESUME_TRAINING") or "").strip():
+        inputs["recache"] = _size_changed(name, out_dir, values)
     return desc, inputs, launch.plan(desc, inputs)
+
+
+_SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
+
+
+def _size_changed(lora, out_dir, values):
+    """A resume that trains at another size from now on (Target Megapixels, a clip family's clip size) caches again
+    first; a run Fizgig has no record of does too, to be safe. Unchanged: the cache is used as it is."""
+    from fizgig.web import history
+    old = history.last_values(lora, out_dir)
+    if old is None:
+        return True
+
+    def num(v):
+        try:
+            return round(float(str(v).strip()), 4)
+        except ValueError:
+            return str(v or "").strip()
+    return any(num(old.get(k, "")) != num(values.get(k, "")) for k in _SIZE_KEYS)
 
 
 def _ref_strength(v):
@@ -2673,6 +2694,10 @@ class Handler(BaseHTTPRequestHandler):
                                                      "resume_mode")}
                 if last["state"] != "paused" or not last["resume"]:
                     return self.json({"error": "No paused run to resume."}, 400)
+                last["values"] = dict(last["values"] or {})
+                for k in _SIZE_KEYS:                     # Resume at the size the form has now: caches again first
+                    if str(b.get(k) or "").strip():
+                        last["values"][k] = str(b[k]).strip()
                 if last["resume_mode"] == "ft":
                     if not os.path.isfile(last["resume"]):
                         return self.json({"error": "The paused fine-tune's checkpoint isn't there any more: "

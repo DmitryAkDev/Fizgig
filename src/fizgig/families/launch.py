@@ -14,7 +14,8 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     enable_bucket, no_upscale
     cache_root                  the cache folder from Preferences (each dataset gets its own folder inside it)
     blocks_swap                 the Block Swap box as typed ("Auto (detect from GPU)", "8", ...)
-    enable_cache, resuming      whether the cache stages run; a resume (or fine-tune continuation) skips them
+    enable_cache, resuming      whether the cache stages run; a resume (or fine-tune continuation) skips them,
+    recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
@@ -190,10 +191,12 @@ def timestep_flags(inputs):
 
 
 def caches(desc, inputs):
-    """Whether the cache stages run: not on a resume (the cache is already built), not for a prompt slider (no
-    photos), not with Enable Cache off."""
+    """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
+    size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
+    Enable Cache off."""
     resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
-    return bool(inputs.get("enable_cache", True) and not resuming and not slider_on(desc, inputs, "prompts"))
+    return bool(inputs.get("enable_cache", True) and (not resuming or inputs.get("recache"))
+                and not slider_on(desc, inputs, "prompts"))
 
 
 # ---------------------------------------------------------------------------------------------------- pairs
