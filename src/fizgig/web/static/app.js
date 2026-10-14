@@ -4427,7 +4427,10 @@ async function studioPoll() {
   S.st.ready = st.state === "ready";
   S.st.donor = !!st.donor;
   S.st.primaryBlocks = new Set(st.primary_blocks || []); S.st.donorBlocks = new Set(st.donor_blocks || []);
-  $("stStatus").textContent = (st.status || $("stStatus").textContent) +
+  // loaded with nothing to render yet: say what it waits for (a prompt), not that a preview is coming
+  const waiting = st.state === "ready" && !st.rendering && !st.shown && !$("stPrompt").value.trim();
+  $("stStatus").textContent = (waiting ? "Loaded. Enter a prompt (include the LoRA's trigger word), then press Update." :
+    st.status || $("stStatus").textContent) +
     (st.status && /^(Loaded|Ready|Donor loaded)/.test(st.status) && studioEqNote(st) ? " " + studioEqNote(st) : "");
   $("stBadge").textContent = {loading: "Loading", ready: st.rendering ? "Rendering" : "Loaded", idle: ""}[st.state] || "";
   $("stBadge").dataset.state = st.state === "loading" || st.rendering ? "running" : st.state === "ready" ? "completed" : "idle";

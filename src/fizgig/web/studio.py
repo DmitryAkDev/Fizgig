@@ -145,7 +145,7 @@ def _event(ev):
             if kind == "loaded":
                 _S.update(nolora="", nolora_media="", nolora_gen=0, nolora_busy=False)
                 _S.update(state="ready", family=ev.get("family", ""), primary=ev.get("primary", ""),
-                          donor=ev.get("donor", ""), status="Loaded. Generating preview…", error="")
+                          donor=ev.get("donor", ""), status="Loaded.", error="")
                 _S["profile"] = _profile(ev.get("hash", ""))
             else:
                 _S.update(donor=ev.get("donor", ""), status="Donor loaded. Enable it per block to mix it in."
