@@ -1072,13 +1072,14 @@ LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's conso
 
 
 def _folder_problem(e, out_dir) -> str:
-    """Why a run's folder couldn't be made, and where to change it: a drive that isn't there is the usual one (an
-    external drive unplugged, or a path from another computer)."""
+    """Why a run's folder couldn't be made, and where to change it: a drive that isn't reachable is the usual one (a
+    network drive disconnected, an external drive unplugged, or a path from another computer)."""
     where = getattr(e, "filename", None) or out_dir
     drive = os.path.splitdrive(str(where))[0]
     if drive and not os.path.exists(drive + os.sep):
         where = out_dir                         # the folder asked for, not just the missing drive's root
-        why = f"there's no drive {drive} on this computer (an external drive that isn't plugged in, or a path from another computer)"
+        why = (f"drive {drive} isn't reachable from here (a network drive that's disconnected, an external drive that "
+               "isn't plugged in, or a path from another computer)")
     else:
         why = e.strerror or str(e)
     return (f"Couldn't make the run's folder {where}: {why}. Choose another LoRA output folder on the Training tab "
