@@ -312,7 +312,73 @@ def _unhook_requests():
     ec.EdgeChrome.on_webview_ready = on_ready
 
 
+_MUTEX = []
+
+
+def _one_window() -> bool:
+    """Windows: one Fizgig window per Fizgig folder. Launched again while it's open, that window comes forward and
+    this launch ends (False). One still closing gets 15 s to go; one that never appeared (its WebView2 stuck, say,
+    on a profile the window before it hadn't let go of yet) is ended, so it can't keep a server - and an old
+    password - running unseen. True: carry on and open."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import hashlib
+        from ctypes import wintypes
+        k, u = ctypes.windll.kernel32, ctypes.windll.user32
+        k.CreateMutexW.restype = wintypes.HANDLE
+        h = k.CreateMutexW(None, False, "Local\\FizgigAppWindow-" + hashlib.sha1(BASE_DIR.lower().encode()).hexdigest()[:12])
+        if not h:
+            return True
+        _MUTEX.append(h)
+        pid_file = user_file("app_window.pid")
+
+        def mine():
+            try:
+                with open(pid_file, "w") as f:
+                    f.write(str(os.getpid()))
+            except OSError:
+                pass
+            return True
+        if k.WaitForSingleObject(h, 0) in (0, 0x80):            # nobody else (0x80: one that crashed)
+            return mine()
+        try:
+            other = int(open(pid_file).read().strip() or 0)
+        except (OSError, ValueError):
+            other = 0
+        found = []
+        proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def each(hwnd, _):
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            n = u.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            u.GetWindowTextW(hwnd, buf, n + 1)
+            if u.IsWindowVisible(hwnd) and pid.value == other and (buf.value == "Fizgig" or buf.value.startswith("Fizgig — ")):
+                found.append(hwnd)
+            return True
+        u.EnumWindows(proc(each), 0)
+        if found:                                              # it's open: that one, not a second
+            if u.IsIconic(found[0]):
+                u.ShowWindow(found[0], 9)
+            u.SetForegroundWindow(found[0])
+            return False
+        if k.WaitForSingleObject(h, 15000) in (0, 0x80):        # it was closing
+            return mine()
+        if other:                                              # no window after all that: stuck, so ended
+            subprocess.run(["taskkill", "/PID", str(other), "/T", "/F"], capture_output=True,
+                           creationflags=0x08000000)
+            k.WaitForSingleObject(h, 5000)
+        return mine()
+    except Exception:
+        return True
+
+
 def main():
+    if not _one_window():
+        return
     user_data.migrate()                       # Fizgig 7's loose files into user_data, before the prefs are read
     port = saved_port(_prefs())
     own, key = None, ""
@@ -433,6 +499,11 @@ def main():
             webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True   # Buy me a coffee, RunPod, the docs
         except Exception:
             pass
+        def watchdog():                    # a window that never appears ends, its server with it, not left unseen
+            if not window.events.shown.wait(120):
+                _stop(own)
+                os._exit(1)
+        threading.Thread(target=watchdog, daemon=True).start()
         profile = user_file("app_profile")
         webview.start(private_mode=False, storage_path=profile, icon=_icon(profile))
     except Exception as e:
