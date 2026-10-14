@@ -6,7 +6,7 @@ https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
 
 The 80-second tour, also [on YouTube](https://youtu.be/F8F-vuiZd88).
 
-> **On RunPod and need the old pod?** The previous pod, with the classic app in a remote desktop, stays available as **[Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** for anyone in the middle of a big job. Pods you already have keep running as they are, and the new [Fizgig template](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep) is the one to deploy from now on.
+> **On RunPod and need the old pod?** The previous pod, with the classic app in a remote desktop, stays available as **[Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** for anyone in the middle of a big job. Pods you already have keep running as they are, and the new [Fizgig template](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep) is the one to deploy from now on.
 
 ## Starting Fizgig
 
@@ -54,7 +54,7 @@ The old desktop app is gone. Everything it did is in the new app, apart from **L
 - **Keep me logged in:** a login lasts 30 days on that device and survives the pod restarting.
 - **Stop this pod when a run finishes** is on the Preferences tab, with a two-minute countdown you can cancel from any page.
 - **The password:** set `FIZGIG_PASSWORD` in the template to choose it; otherwise the pod makes one on its first start, prints it in its logs and keeps it. Templates that set `VNC_PASSWORD` keep working.
-- **The Classic template stays for now:** the previous pod with the remote desktop on port 6080, for anyone in the middle of a big job. [Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep). Pods you already have keep running as Classic pods; both use the same `/workspace`, so a volume moves across with its models, datasets, LoRAs, settings and past runs.
+- **The Classic template stays for now:** the previous pod with the remote desktop on port 6080, for anyone in the middle of a big job. [Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep). Pods you already have keep running as Classic pods; both use the same `/workspace`, so a volume moves across with its models, datasets, LoRAs, settings and past runs.
 
 ## Thanks
 
