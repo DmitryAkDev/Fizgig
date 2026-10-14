@@ -1404,16 +1404,30 @@
             </div>
           </div>
           <div class="section-card pods-rent">
-            <div class="card-title">No pod yet?</div>
-            <div class="card-desc">Deploy Fizgig's RunPod template: it's ready to train, with nothing to install. An RTX
-              5090 (32 GB) is the pick: it trains Krea 2 with no block swap, so it costs less per finished LoRA than a
-              cheaper, slower card. Give it a 100 GB+ volume. When it has started, its ID is under its name on RunPod's
-              Pods page: paste it above, or add your API key and it appears by itself.</div>
+            <div class="card-title">Rent a pod</div>
+            <div class="card-desc">Fizgig's RunPod template is ready to train, with nothing to install. With your API key,
+              this lists the cards RunPod has free right now, their price, and roughly what a run costs on each. Deploy
+              opens RunPod's page with that card and the template chosen: give it a 100 GB+ volume and press Deploy
+              there. Once it has started it shows above by itself (with your key), or paste its ID.</div>
             <div class="card-content">
-              <div class="field-row"><a class="runpod-btn pods-deploy" id="podDeploy" target="_blank" rel="noopener"
-                  href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=faoq8ed6um&amp;ref=vkb387ep"><i></i><span>Deploy Fizgig on RunPod</span></a></div>
-              <div class="field-hint">The link is a referral one: it supports Fizgig's development at no extra cost to you.
-                <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md" target="_blank" rel="noopener">The pod guide</a></div>
+              <div class="pick-row">
+                <label>Memory <select id="pickVram" title="32 GB trains Krea 2 with no block swap; a smaller card swaps blocks and runs slower">
+                  <option value="24">24 GB+</option><option value="32" selected>32 GB+</option>
+                  <option value="48">48 GB+</option><option value="80">80 GB+</option></select></label>
+                <label class="pick-live">Cloud <select id="pickCloud" title="Secure Cloud: RunPod's own data centres. Community Cloud: vetted hosts, cheaper">
+                  <option value="any">Either</option><option value="secure">Secure</option>
+                  <option value="community">Community</option></select></label>
+                <label class="pick-live">Up to $<input id="pickMax" type="number" step="0.1" min="0" placeholder="any">/hr</label>
+                <label class="pick-live" title="How long your run takes on an RTX 5090: each card's cost is worked out from it">A run of
+                  <input id="pickHours" type="number" value="2" step="0.5" min="0.5"> h on a 5090</label>
+                <label id="pickVolWrap" hidden title="Only the cards free in your volume's data centre">Volume
+                  <select id="pickVol"></select></label>
+              </div>
+              <div class="pods-list" id="pickList"></div>
+              <div class="field-hint" id="pickNote"></div>
+              <div class="field-hint">Every Deploy link here is a referral one: it supports Fizgig's development at no
+                extra cost to you. <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md"
+                target="_blank" rel="noopener">The pod guide</a></div>
             </div>
           </div>
         </section>

@@ -4567,7 +4567,7 @@ function wireStudio() {
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
   $("stH3Base").addEventListener("change", () => { studioH3Remember(); $("stStart").textContent = "Update"; });
   playTogether($("stPlayBothBtn"), () => {
-    const v = S.st.layout.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
+    const v = S.st.layout?.kind === "video", ids = v ? ["stBaseVid", "stTweakVid"] : ["stBaseAud", "stTweakAud"];
     if ($("stNolPane").style.display !== "none") ids.unshift(v ? "stNolVid" : "stNolAud");
     return ids;
   });
@@ -5548,8 +5548,68 @@ async function podStop(p) {
   } catch (e) { $("podsNote").textContent = e.message; }
 }
 
+// ---- Rent a pod: RunPod's cards with their live price and stock, cheapest per run first; Deploy opens RunPod's page
+S.pick = {data: null, dc: ""};
+async function pickLoad() {
+  $("pickNote").textContent = "Asking RunPod what's free...";
+  try { S.pick.data = await api("/api/pods/gpus" + (S.pick.dc ? "?dc=" + encodeURIComponent(S.pick.dc) : "")); }
+  catch (e) { $("pickNote").textContent = e.message; return; }
+  const vols = S.pick.data.volumes || [];
+  document.querySelectorAll(".pick-live").forEach((e) => { e.hidden = !S.pick.data.key; });
+  $("pickVolWrap").hidden = !vols.length;
+  if (vols.length && !$("pickVol").options.length) $("pickVol").replaceChildren(el("option", {value: "", text: "Any data centre"}),
+    ...vols.map((v) => el("option", {value: v.dc, text: `${v.name} (${v.dc})`})));
+  pickDraw();
+}
+
+function pickDraw() {
+  const d = S.pick.data;
+  if (!d) return;
+  const min = +$("pickVram").value, cloud = $("pickCloud").value, hours = parseFloat($("pickHours").value) || 2;
+  const max = parseFloat($("pickMax").value) || Infinity;
+  const speedText = (g) => g.gpu === "RTX 5090" ? "the card these speeds are measured against" : g.speed ? `about ${g.speed.toFixed(g.speed < 1 ? 2 : 1)}× a 5090's speed` : "";
+  const deploy = (g) => el("a", {class: "btn btn-primary btn-sm", href: g.url, target: "_blank", rel: "noopener",
+    text: "Deploy ↗", title: `RunPod's deploy page with the ${g.gpu} and Fizgig's template chosen`});
+  const fits = d.gpus.filter((g) => g.vram >= min);
+  if (!d.key) {
+    $("pickList").replaceChildren(...fits.map((g) => el("div", {class: "pod-row"}, el("span", {class: "pod-dot"}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: `${g.gpu} · ${g.vram} GB`}),
+        el("div", {class: "field-hint", text: speedText(g)})), el("div", {class: "pod-btns"}, deploy(g)))));
+    $("pickNote").textContent = "Add your RunPod API key above to see which cards are free right now, their prices and what a run costs on each.";
+    return;
+  }
+  const rows = [];
+  let gone = 0, dear = 0;
+  for (const g of fits) {
+    const offers = ["secure", "community"].filter((c) => (cloud === "any" || cloud === c) && g[c]).map((c) => ({cloud: c, ...g[c]}));
+    if (!offers.length) { gone++; continue; }
+    const o = offers.sort((a, b) => a.price - b.price)[0];
+    if (o.price > max) { dear++; continue; }
+    rows.push({g, o, run: g.speed ? o.price * hours / g.speed : null});
+  }
+  rows.sort((a, b) => (a.run === null) - (b.run === null) || (a.run ?? a.o.price) - (b.run ?? b.o.price));
+  const shown = S.pick.all ? rows : rows.slice(0, 5);
+  $("pickList").replaceChildren(...shown.map(({g, o, run}, i) => {
+    const sub = [`$${o.price.toFixed(2)}/hr`, o.cloud === "secure" ? "Secure Cloud" : "Community Cloud (pick it on RunPod's page)",
+      o.stock && o.stock !== "Low" ? `${o.stock.toLowerCase()} stock` : "", speedText(g),
+      run !== null ? `≈ $${run.toFixed(2)} a run` : ""].filter(Boolean).join(" · ");
+    return el("div", {class: "pod-row"}, el("span", {class: "pod-dot ok"}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name"}, `${g.gpu} · ${g.vram} GB`,
+        ...(i === 0 && run !== null ? [el("span", {class: "pick-best", text: "Best value"})] : [])),
+        el("div", {class: "field-hint", text: sub})), el("div", {class: "pod-btns"}, deploy(g)));
+  }), ...(rows.length > 5 ? [el("button", {class: "btn btn-sm pick-more", text: S.pick.all ? "Show the best 5" :
+    `Show all ${rows.length}`, onclick: () => { S.pick.all = !S.pick.all; pickDraw(); }})] : []));
+  const vol = S.pick.dc ? ` Pick your volume on RunPod's page too: it's in ${S.pick.dc}.` : "";
+  $("pickNote").textContent = (rows.length ? "" : "Nothing fits those choices right now. ") +
+    [gone ? `${gone} more card${gone === 1 ? " has" : "s have"} none free right now` : "",
+     dear ? `${dear} cost more than your limit` : ""].filter(Boolean).join("; ") + (gone || dear ? ". " : "") +
+    "Speeds are a rough guide from public benchmarks; prices and stock are RunPod's, from the last minute." + vol;
+}
+
 function wirePods() {
   $("podsReload").addEventListener("click", () => podsLoad());
+  for (const id of ["pickVram", "pickCloud", "pickMax", "pickHours"]) $(id).addEventListener("input", pickDraw);
+  $("pickVol").addEventListener("change", () => { S.pick.dc = $("pickVol").value; pickLoad(); });
   const add = async () => {
     try {
       const r = await api("/api/pods/add", {text: $("podAddText").value, name: $("podAddName").value});
@@ -5568,12 +5628,12 @@ function wirePods() {
       const r = await api("/api/pods/key", {key: $("podKey").value});
       $("podKey").value = "";
       $("podKeyNote").textContent = `Key saved. ${r.found} Fizgig pod${r.found === 1 ? "" : "s"} on your account.`;
-      podsLoad(true);
+      podsLoad(true); pickLoad();
     } catch (e) { $("podKeyNote").textContent = e.message; }
   });
   $("podKeyClear").addEventListener("click", async () => {
     await api("/api/pods/key", {key: ""}).catch(() => {});
-    $("podKeyNote").textContent = "Key removed."; podsLoad(true);
+    $("podKeyNote").textContent = "Key removed."; podsLoad(true); S.pick.dc = ""; $("pickVol").replaceChildren(); pickLoad();
   });
 }
 
@@ -5618,7 +5678,7 @@ function showTab(name) {
   if (name === "samples") loadGallery();
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
-  if (name === "pods") podsLoad();
+  if (name === "pods") { podsLoad(); pickLoad(); }
   api("/api/state", {tab: name}).catch(() => {});
 }
 

@@ -1916,6 +1916,16 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .pod-main .field-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pod-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .pods-deploy { display: inline-flex; margin-top: 0; }
+.pick-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 12px; }
+.pick-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.pick-row label[hidden] { display: none; }
+.pick-row select, .pick-row input { width: auto; }
+.pick-row input[type=number] { width: 64px; }
+.pick-best { margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;
+  color: var(--success); border: 1px solid var(--success); vertical-align: 1px; }
+#pickList { margin-bottom: 8px; }
+#pickList .pod-main .field-hint { white-space: normal; }
+#pickList .pick-more { align-self: flex-start; }
 .login-remember { margin-top: 10px; }
 @media (max-width: 760px) { .runpod-btn.pods-deploy { order: 0; border-radius: 8px; padding: 9px 12px; }
   .runpod-btn.pods-deploy span { display: inline; } }
