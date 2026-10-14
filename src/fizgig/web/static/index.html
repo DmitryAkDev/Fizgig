@@ -51,8 +51,11 @@
           <span class="run-bar"><span id="sideRunBar"></span></span>
           <span class="side-run-text" id="sideRunText"></span>
         </button>
-        <div class="side-queue" id="sideQueue" style="display:none">
-          <button class="side-queue-text" id="sideQueueText" title="The queue - open it on the Training tab"></button>
+        <div class="side-queue" id="sideQueue" role="button" tabindex="0" title="The queue - open it on the Training tab"
+          style="display:none">
+          <div class="side-queue-head"><span class="side-queue-title">Up next</span><span class="run-badge" id="sideQueueBadge"></span></div>
+          <div class="side-queue-list" id="sideQueueList"></div>
+          <div class="side-queue-held" id="sideQueueHeld"></div>
           <button class="btn btn-sm btn-primary" id="sideQueueStart" style="display:none">Start queue</button>
         </div>
         <div class="gpu-monitor" id="statusBar"></div>

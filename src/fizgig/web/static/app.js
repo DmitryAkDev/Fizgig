@@ -978,13 +978,16 @@ function queueSummary(q, r) {
   const side = $("sideQueue"), up = $("runUpNext");
   side.style.display = up.style.display = n ? "" : "none";
   if (!n) return;
-  const live = r.running || r.state === "starting";
-  const next = items[0].lora, more = n - 1;
   const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
-    q.waiting ? `Queue waiting: ${q.waiting}` :
-    (live ? "Then: " : "Next: ") + next + (more ? ` · ${more} more` : "");
+    q.waiting ? `Queue waiting: ${q.waiting}` : "";
   side.classList.toggle("held", !!q.held);
-  $("sideQueueText").textContent = text;
+  const badge = $("sideQueueBadge");
+  badge.textContent = q.held ? "Held" : q.waiting ? "Waiting" : `${n} queued`;
+  badge.dataset.state = q.held ? "paused" : q.waiting ? "pausing" : "running";
+  $("sideQueueList").replaceChildren(...items.slice(0, 3).map((it, i) => el("div", {class: "side-queue-row"},
+    el("span", {class: "n", text: String(i + 1)}), el("span", {class: "name", text: it.lora, title: it.lora}))),
+    ...(n > 3 ? [el("div", {class: "side-queue-more", text: `+${n - 3} more`})] : []));
+  $("sideQueueHeld").textContent = q.held ? q.reason || "Press Start queue to carry on." : q.waiting || "";
   $("sideQueueStart").style.display = q.held ? "" : "none";
   up.classList.toggle("held", !!q.held);
   up.replaceChildren(...[el("span", {text: q.held ? text : `Up next: ${items.slice(0, 3).map((it, i) => `${i + 1}. ${it.lora}`).join(" · ")}` +
@@ -6141,9 +6144,12 @@ function wire() {
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
-  $("sideQueueText").addEventListener("click", toQueue);
-  $("sideQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
-    .catch((e) => showProblems([e.message])));
+  $("sideQueue").addEventListener("click", toQueue);
+  $("sideQueue").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toQueue(); } });
+  $("sideQueueStart").addEventListener("click", (e) => {
+    e.stopPropagation();                          // starts it; the panel's own click opens the queue
+    api("/api/queue/start", {}).then(pollRun).catch((er) => showProblems([er.message]));
+  });
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", resumeClick);

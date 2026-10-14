@@ -1242,12 +1242,22 @@ body { font-size: 13.5px; background: var(--bg-deep); }
 .side-run-text { font-size: 11.5px; color: var(--text-secondary); }
 .side-run-text:empty { display: none; }
 /* the queue under the run: what's next, or that it's held (and the one click that starts it again) */
-.side-queue { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; }
-.side-queue-text { flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; cursor: pointer;
-  color: var(--text-secondary); background: none; border: 0; padding: 2px 2px; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.side-queue-text:hover { color: var(--text-primary); }
-.side-queue.held .side-queue-text { color: var(--warning); white-space: normal; }
+.side-queue { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 8px; padding: 10px 12px;
+  cursor: pointer; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.side-queue:hover { border-color: var(--accent); }
+.side-queue.held { border-color: var(--warning); }
+.side-queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-queue-title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-secondary); }
+.side-queue-list { display: flex; flex-direction: column; gap: 3px; }
+.side-queue-row { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; color: var(--text-primary); }
+.side-queue-row .n { flex: none; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 10px; font-weight: 700; background: var(--bg-raised); color: var(--text-secondary); }
+.side-queue-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-queue-more { font-size: 11px; color: var(--text-secondary); padding-left: 23px; }
+.side-queue-held { font-size: 11.5px; color: var(--warning); }
+.side-queue-held:empty { display: none; }
+.side-queue .btn { align-self: flex-start; }
 .run-upnext { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 8px; display: flex; flex-wrap: wrap;
   align-items: center; gap: 6px 10px; }
 .run-upnext.held { color: var(--warning); }
