@@ -1071,6 +1071,20 @@ def _restore_pause():
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
 
 
+def _folder_problem(e, out_dir) -> str:
+    """Why a run's folder couldn't be made, and where to change it: a drive that isn't there is the usual one (an
+    external drive unplugged, or a path from another computer)."""
+    where = getattr(e, "filename", None) or out_dir
+    drive = os.path.splitdrive(str(where))[0]
+    if drive and not os.path.exists(drive + os.sep):
+        where = out_dir                         # the folder asked for, not just the missing drive's root
+        why = f"there's no drive {drive} on this computer (an external drive that isn't plugged in, or a path from another computer)"
+    else:
+        why = e.strerror or str(e)
+    return (f"Couldn't make the run's folder {where}: {why}. Choose another LoRA output folder on the Training tab "
+            f"(Output), or set the default in Preferences > LoRA output.")
+
+
 def _start(family_key, values, image_folder, resume="", ft_continue=None, note=""):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
@@ -1092,12 +1106,15 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
             os.remove(os.path.join(out_dir, stale))
         except OSError:
             pass
-    for d in plan.dirs:
-        os.makedirs(d, exist_ok=True)
-    for path, text in plan.files:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
+    try:
+        for d in plan.dirs:
+            os.makedirs(d, exist_ok=True)
+        for path, text in plan.files:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    except OSError as e:
+        return {"error": _folder_problem(e, out_dir)}
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
@@ -1944,7 +1961,7 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     # -- GET
-    def do_GET(self):
+    def _get(self):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         u = urlparse(self.path)
@@ -2481,6 +2498,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- POST
     def do_POST(self):
+        self._guarded(self._post)
+
+    def do_GET(self):
+        self._guarded(self._get)
+
+    def _guarded(self, handle):
+        """A request that fails inside Fizgig still gets an answer - the error, said - so the page shows what went
+        wrong instead of the browser's bare "Failed to fetch"."""
+        try:
+            return handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass                                  # the page went away mid-answer: nobody to tell
+        except Exception as e:
+            logger.exception(f"{self.command} {self.path}")
+            try:
+                self.json({"error": f"Fizgig hit an error doing that ({type(e).__name__}: {e})."}, 500)
+            except Exception:
+                pass
+
+    def _post(self):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         path = urlparse(self.path).path

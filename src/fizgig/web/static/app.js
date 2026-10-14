@@ -4689,7 +4689,7 @@ async function pollCaptions() {
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
   log.textContent = st.log.join("\n");
   if (atEnd) log.scrollTop = log.scrollHeight;
-  if (S.cap.lastState && ["running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();
+  if (S.cap.lastState && ["loading", "running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();   // done: the new captions
   else if (busy && Date.now() - (S.cap.liveAt || 0) > 5000) { S.cap.liveAt = Date.now(); captionsLive(); }
   S.cap.lastState = st.state;
   if (busy || document.querySelector("#tab-captions.active")) S.cap.timer = setTimeout(pollCaptions, busy ? 1500 : 5000);
@@ -4704,7 +4704,8 @@ function captionModelsChanged() {
 
 async function loadCaptions() {
   if (!S.cap.opts || S.cap.optsFamily !== S.family) {        // a model change can bring the song card
-    await loadCaptionOptions().catch(() => {});
+    await loadCaptionOptions().catch((e) => {        // said, and asked again next time the tab opens
+      S.cap.opts = null; $("capModelHint").textContent = `Couldn't get the caption models: ${e.message}`; });
     S.cap.optsFamily = S.family;
   }
   pollCaptions();
