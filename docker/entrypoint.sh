@@ -230,9 +230,9 @@ if command -v filebrowser >/dev/null 2>&1; then
         --branding.name "Fizgig files" --branding.theme dark --branding.disableExternal \
         --branding.files "$FB_BRAND" >/dev/null 2>&1 || true
     _fb_set() {    # admin's password -> 0 on success; the error is in $_fb_out
-        _fb_out=$(filebrowser users add admin "$1" --perm.admin --database "$FB_DB" 2>&1) && return 0
+        _fb_out=$(filebrowser users add admin "$1" --perm.admin --hideDotfiles --database "$FB_DB" 2>&1) && return 0
         _fb_add="$_fb_out"     # no admin yet: the add's own reason ("too easy"), not the update's "does not exist"
-        _fb_out=$(filebrowser users update admin --password "$1" --database "$FB_DB" 2>&1) && return 0
+        _fb_out=$(filebrowser users update admin --password "$1" --hideDotfiles --database "$FB_DB" 2>&1) && return 0
         case "$_fb_out" in *"does not exist"*) _fb_out="$_fb_add" ;; esac
         return 1
     }
