@@ -4726,6 +4726,12 @@ async function captionsLive() {
     if (!n || (n.caption ?? "") === (it.caption ?? "")) continue;
     const ta = it._ta, untouched = !ta || (document.activeElement !== ta && ta.value === (it.caption ?? ""));
     if (!untouched) continue;
+    const pic = S.lb.list[S.lb.at], big = $("lightboxCapText");
+    if (pic && pic.cap && pic.cap.ta === ta && $("lightbox").style.display !== "none" &&
+        document.activeElement !== big && big.value === (it.caption ?? "")) {
+      big.value = n.caption ?? "";
+      $("lightboxCapNote").textContent = "Re-captioned";
+    }
     it.caption = n.caption;
     if (ta) ta.value = n.caption ?? "";
   }
@@ -4815,15 +4821,17 @@ function renderCaptions() {
     const kind = it.name.split(".").pop().toLowerCase();
     const isAudio = ["wav", "mp3", "flac", "m4a"].includes(kind);
     const trainsPictures = !S.fam || !S.fam.media || S.fam.media.includes("photo") || kind === "mp4";
+    const recapRun = async (say = (t) => { status.textContent = t; }) => {
+      say("Re-captioning…");
+      const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
+      if (r && r.error) say(r.error);
+    };
     const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
-      title: "Write this file's caption again with the model and task above", onclick: async () => {
-        status.textContent = "Re-captioning…";
-        const r = await capRun("/api/captions/ai", capJobBody({only: [it.path], overwrite: true}));
-        if (r && r.error) status.textContent = r.error;
-      }});
+      title: "Write this file's caption again with the model and task above", onclick: () => recapRun()});
     const media = mediaFor(it);
     const card = el("div", {class: "caption-card"});
-    card._cap = {ta, save: saveCap};             // the big view edits and saves the same caption
+    // the big view edits, saves, re-captions and removes the same caption
+    card._cap = {ta, it, save: saveCap, recap: recap ? recapRun : null, remove: () => capRemove(it, card, status)};
     const remove = el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
@@ -4851,7 +4859,8 @@ async function capRemove(it, card, status) {
     const note = el("span", {class: "field-hint", text: `${it.name} moved to removed.`});
     card.replaceChildren(el("div", {class: "caption-card-body caption-removed"}, note, el("div", {class: "field-row"}, undo)));
     $("captionsSummary").textContent = `${S.cap.items.length} files · ${it.name} removed`;
-  } catch (e) { status.textContent = e.message; }
+    return true;
+  } catch (e) { status.textContent = e.message; return false; }
 }
 
 async function findReplace(apply) {
@@ -6116,6 +6125,7 @@ function lightboxShow(i) {
   $("lightboxCap").style.display = pic.cap ? "" : "none";
   $("lightbox").classList.toggle("with-cap", !!pic.cap);
   if (pic.cap) {
+    $("lightboxCapRecap").style.display = pic.cap.recap ? "" : "none";
     $("lightboxCapText").value = pic.cap.ta.value;
     $("lightboxCapNote").textContent = "Changes save when you move to the next picture or close.";
   }
@@ -6164,6 +6174,19 @@ function wireLightbox() {
     pic.cap.ta.value = $("lightboxCapText").value;
     try { await pic.cap.save(); $("lightboxCapNote").textContent = "Saved"; }
     catch (e) { $("lightboxCapNote").textContent = e.message; }
+  });
+  $("lightboxCapRecap").addEventListener("click", async () => {
+    const pic = S.lb.list[S.lb.at];
+    if (!pic || !pic.cap || !pic.cap.recap || !(await lightboxCapFlush())) return;
+    await pic.cap.recap((t) => { $("lightboxCapNote").textContent = t; });
+  });
+  $("lightboxCapRemove").addEventListener("click", async () => {
+    const pic = S.lb.list[S.lb.at];
+    if (!pic || !pic.cap || !(await pic.cap.remove())) return;
+    S.lb.list.splice(S.lb.at, 1);              // gone from the set: the next picture takes its place
+    if (!S.lb.list.length) { $("lightbox").style.display = "none"; $("lightboxImg").src = ""; return; }
+    lightboxShow(Math.min(S.lb.at, S.lb.list.length - 1));
+    $("lightboxCapNote").textContent = `${pic.cap.it.name} moved to removed (Undo is on its card).`;
   });
   document.addEventListener("keydown", (e) => {
     if ($("lightbox").style.display === "none") return;
