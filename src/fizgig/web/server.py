@@ -2025,7 +2025,7 @@ class Handler(BaseHTTPRequestHandler):
                      if key and self.password and hmac.compare_digest((qs.get("app_key") or [""])[0], key) else [])
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra=extra)
         if path == "/welcome.mp4":                  # the welcome popup's tour (it ships with Fizgig: no network)
-            return self._file(os.path.join(STATIC_DIR, "welcome_v8.mp4"), "video/mp4")
+            return self._stream(os.path.join(STATIC_DIR, "welcome_v8.mp4"), attachment=False)  # ranged: it seeks
         if path in ("/app.js", "/style.css"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
