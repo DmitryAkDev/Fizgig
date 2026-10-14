@@ -186,9 +186,9 @@ _avail_kb=$(df -Pk /workspace | awk 'NR==2{print $4}')
 _avail_gb=$(( _avail_kb / 1024 / 1024 ))
 _total_gb=$(( $(df -Pk /workspace | awk 'NR==2{print $2}') / 1024 / 1024 ))
 if [ "$_total_gb" -gt 10000 ]; then
-    # A network volume does not expose its quota in here — the kernel reports the host's whole
+    # A RunPod volume (network or the pod's own) does not expose its quota in here — the kernel reports the host's whole
     # backing pool, so a 100 GB volume reads as ~1.4 PB. Printing that looks broken.
-    log "Storage: /workspace is a network volume (size is set in RunPod, not visible from here)"
+    log "Storage: /workspace is a RunPod volume (its size is set in RunPod, not visible from here)"
 else
     log "Storage: /workspace has ${_avail_gb} GB free of ${_total_gb} GB"
 fi
