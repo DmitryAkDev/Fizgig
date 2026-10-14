@@ -1,5 +1,7 @@
 # Fizgig v8.0.2: maintenance
 
+**New in 8.0.2: Captions, picture by picture.** Click a picture on the Captions tab and its caption is under it in the big view, with Save, Re-caption and Remove; the arrow keys step to the next picture, saving an edit first.
+
 Fizgig is now a web app. It opens in its own window on the computer it's installed on like a desktop app, or in any browser: start a run at your desk and watch its previews from your phone, use your desktop's GPU from your laptop, or open a rented one on RunPod in the same window. Every tab is rebuilt for it, and there's plenty that the old app never had.
 
 https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
@@ -66,7 +68,3 @@ Thanks to @vishnuteja7054 for pull request #182 that set me on the road to makin
 - **Open on your phone:** a new card at the bottom of the Start tab. Press **Show QR code** and scan it with your phone's camera: it opens Fizgig already logged in, and the phone stays logged in for 30 days. On a pod it opens the pod's public address, so you can keep an eye on a long run from anywhere. The code shows for 30 seconds and each one works once. It needs a password set, and the card says how if there isn't one.
 - **The tabs fold away on a phone:** a menu button at the top shows the tab you're on; tap it for the tabs, and picking one folds them again.
 - **A tidier top bar on a phone:** the name, the run and the buttons fit on one line.
-
-## New in 8.0.2
-
-- **Captions, picture by picture:** click a picture on the Captions tab and its caption is under it in the big view, with **Save**, **Re-caption** and **Remove**. **‹ ›** or the arrow keys step to the next picture, and an edit is saved before you move on, so you can go through a whole folder without leaving the big view.
