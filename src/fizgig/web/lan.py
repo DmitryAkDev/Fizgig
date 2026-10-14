@@ -122,7 +122,8 @@ def discover(timeout=1.0) -> list:
             if key in found:                    # one computer answering on two interfaces: the first answer
                 continue
             found[key] = {"url": f"http://{src[0]}:{port}/", "ip": src[0], "port": port,
-                          **{k: r.get(k) for k in ("id", "name", "gpu", "vram_gb", "version", "commit", "busy")}}
+                          **{k: r.get(k) for k in ("id", "name", "gpu", "vram_gb", "version", "commit", "busy",
+                                                 "queued", "queue_held")}}
     except OSError:
         pass
     finally:
