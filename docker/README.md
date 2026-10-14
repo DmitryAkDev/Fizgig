@@ -71,7 +71,7 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 | **Fizgig** | 8081 | none | the pod's password |
 | **File manager** | 8080 | `admin` | the same one* |
 
-\* The file manager needs 12+ characters, so a shorter password gets zeros added to the end **for port 8080 only** (`mypass` becomes `mypass000000`). Pick 12+ characters and both logins are identical.
+\* The file manager refuses very common passwords (`abc123`, `password1234`). For one of those it gets zeros added to the end, up to 12 characters, **for port 8080 only** (`abc123` becomes `abc123000000`); if it refuses that too, its login isn't set up. Fizgig's sidebar and the pod's log say which. Pick a less common password and both logins are identical.
 
 **Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
 
@@ -104,8 +104,10 @@ Closing the browser tab does **not** stop training. Fizgig runs on the pod, so c
 
 <p align="center"><img src="../docs/assets/screenshots/from_this_computer.png" alt="From this computer: your own training folders on the pod's page, ready to send" width="800"></p>
 
-**Port 8080** is a file manager rooted at `/workspace`. Drag a dataset folder in from your desktop,
+**Port 8080** is a file manager rooted at `/workspace`: the **File manager** button in Fizgig's sidebar opens it. Drag a dataset folder in from your desktop,
 download finished LoRAs from `output_loras/` the same way. No terminal, no SSH keys.
+
+<p align="center"><img src="../docs/assets/screenshots/file_manager.png" alt="The pod's file manager: a training folder's pictures and captions" width="800"></p>
 
 Prefer a terminal? `runpodctl` is preinstalled — `runpodctl send <path>` on the pod, then
 `runpodctl receive <code>` on your machine. `scp` and `rsync` over SSH work too, and rsync is the
@@ -138,7 +140,7 @@ Environment variables, set on the deploy screen under **Edit Template**:
 
 | Variable | Values | |
 |---|---|---|
-| `FIZGIG_PASSWORD` | 12+ characters | Fizgig *and* the file manager. Generated on the first start if unset, then kept. (`VNC_PASSWORD`, the classic template's name, works too.) |
+| `FIZGIG_PASSWORD` | your choice (not a very common one) | Fizgig *and* the file manager. Generated on the first start if unset, then kept. (`VNC_PASSWORD`, the classic template's name, works too.) |
 | `HF_TOKEN` | `hf_…` | Only needed for Klein, which is gated. Krea 2 needs nothing. |
 | `FETCH_MODELS` | `krea2`, `klein`, `minimax`, `tools` — comma-separated | Download at boot instead of clicking the button in Preferences. `minimax` includes the Circlestone and both Ostris training adapters. `tools` is the Florence-2 captioner, the EN→ZH translator for bilingual captions, and the face model the Look Filter uses. |
 | `FIZGIG_REF` | branch or tag | Which Fizgig to run. Defaults to `master`, so the app updates itself at every pod start. |

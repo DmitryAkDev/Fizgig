@@ -21,15 +21,21 @@ def on_pod() -> bool:
 
 
 def file_manager():
-    """The pod's file manager (filebrowser on port 8080, started by the pod image's entrypoint) -> {url, padded}, or
-    None off a pod or without it. Its login is admin with the pod's password; filebrowser needs 12+ characters, so
-    the entrypoint pads a shorter one with 0s (padded: say so, never the password itself)."""
+    """The pod's file manager (filebrowser on port 8080, started by the pod image's entrypoint) -> {url, login}, or
+    None off a pod or without it. Its login is admin with the pod's password: "exact", "padded" (filebrowser
+    refused it as too common, so the entrypoint added 0s up to 12 characters) or "none" (refused both ways). The
+    entrypoint writes which; an older image wrote nothing and padded any password under 12 characters."""
     if not on_pod() or not shutil.which("filebrowser"):
         return None
     pid = pod_id()
     if not pid:
         return None
-    return {"url": f"https://{pid}-8080.proxy.runpod.net/", "padded": len(os.environ.get("VNC_PASSWORD", "")) < 12}
+    try:
+        with open("/tmp/fizgig_filebrowser_login", encoding="utf-8") as f:
+            login = f.read().strip()
+    except OSError:
+        login = "padded" if len(os.environ.get("VNC_PASSWORD", "")) < 12 else "exact"
+    return {"url": f"https://{pid}-8080.proxy.runpod.net/", "login": login if login in ("exact", "padded", "none") else "exact"}
 
 
 def pod_id() -> str:

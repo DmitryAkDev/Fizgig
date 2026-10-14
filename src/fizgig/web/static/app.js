@@ -5463,8 +5463,10 @@ async function browse(path) {
 
 // ---- a pod's file manager (port 8080): the sidebar button, the Start tab's upload card, Runs & outputs ---------
 function fileManagerLinks(fm) {
-  const how = fm ? "Log in as admin with this pod's password" + (fm.padded ?
-    ", with 0s added to make it 12 characters (the file manager needs 12): abc123 → abc123000000" : "") : "";
+  const how = !fm ? "" : fm.login === "none" ? "Its login isn't set up: it refuses this pod's password as too common. " +
+    "Give the pod a less common FIZGIG_PASSWORD (Edit pod on RunPod) and restart it" :
+    "Log in as admin with this pod's password" + (fm.login === "padded" ? ", with 0s added to make it 12 characters " +
+    "(the file manager refused it as too common): abc123 → abc123000000. The pod's log shows it" : "");
   $("sideFiles").style.display = fm ? "" : "none";
   $("uploadFm").style.display = fm ? "" : "none";
   for (const a of [$("sideFiles"), ...document.querySelectorAll(".fm-link")]) {

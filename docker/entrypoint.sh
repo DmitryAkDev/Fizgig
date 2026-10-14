@@ -216,31 +216,41 @@ fi
 # the web UI already does, so a separate password would be security theatre, and one fewer thing to lose. Non-fatal: file transfer failing must not stop training.
 if command -v filebrowser >/dev/null 2>&1; then
     FB_DB=/workspace/.filebrowser.db
-    # filebrowser rejects passwords under 12 characters. A shorter VNC_PASSWORD therefore creates
-    # NO user at all, and the login just 403s — so pad rather than fail, and print what the
-    # padded password actually is. (Found the hard way: the first version wrapped these commands
-    # in `|| true`, so the log said "File manager on :8080" while the account did not exist.)
-    FB_PW="$VNC_PASSWORD"
-    while [ ${#FB_PW} -lt 12 ]; do FB_PW="${FB_PW}0"; done
+    FB_LOGIN=/tmp/fizgig_filebrowser_login     # "exact" / "padded" / "none": the web app says how to log in
+    # Fizgig's look, read from the checkout (a style change needs no new image); falls back to filebrowser's own
+    FB_BRAND="$APP_DIR/docker/filebrowser"
+    [ -d "$FB_BRAND" ] || FB_BRAND=""
 
     filebrowser config init --database "$FB_DB" >/dev/null 2>&1 || true
+    # The password floor goes to 1 so the pod's password works as it is, at any length. filebrowser still refuses
+    # a common password ("abc123", "password1234") whatever its length; the old 12-character pad (0s on the end)
+    # then usually passes, so that is the fallback. A login that can't be made is logged and shown in the app.
     filebrowser config set --database "$FB_DB" \
-        --address 0.0.0.0 --port 8080 --root /workspace >/dev/null 2>&1 || true
-    # Errors are logged, not swallowed: a file manager nobody can log into is worse than one
-    # that says why.
-    if ! _fb_out=$(filebrowser users add admin "$FB_PW" --perm.admin --database "$FB_DB" 2>&1); then
-        if ! _fb_out=$(filebrowser users update admin --password "$FB_PW" \
-                          --database "$FB_DB" 2>&1); then
-            log "WARN: file manager login not set up: $(echo "$_fb_out" | tail -1)"
-        fi
+        --address 0.0.0.0 --port 8080 --root /workspace --minimumPasswordLength 1 \
+        --branding.name "Fizgig files" --branding.theme dark --branding.disableExternal \
+        --branding.files "$FB_BRAND" >/dev/null 2>&1 || true
+    _fb_set() {    # admin's password -> 0 on success; the error is in $_fb_out
+        _fb_out=$(filebrowser users add admin "$1" --perm.admin --database "$FB_DB" 2>&1) && return 0
+        _fb_add="$_fb_out"     # no admin yet: the add's own reason ("too easy"), not the update's "does not exist"
+        _fb_out=$(filebrowser users update admin --password "$1" --database "$FB_DB" 2>&1) && return 0
+        case "$_fb_out" in *"does not exist"*) _fb_out="$_fb_add" ;; esac
+        return 1
+    }
+    FB_PAD="$VNC_PASSWORD"
+    while [ ${#FB_PAD} -lt 12 ]; do FB_PAD="${FB_PAD}0"; done
+    if _fb_set "$VNC_PASSWORD"; then
+        echo exact > "$FB_LOGIN"
+        log "File manager on :8080 — user 'admin', same password as the web UI"
+    elif [ "$FB_PAD" != "$VNC_PASSWORD" ] && _fb_set "$FB_PAD"; then
+        echo padded > "$FB_LOGIN"
+        log "File manager on :8080 — user 'admin', password '${FB_PAD}'"
+        log "  (the file manager refused the web UI's password as too common, so it has 0s added)"
+    else
+        echo none > "$FB_LOGIN"
+        log "WARN: file manager login not set up: $(echo "$_fb_out" | tail -1)"
+        log "  Set a less common FIZGIG_PASSWORD in the template to use the file manager."
     fi
     filebrowser --database "$FB_DB" >/dev/null 2>&1 &
-    if [ "$FB_PW" = "$VNC_PASSWORD" ]; then
-        log "File manager on :8080 — user 'admin', same password as the web UI"
-    else
-        log "File manager on :8080 — user 'admin', password '${FB_PW}'"
-        log "  (padded: filebrowser needs 12+ characters and the password is shorter)"
-    fi
 fi
 
 cat <<EOF
