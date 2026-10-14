@@ -812,7 +812,7 @@ function firewallRow() {
     const ok = d.allowed && !d.blocked && nets.length;
     row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
     btn.textContent = "Allow on my network";
-    btn.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
+    row.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
     const lines = [];
     if (pub.length) lines.push(`Windows calls ${pub.map((n) => `"${n.name}"`).join(", ")} a Public network and lets no ` +
       "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
@@ -1153,7 +1153,7 @@ function previewGrid(items, prompts, eager) {
 }
 
 async function loadGallery() {
-  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
+  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // an empty box = the default folder
   const host = $("gallery");
   if (!out) { host.innerHTML = ""; $("galleryControls").style.display = "none"; return; }
   const sep = out.includes("\\") ? "\\" : "/";
