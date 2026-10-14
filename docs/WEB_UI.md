@@ -35,6 +35,12 @@ On the other computer (the laptop):
 2. Press **Open** and log in with the desktop's password. You're now using the desktop's Fizgig on the desktop's GPU, with "You're on Desktop" at the top right and **Switch to this computer** to come back.
 3. In the Fizgig window, the Start tab's **From this computer** card sends a training folder from the laptop to the desktop, as it does for a pod.
 
+**If the laptop can't reach it** (Add or Open says it isn't answering), open `http://192.168.0.20:8081` in the laptop's browser. If Fizgig's login page doesn't appear, the desktop's firewall is usually what's in the way:
+
+- The desktop's network must be **Private**, not Public: Settings → Network & internet → your Wi-Fi or Ethernet → Network profile type.
+- If you missed or cancelled Windows' question when Fizgig started, allow the port yourself. Open a terminal as administrator on the desktop and run `netsh advfirewall firewall add rule name="Fizgig" dir=in action=allow protocol=TCP localport=8081 profile=private` (use your port if it isn't 8081).
+- Antivirus software with its own firewall (Norton, Bitdefender, ESET and others) needs the same port allowed in its settings.
+
 Keep Fizgig running on the desktop: if you started it with **Launch Fizgig.bat**, closing its window stops it. Training runs on the desktop, so you can close the laptop's window, or switch the laptop off, and open it again later to check in. Both computers need the same version of Fizgig: if one is behind, the window says so when you open the other one; run the updater on whichever is behind and start it again.
 
 This is for your own network. To reach the desktop from outside your home, use a VPN such as Tailscale (then use the address Tailscale gives the desktop), not a port forwarded on your router: see [The password](#the-password).
