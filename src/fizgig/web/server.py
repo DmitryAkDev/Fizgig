@@ -2873,7 +2873,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not self._local_viewer():
                     return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
                 try:
-                    return self.json(lan.firewall_allow(self.server.server_address[1]))
+                    return self.json(lan.firewall_allow(self.server.server_address[1], saved_port(load_prefs())))
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path.startswith("/api/pods/"):        # the Pods tab: add, forget, opened, API key, start, stop

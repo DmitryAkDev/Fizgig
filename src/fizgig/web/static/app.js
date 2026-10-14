@@ -797,8 +797,8 @@ function firewallRow() {
       "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
       "Ethernet > your network > Network profile type > Private.");
     if (d.blocked) lines.push("Windows Firewall blocks Fizgig's Python (its question was cancelled once). Allow on my network takes that block off.");
-    if (!d.allowed) lines.push("Windows Firewall hasn't been told to let Fizgig in yet. Allow on my network adds two rules " +
-      `for private networks only: the web UI's port and the one other computers find Fizgig on. Windows asks for an administrator's OK.`);
+    if (!d.allowed) lines.push("Windows Firewall doesn't let Fizgig in on this port yet. Allow on my network adds two rules " +
+      `for private networks only: the web UI's port (and the few above it Fizgig moves to when it's taken) and the one other computers find Fizgig on. Windows asks for an administrator's OK.`);
     if (ok) lines.push("✓ Allowed on your network: your other computers find this one in their Pods tab and can open it.");
     say.textContent = lines.join(" ");
     say.className = "field-hint" + (ok ? "" : " warn");

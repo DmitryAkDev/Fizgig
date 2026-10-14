@@ -206,7 +206,13 @@ $blocked = @($app | Where-Object {{ $_.Action -eq 'Block' }}).Count -gt 0
             ports = r.get("ports") or []
             ports = [ports] if isinstance(ports, str) else ports
             prof = str(r.get("profile") or "")
-            return (r.get("proto") in (proto, "Any") and ("Any" in ports or str(p) in ports)
+            def covers(x):                      # "8081", "8081-8090" or "Any"
+                a, _, b = str(x).partition("-")
+                try:
+                    return x == "Any" or int(a) <= p <= int(b or a)
+                except ValueError:
+                    return False
+            return (r.get("proto") in (proto, "Any") and any(covers(x) for x in ports)
                     and ("Any" in prof or all(k in prof for k in kinds)))
         return any(one(r) for r in rules)
     return {"windows": True, "networks": nets, "lan_ip": here,
@@ -214,19 +220,24 @@ $blocked = @($app | Where-Object {{ $_.Action -eq 'Block' }}).Count -gt 0
             "blocked": bool(d.get("blocked"))}
 
 
-def firewall_allow(port) -> dict:
+ALLOW_SPAN = 10      # ports from the saved one up: Fizgig moves up to a free one when it's taken
+
+
+def firewall_allow(port, base=None) -> dict:
     """Allow Fizgig on private networks: our two rules (this port, the discovery port), and Windows' block rules on
     Fizgig's Python taken off. Windows asks for an administrator's OK first."""
     if os.name != "nt":
         raise ValueError("This is for Windows. On Linux, allow the port with your firewall, e.g. "
                          f"sudo ufw allow {int(port)}/tcp && sudo ufw allow {DISCOVERY_PORT}/udp")
+    lo = min(int(port), int(base or port))
+    hi = max(int(port), lo + ALLOW_SPAN - 1)
     inner = f"""
 $ErrorActionPreference = 'SilentlyContinue'
 Remove-NetFirewallRule -DisplayName {_q(RULE)}
 foreach ($x in @({", ".join(_q(x) for x in _pythons())})) {{ Get-NetFirewallApplicationFilter -Program $x | Get-NetFirewallRule |
   Where-Object {{ $_.Action -eq 'Block' -and $_.Direction -eq 'Inbound' }} | Remove-NetFirewallRule }}
 $ErrorActionPreference = 'Stop'
-New-NetFirewallRule -DisplayName {_q(RULE)} -Description 'Fizgig web UI, for your other devices' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {int(port)} -Profile Private | Out-Null
+New-NetFirewallRule -DisplayName {_q(RULE)} -Description 'Fizgig web UI, for your other devices' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {lo}-{hi} -Profile Private | Out-Null
 New-NetFirewallRule -DisplayName {_q(RULE)} -Description 'Fizgig, found by your other computers' -Direction Inbound -Action Allow -Protocol UDP -LocalPort {DISCOVERY_PORT} -Profile Private | Out-Null
 """
     import base64
