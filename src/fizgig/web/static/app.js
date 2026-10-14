@@ -812,7 +812,7 @@ function firewallRow() {
     const ok = d.allowed && !d.blocked && nets.length;
     row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
     btn.textContent = "Allow on my network";
-    btn.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
+    row.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
     const lines = [];
     if (pub.length) lines.push(`Windows calls ${pub.map((n) => `"${n.name}"`).join(", ")} a Public network and lets no ` +
       "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
@@ -1109,9 +1109,10 @@ function showProgress(p, state, name, extraNote) {
     tile("Time left", p.eta);
   }
   const live = ["running", "starting", "pausing"].includes(state);
-  $("sideRunText").textContent = (p && p.note) || extraNote ||
+  // the epoch and time left once training shows them; the stage (caching, a preview) until then
+  $("sideRunText").textContent = (p && p.note) ||
     (p && live && p.total_steps ? `Epoch ${p.epoch || "?"}/${p.total_epochs || "?"} · ${Math.round(p.percent)}%` +
-      (p.eta ? ` · ${p.eta} left` : "") : "");
+      (p.eta ? ` · ${p.eta} left` : "") : "") || extraNote || "";
   $("runWhen").textContent = (p && p.note) || "";
 }
 
@@ -1152,7 +1153,7 @@ function previewGrid(items, prompts, eager) {
 }
 
 async function loadGallery() {
-  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR;
+  const out = S.run.output_dir || S.values.LORA_OUTPUT_DIR || S.outputDefault;   // an empty box = the default folder
   const host = $("gallery");
   if (!out) { host.innerHTML = ""; $("galleryControls").style.display = "none"; return; }
   const sep = out.includes("\\") ? "\\" : "/";
