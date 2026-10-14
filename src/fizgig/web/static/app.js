@@ -956,6 +956,7 @@ async function pollRun() {
   $("btnStop").disabled = !live;
   $("btnResume").style.display = !live && r.resume ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
+  queueSummary(r.web_queue || {items: []}, r);
   runLossTick(live);
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
@@ -963,6 +964,34 @@ async function pollRun() {
   const nowOk = !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
   for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
   if (!nowOk) $("runNowSay").textContent = "";
+}
+
+// the queue at a glance, from every tab (the sidebar, under the run) and at the top of the Run card: what's next, or
+// that it's held and why, with Start queue right there
+function toQueue() {
+  showTab("training");
+  setTimeout(() => $("webQueueCard").scrollIntoView({behavior: "smooth", block: "start"}), 50);
+}
+
+function queueSummary(q, r) {
+  const items = q.items || [], n = items.length;
+  const side = $("sideQueue"), up = $("runUpNext");
+  side.style.display = up.style.display = n ? "" : "none";
+  if (!n) return;
+  const live = r.running || r.state === "starting";
+  const next = items[0].lora, more = n - 1;
+  const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
+    q.waiting ? `Queue waiting: ${q.waiting}` :
+    (live ? "Then: " : "Next: ") + next + (more ? ` · ${more} more` : "");
+  side.classList.toggle("held", !!q.held);
+  $("sideQueueText").textContent = text;
+  $("sideQueueStart").style.display = q.held ? "" : "none";
+  up.classList.toggle("held", !!q.held);
+  up.replaceChildren(...[el("span", {text: q.held ? text : `Up next: ${items.slice(0, 3).map((it, i) => `${i + 1}. ${it.lora}`).join(" · ")}` +
+      (n > 3 ? ` · and ${n - 3} more` : "")}),
+    q.held ? el("button", {class: "btn btn-sm btn-primary", text: "Start queue",
+      onclick: () => api("/api/queue/start", {}).then(pollRun).catch((e) => showProblems([e.message]))}) : null,
+    el("a", {text: "See the queue", onclick: toQueue})].filter(Boolean));
 }
 
 // the web UI's own queue: reorder, remove, start or hold
@@ -5439,7 +5468,8 @@ function podsDraw() {
     const build = {mine: "Different version: update Fizgig on this computer to open it",
       theirs: "Different version: update Fizgig on that computer to open it",
       other: "Different version: update both computers to open it"}[p.build] || "";
-    const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "",
+    const queued = p.queued ? `${p.queued} queued` + (p.queue_held ? " (held)" : "") : "";
+    const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "", queued,
       p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
       !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];
@@ -6095,19 +6125,25 @@ function wire() {
     try {
       const ed = S.editQueue;
       const r = await api(ed ? "/api/queue/update" : "/api/queue/add", ed ? {...runBody(), id: ed.id} : runBody());
-      showProblems(r.problems);
       if (r.ok) {
-        $("runStatus").textContent = ed ? `Saved: queued run ${r.position} has these settings now.` :
-          `Added to the queue (number ${r.position}).`;
+        const q = (S.run && S.run.web_queue && S.run.web_queue.items) || [], live = S.run.running || S.run.state === "starting";
+        const before = r.position > 1 ? (q[r.position - 2] || {}).lora : live ? S.run.lora : "";
+        const eta = r.position === 1 && live && S.run.progress && S.run.progress.eta;
+        showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
+          `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
+          ": it starts as soon as nothing else is training") + ".");
         queueEditing(null);
-      }
+      } else showProblems(r.problems || (r.error ? [r.error] : []));
       pollRun();
-    } catch (e) { $("runStatus").textContent = e.message; }
+    } catch (e) { showProblems([e.message]); }
   });
   $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
+  $("sideQueueText").addEventListener("click", toQueue);
+  $("sideQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
+    .catch((e) => showProblems([e.message])));
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", resumeClick);

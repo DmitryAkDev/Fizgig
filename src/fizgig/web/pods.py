@@ -188,6 +188,7 @@ def _lan_rows(rows, found, mine, save):
         gpu = str(f.get("gpu") or "").replace("NVIDIA GeForce ", "") + (f" ({f['vram_gb']} GB)" if f.get("vram_gb") else "")
         rows[f["url"]] = {**base, "name": base.get("name") or f.get("name") or "", "lan": True,
                           "lan_id": f.get("id") or "", "gpu": gpu, "busy": f.get("busy") or "",
+                          "queued": int(f.get("queued") or 0), "queue_held": bool(f.get("queue_held")),
                           "version": f.get("version") or "", "build": _build_word(mine, f.get("commit")),
                           "state": "ready"}
     if moved and save:

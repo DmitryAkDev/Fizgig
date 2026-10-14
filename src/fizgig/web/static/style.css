@@ -1241,6 +1241,17 @@ body { font-size: 13.5px; background: var(--bg-deep); }
 #sideRunName { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-run-text { font-size: 11.5px; color: var(--text-secondary); }
 .side-run-text:empty { display: none; }
+/* the queue under the run: what's next, or that it's held (and the one click that starts it again) */
+.side-queue { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; }
+.side-queue-text { flex: 1; min-width: 0; text-align: left; font: inherit; font-size: 11.5px; cursor: pointer;
+  color: var(--text-secondary); background: none; border: 0; padding: 2px 2px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.side-queue-text:hover { color: var(--text-primary); }
+.side-queue.held .side-queue-text { color: var(--warning); white-space: normal; }
+.run-upnext { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 8px; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px 10px; }
+.run-upnext.held { color: var(--warning); }
+.run-upnext a { color: var(--accent); cursor: pointer; }
 
 /* status pills and progress bars */
 .run-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11px;

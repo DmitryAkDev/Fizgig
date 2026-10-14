@@ -3327,9 +3327,10 @@ def _lan_announce(port):
             vt = _stats["vram"][1]
             gpu = _stats["device_name"]
             busy = _run["lora"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+        q = webqueue.status()
         return {"id": mid, "name": socket.gethostname(), "port": port, "gpu": gpu if vt else "",
                 "vram_gb": round(vt / 2 ** 30) if vt else 0, "version": about["version"], "commit": about["commit"],
-                "busy": busy}
+                "busy": busy, "queued": len(q["items"]), "queue_held": bool(q["held"])}
     lan.start(info)
 
 
