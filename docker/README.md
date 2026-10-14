@@ -1,10 +1,12 @@
 # Running Fizgig on a rented GPU
 
-[**⚡ Deploy Fizgig on RunPod →**](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)
+[**⚡ Deploy Fizgig on RunPod →**](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)
 
 Fizgig in your browser: the pod runs the app and you open it as a web page, from your computer or your phone. Training, Studio, LoRA Royale, Profiler, Extract and the sample gallery are all there. Nothing to install, and your own GPU stays free while it trains.
 
 *That link is a referral one — it supports Fizgig's development at no extra cost to you.*
+
+**Need the old pod?** The previous template, with the classic app in a remote desktop, stays available as **[Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)**: see [the classic template](#the-classic-template-remote-desktop) below. Pods you already have keep running as they are.
 
 ---
 
@@ -152,7 +154,7 @@ Two more exist for unusual cases: `FETCH_MODELS_EXTRA` passes extra flags to the
 
 ## The classic template (remote desktop)
 
-For a while there are two templates. The one above is the new Fizgig in a browser tab. **[Fizgig Classic](CLASSIC_TEMPLATE_LINK)** is the previous pod: the classic desktop app in a remote desktop on port 6080, for anyone partway through a big job who wants to finish it on what they know.
+For a while there are two templates. The one above is the new Fizgig in a browser tab. **[Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** is the previous pod: the classic desktop app in a remote desktop on port 6080, for anyone partway through a big job who wants to finish it on what they know.
 
 - **Logging in:** port **6080**, user `fizgig`, and the pod's `VNC_PASSWORD` (generated and printed in the log if you didn't set one; on Classic it changes each time the pod starts). The file manager is on 8080 as above, and the new web page on 8081 with the same password.
 - **First run:** Preferences → **⬇ Download models for me**, drag a dataset into `/workspace/datasets` on port 8080, then Start tab → **Browse** and **Training → Start**.

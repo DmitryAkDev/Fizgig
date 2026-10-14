@@ -14,7 +14,7 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.runpod.io/graphql"
-TEMPLATE = "faoq8ed6um"
+TEMPLATE = "bdrdew7hxw"
 REF = "vkb387ep"                    # Fizgig's RunPod referral: every Deploy link carries it
 
 
