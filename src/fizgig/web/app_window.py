@@ -228,11 +228,16 @@ def _where(url):
 
 
 def _pod_name(url):
-    """The name the Pods tab saved it under, else where it is."""
+    """The name the Pods tab saved it under, else where it is. Another computer of yours: its name alone."""
     for p in _prefs().get("app_pods") or []:
         if isinstance(p, dict) and p.get("url") == url and p.get("name"):
-            return f"{p['name']} ({_where(url)})"
+            return p["name"] if p.get("lan_id") else f"{p['name']} ({_where(url)})"
     return _where(url)
+
+
+def _is_pod(url):
+    from urllib.parse import urlparse
+    return (urlparse(url or "").hostname or "").endswith(".proxy.runpod.net")
 
 
 def _is_local(url, port):
@@ -392,14 +397,19 @@ def main():
                 if _is_local(cur, port):
                     window.set_title("Fizgig")
                     if left[0]:
-                        window.evaluate_js(_bar(f"☁ {_pod_name(left[0])} is still running", "Switch to the pod",
-                                                "Back to the pod's Fizgig", "to_pod", dismiss=True))
+                        name = _pod_name(left[0])
+                        if _is_pod(left[0]):
+                            bar = (f"☁ {name} is still running", "Switch to the pod", "Back to the pod's Fizgig")
+                        else:
+                            bar = (f"🖥 {name} is still open", f"Switch to {name}", f"Back to Fizgig on {name}")
+                        window.evaluate_js(_bar(*bar, "to_pod", dismiss=True))
                     return
                 left[0] = cur.split("#")[0]
                 name = _pod_name(cur)
                 window.set_title(f"Fizgig — {name}")
-                window.evaluate_js(_bar(f"☁ You're on {name}", "Switch to this computer",
-                                        "Back to Fizgig on this computer (the pod keeps running)", "home"))
+                window.evaluate_js(_bar(f"☁ You're on {name}" if _is_pod(cur) else f"🖥 You're on {name}",
+                                        "Switch to this computer", "Back to Fizgig on this computer ("
+                                        + ("the pod" if _is_pod(cur) else name) + " keeps running)", "home"))
                 window.evaluate_js(_CHECK_JS)
             except Exception:
                 pass

@@ -61,6 +61,7 @@ async function boot() {
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
+  S.hostName = pr.host_name || "";
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
@@ -5663,7 +5664,8 @@ function podLocalDraw() {
     const what = [d.pictures && `${d.pictures} picture${d.pictures === 1 ? "" : "s"}`,
       d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
       .filter(Boolean).join(" · ");
-    const send = el("button", {class: "btn btn-sm btn-primary", text: "Send to this pod", disabled: S.podLocal.busy,
+    const send = el("button", {class: "btn btn-sm btn-primary", text: S.onPod ? "Send to this pod" :
+      `Send to ${S.hostName || "that computer"}`, disabled: S.podLocal.busy,
       onclick: () => podLocalSend(d)});
     return el("div", {class: "dataset-card", title: d.path},
       el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
@@ -5709,8 +5711,9 @@ function podBuildGuard() {
   if (!a || !pageIsElsewhere() || a.build || $("fizgigBuildBlock")) return;
   const o = el("div", {id: "fizgigBuildBlock", class: "build-block"},
     el("div", {class: "build-block-card"},
-      el("div", {class: "build-block-title", text: "This computer and the pod run different builds of Fizgig"}),
-      el("p", {text: "Fizgig on this computer is older than the pod's. Update it - close Fizgig and run update_fizgig.bat " +
+      el("div", {class: "build-block-title", text: S.onPod ? "This computer and the pod run different builds of Fizgig" :
+        "Your two computers run different builds of Fizgig"}),
+      el("p", {text: `Fizgig on this computer is older than ${S.onPod ? "the pod's" : "the one on " + (S.hostName || "that computer")}. Update it - close Fizgig and run update_fizgig.bat ` +
         "(update_fizgig_rocm.bat on AMD; venv/bin/python update_fizgig.py on Linux or a Mac), then open it again."}),
       a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null));
   document.body.append(o);
