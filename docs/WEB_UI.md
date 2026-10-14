@@ -70,6 +70,8 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 ## On your phone's home screen
 
+**The quickest way in:** the Start tab's **Open on your phone** card. Press **Show QR code** and scan it with your phone's camera: it opens this Fizgig (a pod's public address, or your computer's on your network) already logged in, and the phone stays logged in for 30 days. The code shows for 30 seconds and each one works once, so a screenshot of it is no use to anyone. It needs a password set (Preferences → Web UI), and at home on Windows, Fizgig allowed on your network; the card says so if either is missing. **Log out everywhere** logs the phone out too.
+
 Open Fizgig in your phone's browser (your computer's address, or a pod's) and use **Add to Home Screen** (Safari's Share menu) or **Install app** (Chrome's menu): it then opens from its own icon, full-screen, without the browser's bars. It is the same page, so it needs Fizgig running and logs in as the browser does.
 
 <p align="center"><img src="assets/screenshots/phone.png" alt="A run on a phone" width="260"></p>

@@ -28,6 +28,9 @@
       <aside class="tab-strip-row">
         <div class="side-brand"><img src="/icon.png" alt="" onerror="this.style.display='none'">
           <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span></div>
+        <button class="tabs-toggle" id="tabsToggle" aria-expanded="false" aria-controls="tabs"
+          title="The tabs"><span class="tabs-toggle-icon">☰</span><span id="tabsToggleName">1. Start</span>
+          <span class="tabs-toggle-caret">▾</span></button>
         <nav class="tab-bar-scroller" id="tabs">
           <div class="side-label">Train</div>
           <button class="tab-item active" data-tab="start"><i></i><span>1. Start</span></button>
@@ -155,6 +158,16 @@
             <div class="card-title">Model files needed</div>
             <div class="card-desc" id="modelWarningText"></div>
             <div class="card-content"><button class="btn btn-primary" data-goto="prefs">Open Preferences</button></div>
+          </div>
+          <div class="section-card" id="phoneCard" style="display:none">
+            <div class="card-title">Open on your phone</div>
+            <div class="card-desc">Scan the code with your phone's camera: it opens this Fizgig already logged in, and
+              the phone stays logged in for 30 days, so you can keep an eye on a run from anywhere.</div>
+            <div class="card-content phone-row">
+              <div class="phone-qr" id="phoneQr"></div>
+              <div class="phone-side"><div class="field-hint" id="phoneNote"></div>
+                <div class="field-row" id="phoneBtns"></div></div>
+            </div>
           </div>
         </section>
 
@@ -1617,6 +1630,7 @@
     <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
   </div>
 
+  <script src="/qrcode.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

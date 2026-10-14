@@ -87,6 +87,7 @@ async function boot() {
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
   fileManagerLinks(pr.file_manager);
+  phoneCard();
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   welcomeShow(pr);
   pollRun(); pollStats(); followLog();
@@ -5461,6 +5462,78 @@ async function browse(path) {
   }
 }
 
+// ---- Open on your phone: a QR code with a one-time pass (the server's /api/phone_link). It shows for 30 s when asked
+// for, then blurs again; scanned, the phone opens this Fizgig logged in for 30 days. Needs a password (without one
+// Fizgig only answers on this machine), and at home on Windows, Fizgig let through the firewall.
+function qrSvg(text) {
+  const q = qrcode(0, "M");
+  q.addData(text);
+  q.make();
+  return q.createSvgTag({cellSize: 4, margin: 2, scalable: true});
+}
+
+function phoneCard() {
+  if (new URLSearchParams(location.search).has("phone")) {         // opened from the code: the pass is spent, drop it
+    history.replaceState(null, "", location.pathname);
+  }
+  const card = $("phoneCard"), box = $("phoneQr"), note = $("phoneNote"), btns = $("phoneBtns");
+  if (matchMedia("(pointer: coarse)").matches && innerWidth < 900) { card.style.display = "none"; return; }   // a phone
+  card.style.display = "";
+  const toPrefs = () => {
+    showTab("prefs");
+    setTimeout(() => {
+      const t = [...document.querySelectorAll("#tab-prefs .card-title span")].find((e) => e.textContent === "Web UI");
+      if (t) t.closest(".section-card").scrollIntoView({block: "start", behavior: "smooth"});
+    }, 300);
+  };
+  const hidden = () => {                     // a blurred stand-in where the code goes
+    box.innerHTML = qrSvg("https://github.com/shootthesound/Fizgig");
+    box.classList.add("blurred");
+  };
+  const message = (text, label, action) => {
+    box.classList.remove("blurred");
+    box.replaceChildren(el("div", {class: "phone-msg", text}));
+    note.textContent = "";
+    btns.replaceChildren(...(label ? [el("button", {class: "btn btn-primary btn-sm", text: label, onclick: action})] : []));
+  };
+  let timer = 0;
+  const ready = () => {
+    clearInterval(timer);
+    hidden();
+    note.textContent = "The code shows for 30 seconds. Each one works once.";
+    btns.replaceChildren(el("button", {class: "btn btn-primary btn-sm", text: "Show QR code", onclick: show}));
+  };
+  const show = async () => {
+    let r;
+    try { r = await api("/api/phone_link", {}); } catch (e) { note.textContent = e.message; return; }
+    box.innerHTML = qrSvg(r.url);
+    box.classList.remove("blurred");
+    let left = r.seconds || 30;
+    const tick = () => { note.textContent = `Scan it now: it hides in ${left} s. Each code works once.`; };
+    tick();
+    btns.replaceChildren(el("button", {class: "btn btn-sm", text: "Hide", onclick: ready}));
+    clearInterval(timer);
+    timer = setInterval(() => { left--; if (left <= 0) ready(); else tick(); }, 1000);
+  };
+  if (!S.passwordOn) {
+    if (S.pw.saved) return message("Restart Fizgig to use the password you set, and the QR code appears here.",
+      "Restart Fizgig", toPrefs);
+    return message("Set a password on this Fizgig to open it on your phone: scan a QR code here and you're straight in.",
+      "Set a password", toPrefs);
+  }
+  ready();
+  if (S.onPod || !navigator.platform.startsWith("Win")) return;
+  api("/api/lan/firewall").then((d) => {     // at home on Windows: a phone can't reach a Fizgig the firewall keeps out
+    if (d && d.windows !== false && !d.error && !(d.allowed && !d.blocked))
+      message("Windows Firewall doesn't let your phone in yet. Allow Fizgig on your network (private networks only), " +
+        "then the QR code appears here.", "Allow on my network", async () => {
+          note.textContent = "Waiting for Windows (it asks for an administrator's OK)...";
+          try { const r = await api("/api/lan/firewall", {}); if (r.allowed && !r.blocked) ready(); else note.textContent = "Still not allowed."; }
+          catch (e) { note.textContent = e.message; }
+        });
+  }).catch(() => {});
+}
+
 // ---- a pod's file manager (port 8080): the sidebar button, the Start tab's upload card, Runs & outputs ---------
 function fileManagerLinks(fm) {
   const how = !fm ? "" : fm.login === "none" ? "Its login isn't set up: it refuses this pod's password as too common. " +
@@ -5621,6 +5694,9 @@ function pickDraw() {
     "Speeds are a rough guide from public benchmarks; prices and stock are RunPod's, from the last minute." + vol;
 }
 
+$("tabsToggle").addEventListener("click", () =>
+  tabsMenu(!$("tabsToggle").closest(".tab-strip-row").classList.contains("tabs-open")));
+
 function wirePods() {
   $("podsReload").addEventListener("click", () => podsLoad());
   for (const id of ["pickVram", "pickCloud", "pickMax", "pickHours"]) $(id).addEventListener("input", pickDraw);
@@ -5676,7 +5752,17 @@ async function login() {
 }
 
 // ---- tabs and wiring ---------------------------------------------------------------------------------------
+// a phone's menu button: open or fold the tabs (a desktop never shows the button)
+function tabsMenu(open) {
+  const row = $("tabsToggle").closest(".tab-strip-row");
+  row.classList.toggle("tabs-open", open);
+  $("tabsToggle").setAttribute("aria-expanded", open ? "true" : "false");
+}
+
 function showTab(name) {
+  const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
+  if (tb) $("tabsToggleName").textContent = tb.textContent;
+  tabsMenu(false);
   document.querySelectorAll(".tab-item").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
     if (b.dataset.tab === name) b.scrollIntoView({block: "nearest", inline: "nearest"});
