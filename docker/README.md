@@ -71,6 +71,8 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 
 **Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
 
+**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in: it reads `FIZGIG_PASSWORD` from the pod's settings on RunPod each time, never saving it. That's one more reason to set `FIZGIG_PASSWORD` on the deploy screen as a plain value: a password kept as a RunPod secret, or one the pod made up, you type yourself.
+
 ### How the pod is secured
 
 **Fizgig always needs a password on a pod.** There is no open mode: without `FIZGIG_PASSWORD` one is generated and printed in the log. An open Fizgig on a public URL is a shell on someone else's GPU. Wrong guesses are slowed down per visitor.
