@@ -1,10 +1,12 @@
 # Fizgig v8.0.0: the new app
 
-Fizgig is now a web app. It opens in its own window on the computer it's installed on, or in any browser: start a run at your desk and watch its previews from your phone, use your desktop's GPU from your laptop, or open a rented one on RunPod in the same window. Every tab is rebuilt for it, and there's plenty that the old app never had.
+Fizgig is now a web app. It opens in its own window on the computer it's installed on like a desktop app, or in any browser: start a run at your desk and watch its previews from your phone, use your desktop's GPU from your laptop, or open a rented one on RunPod in the same window. Every tab is rebuilt for it, and there's plenty that the old app never had.
 
 https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
 
 The 80-second tour, also [on YouTube](https://youtu.be/F8F-vuiZd88).
+
+> **On RunPod and need the old pod?** The previous pod, with the classic app in a remote desktop, stays available as **[Fizgig Classic (v7.x)](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** for anyone in the middle of a big job. Pods you already have keep running as they are, and the new [Fizgig template](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep) is the one to deploy from now on.
 
 ## Starting Fizgig
 
@@ -56,4 +58,4 @@ The old desktop app is gone. Everything it did is in the new app, apart from **L
 
 ## Thanks
 
-Thanks to @vishnuteja7054 for pull request #182.
+Thanks to @vishnuteja7054 for pull request #182 that set me on the road to making this work.
