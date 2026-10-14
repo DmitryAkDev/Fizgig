@@ -129,6 +129,11 @@ def _carry_over():
                 values[key] = {k: v for k, v in last.items() if isinstance(v, (str, int, float, bool))}
                 state["values"] = values
             _write(state_file, state)
+    runs_file = os.path.join(USER_DATA, "runs.json")
+    if not os.path.exists(runs_file):
+        runs = _past_runs(read(LAST_USED_FILE) or {}, registry)
+        if runs:
+            _write(runs_file, runs)
     old_queue = os.path.join(PRESETS_DIR, "training_queue.json")
     items = read(old_queue)
     if not isinstance(items, list):
@@ -148,6 +153,49 @@ def _carry_over():
                     "queued_at": str(i.get("queued_at") or ""), "from_fizgig_7": True})
     _write(web_file, web)
     os.replace(old_queue, old_queue[:-5] + ".fizgig7.json")
+
+
+def _past_runs(last_used, registry) -> list:
+    """Fizgig 7 kept no run list, but each LoRA it trained carries its run in its header (the model, epochs, rank, the
+    learning rate, when): one finished run per final LoRA in its output folders, oldest first, for Runs & outputs."""
+    import re
+    import struct
+    dirs = [last_used.get("lora_output_dir"), os.path.join(BASE_DIR, "output_loras")]
+    dirs += list((last_used.get("lora_output_dirs") or {}).values()) if isinstance(last_used.get("lora_output_dirs"), dict) else []
+    seen, out = set(), []
+    for d in dirs:
+        if not isinstance(d, str) or not os.path.isdir(d) or os.path.normcase(os.path.abspath(d)) in seen:
+            continue
+        seen.add(os.path.normcase(os.path.abspath(d)))
+        for name in os.listdir(d):
+            stem, ext = os.path.splitext(name)
+            if ext.lower() != ".safetensors" or re.search(r"-\d{6}$", stem):
+                continue                                  # an epoch's save: the run is its final file
+            path = os.path.join(d, name)
+            try:
+                with open(path, "rb") as f:
+                    n = struct.unpack("<Q", f.read(8))[0]
+                    meta = json.loads(f.read(n)).get("__metadata__") or {} if 0 < n < (64 << 20) else {}
+                when = os.path.getmtime(path)
+            except (OSError, ValueError, struct.error):
+                continue
+            if "fizgig" not in str(meta.get("ss_network_module", "")).lower():
+                continue                                  # someone else's LoRA in the folder
+            desc = registry.by_arch_id(str(meta.get("ss_architecture") or ""))
+            if desc is None:
+                continue
+            epochs = str(meta.get("ss_epoch") or "")
+            values = {"LORA_NAME": stem, "LORA_OUTPUT_DIR": d, "MAX_TRAIN_EPOCHS": epochs,
+                      "NETWORK_DIM": str(meta.get("ss_network_dim") or ""),
+                      "NETWORK_ALPHA": str(meta.get("ss_network_alpha") or "").replace(".0", ""),
+                      "LEARNING_RATE": str(meta.get("ss_learning_rate") or "")}
+            out.append({"id": os.urandom(6).hex(), "source": "desktop", "family": desc.key, "lora": stem,
+                        "output_dir": d, "image_folder": "", "values": {k: v for k, v in values.items() if v},
+                        "started_at": when, "ended_at": when, "result": "finished",
+                        "progress": {"epoch": int(epochs) if epochs.isdigit() else None,
+                                     "total_epochs": int(epochs) if epochs.isdigit() else None, "percent": 100.0}})
+    out.sort(key=lambda r: r["ended_at"])
+    return out
 
 
 def _write(path, data):
