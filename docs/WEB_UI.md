@@ -10,9 +10,13 @@ From there everything works in the browser: download the models (Preferences), u
 
 ## Pods: a rented GPU from your own Fizgig
 
-The **Pods** tab in Fizgig on your own computer opens your RunPod pods. Add a pod by pasting its ID (the code under its name on RunPod's Pods page) or its address; the address of a Fizgig on another computer on your network works too. Each pod shows whether it's ready, still starting, or stopped. **Open** takes the Fizgig window to the pod (in a browser, it opens a tab): it's the same app, running on the pod's GPU, with "You're on <pod>" and a **Switch to this computer** button at the top right to come back (the pod keeps running). Close the window on a pod and it opens on that pod next time, if the pod is still running.
+The **Pods** tab in Fizgig on your own computer opens your RunPod pods. Add a pod by pasting its ID (the code under its name on RunPod's Pods page) or its address; the address of a Fizgig on another computer on your network works too. Each pod shows whether it's ready, still starting, or stopped. **Open** takes the Fizgig window to the pod (in a browser, it opens a tab): it's the same app, running on the pod's GPU, with "You're on <pod>" and a **Switch to this computer** button at the top of the window to come back (the pod keeps running). Close the window on a pod and it opens on that pod next time, if the pod is still running.
 
-With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), your Fizgig pods are listed without adding them, and **Start and open** / **Stop** work from the tab: a stopped pod starts and opens by itself once its Fizgig answers. A pod can take a few minutes to start; if it isn't ready after that, check it on RunPod (its Logs show what it's doing). The key is saved on your computer only. In the app window, a pod whose template sets `FIZGIG_PASSWORD` logs you in by itself (the Pods tab says "logs you in"): the window reads the password from the pod's settings on RunPod each time and never saves it. A password kept as a RunPod secret, or one the pod made up itself, can't be read that way, so you type it as usual, and if the one it finds doesn't work the login box says so. A pod on an older Fizgig than your computer's still opens, with a note to restart it once its run is done (a pod takes the newest Fizgig every time it starts), so updating your own copy never cuts you off from a long run. A pod on a newer one shows what to update, with **Open anyway**. No pod yet? The tab's **Deploy Fizgig on RunPod** button opens the template.
+<p align="center"><img src="assets/screenshots/pods.png" alt="The Pods tab: a laptop found on the network, and a RunPod pod" width="800"></p>
+
+With your RunPod API key (RunPod > Settings > API Keys, pasted into the tab), your Fizgig pods are listed without adding them, and **Start and open** / **Stop** work from the tab: a stopped pod starts and opens by itself once its Fizgig answers. A pod can take a few minutes to start; if it isn't ready after that, check it on RunPod (its Logs show what it's doing). The key is saved on your computer only. In the app window, a pod whose template sets `FIZGIG_PASSWORD` logs you in by itself (the Pods tab says "logs you in"): the window reads the password from the pod's settings on RunPod each time and never saves it. A password kept as a RunPod secret, or one the pod made up itself, can't be read that way, so you type it as usual, and if the one it finds doesn't work the login box says so. A pod on an older Fizgig than your computer's still opens, with a note to restart it once its run is done (a pod takes the newest Fizgig every time it starts), so updating your own copy never cuts you off from a long run. A pod on a newer one shows what to update, with **Open anyway**. No pod yet? The tab's **Rent a pod** card lists the cards RunPod has free right now (with your key), cheapest per run first, with each one's price and roughly what a run costs on it; **Deploy** opens RunPod's page with that card and Fizgig's template chosen, and you press Deploy there.
+
+<p align="center"><img src="assets/screenshots/rent_a_pod.png" alt="Rent a pod: RunPod's free cards, cheapest per run first, each with Deploy" width="800"></p>
 
 On a pod in the Fizgig window, the Start tab's **From this computer** card lists the training folders on your own computer: **Send to this pod** uploads one, captions and all, and makes it the training folder. A dropped connection carries on where it stopped, and sending it again only sends what isn't there yet. (In a browser tab the card isn't there: use Upload a folder.)
 
@@ -29,11 +33,15 @@ On the computer with the GPU you want to use (the desktop):
 3. Press **Restart Fizgig now** beside the password. Fizgig starts again and now listens on your network.
 4. On Windows, **Preferences → Web UI** now shows a **Network** row. Press **Allow on my network** and say yes when Windows asks for an administrator's OK: it lets Fizgig through Windows Firewall on private networks only. If the row says Windows calls your network **Public**, make it Private first (Settings → Network & internet → your Wi-Fi or Ethernet → Network profile type → Private), or Windows lets no other device in. Once Fizgig is let in, the row says **✓ Allowed on your network**.
 
+<p align="center"><img src="assets/screenshots/prefs_webui.png" alt="Preferences, Web UI: the password, the address other devices open, and Allowed on your network" width="800"></p>
+
 On the other computer (the laptop):
 
 1. Open the **Pods** tab. The desktop is already there, with its name and GPU, marked "On your network". Fizgig finds the other computers running it by itself. While the desktop trains, its row says what it's training and how many runs are queued after it.
-2. Press **Open** and log in with the desktop's password. You're now using the desktop's Fizgig on the desktop's GPU, with "You're on" its name at the top right and **Switch to this computer** to come back.
+2. Press **Open** and log in with the desktop's password. You're now using the desktop's Fizgig on the desktop's GPU, with "You're on" and its name at the top of the window and **Switch to this computer** to come back.
 3. In the Fizgig window, the Start tab's **From this computer** card sends a training folder from the laptop to the desktop, as it does for a pod.
+
+<p align="center"><img src="assets/screenshots/other_computer.png" alt="The laptop's Fizgig opened from the desktop: You're on TROGDOR, and Switch to this computer" width="800"></p>
 
 If the desktop doesn't appear, add it by hand: under **Add a pod**, paste its address and port (on the desktop, `ipconfig` shows its **IPv4 Address**, for example `192.168.0.20`, and Preferences → Web UI shows the port), so `192.168.0.20:8081`. Some networks keep their devices from finding each other (a guest Wi-Fi often does); an address added by hand still works there. If the row says **Found, but it doesn't let this computer in yet**, press Allow on my network on the desktop. Antivirus software with its own firewall (Norton, Bitdefender, ESET and others) needs Fizgig's port and UDP port 47810 allowed in its own settings too.
 
@@ -56,13 +64,19 @@ That copy keeps running until you close its terminal. It needs no screen and no 
 
 **Launch Fizgig.bat** on Windows, `launch_fizgig.sh` on Linux (or `python fizgig.py`) opens the web UI in its own window, with no browser around it. It uses the web UI that is already running if there is one; otherwise it starts one on this computer and stops it when the window closes. With a web password set, this window logs itself in (the password guards the network, not your own screen). The window remembers its size and place. It runs on pywebview: WebView2 on Windows (built into Windows 11), GTK/WebKit or Qt on Linux. A Linux machine without either gets the web UI in its browser instead, with a note on installing one (your distro's WebKitGTK, or `pip install pywebview[qt]` in Fizgig's venv).
 
+<p align="center"><img src="assets/screenshots/start.png" alt="Fizgig in its own window: the Start tab" width="800"></p>
+
 ## On your phone's home screen
 
 Open Fizgig in your phone's browser (your computer's address, or a pod's) and use **Add to Home Screen** (Safari's Share menu) or **Install app** (Chrome's menu): it then opens from its own icon, full-screen, without the browser's bars. It is the same page, so it needs Fizgig running and logs in as the browser does.
 
+<p align="center"><img src="assets/screenshots/phone.png" alt="A run on a phone" width="260"></p>
+
 ## The queue
 
 **Add to queue** (beside Start Training) checks the settings as Start does, then lines the run up: it starts when the runs before it finish, so you can set up several from your phone and leave them. The Queue card lists them; move one earlier or later, or remove it. The queue moves on only after a run finishes: one that fails or is stopped holds the queue (it says why) until you press **Start queue**, and so does restarting the web UI - nothing launches by surprise. A paused run is waited for: **Resume** it and the queue carries on after it finishes. To train on at another size, pause, change **Target Megapixels** (or a clip family's clip size) and press Resume: it offers the new size, makes the cache again at that size first (whatever already fits is kept) and carries on from where it paused, so a run can start small and finish at a higher resolution. The Resume button is still there after a restart, and a fine-tune resumes from its last checkpoint for the rotations it has left. Two queued runs can't save into the same files: give each its own LoRA name. **Edit** on a queued run loads its settings into the form; change what you like and **Save to queue** puts them back in its place (**Cancel edit** leaves it as it was).
+
+<p align="center"><img src="assets/screenshots/training_run.png" alt="The Training tab: a run going, Up next in the sidebar" width="800"></p>
 
 ## While a run trains
 
@@ -131,11 +145,15 @@ The Captions tab's captioning tools run on the machine running Fizgig:
 
 With a run training, captioning only starts if the card has room for it beside the run.
 
+<p align="center"><img src="assets/screenshots/captions.png" alt="Captions: every picture with its caption, to read and edit" width="800"></p>
+
 ## Runs & outputs
 
 **Runs** lists every training run, newest first (runs from the old desktop app too): how it ended (finished, failed, stopped, paused), the model and training folder, when it ran and for how long, and its last figures. **Previews & checkpoints** opens that run's results; **Start again with these settings** loads its model, training folder and settings into the form (nothing starts until you press Start). **Loss graph** shows the run's loss at every step (as on the run card), and **Notes** keeps your own notes on the run, saved as you type. The history lives in `user_data/runs.json` in the Fizgig folder.
 
 Below that, **Saved files** lists every LoRA and fine-tune saved in Fizgig's output folders (the ones set per model, plus `output_loras`), grouped by run, newest first. Each run shows its final file with the earlier checkpoints folded under it, a **Download** button on each, and **Download the previews** as one zip. Search by name or folder, or show only what was saved in the last 24 hours, 7 or 30 days, or between two dates. Only Fizgig's own outputs show at first; untick **Only Fizgig's outputs** to see the other LoRAs kept in the same folders too.
+
+<p align="center"><img src="assets/screenshots/outputs.png" alt="Runs & outputs: every run, with its previews, checkpoints and settings" width="800"></p>
 
 ## Choosing the GPU
 

@@ -2356,6 +2356,14 @@ class Handler(BaseHTTPRequestHandler):
             if not self._local_viewer():
                 return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
             return self.json(lan.firewall_status(self.server.server_address[1]))
+        if path == "/api/pods/gpus":                 # the Pods tab's GPU picker: RunPod's cards, prices and stock
+            from fizgig.web import pod_stop, pods
+            if on_pod():
+                return self.json({"error": "The Pods tab is for the Fizgig on your own computer."}, 400)
+            try:
+                return self.json(pods.offers(pod_stop.api_key(load_prefs()), (qs.get("dc") or [""])[0]))
+            except ValueError as e:
+                return self.json({"error": str(e)}, 400)
         if path == "/api/pods/probe":                # one pod, while it starts
             from fizgig.web import pods
             url = (qs.get("url") or [""])[0]

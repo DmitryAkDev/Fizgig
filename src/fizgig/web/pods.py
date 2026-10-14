@@ -14,7 +14,17 @@ import urllib.parse
 import urllib.request
 
 API = "https://api.runpod.io/graphql"
-DEPLOY = "https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep"
+TEMPLATE = "faoq8ed6um"
+REF = "vkb387ep"                    # Fizgig's RunPod referral: every Deploy link carries it
+
+
+def deploy_url(gpu="RTX 5090") -> str:
+    """RunPod's deploy page with Fizgig's template and this GPU picked: the person presses Deploy there."""
+    return "https://console.runpod.io/deploy?" + urllib.parse.urlencode(
+        {"type": "GPU", "gpu": gpu, "count": 1, "template": TEMPLATE, "ref": REF})
+
+
+DEPLOY = deploy_url()
 UA = "Fizgig"                       # RunPod's proxy refuses Python's default User-Agent
 POD_ID = re.compile(r"^[a-z0-9]{8,24}$")
 PROXY = re.compile(r"^https?://([a-z0-9]+)-\d+\.proxy\.runpod\.net", re.I)
@@ -280,3 +290,59 @@ def listing(prefs, key, save=None, mine=""):
     rank = {"ready": 0, "blocked": 1, "waiting": 1, "stopped": 2, "away": 3, "off": 3}
     items.sort(key=lambda r: (rank.get(r["state"], 3), -(r.get("last") or 0), (r.get("name") or "").lower()))
     return {"pods": items, "error": err, "deploy": DEPLOY}
+
+
+# How fast each card trains next to an RTX 5090: a rough guide from public diffusion-training benchmarks, not a
+# measurement of Fizgig (real runs vary with the model and settings). It is also the list the picker offers: exactly
+# the whole cards on RunPod's deploy page (its All tab, 14 Oct 2026). RunPod's API names cards that page doesn't
+# (the RTX PRO 5000, RTX 5080...), and a Deploy link to one of those opens with no card chosen.
+SPEED = {"RTX 5090": 1.0, "RTX 4090": 0.75, "RTX 3090": 0.4, "RTX A6000": 0.45, "RTX A5000": 0.35,
+         "RTX A4500": 0.3, "RTX A4000": 0.25, "RTX 6000 Ada": 0.8, "RTX 4000 Ada": 0.3, "RTX 2000 Ada": 0.15,
+         "L4": 0.3, "L40": 0.6, "L40S": 0.8, "A40": 0.45, "A100 PCIe": 0.8, "A100 SXM": 0.85,
+         "H100 PCIe": 1.2, "H100 SXM": 1.5, "H100 NVL": 1.35, "H200 SXM": 1.6, "H200 NVL": 1.5, "B200": 2.5,
+         "B300": 2.7, "RTX PRO 4000": 0.45, "RTX PRO 4500": 0.65, "RTX PRO 4500 SE": 0.65, "RTX PRO 6000": 1.2,
+         "RTX PRO 6000 WK": 1.2}
+# without an API key RunPod shares no prices or stock: these, to pick from on its own page
+SHORTLIST = [("RTX 5090", 32), ("RTX 4090", 24), ("L40S", 48), ("RTX PRO 6000", 96), ("A100 SXM", 80),
+             ("H100 SXM", 80)]
+_offers_cache = {}
+
+
+def _trains(g) -> bool:
+    """A card Fizgig's pod image trains on: NVIDIA (the image is CUDA), bf16-capable (not a V100), a whole GPU."""
+    gid, name = str(g.get("id") or ""), str(g.get("displayName") or "")
+    return gid.startswith("NVIDIA") and "V100" not in gid and "MIG" not in name
+
+
+def offers(key, dc="") -> dict:
+    """Every card Fizgig can train on, with its live price and stock in Secure and Community Cloud (in one data
+    centre when `dc` is set: where a network volume lives), and the account's network volumes. Asked again at most
+    once a minute."""
+    if not key:
+        return {"key": False, "volumes": [], "gpus": [{"gpu": n, "vram": v, "speed": SPEED.get(n), "url": deploy_url(n)}
+                                                      for n, v in SHORTLIST]}
+    hit = _offers_cache.get((key, dc))
+    if hit and time.time() - hit[0] < 60:
+        return hit[1]
+    where = f', dataCenterId: "{dc}"' if re.match(r"^[A-Z0-9-]{3,20}$", dc or "") else ""
+    d = _gql(key, "{ myself { networkVolumes { id name size dataCenterId } } gpuTypes { id displayName memoryInGb "
+                  f"s: lowestPrice(input: {{gpuCount: 1, secureCloud: true{where}}}) {{ uninterruptablePrice stockStatus }} "
+                  f"c: lowestPrice(input: {{gpuCount: 1, secureCloud: false{where}}}) {{ uninterruptablePrice stockStatus }} }} }}")
+    gpus = []
+    for g in d.get("gpuTypes") or []:
+        if not _trains(g):
+            continue
+        name = g["displayName"]
+        if name not in SPEED:                    # not on RunPod's deploy page
+            continue
+        row = {"gpu": name, "vram": int(g.get("memoryInGb") or 0), "speed": SPEED.get(name), "url": deploy_url(name)}
+        for cloud, k in (("secure", "s"), ("community", "c")):
+            lp = g.get(k) or {}
+            if lp.get("uninterruptablePrice"):
+                row[cloud] = {"price": float(lp["uninterruptablePrice"]), "stock": lp.get("stockStatus") or ""}
+        gpus.append(row)
+    vols = [{"id": v["id"], "name": v.get("name") or v["id"], "size": v.get("size"), "dc": v.get("dataCenterId") or ""}
+            for v in (d.get("myself") or {}).get("networkVolumes") or []]
+    out = {"key": True, "gpus": gpus, "volumes": vols, "dc": dc if where else ""}
+    _offers_cache[(key, dc)] = (time.time(), out)
+    return out
