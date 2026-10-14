@@ -4806,11 +4806,12 @@ function renderCaptions() {
     ta.value = it.caption ?? "";
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
-    const save = el("button", {class: "btn btn-sm", text: "Save", onclick: async () => {
+    const saveCap = async () => {
       await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
       it.caption = ta.value;
       status.textContent = "Saved";
-    }});
+    };
+    const save = el("button", {class: "btn btn-sm", text: "Save", onclick: saveCap});
     const kind = it.name.split(".").pop().toLowerCase();
     const isAudio = ["wav", "mp3", "flac", "m4a"].includes(kind);
     const trainsPictures = !S.fam || !S.fam.media || S.fam.media.includes("photo") || kind === "mp4";
@@ -4822,6 +4823,7 @@ function renderCaptions() {
       }});
     const media = mediaFor(it);
     const card = el("div", {class: "caption-card"});
+    card._cap = {ta, save: saveCap};             // the big view edits and saves the same caption
     const remove = el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
@@ -6095,17 +6097,38 @@ let wired = false;
 // ---- the picture viewer: any preview or Captions picture, big, with the others in its list a step away --------
 const LIGHTBOX_PICS = ".gallery-item > img, .caption-card > img";      // (Repair Studio's panes are gallery items)
 S.lb = {list: [], at: 0};
+// the caption shown under a Captions picture: an edit goes back to its card and is saved before the view moves on
+async function lightboxCapFlush() {
+  const pic = S.lb.list[S.lb.at], cap = pic && pic.cap;
+  if (!cap || $("lightboxCap").style.display === "none" || $("lightboxCapText").value === cap.ta.value) return true;
+  cap.ta.value = $("lightboxCapText").value;
+  try { await cap.save(); $("lightboxCapNote").textContent = "Saved"; return true; }
+  catch (e) { $("lightboxCapNote").textContent = e.message; return false; }
+}
+async function lightboxStep(i) {
+  if (!S.lb.list[i] || !(await lightboxCapFlush())) return;
+  lightboxShow(i);
+}
 function lightboxShow(i) {
   const pic = S.lb.list[i];
   if (!pic) return;
   S.lb.at = i;
+  $("lightboxCap").style.display = pic.cap ? "" : "none";
+  $("lightbox").classList.toggle("with-cap", !!pic.cap);
+  if (pic.cap) {
+    $("lightboxCapText").value = pic.cap.ta.value;
+    $("lightboxCapNote").textContent = "Changes save when you move to the next picture or close.";
+  }
   $("lightboxImg").src = pic.src;
   $("lightboxName").textContent = pic.name;
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
 }
-function lightboxClose() { $("lightbox").style.display = "none"; $("lightboxImg").src = ""; }
+async function lightboxClose() {
+  if (!(await lightboxCapFlush())) return;
+  $("lightbox").style.display = "none"; $("lightboxImg").src = "";
+}
 // a tile's thumbnail (/api/thumb, small and squashed) opens big as the picture itself (/api/media), as the Start tab's
 // dataset pictures do
 function fullPicture(src) {
@@ -6127,19 +6150,29 @@ function wireLightbox() {
       const fig = i.closest(".gallery-item, .caption-card");
       const cap = fig && fig.querySelector("figcaption, .caption-card-title");
       const label = cap ? [...cap.childNodes].map((n) => n.textContent).filter(Boolean).join(" · ") : "";
-      return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt};
+      return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt, cap: fig && fig._cap};
     });
     lightboxShow(imgs.indexOf(img));
   });
   $("lightbox").addEventListener("click", (e) => { if (e.target.id === "lightbox" || e.target.id === "lightboxImg") lightboxClose(); });
   $("lightboxClose").addEventListener("click", lightboxClose);
-  $("lightboxPrev").addEventListener("click", () => lightboxShow(S.lb.at - 1));
-  $("lightboxNext").addEventListener("click", () => lightboxShow(S.lb.at + 1));
+  $("lightboxPrev").addEventListener("click", () => lightboxStep(S.lb.at - 1));
+  $("lightboxNext").addEventListener("click", () => lightboxStep(S.lb.at + 1));
+  $("lightboxCapSave").addEventListener("click", async () => {
+    const pic = S.lb.list[S.lb.at];
+    if (!pic || !pic.cap) return;
+    pic.cap.ta.value = $("lightboxCapText").value;
+    try { await pic.cap.save(); $("lightboxCapNote").textContent = "Saved"; }
+    catch (e) { $("lightboxCapNote").textContent = e.message; }
+  });
   document.addEventListener("keydown", (e) => {
     if ($("lightbox").style.display === "none") return;
-    if (e.key === "Escape") lightboxClose();
-    else if (e.key === "ArrowLeft") lightboxShow(S.lb.at - 1);
-    else if (e.key === "ArrowRight") lightboxShow(S.lb.at + 1);
+    const typing = e.target === $("lightboxCapText");
+    if (typing && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("lightboxCapSave").click(); }
+    else if (e.key === "Escape") lightboxClose();
+    else if (typing) return;                     // the arrows move the cursor in the caption
+    else if (e.key === "ArrowLeft") lightboxStep(S.lb.at - 1);
+    else if (e.key === "ArrowRight") lightboxStep(S.lb.at + 1);
   });
 }
 

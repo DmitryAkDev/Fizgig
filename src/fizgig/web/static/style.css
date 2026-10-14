@@ -1577,6 +1577,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .lightbox-figure figcaption { color: var(--text-secondary); font-size: 9pt; margin-top: 8px; overflow-wrap: anywhere;
   text-align: center; }
 .lightbox-close { position: absolute; top: 12px; right: 12px; }
+/* a Captions picture: its caption under it, the picture shorter to make room */
+.lightbox.with-cap .lightbox-figure img { height: calc(100vh - 230px); }
+.lightbox-cap { width: min(900px, calc(100vw - 140px)); margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.lightbox-cap textarea { width: 100%; box-sizing: border-box; min-height: 74px; resize: vertical; font: inherit; font-size: 14px;
+  background: var(--bg-inset); color: var(--text-primary); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.lightbox-cap textarea:focus { outline: none; border-color: var(--accent); }
+.lightbox-cap-row { display: flex; align-items: center; gap: 10px; }
 .lightbox-step { font-size: 22px; height: 44px; width: 44px; justify-content: center; flex: none; }
 @media (max-width: 760px) {
   .lightbox { padding: 8px; gap: 4px; }

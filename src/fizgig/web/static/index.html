@@ -1626,7 +1626,12 @@
   <div class="lightbox" id="lightbox" style="display:none">
     <button class="btn lightbox-close" id="lightboxClose" title="Close (Esc)">✕</button>
     <button class="btn lightbox-step" id="lightboxPrev" title="Previous (←)">‹</button>
-    <figure class="lightbox-figure"><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption></figure>
+    <figure class="lightbox-figure"><img id="lightboxImg" alt=""><figcaption id="lightboxName"></figcaption>
+      <div class="lightbox-cap" id="lightboxCap" style="display:none">
+        <textarea id="lightboxCapText" rows="3" spellcheck="true"></textarea>
+        <div class="lightbox-cap-row"><button class="btn btn-primary btn-sm" id="lightboxCapSave"
+          title="Save the caption (Ctrl+Enter)">Save</button><span class="field-hint" id="lightboxCapNote"></span></div>
+      </div></figure>
     <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
   </div>
 
