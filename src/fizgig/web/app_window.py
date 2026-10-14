@@ -266,7 +266,14 @@ def _start_server(port, key):
                FIZGIG_APP_PARENT=str(os.getpid()))            # the server stops if this window's process goes
     kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
           if os.name == "nt" else {"start_new_session": True})
-    return subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
+    exe = sys.executable
+    # the window runs on pythonw.exe (no console window of its own); the server on python.exe with a hidden console,
+    # which every run, caption job and tool under it shares - under pythonw each console tool they start (torch.compile's
+    # Triton builds, a compiler check) opened its own window, flashing up and away
+    con = os.path.join(os.path.dirname(exe), "python.exe")
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe" and os.path.isfile(con):
+        exe = con
+    return subprocess.Popen([exe, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
                              str(port)], cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, **kw)
 
