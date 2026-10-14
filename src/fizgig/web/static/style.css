@@ -1914,3 +1914,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .build-block-card { max-width: 560px; background: var(--bg-surface); border: 2px solid var(--warning); border-radius: 12px;
   padding: 22px 24px; }
 .build-block-title { font-size: 18px; font-weight: 700; color: var(--warning); margin-bottom: 10px; }
+.card-title-tools { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+/* the Samples and Training tabs' Model picker: a card with no title, its one row centred top to bottom */
+.section-card.model-strip { padding-top: 0; padding-bottom: 0; }
+.model-strip > .card-content { padding: 14px 20px; }
+.model-strip .field-row { margin: 0; }

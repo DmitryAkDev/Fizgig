@@ -5594,21 +5594,50 @@ const appBridge = () => (window.pywebview && window.pywebview.api && window.pywe
   window.pywebview.api : null;
 const pageIsElsewhere = () => !["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname);
 
+S.podLocal = {list: [], root: "", busy: false};
+const PODLOCAL_SORT = {
+  new: (a, b) => (b.time || 0) - (a.time || 0), old: (a, b) => (a.time || 0) - (b.time || 0),
+  az: (a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"}),
+  za: (a, b) => b.name.localeCompare(a.name, undefined, {numeric: true, sensitivity: "base"}),
+  big: (a, b) => (b.bytes || 0) - (a.bytes || 0),
+  many: (a, b) => (b.pictures + b.clips + b.songs) - (a.pictures + a.clips + a.songs)};
+
 async function podLocalInit() {
   const api_ = appBridge();
   if (!api_ || !pageIsElsewhere()) return;
-  const card = $("podLocalCard");
-  card.style.display = "";
-  let r;
-  try { r = await api_.local_datasets(); } catch (e) { $("podLocalStatus").textContent = String(e.message || e); return; }
+  $("podLocalCard").style.display = "";
+  const sort = $("podLocalSort");
+  try { const s = localStorage.getItem("fizgig.podLocalSort"); if (PODLOCAL_SORT[s]) sort.value = s; } catch (e) { /* no storage */ }
+  sort.onchange = () => { try { localStorage.setItem("fizgig.podLocalSort", sort.value); } catch (e) { /* no storage */ } podLocalDraw(); };
+  $("podLocalReload").onclick = podLocalLoad;
+  podLocalLoad();
+}
+
+async function podLocalLoad() {
+  const btn = $("podLocalReload");
+  btn.disabled = true;
+  if (!S.podLocal.busy) $("podLocalStatus").textContent = "Looking at this computer's training folders...";
+  try {
+    const r = await appBridge().local_datasets();
+    S.podLocal.list = r.datasets || [];
+    S.podLocal.root = r.root || "";
+    if (!S.podLocal.busy) $("podLocalStatus").textContent = "";
+  } catch (e) { $("podLocalStatus").textContent = String(e.message || e); }
+  btn.disabled = false;
+  podLocalDraw();
+}
+
+function podLocalDraw() {
   const host = $("podLocalGrid");
   const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(1) + " GB" : Math.max(1, Math.round(n / 2 ** 20)) + " MB";
-  host.replaceChildren(...(r.datasets || []).map((d) => {
+  const list = [...S.podLocal.list].sort(PODLOCAL_SORT[$("podLocalSort").value] || PODLOCAL_SORT.new);
+  host.replaceChildren(...list.map((d) => {
     const total = d.pictures + d.clips + d.songs;
     const what = [d.pictures && `${d.pictures} picture${d.pictures === 1 ? "" : "s"}`,
       d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
       .filter(Boolean).join(" · ");
-    const send = el("button", {class: "btn btn-sm btn-primary", text: "Send to this pod", onclick: () => podLocalSend(d, send)});
+    const send = el("button", {class: "btn btn-sm btn-primary", text: "Send to this pod", disabled: S.podLocal.busy,
+      onclick: () => podLocalSend(d)});
     return el("div", {class: "dataset-card", title: d.path},
       el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
         d.thumbs.length ? d.thumbs.map((src) => el("img", {alt: "", src})) :
@@ -5618,14 +5647,15 @@ async function podLocalInit() {
           text: d.captioned >= total ? "all captioned" : `${d.captioned} of ${total} captioned`}),
         el("div", {class: "dataset-actions"}, send)));
   }));
-  $("podLocalStatus").textContent = (r.datasets || []).length ? "" :
-    `No training folders on this computer yet (${r.root}).`;
+  if (!list.length && !S.podLocal.busy && !$("podLocalStatus").textContent)
+    $("podLocalStatus").textContent = `No training folders on this computer yet (${S.podLocal.root}).`;
 }
 
-async function podLocalSend(d, btn) {
+async function podLocalSend(d) {
   const api_ = appBridge();
   const say = (t, bad) => { $("podLocalStatus").textContent = t; $("podLocalStatus").classList.toggle("bad", !!bad); };
-  btn.disabled = true;
+  S.podLocal.busy = true;                     // one send at a time: every Send button waits, through a Refresh too
+  podLocalDraw();
   try {
     const files = await api_.local_files(d.path);
     const CHUNK = 2 * 2 ** 20;                 // what one bridge read carries
@@ -5640,7 +5670,8 @@ async function podLocalSend(d, btn) {
       }}));
     await uploadFiles(local, {name: d.name, say});
   } catch (e) { say(String(e.message || e), true); }
-  btn.disabled = false;
+  S.podLocal.busy = false;
+  podLocalDraw();
 }
 window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
 

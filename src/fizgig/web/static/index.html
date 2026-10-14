@@ -109,7 +109,12 @@
             </div>
           </div>
           <div class="section-card accent-card" id="podLocalCard" style="display:none">
-            <div class="card-title">From this computer</div>
+            <div class="card-title"><span>From this computer</span>
+              <div class="card-title-tools"><select id="podLocalSort" class="w-combo-md" title="Order of the folders">
+                  <option value="new">Newest first</option><option value="old">Oldest first</option>
+                  <option value="az">Name A-Z</option><option value="za">Name Z-A</option>
+                  <option value="big">Largest first</option><option value="many">Most files first</option>
+                </select><button class="btn btn-sm" id="podLocalReload">Refresh</button></div></div>
             <div class="card-desc">The training folders on your own computer. Send one to this pod and it trains here: it
               goes up with its captions, picks up where it left off if the connection drops, and skips what's already
               here. Then it's the training folder.</div>
@@ -394,7 +399,7 @@
             <h1>Samples</h1>
             <p>Previews made while the model trains, so you can watch it learn and pick the best checkpoint.</p>
           </div>
-          <div class="section-card">
+          <div class="section-card model-strip">
             <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
               <select class="w-combo-lg family-pick"></select>
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
@@ -427,7 +432,7 @@
             <h1>Training</h1>
             <p>Pick a preset, adjust what you need, and start the run. Settings are read at launch.</p>
           </div>
-          <div class="section-card">
+          <div class="section-card model-strip">
             <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
               <select class="w-combo-lg family-pick"></select>
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
