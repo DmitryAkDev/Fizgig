@@ -1377,7 +1377,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
     gap: 8px; border-right: none; border-bottom: 1px solid var(--border); overflow: visible; }
   .side-brand { padding: 0; flex: 0 0 auto; }
   .side-brand small { display: none; }
-  .side-brand img { width: 24px; height: 24px; }
+  .side-brand img { display: none; }          /* the word stays; the room keeps the buttons on one line */
   .side-run { order: 2; margin: 0; flex: 1 1 140px; padding: 6px 10px; gap: 4px; }
   .side-run .side-run-text { display: none; }
   .side-queue { order: 2; margin: 0; flex: 1 1 140px; padding: 6px 10px; gap: 4px; }   /* beside the run, its count only */
