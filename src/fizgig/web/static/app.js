@@ -87,6 +87,7 @@ async function boot() {
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
   podLocalInit();                                             // in the app window on a pod: this computer's folders
+  welcomeShow(pr);
   pollRun(); pollStats(); followLog();
   setInterval(pollRun, 2000); setInterval(pollStats, 2000); setInterval(loadGallery, 15000);
   setInterval(loadCheckpoints, 15000);
@@ -722,6 +723,25 @@ function podCard() {
         "can't stop pods. Saved in prefs.json on your volume, so it carries over to your next pod and stays out of any shared template."}),
       P.storage ? el("div", {class: "field-hint" + (P.storage[1] ? " warn" : ""), text: P.storage[0]}) : null,
       el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the pod, not in your browser."})));
+}
+
+// Fizgig 8's welcome, on this computer's own Fizgig (not a pod's or another computer's page): once a launch until
+// Don't show this again. The tour ships with Fizgig; if it won't play, the words stand on their own.
+function welcomeShow(pr) {
+  let seen = false;
+  try { seen = sessionStorage.getItem("fizgig.welcomeSeen") === "1"; } catch (e) { /* no storage */ }
+  if (pr.welcome_hidden || seen || S.onPod || pageIsElsewhere() || $("welcomeModal").classList.contains("active")) return;
+  const v = $("welcomeVideo"), m = $("welcomeModal");
+  v.onerror = () => { v.style.display = "none"; };
+  const close = async () => {
+    m.classList.remove("active"); v.pause();
+    try { sessionStorage.setItem("fizgig.welcomeSeen", "1"); } catch (e) { /* no storage */ }
+    if ($("welcomeNever").checked) api("/api/prefs", {changes: {welcome_v8_hidden: "1"}}).catch(() => {});
+  };
+  $("welcomeClose").onclick = close; $("welcomeX").onclick = close;
+  m.onclick = (e) => { if (e.target === m) close(); };
+  m.classList.add("active");
+  v.play().catch(() => {});
 }
 
 // the web UI's password (prefs web_password, the desktop's): empty = this machine only; set = other devices log in
