@@ -131,7 +131,7 @@ def _carry_over():
             _write(state_file, state)
     runs_file = os.path.join(USER_DATA, "runs.json")
     if not os.path.exists(runs_file):
-        runs = _past_runs(read(LAST_USED_FILE) or {}, registry)
+        runs = _past_runs(read(LAST_USED_FILE) or {}, registry, read(PREFS_FILE) or {})
         if runs:
             _write(runs_file, runs)
     old_queue = os.path.join(PRESETS_DIR, "training_queue.json")
@@ -155,12 +155,13 @@ def _carry_over():
     os.replace(old_queue, old_queue[:-5] + ".fizgig7.json")
 
 
-def _past_runs(last_used, registry) -> list:
+def _past_runs(last_used, registry, prefs=None) -> list:
     """Fizgig 7 kept no run list, but each LoRA it trained carries its run in its header (the model, epochs, rank, the
     learning rate, when): one finished run per final LoRA in its output folders, oldest first, for Runs & outputs."""
     import re
     import struct
-    dirs = [last_used.get("lora_output_dir"), os.path.join(BASE_DIR, "output_loras")]
+    # the desktop kept its output folder in last_used; a Fizgig 7 pod set it in prefs (/workspace/output_loras)
+    dirs = [last_used.get("lora_output_dir"), (prefs or {}).get("lora_output_dir"), os.path.join(BASE_DIR, "output_loras")]
     dirs += list((last_used.get("lora_output_dirs") or {}).values()) if isinstance(last_used.get("lora_output_dirs"), dict) else []
     seen, out = set(), []
     for d in dirs:
