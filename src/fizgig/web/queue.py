@@ -45,7 +45,9 @@ def load():
     items = [i for i in items if isinstance(i, dict) and i.get("family") and isinstance(i.get("values"), dict)]
     with _lock:
         _q.update(items=items, held=bool(items), waiting="",
-                  reason="The web UI restarted: press Start queue to carry on." if items else "")
+                  reason=("Your queued runs from Fizgig 7 are here: press Start queue when you want them to run."
+                          if any(i.get("from_fizgig_7") for i in items) else
+                          "The web UI restarted: press Start queue to carry on.") if items else "")
 
 
 def status():
