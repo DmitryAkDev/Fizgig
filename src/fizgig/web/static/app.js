@@ -1109,9 +1109,10 @@ function showProgress(p, state, name, extraNote) {
     tile("Time left", p.eta);
   }
   const live = ["running", "starting", "pausing"].includes(state);
-  $("sideRunText").textContent = (p && p.note) || extraNote ||
+  // the epoch and time left once training shows them; the stage (caching, a preview) until then
+  $("sideRunText").textContent = (p && p.note) ||
     (p && live && p.total_steps ? `Epoch ${p.epoch || "?"}/${p.total_epochs || "?"} · ${Math.round(p.percent)}%` +
-      (p.eta ? ` · ${p.eta} left` : "") : "");
+      (p.eta ? ` · ${p.eta} left` : "") : "") || extraNote || "";
   $("runWhen").textContent = (p && p.note) || "";
 }
 
