@@ -1003,6 +1003,8 @@ input[type="range"] {
 .welcome-text ul { margin: 0 0 10px; padding-left: 18px; }
 .welcome-text li { margin-bottom: 5px; }
 .welcome-new { font-weight: 700; }
+.welcome-text code { font-size: 12.5px; }
+.welcome-guides a { color: var(--accent); }
 .welcome-never { margin-right: auto; }
 @media (max-width: 860px) { .welcome-body { flex-direction: column; } .welcome-body video { width: 100%; flex: none; } }
 .modal-window {
