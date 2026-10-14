@@ -100,6 +100,64 @@ def _repoint_prefs():
         os.replace(tmp, PREFS_FILE)
 
 
+def _carry_over():
+    """What Fizgig 7 knew that Fizgig 8 keeps elsewhere, taken across once: the model it was on, with its last
+    training settings, for the web app's first start (only while the web app hasn't chosen one of its own), and the
+    runs in its queue, into the web app's queue (held: nothing starts by itself). Its queue file is then renamed so
+    the runs come across once."""
+    def read(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+    try:
+        from fizgig.families import registry
+    except Exception:
+        return
+    key_of = lambda label: getattr(registry.by_gui_label(str(label or "")), "key", "")
+    state_file = os.path.join(USER_DATA, "web_state.json")
+    state = read(state_file)
+    state = state if isinstance(state, dict) else {}
+    if not state.get("family"):
+        key = key_of((read(LAST_USED_FILE) or {}).get("architecture"))
+        if key:
+            state["family"] = key
+            last = read(os.path.join(PRESETS_DIR, ".last_train_settings.json"))
+            values = state.get("values") if isinstance(state.get("values"), dict) else {}
+            if isinstance(last, dict) and key not in values:
+                values[key] = {k: v for k, v in last.items() if isinstance(v, (str, int, float, bool))}
+                state["values"] = values
+            _write(state_file, state)
+    old_queue = os.path.join(PRESETS_DIR, "training_queue.json")
+    items = read(old_queue)
+    if not isinstance(items, list):
+        return
+    web_file = os.path.join(USER_DATA, "web_queue.json")
+    web = read(web_file)
+    web = web if isinstance(web, list) else []
+    for i in items:
+        values = i.get("preset") if isinstance(i, dict) else None
+        key = key_of(i.get("architecture")) if isinstance(i, dict) else ""
+        if not key or not isinstance(values, dict):
+            continue
+        web.append({"id": str(i.get("id") or "")[-10:] or os.urandom(5).hex(), "family": key,
+                    "values": {k: v for k, v in values.items() if isinstance(v, (str, int, float, bool))},
+                    "image_folder": str(i.get("image_folder") or ""), "lora": str(values.get("LORA_NAME") or ""),
+                    "output_dir": str(values.get("LORA_OUTPUT_DIR") or ""),
+                    "queued_at": str(i.get("queued_at") or ""), "from_fizgig_7": True})
+    _write(web_file, web)
+    os.replace(old_queue, old_queue[:-5] + ".fizgig7.json")
+
+
+def _write(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp, path)
+
+
 def migrate(log=print):
     """Fizgig 7's files into user_data, once per process (cheap when there is nothing to move). Never raises: a file
     another program holds open stays where it is, and the next start tries again."""
@@ -122,6 +180,10 @@ def migrate(log=print):
                 os.remove(p)
         except OSError:
             pass
+    try:
+        _carry_over()
+    except Exception:
+        pass
     if moved:
         try:
             _repoint_prefs()
