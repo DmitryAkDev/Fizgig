@@ -1366,6 +1366,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   .side-brand img { width: 24px; height: 24px; }
   .side-run { order: 2; margin: 0; flex: 1 1 140px; padding: 6px 10px; gap: 4px; }
   .side-run .side-run-text { display: none; }
+  .side-queue { order: 2; margin: 0; flex: 1 1 140px; padding: 6px 10px; gap: 4px; }   /* beside the run, its count only */
+  .side-queue-list { display: none; }
   .tab-bar-scroller { order: 3; flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; gap: 6px; }
   .side-label { display: none; }
   .tab-item { width: auto; padding: 7px 11px; border-radius: 999px; background: var(--bg-surface); font-size: 12.5px;
