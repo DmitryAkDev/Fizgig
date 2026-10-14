@@ -791,7 +791,8 @@ function firewallRow() {
     const pub = d.allowed ? [] : nets.filter((n) => n.category === "Public");   // allowed there too: nothing to change
     const ok = d.allowed && !d.blocked && nets.length;
     row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
-    btn.textContent = d.allowed && !d.blocked ? "Allow again" : "Allow on my network";
+    btn.textContent = "Allow on my network";
+    btn.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
     const lines = [];
     if (pub.length) lines.push(`Windows calls ${pub.map((n) => `"${n.name}"`).join(", ")} a Public network and lets no ` +
       "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
