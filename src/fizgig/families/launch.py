@@ -14,7 +14,8 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     enable_bucket, no_upscale
     cache_root                  the cache folder from Preferences (each dataset gets its own folder inside it)
     blocks_swap                 the Block Swap box as typed ("Auto (detect from GPU)", "8", ...)
-    enable_cache, resuming      whether the cache stages run; a resume (or fine-tune continuation) skips them
+    enable_cache, resuming      whether the cache stages run; a resume (or fine-tune continuation) skips them,
+    recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
@@ -90,6 +91,64 @@ def ft_on(desc, inputs):
     return bool(desc.finetune and inputs.get("FAMILY_FT"))
 
 
+# ---- a paused run's continuation point (both apps' Resume) -------------------------------------------------------
+STATE_MARKERS = ("training_state.json", "random_states_0.pkl")   # written last: a state folder without one is a
+                                                                  # half-written save
+
+
+def latest_state(out_dir, name):
+    """The run's newest complete state folder (<name>-NNNNNN-state with its commit marker), or ""."""
+    try:
+        found = [d for d in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}-state", d)
+                 and any(os.path.isfile(os.path.join(out_dir, d, m)) for m in STATE_MARKERS)]
+    except OSError:
+        return ""
+    return os.path.join(out_dir, max(found)) if found else ""
+
+
+def latest_ft_checkpoint(out_dir, name):
+    """A fine-tune's newest checkpoint (<name>-NNNNNN.safetensors - a fine-tune has no state folders), or ""."""
+    try:
+        found = [f for f in os.listdir(out_dir) if re.fullmatch(re.escape(name) + r"-\d{6}\.safetensors", f)]
+    except OSError:
+        return ""
+    return os.path.join(out_dir, max(found)) if found else ""
+
+
+def ft_continuation(path):
+    """(next_window, epochs_done, n_windows) from a fine-tune checkpoint's metadata (the trainers stamp them); the
+    -NNNNNN in the file name wins for the epochs. Anything missing reads as 0."""
+    import json
+    import struct
+    md = {}
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            md = json.loads(f.read(n)).get("__metadata__") or {}
+    except (OSError, ValueError, struct.error):
+        pass
+    def num(k):
+        try:
+            return int(float(md.get(k) or 0))
+        except (TypeError, ValueError):
+            return 0
+    epochs = num("fizgig_ft_epochs_done")
+    m = re.search(r"-(\d{6})\.safetensors$", os.path.basename(path or ""))
+    if m:
+        epochs = int(m.group(1))
+    return num("fizgig_next_start_window"), epochs, num("fizgig_ft_n_windows")
+
+
+def ft_rotations_left(path, rotations, rotate_every):
+    """What a family fine-tune paused at path has left of `rotations` (whole rotations of its cycle), and the
+    continuation's FAMILY_FT_CONTINUE - as the desktop's Resume works it out."""
+    nxt, done, nw = ft_continuation(path)
+    per = max(1, _ft_int({"x": rotate_every}, "x", 1))
+    rot = max(1, _ft_int({"x": rotations}, "x", 1))
+    done_rot = round(done / (nw * per)) if nw else 0
+    return rot - done_rot, done_rot, {"checkpoint": path, "start_window": nxt, "epochs_done": done}
+
+
 def ft_reg_dir(desc, inputs):
     """A fine-tune's regularisation folder, when fine-tune is on and one is set (else "")."""
     return _s(inputs.get("FAMILY_FT_REG_DIR")) if ft_on(desc, inputs) and getattr(desc, "ft_regularisation", True)         else ""
@@ -132,10 +191,12 @@ def timestep_flags(inputs):
 
 
 def caches(desc, inputs):
-    """Whether the cache stages run: not on a resume (the cache is already built), not for a prompt slider (no
-    photos), not with Enable Cache off."""
+    """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
+    size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
+    Enable Cache off."""
     resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
-    return bool(inputs.get("enable_cache", True) and not resuming and not slider_on(desc, inputs, "prompts"))
+    return bool(inputs.get("enable_cache", True) and (not resuming or inputs.get("recache"))
+                and not slider_on(desc, inputs, "prompts"))
 
 
 # ---------------------------------------------------------------------------------------------------- pairs
@@ -500,7 +561,6 @@ def train_command(desc, inputs, plan):
             cmd += ["--reg_lr_multiplier", f"{_ft_reg_mult(st):g}"]
         cont = st.get("FAMILY_FT_CONTINUE") or {}
         if cont.get("checkpoint"):
-            cmd[cmd.index("--dit") + 1] = cont["checkpoint"]
             cmd += ["--ft_start_window", str(int(cont.get("start_window", 0))),
                     "--ft_epochs_done", str(int(cont.get("epochs_done", 0)))]
     # per-image loss watch (families/loss_watch.py), batch size 1 only
@@ -588,6 +648,9 @@ def train_command(desc, inputs, plan):
             cmd.append("--slider_pairs")
     if desc.options:
         cmd = _dedupe_flags(cmd + option_tokens(desc, st)[0])
+    cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
+    if cont.get("checkpoint"):       # after the options: a model option's own --dit (H3's reference base) is what the
+        cmd[cmd.index("--dit") + 1] = cont["checkpoint"]     # paused run started from; its checkpoint goes on
     return cmd
 
 
@@ -767,6 +830,34 @@ def dataset_toml(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- the plan
+def multi_concept_problems(desc, inputs):
+    """Multi Concept ticked (inputs["multiconcept"], the web form's): each extra subject folder becomes its own
+    [[datasets]] block, so it has to be there, be its own folder and carry its own captions (the desktop's checks)."""
+    if not (desc.multi_concept and inputs.get("multiconcept")):
+        return []
+    norm = lambda f: f.lower().replace("\\", "/").rstrip("/")
+    seen, out = {norm(_s(inputs.get("image_folder")))}, []
+    extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)]
+    if not extra:
+        out.append("Multi Concept is on but no second subject folder is set — pick one, or turn the mode off.")
+    ext = _s(inputs.get("caption_ext")) or ".txt"
+    for f in extra:
+        if norm(f) in seen:
+            out.append(f"Multi Concept: {f} is the same folder as another subject — each needs its own folder.")
+            continue
+        seen.add(norm(f))
+        if not os.path.isdir(f):
+            out.append(f"Multi Concept: folder does not exist: {f}")
+        elif not any(fn.lower().endswith(ext.lower()) for fn in os.listdir(f)):
+            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training — each "
+                       f"subject needs its own trigger word in every caption, or they will blend.")
+    return out
+
+
+def automagic(inputs):
+    return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+
+
 def start_problems(desc, inputs):
     """Everything Start refuses, in the order the desktop app lists it: the shared checks (fizgig.families.checks)
     with the family's own (problems) in their place. The dataset TOML is written by the plan itself, so only its
@@ -779,6 +870,15 @@ def start_problems(desc, inputs):
     out += checks.dataset_config(v.get("DATASET_CONFIG"), must_exist=False)
     out += problems(desc, inputs)
     out += checks.learning_rate_range(v)
+    out += multi_concept_problems(desc, v)
+    if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
+        try:
+            lr = float(v.get("LEARNING_RATE"))
+        except (TypeError, ValueError):
+            lr = 0.0
+        if lr > 1e-3:
+            out.append(f"Automagic v3 starts at the Learning Rate you give and finds its own rate: {lr:g} is an AdamW "
+                       f"number. Use 1e-6 (its default) or at most 0.001.")
     out += checks.context_lora(v)
     raw_swap = str(v.get("blocks_swap") or "").strip()
     m = re.match(r"\d+", raw_swap)
@@ -860,6 +960,9 @@ def plan(desc, inputs):
     if folder and not os.path.isabs(folder):
         inputs["image_folder"] = os.path.abspath(folder)     # the subprocesses run from the Fizgig folder
     inputs["LORA_NAME"] = tidy_name(_s(inputs.get("LORA_NAME")))[0]
+    if automagic(inputs):            # it owns the rate: Adaptive LR, per-image LR and the look warm-up are off
+        inputs["ADAPTIVE_LR"] = False
+        inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
     p = LaunchPlan(problems=start_problems(desc, inputs))
     if not p.problems:
         try:

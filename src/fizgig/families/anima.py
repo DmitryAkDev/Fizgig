@@ -136,10 +136,9 @@ ANIMA = FamilyDescription(
         ),
     ),
     preview_speed_lora="Anima Turbo LoRA v0.2",
-    # With the Turbo LoRA file set, previews still default to the plain model (strength 0), so its steps are the plain
-    # model's 20, not the turbo's own 10
-    preview_speed_steps=20,
-    preview_speed_strength=0.0,       # previews on the base by default; raise Turbo strength for speed
+    # With the Turbo LoRA file set, previews render on it by default (strength 1, CFG 1) at its card's 10 steps (Peter,
+    # 13 Oct: down from 20)
+    preview_speed_steps=10,
     preview_steps=20,
     preview_cfg=4.5,
     preview_negative=("worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, "

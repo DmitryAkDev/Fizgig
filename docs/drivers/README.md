@@ -13,7 +13,7 @@ Register the description in `src/fizgig/families/registry.py`. That is the only 
 - the caching and training entry points (`families/cache.py`, `families/train.py`), on the command line and from the GUI
 - the GUI: the Base Model picker, its Preferences section and download buttons, the Training and Samples tabs, presets, validation and the training queue
 - previews during training, LoRA saving in the family's own key format, resume and pause
-- the workbench tabs: Repair Studio, LoRA the Explorer, Profiler, Extract and LoRA Royale
+- the workbench tabs: Repair Studio, Profiler, Extract and LoRA Royale
 
 You don't edit the GUI, the trainer or the tools. If your model needs something the layer doesn't have yet, see [When the layer is missing something](#when-the-layer-is-missing-something).
 
@@ -74,7 +74,7 @@ Pause, resume, EMA, Adaptive LR, gradient clipping, the per-image loss watch, Lo
 
 ### 3. The workbench — `families/workbench.py`
 
-Repair Studio, the Explorer and Royale share one engine (`WorkbenchEngine`):
+Repair Studio and Royale share one engine (`WorkbenchEngine`):
 
 - **Load:** the same base-model load as training (forward only), `load_vae`, the LoRA over `lora_target_names`, and the preview speed LoRA if the family has one.
 - **Sliders:** one per block in `block_map(dit)`; `block_of(module)` maps each LoRA module to its slider.

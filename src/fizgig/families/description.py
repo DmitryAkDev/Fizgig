@@ -145,6 +145,39 @@ class ClipSpec:
 
 
 @dataclass(frozen=True)
+class VideoCheckpoint:
+    """One choice in a video workbench's checkpoint picker."""
+    label: str                        # the picker's words (saved setups name it by these)
+    role: str                         # the model file it loads ("dit", "ref_dit", ...)
+    references: bool = False          # its pictures are references the clip should look like, not first/last frames
+
+
+@dataclass(frozen=True)
+class VideoWorkbench:
+    """A video family's workbench controls (Studio's clip settings, RefMod Toolkit's): the choices each picker offers,
+    the first of each the default unless a default is named."""
+    lengths: tuple = ()               # (label, frames)
+    sizes: tuple = ()                 # edge lengths for width and height
+    default_size: tuple = (768, 640)  # (width, height)
+    default_length: str = ""
+    scales: tuple = ()                # (label, factor): the dial canvas
+    checkpoints: tuple = ()           # VideoCheckpoint, Studio's picker
+    bases: tuple = ()                 # (label, the engine's base_mode)
+    refmod_checkpoints: tuple = ()    # RefMod Toolkit's picker (its saved setups' words)
+    refmod_lengths: tuple = ()        # (label, frames)
+    refmod_size: tuple = (640, 768)
+    sweep_frames: int = 22            # a RefMod sweep's clips: a still doesn't show what a RefMod does
+
+    def checkpoint(self, label, refmod=False) -> VideoCheckpoint:
+        """The checkpoint a picker label names (the first when it names none)."""
+        pool = (self.refmod_checkpoints if refmod else self.checkpoints) or self.checkpoints
+        return next((c for c in pool if c.label == label), pool[0])
+
+    def base_mode(self, label) -> str:
+        return dict(self.bases).get(label, self.bases[0][1] if self.bases else "auto")
+
+
+@dataclass(frozen=True)
 class FamilyOption:
     """A family's own control on the Training (or Samples) tab: a dropdown, an entry or a tick whose value becomes
     launch tokens. A token is "name=value" (the driver's --family_option), "--flag=value" or "--flag" (a trainer
@@ -286,6 +319,7 @@ class FamilyDescription:
     multi_concept_defaults: tuple = ()
     multi_concept_hint: str = ""
     clip_spec: Optional[ClipSpec] = None
+    video_controls: Optional[VideoWorkbench] = None     # a video family's workbench pickers (VideoWorkbench)
 
     # latent rules
     latent_channels: int = 16
@@ -455,7 +489,8 @@ class FamilyDescription:
     # downloader fetches them with the helper models so first use works offline
     helper_files: tuple = ()
 
-    # workbench tools that support this family ("repair", ...); the generic WorkbenchEngine drives them all
+    # workbench tools that support this family ("repair", "explorer", "profiler", "extract", "royale", and "refmod":
+    # RefMod Toolkit, the engine's render_refmod / reference_items); the generic WorkbenchEngine drives them all
     workbench: tuple = ()
     # the workbench engine class ("module:Class") when the generic engines do not fit (a family with clips gets the
     # generic video engine, families/video_workbench.py). H3 brings its own for keyframes, references and RefMod on
@@ -584,6 +619,16 @@ class FamilyDescription:
     def preview_speed(self):
         """The SpeedLoRA used for in-training previews, or None."""
         return next((sl for sl in self.speed_loras if sl.name == self.preview_speed_lora), None)
+
+    def cfg_note(self) -> str:
+        """The Samples tab's line under CFG Scale: the family's own, plus the Turbo LoRA's CFG when previews with it
+        use another (Anima's Turbo: 1, against the plain model's 4.5) - the box follows the Turbo on and off."""
+        note = self.preview_cfg_note or "1 = no CFG. Above 1 the negative prompt applies."
+        sp = self.preview_speed()
+        if sp is not None and sp.pref_key and not self.samples_turbo_pace and sp.settings.cfg != self.preview_cfg:
+            note += (f" With the Turbo LoRA on (strength above 0), previews use CFG {sp.settings.cfg:g} and the box "
+                     "switches to it.")
+        return note
 
     def preview_speed_defaults(self):
         """(steps, strength) previews use with the preview SpeedLoRA, or None without one."""

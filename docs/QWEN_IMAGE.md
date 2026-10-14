@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-Qwen Image 2.1 trains LoRAs and LoKRs in Fizgig, including edit LoRAs learned from before/after pairs, with turbo previews during training, the per-image loss watch, and all five workbench tools (Repair Studio, LoRA the Explorer, Profiler, Extract, LoRA Royale). Saved LoRAs, LoKRs, Repair Studio saves and Extract outputs load in ComfyUI's standard LoRA loader. It's the first model on Fizgig's driver system.
+Qwen Image 2.1 trains LoRAs and LoKRs in Fizgig, including edit LoRAs learned from before/after pairs, with turbo previews during training, the per-image loss watch, and all four workbench tools (Repair Studio, Profiler, Extract, LoRA Royale). Saved LoRAs, LoKRs, Repair Studio saves and Extract outputs load in ComfyUI's standard LoRA loader. It's the first model on Fizgig's driver system.
 
 ## Getting set up
 
@@ -60,7 +60,7 @@ The text encoder only encodes, and loads in 8-bit below about 20 GB free (about 
 
 Training previews render with the **Turbo LoRA** at strength 1, **8 steps, CFG 1** (both set in Preferences; the download button fetches them). Ticking **Use the Turbo model for samples** on the Samples tab renders them on the Turbo DiT instead, with the model being trained parked beside it. Without the Turbo LoRA they render on the plain model at **25 steps, CFG 3**. The training adapter is off for previews; a Context LoRA stays on.
 
-Repair Studio, LoRA the Explorer and LoRA Royale preview on the Turbo DiT (8 steps, CFG 1) when it's set; without it they follow the Samples tab.
+Repair Studio and LoRA Royale preview on the Turbo DiT (8 steps, CFG 1) when it's set; without it they follow the Samples tab.
 
 ## Edit LoRAs
 
@@ -68,9 +68,9 @@ Qwen Image 2.1 is one model for text-to-image and editing, so a LoRA can learn a
 
 A film grade trained on 40 pairs: the original, the edit, and Fizgig's epoch 9 training preview.
 
-![Before edit](../assets/qwen_edit/1_before_edit.jpg)
-![After edit](../assets/qwen_edit/2_after_edit.jpg)
-![Fizgig's epoch 9 preview](../assets/qwen_edit/3_fizgig_epoch9_preview.png)
+![Before edit](assets/qwen_edit/1_before_edit.jpg)
+![After edit](assets/qwen_edit/2_after_edit.jpg)
+![Fizgig's epoch 9 preview](assets/qwen_edit/3_fizgig_epoch9_preview.png)
 
 **What you need:** about 40 pairs (20 at least; more if your photos vary a lot). Each photo 1 MP or larger, e.g. 1200×800; bigger is fine, Fizgig resizes them. An original and its edited version must have the same crop and shape.
 

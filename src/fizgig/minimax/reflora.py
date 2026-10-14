@@ -15,31 +15,18 @@ import json
 import os
 
 from fizgig.minimax.refmod import BUNDLE_FORMAT_VERSION, NODE_FORMAT_VERSION, NODE_META_KEY
+from fizgig.minimax.refmod_meta import is_reference_key, is_reflora  # noqa: F401
 
 HYBRID_KEY = "h3_hybrid"
 HYBRID_VERSION = 1
 MAX_REFERENCES = 256
 
 
-def is_reference_key(key: str) -> bool:
-    """A RefMod tensor (a ReFLoRA's ref_N, a standalone mod's latent) rather than a LoRA weight."""
-    return key == "latent" or (key.startswith("ref_") and key[4:].isdigit())
 
 
 def lora_tensors(sd: dict) -> dict:
     """A LoRA file's state dict without the references a ReFLoRA carries beside the weights."""
     return {k: v for k, v in sd.items() if not is_reference_key(k)}
-
-
-def is_reflora(path: str) -> bool:
-    """A file with both LoRA weights and RefMod references."""
-    try:
-        from safetensors import safe_open
-        with safe_open(path, framework="pt", device="cpu") as f:
-            keys = list(f.keys())
-    except Exception:
-        return False
-    return any(is_reference_key(k) for k in keys) and any(not is_reference_key(k) for k in keys)
 
 
 def _raw_member(path: str, tensor_key: str):
