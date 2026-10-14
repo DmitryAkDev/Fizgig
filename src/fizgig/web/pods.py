@@ -293,16 +293,15 @@ def listing(prefs, key, save=None, mine=""):
 
 
 # How fast each card trains next to an RTX 5090: a rough guide from public diffusion-training benchmarks, not a
-# measurement of Fizgig (real runs vary with the model and settings). It is also the list the picker offers: RunPod's
-# API names cards its deploy page doesn't (the RTX PRO 5000 and 4000, Oct 2026), and a Deploy link to one of those
-# opens with no card chosen, so only cards on RunPod's published GPU list (docs.runpod.io/references/gpu-types) are here.
-SPEED = {"RTX 5090": 1.0, "RTX 4090": 0.75, "RTX 5080": 0.55, "RTX 4080": 0.5, "RTX 4080 SUPER": 0.52,
-         "RTX 3090": 0.4, "RTX 3090 Ti": 0.45, "RTX A5000": 0.35, "RTX A4500": 0.3, "RTX A4000": 0.25, "L4": 0.3,
-         "RTX 4000 Ada": 0.3, "RTX 5000 Ada": 0.6, "RTX 6000 Ada": 0.8, "RTX A6000": 0.45, "A40": 0.45,
-         "L40": 0.6, "L40S": 0.8, "A100 PCIe": 0.8, "A100 SXM": 0.85, "H100 PCIe": 1.2, "H100 SXM": 1.5,
-         "H100 NVL": 1.35, "H200 SXM": 1.6, "H200 NVL": 1.5, "B200": 2.5,
-         "RTX PRO 4500": 0.65, "RTX PRO 6000": 1.2, "RTX PRO 6000 WK": 1.2,
-         "RTX PRO 6000 MaxQ": 1.0}
+# measurement of Fizgig (real runs vary with the model and settings). It is also the list the picker offers: exactly
+# the whole cards on RunPod's deploy page (its All tab, 14 Oct 2026). RunPod's API names cards that page doesn't
+# (the RTX PRO 5000, RTX 5080...), and a Deploy link to one of those opens with no card chosen.
+SPEED = {"RTX 5090": 1.0, "RTX 4090": 0.75, "RTX 3090": 0.4, "RTX A6000": 0.45, "RTX A5000": 0.35,
+         "RTX A4500": 0.3, "RTX A4000": 0.25, "RTX 6000 Ada": 0.8, "RTX 4000 Ada": 0.3, "RTX 2000 Ada": 0.15,
+         "L4": 0.3, "L40": 0.6, "L40S": 0.8, "A40": 0.45, "A100 PCIe": 0.8, "A100 SXM": 0.85,
+         "H100 PCIe": 1.2, "H100 SXM": 1.5, "H100 NVL": 1.35, "H200 SXM": 1.6, "H200 NVL": 1.5, "B200": 2.5,
+         "B300": 2.7, "RTX PRO 4000": 0.45, "RTX PRO 4500": 0.65, "RTX PRO 4500 SE": 0.65, "RTX PRO 6000": 1.2,
+         "RTX PRO 6000 WK": 1.2}
 # without an API key RunPod shares no prices or stock: these, to pick from on its own page
 SHORTLIST = [("RTX 5090", 32), ("RTX 4090", 24), ("L40S", 48), ("RTX PRO 6000", 96), ("A100 SXM", 80),
              ("H100 SXM", 80)]
@@ -334,7 +333,7 @@ def offers(key, dc="") -> dict:
         if not _trains(g):
             continue
         name = g["displayName"]
-        if name not in SPEED:                    # not on RunPod's deploy page, or not checked yet
+        if name not in SPEED:                    # not on RunPod's deploy page
             continue
         row = {"gpu": name, "vram": int(g.get("memoryInGb") or 0), "speed": SPEED.get(name), "url": deploy_url(name)}
         for cloud, k in (("secure", "s"), ("community", "c")):
