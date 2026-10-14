@@ -228,7 +228,8 @@ def listing(prefs, key, save=None, mine=""):
         except ValueError as e:
             err = str(e)
     try:
-        _lan_rows(rows, finding.result(timeout=5), mine, save)
+        me = str(prefs.get("lan_id") or "")     # this computer's other Fizgig (a second launch, another port) isn't a computer to open
+        _lan_rows(rows, [f for f in finding.result(timeout=5) if not me or f.get("id") != me], mine, save)
     except Exception:
         pass
     items = list(rows.values())

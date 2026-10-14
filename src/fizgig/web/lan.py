@@ -144,6 +144,15 @@ def _exe() -> str:
         return getattr(sys, "_base_executable", "") or sys.executable
 
 
+def _pythons() -> list:
+    """This Python and its sibling (python.exe / pythonw.exe): the app window runs Fizgig on one, the browser launcher
+    on the other, and Windows keeps a block rule for each."""
+    exe = _exe()
+    d, n = os.path.split(exe)
+    other = {"python.exe": "pythonw.exe", "pythonw.exe": "python.exe"}.get(n.lower())
+    return [exe] + ([os.path.join(d, other)] if other and os.path.exists(os.path.join(d, other)) else [])
+
+
 def _ps(script, timeout=20):
     r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
                        capture_output=True, text=True, timeout=timeout, **_NO_WINDOW)
@@ -155,24 +164,23 @@ def _q(s) -> str:
 
 
 def firewall_status(port) -> dict:
-    """{windows, networks: [{name, category}], allowed: our rules cover this port, blocked: a block rule on
-    Fizgig's Python (one Windows makes when its question is cancelled; it beats any allow)}."""
+    """{windows, networks: [{name, category}], allowed: the home network lets this port and the discovery port in
+    (our rules, or the ones Windows made for Fizgig's Python when its own question was answered Allow), blocked: a
+    block rule on Fizgig's Python (one Windows makes when its question is cancelled; it beats any allow)}."""
     if os.name != "nt":
         return {"windows": False}
     script = f"""
 $ErrorActionPreference = 'SilentlyContinue'
 $nets = @(Get-NetConnectionProfile | ForEach-Object {{ @{{ name = [string]$_.Name; category = [string]$_.NetworkCategory;
   alias = [string]$_.InterfaceAlias; ips = @((Get-NetIPAddress -InterfaceIndex $_.InterfaceIndex -AddressFamily IPv4).IPAddress) }} }})
-$ours = @(Get-NetFirewallRule -DisplayName {_q(RULE)} | Where-Object {{ $_.Enabled -eq 'True' -and $_.Action -eq 'Allow' }})
-$tcp = $false; $udp = $false
-foreach ($r in $ours) {{
-  $f = $r | Get-NetFirewallPortFilter
-  if ($f.Protocol -eq 'TCP' -and @($f.LocalPort) -contains '{int(port)}') {{ $tcp = $true }}
-  if ($f.Protocol -eq 'UDP' -and @($f.LocalPort) -contains '{DISCOVERY_PORT}') {{ $udp = $true }}
-}}
-$blocked = @(Get-NetFirewallApplicationFilter -Program {_q(_exe())} | Get-NetFirewallRule |
-  Where-Object {{ $_.Enabled -eq 'True' -and $_.Action -eq 'Block' -and $_.Direction -eq 'Inbound' }}).Count -gt 0
-@{{ networks = $nets; tcp = $tcp; udp = $udp; blocked = $blocked }} | ConvertTo-Json -Compress -Depth 4
+$app = @(Get-NetFirewallApplicationFilter -Program {_q(_exe())} | Get-NetFirewallRule |
+  Where-Object {{ $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' }})
+$rules = @(@(Get-NetFirewallRule -DisplayName {_q(RULE)}) + @($app | Where-Object {{ $_.Action -eq 'Allow' }}) |
+  Where-Object {{ $_.Enabled -eq 'True' -and $_.Action -eq 'Allow' }} | ForEach-Object {{
+  $f = $_ | Get-NetFirewallPortFilter
+  @{{ proto = [string]$f.Protocol; ports = @($f.LocalPort | ForEach-Object {{ [string]$_ }}); profile = [string]$_.Profile }} }})
+$blocked = @($app | Where-Object {{ $_.Action -eq 'Block' }}).Count -gt 0
+@{{ networks = $nets; rules = $rules; blocked = $blocked }} | ConvertTo-Json -Compress -Depth 4
 """
     try:
         code, out = _ps(script)
@@ -188,7 +196,21 @@ $blocked = @(Get-NetFirewallApplicationFilter -Program {_q(_exe())} | Get-NetFir
         ips = n.get("ips") or []
         n["ips"] = [ips] if isinstance(ips, str) else ips
         n["lan"] = bool(here and here in n["ips"])
-    return {"windows": True, "networks": nets, "lan_ip": here, "allowed": bool(d.get("tcp") and d.get("udp")),
+    rules = d.get("rules") or []
+    rules = [rules] if isinstance(rules, dict) else rules
+    kinds = {n["category"] for n in nets if n["lan"]} or {n["category"] for n in nets}
+    kinds = {{"DomainAuthenticated": "Domain"}.get(k, k) for k in kinds}
+
+    def lets_in(proto, p):                      # on every network this computer is reached on
+        def one(r):
+            ports = r.get("ports") or []
+            ports = [ports] if isinstance(ports, str) else ports
+            prof = str(r.get("profile") or "")
+            return (r.get("proto") in (proto, "Any") and ("Any" in ports or str(p) in ports)
+                    and ("Any" in prof or all(k in prof for k in kinds)))
+        return any(one(r) for r in rules)
+    return {"windows": True, "networks": nets, "lan_ip": here,
+            "allowed": bool(kinds) and lets_in("TCP", int(port)) and lets_in("UDP", DISCOVERY_PORT),
             "blocked": bool(d.get("blocked"))}
 
 
@@ -201,8 +223,8 @@ def firewall_allow(port) -> dict:
     inner = f"""
 $ErrorActionPreference = 'SilentlyContinue'
 Remove-NetFirewallRule -DisplayName {_q(RULE)}
-Get-NetFirewallApplicationFilter -Program {_q(_exe())} | Get-NetFirewallRule |
-  Where-Object {{ $_.Action -eq 'Block' -and $_.Direction -eq 'Inbound' }} | Remove-NetFirewallRule
+foreach ($x in @({", ".join(_q(x) for x in _pythons())})) {{ Get-NetFirewallApplicationFilter -Program $x | Get-NetFirewallRule |
+  Where-Object {{ $_.Action -eq 'Block' -and $_.Direction -eq 'Inbound' }} | Remove-NetFirewallRule }}
 $ErrorActionPreference = 'Stop'
 New-NetFirewallRule -DisplayName {_q(RULE)} -Description 'Fizgig web UI, for your other devices' -Direction Inbound -Action Allow -Protocol TCP -LocalPort {int(port)} -Profile Private | Out-Null
 New-NetFirewallRule -DisplayName {_q(RULE)} -Description 'Fizgig, found by your other computers' -Direction Inbound -Action Allow -Protocol UDP -LocalPort {DISCOVERY_PORT} -Profile Private | Out-Null

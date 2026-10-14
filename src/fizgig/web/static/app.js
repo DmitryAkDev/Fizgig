@@ -771,8 +771,8 @@ function firewallRow() {
     if (d.error) { say.textContent = d.error; say.className = "field-hint warn"; return; }
     const all = d.networks || [];
     const nets = all.some((n) => n.lan) ? all.filter((n) => n.lan) : all;   // the home network, not a VPN's adapter
-    const pub = nets.filter((n) => n.category === "Public");
-    const ok = d.allowed && !d.blocked && !pub.length && nets.length;
+    const pub = d.allowed ? [] : nets.filter((n) => n.category === "Public");   // allowed there too: nothing to change
+    const ok = d.allowed && !d.blocked && nets.length;
     row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
     btn.textContent = d.allowed && !d.blocked ? "Allow again" : "Allow on my network";
     const lines = [];
