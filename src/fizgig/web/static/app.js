@@ -5468,9 +5468,9 @@ function podsDraw() {
     const st = p._starting && p.state !== "ready" ? "starting" : p.state;
     const [label, tone] = POD_STATE[st] || [st, "muted"];
     const title = p.name || p.id || p.url;
-    const build = {mine: "Different version: update Fizgig on this computer to open it",
-      theirs: "Different version: update Fizgig on that computer to open it",
-      other: "Different version: update both computers to open it"}[p.build] || "";
+    const build = {mine: "Newer Fizgig there: update this computer",
+      theirs: "Older Fizgig there: it opens as it is; update it when it's free",
+      other: "Different builds: update both when they're free"}[p.build] || "";
     const queued = p.queued ? `${p.queued} queued` + (p.queue_held ? " (held)" : "") : "";
     const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "", queued,
       p.auto_login && inApp() ? "logs you in" : "",
@@ -5766,7 +5766,9 @@ function podBuildGuard() {
         "Your two computers run different builds of Fizgig"}),
       el("p", {text: `Fizgig on this computer is older than ${S.onPod ? "the pod's" : "the one on " + (S.hostName || "that computer")}. Update it - close Fizgig and run update_fizgig.bat ` +
         "(update_fizgig_rocm.bat on AMD; venv/bin/python update_fizgig.py on Linux or a Mac), then open it again."}),
-      a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null));
+      el("div", {class: "field-row"}, a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null,
+        el("button", {class: "btn", text: "Open anyway", title: "Use it as it is: most of it works, something newer than this computer's Fizgig may not",
+          onclick: () => o.remove()}))));
   document.body.append(o);
 }
 window.addEventListener("pywebviewready", podBuildGuard);

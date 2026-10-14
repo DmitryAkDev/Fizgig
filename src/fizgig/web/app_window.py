@@ -147,8 +147,10 @@ def _update_how():
 
 
 def build_verdict(pod_build, pod=True):
-    """The rule: the window and the pod run the same build, or the pod's page is blocked with what to do. Which
-    side is behind decides it: a pod updates itself at each start; this computer with its updater."""
+    """The window and a pod (or your other computer) on different builds. An OLDER one opens as it is, with a note:
+    its page only asks the window for what it already knew (the window keeps those names), and updating it would mean
+    stopping a run that may be hours in. A NEWER one, or one this computer has never seen, may ask for what this window
+    doesn't have yet: its page is covered with what to do, and Open anyway."""
     mine = _build()
     if not mine:
         return {"ok": True}
@@ -159,17 +161,19 @@ def build_verdict(pod_build, pod=True):
     title = ("This computer and the pod run different builds of Fizgig" if pod else
              "Your two computers run different builds of Fizgig")
     mine_s, theirs_s = mine[:7], theirs[:7]
-    if theirs and _git("merge-base", "--is-ancestor", mine, theirs)[0] == 0 or (theirs and _git("cat-file", "-e", theirs + "^{commit}")[0] != 0):
-        # the pod's build is newer than this computer's, or one this computer has never seen
-        msg = (f"{other.capitalize()} runs build {theirs_s}, this computer build {mine_s}. Update Fizgig on this computer - "
-               f"{_update_how()} - and the two match.")
-    else:
-        said = f"{other.capitalize()} runs build {theirs_s}" if theirs else f"{other.capitalize()} runs an older build"
-        msg = (f"{said}, this computer build {mine_s}. " + (
-            "Restart the pod (stop it, then Start and open on the Pods tab): a pod takes the newest Fizgig every time "
-            "it starts." if pod else "Update Fizgig on that computer (close it, run its updater, start it again), "
-            "then open it here again."))
-    return {"ok": False, "title": title, "message": msg}
+    older = bool(theirs) and _git("merge-base", "--is-ancestor", theirs, mine)[0] == 0
+    if not older:
+        # the pod's build is newer than this computer's, one this computer has never seen, or off another line
+        said = f"runs build {theirs_s}" if theirs else "doesn't say which build it runs"
+        msg = (f"{other.capitalize()} {said}, this computer build {mine_s}. Update Fizgig on this computer - "
+               f"{_update_how()} - and the two match. Opened anyway, most of it works; something newer than this "
+               f"computer's Fizgig may not.")
+        return {"ok": False, "title": title, "message": msg}
+    # older there: it works as it is, and a run on it carries on
+    note = (f"{other.capitalize()} runs an older Fizgig ({theirs_s or 'an older build'}). It works as it is; to update it, " +
+            ("stop and start the pod when its run is done (a pod takes the newest Fizgig every time it starts)." if pod
+             else "run its updater when it's free."))
+    return {"ok": True, "older": True, "note": note}
 
 
 # a page in the window that runs a different build from this computer: covered, with what to do and the way back
@@ -193,8 +197,36 @@ _BLOCK_JS = r"""
   b.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:6px 16px;cursor:pointer;' +
     'font:600 14px Segoe UI,system-ui,sans-serif';
   b.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
-  c.appendChild(h); c.appendChild(p); c.appendChild(b); o.appendChild(c);
+  var a = document.createElement('button');
+  a.textContent = 'Open anyway';
+  a.title = "Use it as it is: most of it works, something newer than this computer's Fizgig may not";
+  a.style.cssText = 'margin-left:10px;background:none;color:#F0F4F8;border:1px solid #6B7280;border-radius:999px;' +
+    'padding:6px 16px;cursor:pointer;font:600 14px Segoe UI,system-ui,sans-serif';
+  a.onclick = function () { o.remove(); };
+  c.appendChild(h); c.appendChild(p); c.appendChild(b); c.appendChild(a); o.appendChild(c);
   document.body.appendChild(o);
+})(__ARGS__);
+"""
+
+
+# an older build there: a note under the bar, not a wall (✕ hides it)
+_NOTE_JS = r"""
+(function (text) {
+  if (document.getElementById('fizgigBuildNote')) return;
+  var n = document.createElement('div');
+  n.id = 'fizgigBuildNote';
+  n.style.cssText = 'position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;' +
+    'align-items:center;gap:8px;max-width:70vw;padding:6px 8px 6px 14px;border-radius:10px;background:#3A2A08;' +
+    'border:1px solid #F59E0B;color:#FCD34D;font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  var t = document.createElement('span');
+  t.textContent = text;
+  var x = document.createElement('button');
+  x.textContent = '✕';
+  x.title = 'Hide this';
+  x.style.cssText = 'background:none;color:#FCD34D;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
+  x.onclick = function () { n.remove(); };
+  n.appendChild(t); n.appendChild(x);
+  document.body.appendChild(n);
 })(__ARGS__);
 """
 
@@ -467,6 +499,8 @@ def main():
                 if not v["ok"]:
                     window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
                                                          json.dumps(v["message"])))
+                elif v.get("note"):
+                    window.evaluate_js(_NOTE_JS.replace("__ARGS__", json.dumps(v["note"])))
                 return v
 
             def local_datasets(self):
