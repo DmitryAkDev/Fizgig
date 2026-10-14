@@ -205,7 +205,8 @@ _CHECK_JS = r"""
   window.__fizgigBuildCheck = true;
   var tries = 0;
   function ask() {
-    fetch('/api/about', {credentials: 'same-origin'}).then(function (r) {
+    var t = document.querySelector('meta[name="fizgig-token"]');            // its API answers its own page only
+    fetch('/api/about', {credentials: 'same-origin', headers: {'X-Fizgig-Token': t ? t.content : ''}}).then(function (r) {
       if (!r.ok) throw new Error(r.status);
       return r.json();
     }).then(function (d) {
