@@ -3294,7 +3294,7 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     Handler.password = password or None
     Handler.local_only = not password
     Handler.password_arg = password_arg
-    Handler.port_fixed = port is not None
+    Handler.port_fixed = port is not None and not os.environ.get("FIZGIG_APP_KEY")   # the app window passes its saved port
     if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
     else:

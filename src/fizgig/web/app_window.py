@@ -260,7 +260,8 @@ def _last_pod(port):
 
 
 def _start_server(port, key):
-    """The web UI on this computer only (as `--web` does with no password), the window's key in its environment."""
+    """The web UI as `--web` serves it (this computer only, unless a password is saved: then your other devices too),
+    the window's key in its environment."""
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", FIZGIG_APP_KEY=key,
                FIZGIG_APP_PARENT=str(os.getpid()))            # the server stops if this window's process goes
     kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
