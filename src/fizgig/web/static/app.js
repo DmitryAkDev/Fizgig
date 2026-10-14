@@ -736,28 +736,43 @@ function webPasswordRows() {
   const base = () => (P.env ? "A password given when Fizgig was started (FIZGIG_PASSWORD or --password) is used instead of this one. " : "") +
     "Empty: the web UI opens on this machine only. Set (8 characters or more): other devices can open it too, after " +
     "logging in. Whoever has it can use Fizgig and open files on this machine, so treat it like a remote-desktop " +
-    "password. Saved in prefs.json as plain text. It applies the next time Fizgig starts.";
+    "password. Saved in prefs.json as plain text.";
+  // the running web UI still has the old password (or none) until it restarts
+  const restart = el("button", {class: "btn btn-sm btn-primary", text: "Restart Fizgig now", style: "display:none",
+    title: "Fizgig starts again with the new password (a run going stops it: wait for that first)", onclick: async () => {
+      restart.disabled = true; say.textContent = "Restarting Fizgig...";
+      try { await api("/api/restart", {}); } catch (e) { say.textContent = e.message; restart.disabled = false; return; }
+      await new Promise((ok) => setTimeout(ok, 1500));
+      for (let i = 0; i < 120; i++) {                // back when its page answers again
+        try { if ((await fetch("/icon.png", {cache: "no-store"})).ok) break; } catch (e) { /* not yet */ }
+        await new Promise((ok) => setTimeout(ok, 500));
+      }
+      const a = window.pywebview && window.pywebview.api;
+      if (a && a.home && !pageIsElsewhere()) a.home(); else location.reload();   // the window logs itself in again
+    }});
+  const stale = () => !P.env && P.saved !== !!S.passwordOn || P.changed;
   const links = el("div", {class: "field-hint"});
   const remove = el("button", {class: "btn btn-sm", text: "Remove", onclick: () => save("")});
   const paint = () => {
     remove.style.display = P.saved ? "" : "none";
+    restart.style.display = stale() ? "" : "none";
     const port = S.portNow || S.webPort;
-    links.textContent = P.lan ? (P.saved ? `Other devices on your network: http://${P.lan}:${port}/ (from the next start).` +
+    links.textContent = P.lan ? (P.saved ? `Other devices on your network: http://${P.lan}:${port}/` + (stale() ? " (once Fizgig has restarted)." : ".") +
       (navigator.platform.startsWith("Win") ? " The first time, Windows may ask to let Python through the firewall: allow it on private networks." : "")
       : "Set a password to open it from other devices.") : "";
   };
   const save = async (v) => {
     try {
       const r = await api("/api/prefs/password", {password: v});
-      P.saved = r.saved; input.value = "";
+      P.saved = r.saved; P.changed = true; input.value = "";
       input.placeholder = P.saved ? "saved - type a new one to replace it" : "8 characters or more";
-      say.textContent = (r.saved ? "Saved. " : "Removed. ") + base(); paint();
+      say.textContent = (r.saved ? "Saved: restart Fizgig for it to apply. " : "Removed: restart Fizgig for it to apply. ") + base(); paint();
     } catch (e) { say.textContent = e.message; }
   };
   input.addEventListener("change", () => input.value.trim() && save(input.value.trim()));
   say.textContent = base(); paint();
   return [el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Password:"}), input,
-    el("label", {class: "checkbox-label"}, show, " Show"), remove), say, links, firewallRow()];
+    el("label", {class: "checkbox-label"}, show, " Show"), remove, restart), say, links, firewallRow()];
 }
 
 // Windows Firewall, on the computer Fizgig runs on: is Fizgig let through on this network, and a button that lets it

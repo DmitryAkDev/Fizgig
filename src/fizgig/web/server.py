@@ -2840,6 +2840,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/restart":              # Restart now: a new password (or none) takes effect
+                if on_pod():
+                    return self.json({"error": "A pod's password comes from its template: restart the pod."}, 400)
+                with _lock:
+                    busy = _run["proc"] is not None and _run["proc"].poll() is None
+                if busy:
+                    return self.json({"error": "A run is going: Fizgig restarts once it's done (pause it, or "
+                                               "restart after it finishes)."}, 400)
+                _RESTART[0] = True
+                threading.Timer(0.3, self.server.shutdown).start()
+                return self.json({"ok": True})
             if path == "/api/prefs/password":       # the web UI's password: used from the next start
                 pwd = str(b.get("password") or "").strip()
                 if pwd and len(pwd) < 8:
@@ -3294,6 +3305,12 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     Handler.password = password or None
     Handler.local_only = not password
     Handler.password_arg = password_arg
+    if os.environ.pop("FIZGIG_RESTARTED", None):     # Restart now: the old server may still be letting go
+        want = port or (PORT_DEFAULT if on_pod() else saved_port(load_prefs()))
+        for _ in range(60):
+            if not listening(want):
+                break
+            time.sleep(0.25)
     Handler.port_fixed = port is not None and not os.environ.get("FIZGIG_APP_KEY")   # the app window passes its saved port
     if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
@@ -3329,6 +3346,25 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
         _stop()
         captions.unload()
         srv.server_close()
+        if _RESTART[0]:
+            _respawn()
+
+
+_RESTART = [False]
+
+
+def _respawn():
+    """Restart now: the same command again, once this one has let go of its port (the app window's key and parent
+    travel in the environment, so the window stays logged in)."""
+    args = [sys.executable, os.path.abspath(sys.argv[0])] + [a for a in sys.argv[1:] if a != "--open"]
+    kw = {}
+    if os.name == "nt":
+        import ctypes
+        if not ctypes.windll.kernel32.GetConsoleWindow():      # no console (the app window's): none for it either
+            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    subprocess.Popen(args, cwd=os.getcwd(), env=dict(os.environ, FIZGIG_RESTARTED="1"), **kw)
 
 
 def main(argv=None):
