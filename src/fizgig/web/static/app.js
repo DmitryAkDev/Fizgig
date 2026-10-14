@@ -5437,8 +5437,8 @@ S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
-  away: ["Not on your network now: is that computer on, awake and running Fizgig?", "muted"],
-  blocked: ["Found, but it doesn't let this computer in yet: on that computer, Preferences > Web UI > Allow on my network", "warn"]};
+  away: ["Not on your network now: is it on, awake and running Fizgig?", "muted"],
+  blocked: ["Found, but it doesn't let this computer in yet: on it, Preferences > Web UI > Allow on my network", "warn"]};
 
 async function podsLoad(quiet) {
   if (!quiet) $("podsNote").textContent = "Checking your pods...";
@@ -5716,7 +5716,7 @@ function podLocalDraw() {
       d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
       .filter(Boolean).join(" · ");
     const send = el("button", {class: "btn btn-sm btn-primary", text: S.onPod ? "Send to this pod" :
-      `Send to ${S.hostName || "that computer"}`, disabled: S.podLocal.busy,
+      `Send to ${S.hostName || "your other computer"}`, disabled: S.podLocal.busy,
       onclick: () => podLocalSend(d)});
     return el("div", {class: "dataset-card", title: d.path},
       el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
@@ -5764,7 +5764,7 @@ function podBuildGuard() {
     el("div", {class: "build-block-card"},
       el("div", {class: "build-block-title", text: S.onPod ? "This computer and the pod run different builds of Fizgig" :
         "Your two computers run different builds of Fizgig"}),
-      el("p", {text: `Fizgig on this computer is older than ${S.onPod ? "the pod's" : "the one on " + (S.hostName || "that computer")}. Update it - close Fizgig and run update_fizgig.bat ` +
+      el("p", {text: `Fizgig on this computer is older than ${S.onPod ? "the pod's" : "the one on " + (S.hostName || "your other computer")}. Update it - close Fizgig and run update_fizgig.bat ` +
         "(update_fizgig_rocm.bat on AMD; venv/bin/python update_fizgig.py on Linux or a Mac), then open it again."}),
       el("div", {class: "field-row"}, a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null,
         el("button", {class: "btn", text: "Open anyway", title: "Use it as it is: most of it works, something newer than this computer's Fizgig may not",

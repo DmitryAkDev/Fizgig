@@ -154,7 +154,7 @@ def _update_how():
     return "close Fizgig, run venv/bin/python update_fizgig.py in the Fizgig folder, then open it again"
 
 
-def build_verdict(pod_build, pod=True):
+def build_verdict(pod_build, pod=True, name=""):
     """The window and a pod (or your other computer) on different builds. An OLDER one opens as it is, with a note:
     its page only asks the window for what it already knew (the window keeps those names), and updating it would mean
     stopping a run that may be hours in. A NEWER one, or one this computer has never seen, may ask for what this window
@@ -165,7 +165,7 @@ def build_verdict(pod_build, pod=True):
     theirs = str(pod_build or "").strip()
     if theirs == mine:
         return {"ok": True}
-    other = "the pod" if pod else "that computer"
+    other = "the pod" if pod else (name or "your other computer")      # your computer by its name
     title = ("This computer and the pod run different builds of Fizgig" if pod else
              "Your two computers run different builds of Fizgig")
     mine_s, theirs_s = mine[:7], theirs[:7]
@@ -173,12 +173,12 @@ def build_verdict(pod_build, pod=True):
     if not older:
         # the pod's build is newer than this computer's, one this computer has never seen, or off another line
         said = f"runs build {theirs_s}" if theirs else "doesn't say which build it runs"
-        msg = (f"{other.capitalize()} {said}, this computer build {mine_s}. Update Fizgig on this computer - "
+        msg = (f"{other[:1].upper() + other[1:]} {said}, this computer build {mine_s}. Update Fizgig on this computer - "
                f"{_update_how()} - and the two match. Opened anyway, most of it works; something newer than this "
                f"computer's Fizgig may not.")
         return {"ok": False, "title": title, "message": msg}
     # older there: it works as it is, and a run on it carries on
-    note = (f"{other.capitalize()} runs an older Fizgig ({theirs_s or 'an older build'}). It works as it is; to update it, " +
+    note = (f"{other[:1].upper() + other[1:]} runs an older Fizgig ({theirs_s or 'an older build'}). It works as it is; to update it, " +
             ("stop and start the pod when its run is done (a pod takes the newest Fizgig every time it starts)." if pod
              else "run its updater when it's free."))
     return {"ok": True, "older": True, "note": note}
@@ -505,7 +505,8 @@ def main():
                     url = window.get_current_url() or ""
                 except Exception:
                     url = ""
-                v = build_verdict(pod_build, pod=".proxy.runpod.net" in url or not url)
+                pod = ".proxy.runpod.net" in url or not url
+                v = build_verdict(pod_build, pod=pod, name="" if pod else _pod_name(url.split("#")[0]))
                 if not v["ok"]:
                     window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
                                                          json.dumps(v["message"])))
