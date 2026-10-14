@@ -58,6 +58,7 @@ Memory plans itself: precision, block swap and previews size to your free VRAM, 
 
 https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
 
+<p align="center"><sub>The Fizgig 8 tour · <a href="https://youtu.be/F8F-vuiZd88">watch it on YouTube</a></sub></p>
 
 ## Supported models
 
