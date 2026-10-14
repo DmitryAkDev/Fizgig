@@ -1384,8 +1384,8 @@
             <div class="card-desc">Paste the pod's ID (the code under its name on RunPod's Pods page) or its address. The
               address of a Fizgig on another computer on your network works too.</div>
             <div class="card-content">
-              <div class="field-row"><input id="podAddText" class="w-path" placeholder="e.g. lx6csscwpfdfvd" spellcheck="false">
-                <input id="podAddName" class="w-combo-md" placeholder="name (optional)">
+              <div class="field-row"><input type="text" id="podAddText" class="w-path" placeholder="e.g. lx6csscwpfdfvd" spellcheck="false">
+                <input type="text" id="podAddName" class="w-combo-md" placeholder="name (optional)">
                 <button class="btn btn-primary" id="podAdd">Add</button></div>
               <div class="field-hint" id="podAddNote"></div>
             </div>
@@ -1536,6 +1536,41 @@
           rel="noopener">📖 Release notes</a></p>
       </div>
       <div class="modal-footer"><button class="btn btn-primary" data-close="aboutModal">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Fizgig 8's welcome: on this computer's own page, until Don't show this again -->
+  <div class="modal-backdrop" id="welcomeModal">
+    <div class="modal-window welcome-window">
+      <div class="modal-header"><span>Welcome to Fizgig 8</span>
+        <button class="btn btn-sm" id="welcomeX" title="Close">✕</button></div>
+      <div class="modal-body welcome-body">
+        <video id="welcomeVideo" src="/welcome.mp4" muted loop playsinline controls preload="auto"></video>
+        <div class="welcome-text">
+          <p><b>The steps haven't changed.</b> Start → Image Prep → Captions → Samples → Training, numbered down the
+            left instead of across the top. The tools you use afterwards (Runs &amp; outputs, Studio, Profiler and the
+            rest) sit below them.</p>
+          <p><b>Its own window, or your browser.</b> <code>Launch Fizgig.bat</code> opens it in its own window,
+            <code>Launch Fizgig in browser.bat</code> in your browser: the same app either way.</p>
+          <p class="welcome-new">New in Fizgig 8:</p>
+          <ul>
+            <li><b>Up next</b> in the sidebar: what's training and what's queued, from any tab.</li>
+            <li><b>Pods</b>: use your other computer's GPU on your network, or a RunPod pod, right here.</li>
+            <li><b>Runs &amp; outputs</b>: every run, with its files and its settings to start again.</li>
+            <li><b>Your phone</b>: set a password in Preferences → Web UI and watch a run from it.</li>
+          </ul>
+          <p class="field-hint">Coming from Fizgig 7? Your folders, settings, presets and queued runs came across.</p>
+          <p class="welcome-guides">Guides:
+            <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md#your-other-computers-use-ones-gpu-from-another" target="_blank" rel="noopener">Your other computers</a> ·
+            <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md" target="_blank" rel="noopener">Pods on RunPod</a> ·
+            <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md#on-your-phones-home-screen" target="_blank" rel="noopener">Your phone</a> ·
+            <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md" target="_blank" rel="noopener">Everything else</a></p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <label class="checkbox-label welcome-never"><input type="checkbox" id="welcomeNever"> Don't show this again</label>
+        <button class="btn btn-primary" id="welcomeClose">Get started</button>
+      </div>
     </div>
   </div>
 

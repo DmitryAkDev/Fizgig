@@ -18,9 +18,9 @@ On a pod in the Fizgig window, the Start tab's **From this computer** card lists
 
 Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.
 
-## Two computers: use one's GPU from the other
+## Your other computers: use one's GPU from another
 
-The Pods tab isn't only for RunPod. If you have two computers on the same network, say a desktop with an RTX 5090 and a laptop with a smaller card, Fizgig on the laptop can open Fizgig on the desktop and train on its GPU, the same way it opens a pod.
+The Pods tab isn't only for RunPod. Fizgig finds every computer running it on your network, so with a desktop with an RTX 5090 and a laptop with a smaller card, say, Fizgig on the laptop can open Fizgig on the desktop and train on its GPU, the same way it opens a pod. Three or four machines all show up the same way.
 
 On the computer with the GPU you want to use (the desktop):
 

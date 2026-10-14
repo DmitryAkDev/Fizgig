@@ -2024,6 +2024,8 @@ class Handler(BaseHTTPRequestHandler):
             extra = ([self._cookie()]
                      if key and self.password and hmac.compare_digest((qs.get("app_key") or [""])[0], key) else [])
             return self._send(200, page.encode("utf-8"), "text/html; charset=utf-8", extra=extra)
+        if path == "/welcome.mp4":                  # the welcome popup's tour (it ships with Fizgig: no network)
+            return self._file(os.path.join(STATIC_DIR, "welcome_v8.mp4"), "video/mp4")
         if path in ("/app.js", "/style.css"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
@@ -2051,6 +2053,7 @@ class Handler(BaseHTTPRequestHandler):
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
                               "password_saved": bool(str(p.get("web_password") or "").strip()),
+                              "welcome_hidden": str(p.get("welcome_v8_hidden") or "") == "1",
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
                               "lan_ip": __import__("fizgig.web.port", fromlist=["x"]).lan_ip(),
                               "cuda_device": str(p.get("cuda_device") or ""), "gpus": list_gpus(),
@@ -2864,7 +2867,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir"}
+                    "input_dataset_dir", "welcome_v8_hidden"}
                 ch = b.get("changes") or {}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
                     ch = {**{k: "" for k in SETTING_PREFS}, **{k: v for k, v in PREF_DEFAULTS.items()
