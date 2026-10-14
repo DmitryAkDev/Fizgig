@@ -1301,8 +1301,8 @@ class Gizmo:
         root.configure(bg=COLORS["bg_deep"])
         # Wide enough that the vertical scrollbar never eats into the content (which measures
         # ~985 px), tall enough for two cards at a time. The rest scrolls.
-        root.geometry("1060x900")
-        root.minsize(1010, 620)
+        root.geometry("%dx%d" % _scaled(root, 1060, 900))
+        root.minsize(*_scaled(root, 1010, 620))
 
         self.ffmpeg = find_ffmpeg()
         self.settings = load_settings()
@@ -4740,8 +4740,8 @@ class Gizmo:
                                          height=self._CHOP_THUMB[1])
         win.title(f"Auto-chop — {os.path.basename(self.src)}")
         win.configure(bg=COLORS["bg_deep"])
-        win.geometry("920x700")
-        win.minsize(760, 480)
+        win.geometry("%dx%d" % _scaled(win, 920, 700))
+        win.minsize(*_scaled(win, 760, 480))
         win.protocol("WM_DELETE_WINDOW", self._autochop_close)
 
         top = tk.Frame(win, bg=COLORS["bg_deep"])
@@ -5669,7 +5669,34 @@ class GizmoRecorder:
             pass                               # app teardown mid-close
 
 
+def _dpi_aware():
+    """Windows: draw at the screen's real scaling. Unaware, a 125/150 % laptop screen gets the window drawn at
+    100 % and stretched as a picture, which blurs every letter. Aware, Tk sizes its fonts for the screen."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)      # system-aware: sharp at the main screen's scaling
+        except (AttributeError, OSError):
+            ctypes.windll.user32.SetProcessDPIAware()          # Windows 7 / 8.0
+    except Exception:
+        pass                                                    # never stop Gizmo starting over this
+
+
+def _scaled(win, w, h):
+    """A size laid out at 100 %, for this screen's scaling (fonts grow with it, so the room must too), kept on the
+    screen."""
+    try:
+        k = max(1.0, float(win.winfo_fpixels("1i")) / 96.0)
+    except tk.TclError:
+        k = 1.0
+    sw, sh = win.winfo_screenwidth(), win.winfo_screenheight()
+    return min(int(w * k), sw - 40), min(int(h * k), sh - 80)
+
+
 def main():
+    _dpi_aware()
     root = tk.Tk()
     app = Gizmo(root)
     # A path on the command line, which is what Windows hands over when a video is dropped onto
