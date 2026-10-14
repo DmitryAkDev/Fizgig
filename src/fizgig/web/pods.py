@@ -173,9 +173,12 @@ def _lan_rows(rows, found, mine, save):
     """The Fizgigs that answered on the network, into the list: a saved computer whose address changed takes its new
     one (and keeps it), the rest are listed as found, ready to open."""
     moved = False
+    port = lambda u: u.rstrip("/").rsplit(":", 1)[-1]
     for f in found:
-        old = next((r for r in rows.values() if f.get("id") and r.get("lan_id") == f["id"]
-                    and r["url"].rsplit(":", 1)[-1] == f["url"].rsplit(":", 1)[-1]), None)
+        mine_ = [r for r in rows.values() if f.get("id") and r.get("lan_id") == f["id"]]
+        old = next((r for r in mine_ if port(r["url"]) == port(f["url"])), None)
+        if not old and len(mine_) == 1 and sum(g.get("id") == f["id"] for g in found) == 1:
+            old = mine_[0]                      # its only Fizgig, on another port now (the old one was taken)
         if old and old["url"] != f["url"]:
             rows.pop(old["url"])
             old["url"] = f["url"]
@@ -241,6 +244,8 @@ def listing(prefs, key, save=None, mine=""):
         st = states.get(r["url"], "stopped" if r.get("account") and not r.get("running") else "off")
         # found on the network but its page doesn't answer: its firewall lets the question in, not the web UI
         r["state"] = ("ready" if st == "ready" else "blocked") if r.get("lan") else st
-    rank = {"ready": 0, "waiting": 1, "stopped": 2, "off": 3}
+        if r["state"] == "off" and r.get("lan_id"):  # a computer of yours that didn't answer: off, asleep or Fizgig closed
+            r["state"] = "away"
+    rank = {"ready": 0, "blocked": 1, "waiting": 1, "stopped": 2, "away": 3, "off": 3}
     items.sort(key=lambda r: (rank.get(r["state"], 3), -(r.get("last") or 0), (r.get("name") or "").lower()))
     return {"pods": items, "error": err, "deploy": DEPLOY}

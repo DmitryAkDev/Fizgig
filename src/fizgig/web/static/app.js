@@ -5387,6 +5387,7 @@ S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
+  away: ["Not on your network now: is that computer on, awake and running Fizgig?", "muted"],
   blocked: ["Found, but it doesn't let this computer in yet: on that computer, Preferences > Web UI > Allow on my network", "warn"]};
 
 async function podsLoad(quiet) {
