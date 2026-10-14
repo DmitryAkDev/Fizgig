@@ -1444,6 +1444,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   font: inherit; transition: border-color .12s, transform .12s; }
 .dataset-card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .dataset-card.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,.35); }
+/* a training folder picked from outside the training data folder: outlined, with where it lives */
+.dataset-card.elsewhere { border-style: dashed; border-color: #8B5CF6; }
+.dataset-card.elsewhere.active { border-style: solid; border-color: var(--accent); }
+.dataset-where { font-size: 11px; color: #A78BFA; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.datasets-empty { grid-column: 1 / -1; }
 .dataset-mosaic { display: grid; height: 132px; background: var(--bg-inset); gap: 2px; overflow: hidden;
   grid-template-rows: minmax(0, 1fr); }
 .dataset-mosaic.n4 { grid-template-rows: repeat(2, minmax(0, 1fr)); }

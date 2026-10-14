@@ -1568,20 +1568,67 @@ def _settled(entry, names) -> bool:
         return False
 
 
+RECENT_KEEP = 12                            # the training folders from elsewhere the Start tab remembers
+
+
+def remember_folder(path):
+    """A training folder you picked: first in the list of recent ones (last_used recent_folders), so the Start tab's
+    Your training data shows it even when it lives outside the training data folder."""
+    path = str(path or "").strip()
+    if not path:
+        return
+    d = load_last_used()
+    key = os.path.normcase(os.path.abspath(path))
+    old = [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
+           and os.path.normcase(os.path.abspath(p)) != key]
+    update_last_used({"recent_folders": [path] + old[:RECENT_KEEP - 1]})
+
+
+def forget_folder(path):
+    key = os.path.normcase(os.path.abspath(str(path or "")))
+    d = load_last_used()
+    update_last_used({"recent_folders": [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
+                                         and os.path.normcase(os.path.abspath(p)) != key]})
+
+
+def _elsewhere_folders(root) -> list:
+    """Training folders you've used that aren't inside the training data folder: the one picked now, the recent ones,
+    and those of past runs (a Fizgig 7 install's datasets, wherever they are)."""
+    d = load_last_used()
+    cand = [d.get("image_folder"), d.get("image_folder2")] + list(d.get("recent_folders") or [])
+    try:
+        cand += [r.get("image_folder") for r in history.runs()[:60]]
+    except Exception:
+        pass
+    inside = os.path.normcase(os.path.abspath(root)) + os.sep
+    seen, out = set(), []
+    for p in cand:
+        if not isinstance(p, str) or not p.strip():
+            continue
+        k = os.path.normcase(os.path.abspath(p))
+        if k in seen or (k + os.sep).startswith(inside) or not os.path.isdir(p):
+            continue
+        seen.add(k)
+        out.append(p)
+    return out
+
+
 def list_datasets() -> dict:
-    """The folders in the training data folder (uploads_root()), newest first: what each holds (pictures, clips,
-    songs, how many have a caption), when it last changed, and up to four pictures for its tile."""
+    """The folders in the training data folder (uploads_root()), and the training folders you've used from anywhere
+    else (marked elsewhere), newest first: what each holds (pictures, clips, songs, how many have a caption), when
+    it last changed, and up to four pictures for its tile."""
     root = uploads_root()
     out = []
     try:
-        folders = [e for e in os.scandir(root) if e.is_dir() and not e.name.startswith(".")]
+        folders = [(e.path, e.name, False) for e in os.scandir(root) if e.is_dir() and not e.name.startswith(".")]
     except OSError:
         folders = []
-    for d in folders:
+    folders += [(p, os.path.basename(os.path.normpath(p)) or p, True) for p in _elsewhere_folders(root)]
+    for path, name, elsewhere in folders:
         pics = clips = songs = captioned = 0
         thumbs, newest = [], 0.0
         try:
-            entries = list(os.scandir(d.path))
+            entries = list(os.scandir(path))
         except OSError:
             continue
         names = {e.name for e in entries}
@@ -1609,10 +1656,11 @@ def list_datasets() -> dict:
                 pass
             if kind == "pic" and len(thumbs) < 4 and _settled(e, names):
                 thumbs.append(e.path)
-        _sweep_parts(d.path, entries)
+        if not elsewhere:
+            _sweep_parts(path, entries)
         if pics + clips + songs:
-            out.append({"name": d.name, "path": d.path, "pictures": pics, "clips": clips, "songs": songs,
-                        "captioned": captioned, "time": newest, "thumbs": thumbs or waves})
+            out.append({"name": name, "path": path, "pictures": pics, "clips": clips, "songs": songs,
+                        "captioned": captioned, "time": newest, "thumbs": thumbs or waves, "elsewhere": elsewhere})
     out.sort(key=lambda x: -x["time"])
     return {"root": root, "datasets": out[:300], "total": len(out)}
 
@@ -2852,6 +2900,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_state({k: v for k, v in b.items() if k in ("family", "image_folder", "tab", "captions", "prep")})
                 if isinstance(b.get("image_folder"), str) and b["image_folder"].strip():
                     update_last_used({"image_folder": b["image_folder"].strip()})     # the desktop shows it too
+                    remember_folder(b["image_folder"])
                 return self.json({"ok": True})
             if path == "/api/trigger":
                 set_folder_trigger(str(b.get("folder") or ""), str(b.get("word") or ""))
@@ -2888,6 +2937,9 @@ class Handler(BaseHTTPRequestHandler):
                                                "restart after it finishes)."}, 400)
                 _RESTART[0] = True
                 threading.Timer(0.3, self.server.shutdown).start()
+                return self.json({"ok": True})
+            if path == "/api/datasets/forget":      # a folder from elsewhere off Your training data (files untouched)
+                forget_folder(b.get("path"))
                 return self.json({"ok": True})
             if path == "/api/prefs/password":       # the web UI's password: used from the next start
                 pwd = str(b.get("password") or "").strip()

@@ -678,7 +678,7 @@ function outputFolderCard() {
 
 function dataFolderCard() {
   const input = el("input", {type: "text", class: "w-path", id: "dataFolder", value: (S.uploadRoot && S.uploadRoot.set) ?
-    S.uploadRoot.root : "", placeholder: "Fizgig's own training_data folder"});
+    S.uploadRoot.root : "", placeholder: "Default: " + ((S.uploadRoot && S.uploadRoot.root) || "Fizgig's own training_data folder")});
   const save = async () => {
     try { await api("/api/prefs", {changes: {input_dataset_dir: input.value.trim()}}); showUploadRoot(); loadDatasets(); }
     catch (e) { hint.textContent = e.message; }
@@ -1424,8 +1424,8 @@ async function loadCheckpoints() {
 // ---- Start tab: your training data (the folders in the training data folder) ---------------------------------
 async function loadDatasets() {
   try { S.datasets = await api("/api/datasets"); } catch (e) { return; }
-  $("datasetsDesc").textContent = `The folders in ${S.datasets.root}. Click one to train on it; ` +
-    "upload a new one below, or pick any folder with Choose… above.";
+  $("datasetsDesc").textContent = `The folders in ${S.datasets.root}, and the ones you've picked from anywhere ` +
+    "else (outlined). Click one to train on it; upload a new one below, or pick any folder with Choose… above.";
   $("datasetsSearchRow").style.display = S.datasets.total > 8 ? "" : "none";
   renderDatasets();
 }
@@ -1471,21 +1471,25 @@ function renderDatasets() {
     const act = (text, title, fn) => el("button", {class: "btn btn-sm", text, title, onclick: (e) => {
       e.stopPropagation(); fn(); }});
     // the tile chooses the folder; its buttons also open it in Captions, or show its pictures big
-    const card = el("div", {class: "dataset-card" + (norm(d.path) === norm(S.imageFolder) ? " active" : ""),
-      title: d.path, role: "button", tabindex: "0", onclick: choose,
+    const card = el("div", {class: "dataset-card" + (norm(d.path) === norm(S.imageFolder) ? " active" : "") +
+      (d.elsewhere ? " elsewhere" : ""), title: d.path, role: "button", tabindex: "0", onclick: choose,
       onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); } }}, mosaic,
-      el("div", {class: "dataset-meta"}, el("b", {text: d.name}), el("span", {text: what}),
+      el("div", {class: "dataset-meta"}, el("b", {text: d.name}),
+        d.elsewhere ? el("span", {class: "dataset-where", text: d.path, title: "A folder you picked, outside the training data folder"}) : null,
+        el("span", {text: what}),
         el("span", {class: d.captioned >= total ? "ok" : "warn", text: caps}),
         el("span", {class: "dataset-when", text: d.time ? new Date(d.time * 1000).toLocaleDateString() : ""}),
         el("div", {class: "dataset-actions"},
           act("Captions", "Train on this folder and open it on the Captions tab", () => { choose(); showTab("captions"); }),
-          d.pictures ? act("Pictures", "Look through its pictures, big", () => datasetPictures(d)) : null)));
+          d.pictures ? act("Pictures", "Look through its pictures, big", () => datasetPictures(d)) : null,
+          d.elsewhere && norm(d.path) !== norm(S.imageFolder) ? act("✕", "Take it off this list (the folder and its files stay)",
+            () => api("/api/datasets/forget", {path: d.path}).then(loadDatasets)) : null)));
     host.append(card);
   }
   if (shown.length < list.length) host.append(el("button", {class: "btn dataset-more", text: `Show all ${list.length}`,
     onclick: () => { S.datasetsAll = true; renderDatasets(); }}));
-  if (!list.length) host.append(el("div", {class: "field-hint", text: r.total ?
-    "No folder matches that." : "No training data here yet. Upload a folder below, or pick one with Choose… above."}));
+  if (!list.length) host.append(el("div", {class: "field-hint datasets-empty", text: r.total ?
+    "No folder matches that." : "No training data yet. Upload a folder below, or pick one with Choose… above."}));
 }
 
 // ---- Runs & outputs: the run history (fizgig/web/history.py) -----------------------------------------------
