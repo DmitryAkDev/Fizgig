@@ -5,6 +5,7 @@ unattended finish."""
 
 import json
 import os
+import shutil
 import threading
 import time
 import urllib.request
@@ -17,6 +18,18 @@ _s = {"deadline": 0.0, "gen": 0, "note": ""}
 def on_pod() -> bool:
     """The Docker pod image (its own marker), or RunPod's id."""
     return os.environ.get("FIZGIG_POD", "0") not in ("0", "") or bool(os.environ.get("RUNPOD_POD_ID"))
+
+
+def file_manager():
+    """The pod's file manager (filebrowser on port 8080, started by the pod image's entrypoint) -> {url, padded}, or
+    None off a pod or without it. Its login is admin with the pod's password; filebrowser needs 12+ characters, so
+    the entrypoint pads a shorter one with 0s (padded: say so, never the password itself)."""
+    if not on_pod() or not shutil.which("filebrowser"):
+        return None
+    pid = pod_id()
+    if not pid:
+        return None
+    return {"url": f"https://{pid}-8080.proxy.runpod.net/", "padded": len(os.environ.get("VNC_PASSWORD", "")) < 12}
 
 
 def pod_id() -> str:

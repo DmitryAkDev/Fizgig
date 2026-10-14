@@ -2043,6 +2043,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({**get_schema(ref_dit_set=bool(pref_path(load_prefs(), "minimax_ref_dit"))),
                               "logged_in": True, "outdated": _code_stamp() > _STARTED_CODE + 1})
         if path == "/api/prefs":
+            from fizgig.web import pod_stop
             p = load_prefs()
             return self.json({"models": {k: str(p.get(k) or "") for d in training_families()
                                          for k in form.model_keys(d)},
@@ -2050,7 +2051,7 @@ class Handler(BaseHTTPRequestHandler):
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
                               "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
-                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
+                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "file_manager": pod_stop.file_manager(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
                               "password_saved": bool(str(p.get("web_password") or "").strip()),
                               "welcome_hidden": str(p.get("welcome_v8_hidden") or "") == "1",

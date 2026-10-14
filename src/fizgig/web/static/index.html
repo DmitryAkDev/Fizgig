@@ -61,6 +61,7 @@
         <div class="gpu-monitor" id="statusBar"></div>
         <a class="runpod-btn" id="sideDeploy" href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=faoq8ed6um&amp;ref=vkb387ep"
           target="_blank" rel="noopener" title="Run Fizgig on a rented GPU: RunPod's Fizgig template, ready to train"><i></i><span>Deploy on RunPod</span></a>
+        <a class="runpod-btn files-btn" id="sideFiles" target="_blank" rel="noopener" style="display:none"><i></i><span>File manager</span></a>
         <button class="about-btn" id="aboutBtn" title="About Fizgig"><i></i><span>About</span></button>
         <a class="coffee-btn" href="https://buymeacoffee.com/lorasandlenses" target="_blank" rel="noopener"
           title="Fizgig is free: a coffee keeps it going"><i></i><span>Buy me a coffee</span></a>
@@ -145,6 +146,9 @@
                   accept="image/*,.mp4,audio/*,.m4a,.txt,.caption,.json,.zip"></label></div>
               <div class="field-hint" id="uploadWhere"></div>
               <div class="field-hint" id="uploadStatus"></div>
+              <div class="field-hint" id="uploadFm" style="display:none">A big dataset? Drag the folder into this pod's
+                <a class="fm-link" target="_blank" rel="noopener">file manager</a> instead, into
+                <code>/workspace/training_data</code>.</div>
             </div>
           </div>
           <div class="section-card warning-card" id="modelWarning" style="display:none">
@@ -1336,8 +1340,9 @@
             <p>Every run you've started, newest first: how it went, its previews and
               checkpoints, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
               output folders. Download sends a file to
-              the device you're using now. Very large fine-tunes come off faster another way: on a pod, through the file
-              manager on port 8080; on your own server, with scp or rsync from the folder shown.</p>
+              the device you're using now. Very large fine-tunes come off faster another way: on a pod, through its
+              <a class="fm-link fm-text" target="_blank" rel="noopener">file manager</a>; on your own server, with scp or rsync
+              from the folder shown.</p>
           </div>
           <div class="section-card">
             <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>

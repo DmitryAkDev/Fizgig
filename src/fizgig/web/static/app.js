@@ -86,6 +86,7 @@ async function boot() {
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
+  fileManagerLinks(pr.file_manager);
   podLocalInit();                                             // in the app window on a pod: this computer's folders
   welcomeShow(pr);
   pollRun(); pollStats(); followLog();
@@ -5457,6 +5458,18 @@ async function browse(path) {
         $("pickerModal").classList.remove("active"); pickDone(f.path);
       }}));
     }
+  }
+}
+
+// ---- a pod's file manager (port 8080): the sidebar button, the Start tab's upload card, Runs & outputs ---------
+function fileManagerLinks(fm) {
+  const how = fm ? "Log in as admin with this pod's password" + (fm.padded ?
+    ", with 0s added to make it 12 characters (the file manager needs 12): abc123 → abc123000000" : "") : "";
+  $("sideFiles").style.display = fm ? "" : "none";
+  $("uploadFm").style.display = fm ? "" : "none";
+  for (const a of [$("sideFiles"), ...document.querySelectorAll(".fm-link")]) {
+    if (fm) { a.href = fm.url; a.title = `Big files in and out, by drag and drop. ${how}.`; }
+    else if (a.classList.contains("fm-text")) a.removeAttribute("href");
   }
 }
 
