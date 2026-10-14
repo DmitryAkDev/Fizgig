@@ -14,11 +14,11 @@ set "FIZGIG_GPU_BACKEND=rocm"
 REM BNB_ROCM_VERSION / ROCM_PATH / HIP_PATH - written by
 REM install_fizgig_rocm.bat / write_rocm_env.py (not on every launch; re-run write_rocm_env.py
 REM after a pull if rocm_env.bat is stale).
-if exist "%~dp0rocm_env.bat" (
-    call "%~dp0rocm_env.bat"
+if exist "%~dp0user_data\rocm_env.bat" (
+    call "%~dp0user_data\rocm_env.bat"
 ) else if exist "%~dp0venv\Scripts\python.exe" (
     "%~dp0venv\Scripts\python.exe" "%~dp0write_rocm_env.py" >nul 2>&1
-    if exist "%~dp0rocm_env.bat" call "%~dp0rocm_env.bat"
+    if exist "%~dp0user_data\rocm_env.bat" call "%~dp0user_data\rocm_env.bat"
 )
 REM Pinned installs set BNB_ROCM_VERSION in rocm_env.bat. Floating --experimental leaves it
 REM unset so bitsandbytes picks its highest matching DLL (override: set BNB_ROCM_VERSION).
@@ -32,8 +32,8 @@ if exist "%~dp0venv\Scripts" set "PATH=%~dp0venv\Scripts;%PATH%"
 
 REM Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
 set "GPU_ARCH="
-if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0detect_gpu.py" (
-    for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
+if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0src\install\detect_gpu.py" (
+    for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0src\install\detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
 )
 set "IS_LEGACY_GPU=0"
 if defined GPU_ARCH (
@@ -72,4 +72,4 @@ if defined BNB_ROCM_VERSION (
     echo [AMD-ROCm] BNB_ROCM_VERSION unset ^(bitsandbytes selects DLL^)  ROCM_PATH=%ROCM_PATH%
 )
 
-start "" /b wscript //nologo //b "%~dp0run_silent.vbs"
+start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0fizgig.py"

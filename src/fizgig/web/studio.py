@@ -12,8 +12,9 @@ import sys
 import threading
 import time
 
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-OUT_DIR = os.path.join(BASE_DIR, ".fizgig_web_studio")
+OUT_DIR = user_file("studio")
 RM_DIR = os.path.join(OUT_DIR, "refmod")      # RefMod Toolkit's renders: its history outlives a worker restart
 EV = "@@EV "
 
@@ -194,7 +195,7 @@ def _profile(h):
     try:
         from fizgig.utils.lora_files import find_profile_for_hash
         from fizgig.web.server import load_prefs, pref_path
-        d = pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "profiles")
+        d = pref_path(load_prefs(), "profiles_dir") or user_file("profiles")
         prof = find_profile_for_hash(d, h)
         if not prof:
             return None

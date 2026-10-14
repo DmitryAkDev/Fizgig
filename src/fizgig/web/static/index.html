@@ -51,6 +51,13 @@
           <span class="run-bar"><span id="sideRunBar"></span></span>
           <span class="side-run-text" id="sideRunText"></span>
         </button>
+        <div class="side-queue" id="sideQueue" role="button" tabindex="0" title="The queue - open it on the Training tab"
+          style="display:none">
+          <div class="side-queue-head"><span class="side-queue-title">Up next</span><span class="run-badge" id="sideQueueBadge"></span></div>
+          <div class="side-queue-list" id="sideQueueList"></div>
+          <div class="side-queue-held" id="sideQueueHeld"></div>
+          <button class="btn btn-sm btn-primary" id="sideQueueStart" style="display:none">Start queue</button>
+        </div>
         <div class="gpu-monitor" id="statusBar"></div>
         <a class="runpod-btn" id="sideDeploy" href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=faoq8ed6um&amp;ref=vkb387ep"
           target="_blank" rel="noopener" title="Run Fizgig on a rented GPU: RunPod's Fizgig template, ready to train"><i></i><span>Deploy on RunPod</span></a>
@@ -66,8 +73,8 @@
             <div class="field-hint">Your LoRA and everything else under /workspace stays on the volume for next time.</div></div>
         </div>
         <div class="section-card warning-card" id="outdatedBanner" style="display:none">
-          <div class="card-content">Fizgig was updated while this web UI kept running: restart the web UI (Preferences &gt;
-            Web UI in the desktop app, or close and reopen the Fizgig window), then reload this page. Until then some
+          <div class="card-content">Fizgig was updated while this web UI kept running: restart the web UI (close and reopen
+            the Fizgig window, or Fizgig in browser), then reload this page. Until then some
             new parts won't work.</div>
         </div>
         <section id="tab-start" class="tab-panel active">
@@ -109,8 +116,13 @@
             </div>
           </div>
           <div class="section-card accent-card" id="podLocalCard" style="display:none">
-            <div class="card-title">From this computer</div>
-            <div class="card-desc">The training folders on your own computer. Send one to this pod and it trains here: it
+            <div class="card-title"><span>From this computer</span>
+              <div class="card-title-tools"><select id="podLocalSort" class="w-combo-md" title="Order of the folders">
+                  <option value="new">Newest first</option><option value="old">Oldest first</option>
+                  <option value="az">Name A-Z</option><option value="za">Name Z-A</option>
+                  <option value="big">Largest first</option><option value="many">Most files first</option>
+                </select><button class="btn btn-sm" id="podLocalReload">Refresh</button></div></div>
+            <div class="card-desc" id="podLocalDesc">The training folders on the computer you're at. Send one here and it trains here: it
               goes up with its captions, picks up where it left off if the connection drops, and skips what's already
               here. Then it's the training folder.</div>
             <div class="card-content">
@@ -394,7 +406,7 @@
             <h1>Samples</h1>
             <p>Previews made while the model trains, so you can watch it learn and pick the best checkpoint.</p>
           </div>
-          <div class="section-card">
+          <div class="section-card model-strip">
             <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
               <select class="w-combo-lg family-pick"></select>
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
@@ -427,7 +439,7 @@
             <h1>Training</h1>
             <p>Pick a preset, adjust what you need, and start the run. Settings are read at launch.</p>
           </div>
-          <div class="section-card">
+          <div class="section-card model-strip">
             <div class="card-content"><div class="field-row"><span class="field-label">Model:</span>
               <select class="w-combo-lg family-pick"></select>
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
@@ -438,8 +450,8 @@
               <select id="presets" class="w-combo preset-select"></select>
               <span class="field-hint" id="presetNote"></span>
               <button class="btn" id="presetSave">Save preset…</button>
-              <span class="field-hint">Ready-made settings for this model, then any you saved (here or in the desktop
-                app): picking one fills the form below.</span>
+              <span class="field-hint">Ready-made settings for this model, then any you saved: picking one fills
+                the form below.</span>
             </div><div id="presetSaveRow"></div></div>
           </div>
           <div id="trainingForm"></div>
@@ -463,9 +475,10 @@
                 <button class="btn btn-danger" id="btnStop">Stop</button>
                 <span class="field-hint" id="runStatus"></span>
               </div>
+              <div class="field-row resume-choice" id="resumeChoice" style="display:none"></div>
               <div class="field-hint" id="runNowSay"></div>
-              <div class="field-hint" id="runSource"></div>
               <div id="problems" class="problems"></div>
+              <div class="run-upnext" id="runUpNext" style="display:none"></div>
               <pre class="console-terminal" id="console"></pre>
             </div>
           </div>
@@ -479,12 +492,6 @@
               <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
                 <button class="btn" id="webQueueHold">Hold</button></div>
             </div>
-          </div>
-          <div class="section-card" id="queueCard" style="display:none">
-            <div class="card-title">Queue (desktop app)</div>
-            <div class="card-desc">Runs waiting in the desktop app's queue, in order. Each starts there when the one
-              before it finishes. Add, reorder or remove them in the desktop app.</div>
-            <div class="card-content"><div id="queueList" class="checkpoint-list"></div></div>
           </div>
           <div class="section-card">
             <div class="card-title">Checkpoints</div>
@@ -622,10 +629,10 @@
                   (the first time takes a minute).</span></div>
               <div class="run-bar"><span id="stBar" style="width:0"></span></div>
               <div class="field-row st-setups"><span class="field-label">Setup:</span>
-                <select id="stSetupList" class="w-combo" title="Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering. The desktop's setups are here too.">
+                <select id="stSetupList" class="w-combo" title="Restores a saved setup exactly - switching model if needed, loading its LoRAs and rendering.">
                   <option value="">Load a setup…</option></select>
                 <input type="text" id="stSetupName" class="w-num st-setup-name" placeholder="name">
-                <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later (here or on the desktop) or share.">Save setup</button>
+                <button class="btn" id="stSetupSave" title="Saves everything on this tab - the LoRAs, every slider and tick, the prompt, seed, length, photos and source - to one file you can load back later or share.">Save setup</button>
                 <span class="field-hint" id="stSetupMsg"></span></div>
             </div>
           </div>
@@ -1189,7 +1196,7 @@
                 <button class="btn btn-sm" id="rmSetupLoad">Load</button>
                 <input type="text" id="rmSetupName" class="w-num rm-name" placeholder="name">
                 <button class="btn btn-sm" id="rmSetupSave">Save</button>
-                <span class="field-hint">this whole tab (the desktop's files)</span></div>
+                <span class="field-hint">this whole tab</span></div>
               <div class="field-row"><span class="field-label">ComfyUI:</span><button class="btn" id="rmReadoutBtn">📋 ComfyUI settings</button>
                 <button class="btn btn-sm" id="rmReadoutCopy" style="display:none">Copy</button></div>
               <pre class="rm-readout" id="rmReadout" style="display:none"></pre>
@@ -1326,7 +1333,7 @@
         <section id="tab-outputs" class="tab-panel">
           <div class="tab-banner">
             <h1>Runs &amp; outputs</h1>
-            <p>Every run you've started here or in the desktop app, newest first: how it went, its previews and
+            <p>Every run you've started, newest first: how it went, its previews and
               checkpoints, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
               output folders. Download sends a file to
               the device you're using now. Very large fine-tunes come off faster another way: on a pod, through the file

@@ -23,7 +23,7 @@ Two things it will NOT do, both on purpose:
   * It does not caption. Captioning happens in Fizgig afterwards, on the whole folder at once,
     which is also why muting is a filename suffix — there are no .txt files yet to keep in sync.
 
-Run: venv/Scripts/pythonw.exe gizmo.pyw    (or the Launch Gizmo .bat, or Open Gizmo on Fizgig's Image Prep tab)
+Run: Launch Gizmo.bat (or launch_gizmo.sh, or Open Gizmo on Fizgig's Image Prep tab)
 """
 
 import os
@@ -647,7 +647,9 @@ def pick_sentence(frames, rng=None):
 
 
 # --- persisted settings (mic + default whisper language) ----------------------------------------
-SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gizmo_settings.json")
+# Fizgig's folder (this file lives in src/gizmo); the settings live in its user_data folder
+FIZGIG_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SETTINGS_FILE = os.path.join(FIZGIG_DIR, "user_data", "gizmo_settings.json")
 SETTINGS_DEFAULTS = {"microphone": "", "whisper_language": "Auto detect",
                      "random_delivery": True, "trim_takes": True, "free_speech": False,
                      "trigger_word": "", "clip_out_dir": "", "voice_out_dir": "",
@@ -656,7 +658,7 @@ SETTINGS_DEFAULTS = {"microphone": "", "whisper_language": "Auto detect",
 
 
 def load_settings():
-    """gizmo_settings.json beside gizmo.py, or defaults. Corrupt/absent -> defaults, never
+    """user_data/gizmo_settings.json, or defaults. Corrupt/absent -> defaults, never
     a crash — losing a mic choice is an inconvenience, losing the app is not."""
     import json
     try:
@@ -671,6 +673,7 @@ def load_settings():
 def save_settings(settings):
     import json
     try:
+        os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump({k: settings.get(k, v) for k, v in SETTINGS_DEFAULTS.items()},
                       f, indent=2)
@@ -1482,14 +1485,14 @@ class Gizmo:
               padding=[("selected", (18, 8)), ("!selected", (18, 8))])
 
     def open_fizgig(self):
-        """The Fizgig app's window (lora_trainer_gui.py --app: the web UI in its own window, joining one already
+        """The Fizgig app's window (fizgig.py: the web UI in its own window, joining one already
         running). Its own process, so closing Gizmo leaves it open."""
-        here = os.path.dirname(os.path.abspath(__file__))
+        here = FIZGIG_DIR
         exe = sys.executable
         if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
             exe = os.path.join(os.path.dirname(exe), "pythonw.exe")   # no console window beside the app
         try:
-            subprocess.Popen([exe, os.path.join(here, "lora_trainer_gui.py"), "--app"], cwd=here,
+            subprocess.Popen([exe, os.path.join(here, "fizgig.py")], cwd=here,
                              creationflags=_NO_WINDOW)
         except OSError as e:
             messagebox.showerror("Gizmo", f"Couldn't open Fizgig: {e}")

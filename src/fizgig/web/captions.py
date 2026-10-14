@@ -7,7 +7,7 @@ here. Bilingual translation runs fizgig.scripts.translate_captions. One job at a
 polls.
 
 Model names, Florence pins and the Qwen3-VL task menu match the desktop app (lora_trainer_gui.py FLORENCE_*,
-fizgig.krea2.embedder.CAPTION_TASKS); the edited Qwen instructions are the same Preferences entry
+fizgig.krea2.caption_text.CAPTION_TASKS); the edited Qwen instructions are the same Preferences entry
 (caption_qwen_instructions), so an edit in either app is used by both.
 """
 import glob
@@ -19,8 +19,9 @@ import sys
 import threading
 import time
 
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-JOB_DIR = os.path.join(BASE_DIR, ".fizgig_web_caption")
+JOB_DIR = user_file("caption_jobs")
 
 FLORENCE_DEFAULT_MODEL = "MiaoshouAI/Florence-2-base-PromptGen"
 FLORENCE_MODELS = [FLORENCE_DEFAULT_MODEL, "microsoft/Florence-2-base", "microsoft/Florence-2-large"]
@@ -70,7 +71,7 @@ def _busy():
 
 # ---- what the page offers ------------------------------------------------------------------------------------
 def _tasks():
-    from fizgig.krea2.embedder import CAPTION_TASKS, DEFAULT_CAPTION_TASK
+    from fizgig.krea2.caption_text import CAPTION_TASKS, DEFAULT_CAPTION_TASK   # text only: no torch to load
     return CAPTION_TASKS, DEFAULT_CAPTION_TASK
 
 

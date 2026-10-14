@@ -49,7 +49,7 @@ profiles/*
 *.bin
 
 # Research (private)
-research/
+dev/
 anchor_images/
 
 # IDE
@@ -92,7 +92,6 @@ python312/
 
 
 # Internal-only: debugging test harnesses + template setup notes (local, never public)
-tests/
 docs/RUNPOD_TEMPLATE.md
 
 # Local-only deploy/sync helpers (never commit)
@@ -104,6 +103,8 @@ docs/EVAL_full_model_h3_video.md
 docs/FINETUNE_ROTATION.md
 docs/DISTRIBUTED_FINETUNE.md
 web_state.json
+# the web UI's and the app window's own files (src/fizgig/web/paths.py)
+user_data/
 
 # training data uploaded through the web UI
 training_data/

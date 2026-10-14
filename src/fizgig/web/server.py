@@ -23,6 +23,7 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -32,7 +33,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
-from fizgig.web import captions, history, live
+from fizgig.web import captions, history
 from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
@@ -43,11 +44,13 @@ from fizgig.web.schema import get_schema
 logger = logging.getLogger("fizgig.web")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
-STATE_FILE = os.path.join(BASE_DIR, "web_state.json")      # the web UI's own memory (git-ignored)
-DATASET_DIR = os.path.join(BASE_DIR, "dataset")
+from fizgig import user_data  # noqa: E402
+PREFS_FILE = user_data.PREFS_FILE
+STATE_FILE = user_file("web_state.json")      # the web UI's own memory (git-ignored)
+DATASET_DIR = user_file("dataset")          # each run's dataset TOML (written at Start)
 OUTPUT_DEFAULT = os.path.join(BASE_DIR, "output_loras")
 MEDIA = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".avif", ".gif", ".wav", ".mp3", ".flac", ".m4a", ".mp4",
          ".webm"}
@@ -148,11 +151,6 @@ def _poll_stats_loop():
                           ram_peak=max(_stats["ram_peak"], ru), **extra)
             mine = {"running": _run["proc"] is not None and _run["proc"].poll() is None, "state": _run["state"],
                     "lora": _run["lora"], "output_dir": _run["output_dir"]}
-        cs = captions.status()                   # the desktop app won't start a run beside a caption job
-        mine["captioning"] = cs["state"] in ("loading", "running", "translating")
-        live.write(live.LIVE_WEB, mine)          # the desktop app reads this before starting a run
-        if captions.model_loaded() and captions.status()["state"] == "loaded" and live.busy(live.desktop_state()):
-            captions.unload()                    # the desktop app is training: give it the caption model's memory
         time.sleep(1.0)
 
 
@@ -182,12 +180,12 @@ def _write_json(path, data):
 
 
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
-PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "profiles", "cache_dir": "cache",
+PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
                  "inference_int8": "1"}
 
 
-LAST_USED_FILE = os.path.join(BASE_DIR, ".last_used.json")    # the desktop's: the training folder, trigger words
+LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
 
 
 def load_last_used() -> dict:
@@ -277,7 +275,7 @@ def pref_path(prefs, key) -> str:
     return v if not v or os.path.isabs(v) else os.path.normpath(os.path.join(BASE_DIR, v))
 
 
-PRESETS_DIR = os.path.join(BASE_DIR, "presets")
+PRESETS_DIR = user_data.PRESETS_DIR
 
 
 class _RefModPresets:
@@ -357,7 +355,7 @@ def save_state(changes: dict):
 
 
 # ---- runs -------------------------------------------------------------------------------------------------------
-STUDIO_PRESETS = os.path.join(BASE_DIR, "presets", "repair_studio")
+STUDIO_PRESETS = os.path.join(user_data.PRESETS_DIR, "repair_studio")
 
 
 def _studio_desc(key):
@@ -395,10 +393,9 @@ def _studio_samples(desc):
 
 
 def _gpu_training():
-    """A training run (here or in the desktop app) is using the GPU: Repair Studio waits for it."""
+    """A training run is using the GPU: Repair Studio waits for it."""
     with _lock:
-        web = _run["proc"] is not None and _run["proc"].poll() is None
-    return web or live.busy(live.desktop_state())
+        return _run["proc"] is not None and _run["proc"].poll() is None
 
 
 STUDIO_SETUPS = os.path.join(STUDIO_PRESETS, "setups")      # the desktop's Save / Load Setup folder
@@ -442,7 +439,8 @@ def _pods_post(what, b):
         update_prefs({"app_pods": pods.forget(p, str(b.get("url") or ""))})
         return {"ok": True}
     if what == "opened":
-        update_prefs({"app_pods": pods.touch(p, str(b.get("url") or ""), str(b.get("name") or ""))})
+        update_prefs({"app_pods": pods.touch(p, str(b.get("url") or ""), str(b.get("name") or ""),
+                                             str(b.get("lan_id") or ""))})
         return {"ok": True}
     if what == "key":                        # checked against RunPod before it is kept
         key = str(b.get("key") or "").strip()
@@ -708,7 +706,28 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if ft_continue:          # a paused fine-tune: from its checkpoint, for the rotations left (the cache is built)
         inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
                       resuming=True)
+    if resume or ft_continue or str(values.get("RESUME_TRAINING") or "").strip():
+        inputs["recache"] = _size_changed(name, out_dir, values)
     return desc, inputs, launch.plan(desc, inputs)
+
+
+_SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
+
+
+def _size_changed(lora, out_dir, values):
+    """A resume that trains at another size from now on (Target Megapixels, a clip family's clip size) caches again
+    first; a run Fizgig has no record of does too, to be safe. Unchanged: the cache is used as it is."""
+    from fizgig.web import history
+    old = history.last_values(lora, out_dir)
+    if old is None:
+        return True
+
+    def num(v):
+        try:
+            return round(float(str(v).strip()), 4)
+        except ValueError:
+            return str(v or "").strip()
+    return any(num(old.get(k, "")) != num(values.get(k, "")) for k in _SIZE_KEYS)
 
 
 def _ref_strength(v):
@@ -762,14 +781,11 @@ def output_folders() -> list:
     for vals in (load_state().get("values") or {}).values():
         if isinstance(vals, dict) and vals.get("LORA_OUTPUT_DIR"):
             found.append(vals["LORA_OUTPUT_DIR"])
-    desk = _read_json(os.path.join(BASE_DIR, ".last_used.json")).get("lora_output_dirs")
+    desk = _read_json(LAST_USED_FILE).get("lora_output_dirs")      # the old desktop app's per-model folders
     if isinstance(desk, dict):
         found += [v for v in desk.values() if isinstance(v, str) and v]
     with _lock:
         found.append(_run.get("output_dir") or "")
-    d = live.desktop_state()
-    if d and d.get("output_dir"):
-        found.append(d["output_dir"])
     out, seen = [], set()
     for f in found:
         f = pref_path({"x": f}, "x") if f else ""
@@ -847,10 +863,10 @@ def _run_samples(folder, name):
 
 
 def _zip_file(prefix, files) -> str:
-    """files [(path, name in the zip)] in one stored zip under .fizgig_web_zips (a day-old leftover cleared first)."""
+    """files [(path, name in the zip)] in one stored zip under user_data/zips (a day-old leftover cleared first)."""
     import tempfile
     import zipfile
-    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    zdir = user_file("zips")
     os.makedirs(zdir, exist_ok=True)
     for old in os.scandir(zdir):
         try:
@@ -889,7 +905,7 @@ def samples_zip(folder, name) -> str:
     if not files:
         raise ValueError("This run has no previews.")
     import tempfile
-    zdir = os.path.join(BASE_DIR, ".fizgig_web_zips")
+    zdir = user_file("zips")
     os.makedirs(zdir, exist_ok=True)
     for old in os.scandir(zdir):                  # one left by a download that never finished, a day on
         try:
@@ -965,9 +981,6 @@ def delete_run(run_id, confirm=False) -> dict:
         web_live = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
         if web_live and same(_run["output_dir"], _run["lora"]):
             return {"error": "That run is training now. Stop it first."}
-    d = live.desktop_state()
-    if d and live.busy(d) and same(d.get("output_dir"), d.get("lora")):
-        return {"error": "That run is training in the desktop app now. Stop it there first."}
     found = run_outputs(folder, name) if folder and name else {"checkpoints": [], "states": [], "previews": [],
                                                               "bytes": 0}
     if not confirm:
@@ -1058,6 +1071,21 @@ def _restore_pause():
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
 
 
+def _folder_problem(e, out_dir) -> str:
+    """Why a run's folder couldn't be made, and where to change it: a drive that isn't reachable is the usual one (a
+    network drive disconnected, an external drive unplugged, or a path from another computer)."""
+    where = getattr(e, "filename", None) or out_dir
+    drive = os.path.splitdrive(str(where))[0]
+    if drive and not os.path.exists(drive + os.sep):
+        where = out_dir                         # the folder asked for, not just the missing drive's root
+        why = (f"drive {drive} isn't reachable from here (a network drive that's disconnected, an external drive that "
+               "isn't plugged in, or a path from another computer)")
+    else:
+        why = e.strerror or str(e)
+    return (f"Couldn't make the run's folder {where}: {why}. Choose another LoRA output folder on the Training tab "
+            f"(Output), or set the default in Preferences > LoRA output.")
+
+
 def _start(family_key, values, image_folder, resume="", ft_continue=None, note=""):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
@@ -1065,14 +1093,8 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
-    if live.busy(live.desktop_state()):
-        return {"error": "The desktop app is training. Pause or stop that run first (it shows above)."}
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
-    dk = live.desktop_state() or {}
-    if dk.get("captioning") or dk.get("caption_loaded"):
-        return {"error": "The desktop app's Captions tab has its caption model on the GPU. Press Unload Model there "
-                         "(or Stop, if it is captioning), then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
     desc, inputs, plan = _plan(family_key, values, image_folder, resume, ft_continue)
     if plan.problems:
@@ -1085,12 +1107,15 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
             os.remove(os.path.join(out_dir, stale))
         except OSError:
             pass
-    for d in plan.dirs:
-        os.makedirs(d, exist_ok=True)
-    for path, text in plan.files:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
+    try:
+        for d in plan.dirs:
+            os.makedirs(d, exist_ok=True)
+        for path, text in plan.files:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    except OSError as e:
+        return {"error": _folder_problem(e, out_dir)}
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
@@ -1110,14 +1135,11 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
 
 def _queue_starter(item):
     """For webqueue.start_next: (True, "") once the item's run has started; (False, "wait: ...") while the GPU is
-    busy elsewhere (this run, the desktop app, a caption job); (False, why) when it can't start."""
+    busy elsewhere (this run, a caption job); (False, why) when it can't start."""
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return False, "wait: a run is training here"
-    dk = live.desktop_state() or {}
-    if live.busy(dk):
-        return False, "wait: the desktop app is training - the next run starts when it finishes"
-    if dk.get("captioning") or captions.status()["state"] in ("loading", "running", "translating"):
+    if captions.status()["state"] in ("loading", "running", "translating"):
         return False, "wait: captions are being made - the next run starts when they finish"
     try:
         r = _start(item["family"], item["values"], item.get("image_folder") or "")
@@ -1125,7 +1147,7 @@ def _queue_starter(item):
         return False, str(e)
     if r.get("ok"):
         return True, ""
-    if r.get("error") and ("desktop app" in r["error"] or "Captions are" in r["error"]):
+    if r.get("error") and "Captions are" in r["error"]:
         return False, "wait: " + r["error"]
     return False, r.get("error") or "; ".join(r.get("problems") or ["it couldn't start"])
 
@@ -1780,11 +1802,11 @@ def _fetch_watch(proc):
 
 
 def _caption_gpu_check(need_gb):
-    """With a run training (here or in the desktop app), a caption job only starts when the card has room for it
-    beside the run (the desktop app's rule: what the job needs + 3 GB)."""
+    """With a run training, a caption job only starts when the card has room for it beside the run (what the job
+    needs + 3 GB)."""
     with _lock:
         mine = _run["proc"] is not None and _run["proc"].poll() is None
-    if not (mine or live.busy(live.desktop_state())):
+    if not mine:
         return
     g = _chosen_gpu(list_gpus(), os.environ.get("CUDA_VISIBLE_DEVICES") or load_prefs().get("cuda_device"))
     free = (g["total_gb"] - g["used_gb"]) if g else 0.0
@@ -1940,7 +1962,7 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     # -- GET
-    def do_GET(self):
+    def _get(self):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         u = urlparse(self.path)
@@ -1957,8 +1979,10 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/app.js", "/style.css"):
             return self._file(os.path.join(STATIC_DIR, path[1:]),
                               "application/javascript; charset=utf-8" if path.endswith(".js") else "text/css")
-        if path in ("/logo.jpg", "/icon.png"):
-            return self._file(os.path.join(BASE_DIR, path[1:]))
+        if path == "/icon.png":
+            return self._file(os.path.join(STATIC_DIR, "icon.png"))
+        if path == "/logo.jpg":
+            return self._file(os.path.join(BASE_DIR, "docs", "assets", "logo.jpg"))
         if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # Add to Home Screen (no login:
             return self._file(os.path.join(STATIC_DIR, path[1:]),                 # a phone fetches it without one)
                               "application/manifest+json" if path.endswith(".webmanifest") else None)
@@ -1976,7 +2000,7 @@ class Handler(BaseHTTPRequestHandler):
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
                               "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
-                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "port_fixed": getattr(self, "port_fixed", False),
+                              "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
                               "password_on": bool(self.password),
                               "password_saved": bool(str(p.get("web_password") or "").strip()),
                               "password_env": bool(os.environ.get("FIZGIG_PASSWORD")) or getattr(self, "password_arg", False),
@@ -2026,7 +2050,7 @@ class Handler(BaseHTTPRequestHandler):
             fams = rms.families()
             want = (qs.get("family") or [""])[0]
             desc = next((d for d in fams if d.key == want), fams[0] if fams else None)
-            return self.json(rms.info(desc, _read_json(os.path.join(BASE_DIR, ".last_used.json"))))
+            return self.json(rms.info(desc, _read_json(LAST_USED_FILE)))
         if path == "/api/refmod/scan":
             from fizgig.web import refmod_studio as rms
             return self.json(rms.scan((qs.get("folder") or [""])[0].strip(), (qs.get("lora") or [""])[0].strip()))
@@ -2118,7 +2142,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.json(tools.status("profile"))
         if path == "/api/profile/report":           # a Profiler report (the profiles folder's HTML)
             p = (qs.get("path") or [""])[0]
-            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or os.path.join(BASE_DIR, "profiles"))
+            root = os.path.abspath(pref_path(load_prefs(), "profiles_dir") or user_file("profiles"))
             if not p.lower().endswith(".html") or not os.path.isfile(p) or                     os.path.commonpath([root, os.path.abspath(p)]) != root:
                 return self.json({"error": "not a report"}, 404)
             with open(p, "rb") as f:
@@ -2225,11 +2249,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/runs/loss":                 # a run's loss by step (the loss graph); live=1: the run going now
             from fizgig.training import step_log
             if (qs.get("live") or [""])[0] == "1":
-                d = live.desktop_state()
                 with _lock:
                     folder, name = _run["output_dir"], _run["lora"]
-                if d and live.busy(d):           # the desktop app's run, when that is the one training
-                    folder, name = d.get("output_dir") or "", d.get("lora") or ""
             else:
                 rec = history.get((qs.get("id") or [""])[0]) or {}
                 folder, name = rec.get("output_dir") or "", rec.get("lora") or ""
@@ -2278,7 +2299,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "The Pods tab is for the Fizgig on your own computer."}, 400)
             p = load_prefs()
             key = pod_stop.api_key(p)
-            return self.json({**pods.listing(p, key), "key_saved": bool(key)})
+            return self.json({**pods.listing(p, key, update_prefs, about_info()["commit"]), "key_saved": bool(key)})
+        if path == "/api/lan/firewall":              # Preferences > Web UI: is Fizgig let through (Windows)?
+            from fizgig.web import lan
+            if not self._local_viewer():
+                return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
+            return self.json(lan.firewall_status(self.server.server_address[1]))
         if path == "/api/pods/probe":                # one pod, while it starts
             from fizgig.web import pods
             url = (qs.get("url") or [""])[0]
@@ -2293,18 +2319,10 @@ class Handler(BaseHTTPRequestHandler):
                 r = {k: v for k, v in _run.items() if k != "proc"}
                 r["running"] = _run["proc"] is not None and _run["proc"].poll() is None
             r["resume"] = r.get("resume") if r["state"] == "paused" else ""
-            d = live.desktop_state()
-            r["desktop"] = ({k: d.get(k) for k in ("running", "state", "lora", "output_dir", "family", "stage",
-                                                   "percent", "last_result", "ack", "unresponsive", "progress",
-                                                   "started_at")} if d else None)
-            r["queue"] = live.queue_summary() if d else []
             r["web_queue"] = webqueue.status()
             from fizgig.web import pod_stop
             r["pod_stop"] = pod_stop.status()
             return self.json(r)
-        if path == "/api/desktop/log":
-            text, nxt = live.read_log(int((qs.get("offset") or ["0"])[0] or 0), tail=bool(qs.get("tail")))
-            return self.json({"text": text, "offset": nxt})
         if path == "/api/log":
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
         if path == "/api/browse":
@@ -2481,6 +2499,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- POST
     def do_POST(self):
+        self._guarded(self._post)
+
+    def do_GET(self):
+        self._guarded(self._get)
+
+    def _guarded(self, handle):
+        """A request that fails inside Fizgig still gets an answer - the error, said - so the page shows what went
+        wrong instead of the browser's bare "Failed to fetch"."""
+        try:
+            return handle()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass                                  # the page went away mid-answer: nobody to tell
+        except Exception as e:
+            logger.exception(f"{self.command} {self.path}")
+            try:
+                self.json({"error": f"Fizgig hit an error doing that ({type(e).__name__}: {e})."}, 500)
+            except Exception:
+                pass
+
+    def _post(self):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         path = urlparse(self.path).path
@@ -2694,6 +2732,10 @@ class Handler(BaseHTTPRequestHandler):
                                                      "resume_mode")}
                 if last["state"] != "paused" or not last["resume"]:
                     return self.json({"error": "No paused run to resume."}, 400)
+                last["values"] = dict(last["values"] or {})
+                for k in _SIZE_KEYS:                     # Resume at the size the form has now: caches again first
+                    if str(b.get(k) or "").strip():
+                        last["values"][k] = str(b[k]).strip()
                 if last["resume_mode"] == "ft":
                     if not os.path.isfile(last["resume"]):
                         return self.json({"error": "The paused fine-tune's checkpoint isn't there any more: "
@@ -2718,9 +2760,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
                 with _lock:
                     out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
-                d = live.desktop_state()
-                if not out and d and d.get("running"):
-                    out = d.get("output_dir") or ""
                 if not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
                 side = os.path.join(out, ".sample_override.json")
@@ -2741,9 +2780,6 @@ class Handler(BaseHTTPRequestHandler):
                 with _lock:
                     running = _run["proc"] is not None and _run["proc"].poll() is None and _run["stage"] == "Training"
                     out, fam, vals = _run["output_dir"], _run["family"], dict(_run["values"])
-                d = live.desktop_state()
-                if not running and d and d.get("running") and d.get("state") == "running":
-                    out, fam, vals, running = d.get("output_dir") or "", d.get("family") or "", {}, True
                 if not running or not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
                 desc = get_family(fam)
@@ -2777,23 +2813,6 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/logout_all":                 # every device: a new key makes every login stale
                 _SESSION_KEY[0] = secrets.token_urlsafe(32)
                 update_prefs({"web_session_key": _SESSION_KEY[0]})
-                return self.json({"ok": True})
-            if path == "/api/desktop/samples":         # preview settings changed here go to the desktop too
-                if b.get("family") == refmod.KEY:
-                    return self.json({"ok": True})     # a mod has no previews
-                desc = get_family(b.get("family", ""))
-                if desc is None:
-                    return self.json({"error": "unknown family"}, 400)
-                vals = b.get("values") or {}
-                if live.read_fresh(live.LIVE_DESKTOP):
-                    live.send_desktop_samples(desc.key, vals)
-                else:
-                    live.write_samples_to_last_used(desc.key, desc.gui_label, vals)
-                return self.json({"ok": True})
-            if path == "/api/desktop":
-                if not live.read_fresh(live.LIVE_DESKTOP):          # commands need the app itself answering
-                    return self.json({"error": "The desktop app isn't open."}, 400)
-                live.send_desktop(str(b.get("cmd") or ""))
                 return self.json({"ok": True})
             if path == "/api/prefs":
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
@@ -2859,6 +2878,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(_refmod_post(path[len("/api/refmod/"):], b))
                 except (ValueError, RuntimeError, OSError) as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/restart":              # Restart now: a new password (or none) takes effect
+                if on_pod():
+                    return self.json({"error": "A pod's password comes from its template: restart the pod."}, 400)
+                with _lock:
+                    busy = _run["proc"] is not None and _run["proc"].poll() is None
+                if busy:
+                    return self.json({"error": "A run is going: Fizgig restarts once it's done (pause it, or "
+                                               "restart after it finishes)."}, 400)
+                _RESTART[0] = True
+                threading.Timer(0.3, self.server.shutdown).start()
+                return self.json({"ok": True})
             if path == "/api/prefs/password":       # the web UI's password: used from the next start
                 pwd = str(b.get("password") or "").strip()
                 if pwd and len(pwd) < 8:
@@ -2868,14 +2898,22 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/gizmo/open":           # Gizmo, the clip / voice / music prep app, on this computer
                 if on_pod() or not self._local_viewer():
                     return self.json({"error": "Gizmo opens on the computer running Fizgig - use it there."}, 400)
-                script = os.path.join(BASE_DIR, "gizmo.pyw" if os.name == "nt" else "gizmo.py")
+                script = os.path.join(BASE_DIR, "src", "gizmo", "gizmo.pyw" if os.name == "nt" else "gizmo.py")
                 if not os.path.isfile(script):
-                    return self.json({"error": "gizmo.py is missing from your Fizgig folder - update Fizgig."}, 400)
+                    return self.json({"error": "Gizmo is missing from your Fizgig folder - update Fizgig."}, 400)
                 exe = sys.executable
                 if os.name == "nt" and os.path.basename(exe).lower() == "python.exe":
                     exe = os.path.join(os.path.dirname(exe), "pythonw.exe")    # no console window beside it
                 subprocess.Popen([exe, script], cwd=BASE_DIR, **({"creationflags": 0x08000000} if os.name == "nt" else {}))
                 return self.json({"ok": True})
+            if path == "/api/lan/firewall":          # Allow on my network: Windows asks for an administrator's OK
+                from fizgig.web import lan
+                if not self._local_viewer():
+                    return self.json({"error": "Only on the computer Fizgig runs on."}, 403)
+                try:
+                    return self.json(lan.firewall_allow(self.server.server_address[1], saved_port(load_prefs())))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
             if path.startswith("/api/pods/"):        # the Pods tab: add, forget, opened, API key, start, stop
                 return self.json(_pods_post(path[len("/api/pods/"):], b))
             if path == "/api/pod/keep":             # the pod's auto-stop countdown cancelled
@@ -3147,7 +3185,7 @@ class Handler(BaseHTTPRequestHandler):
                 job = {"family": desc.key, "lora": str(b.get("lora") or "").strip(), "mode": mode,
                        "prompt": str(b.get("prompt") or ""), "class_prompt": str(b.get("class_prompt") or ""),
                        "baselines": [str(x) for x in (b.get("baselines") or [])][:3], "size": int(b.get("size") or 768),
-                       "profiles_dir": pref_path(prefs, "profiles_dir") or os.path.join(BASE_DIR, "profiles"),
+                       "profiles_dir": pref_path(prefs, "profiles_dir") or user_file("profiles"),
                        "plan": None, "settings": None}
                 if job["baselines"] and len(job["baselines"]) != 3:
                     raise ValueError("Pick exactly 3 photos of the subject (one alone carries its own framing into every score).")
@@ -3278,7 +3316,25 @@ def _follow_parent(pid):
             os._exit(0)
 
 
-def run_server(host, port=None, password=None, password_arg=False):
+def _lan_announce(port):
+    """What this Fizgig tells another computer's Pods tab: its name, GPU, port, build and whether it's training."""
+    from fizgig.web import lan
+    mid = lan.machine_id(load_prefs(), update_prefs)
+    about = about_info()
+
+    def info():
+        with _lock:
+            vt = _stats["vram"][1]
+            gpu = _stats["device_name"]
+            busy = _run["lora"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+        q = webqueue.status()
+        return {"id": mid, "name": socket.gethostname(), "port": port, "gpu": gpu if vt else "",
+                "vram_gb": round(vt / 2 ** 30) if vt else 0, "version": about["version"], "commit": about["commit"],
+                "busy": busy, "queued": len(q["items"]), "queue_held": bool(q["held"])}
+    lan.start(info)
+
+
+def run_server(host, port=None, password=None, password_arg=False, open_browser=False):
     """`port` given = that port only. Otherwise the Preferences port (8081 until one is saved); when it is taken, the
     nearest free one above it, saved to Preferences so every later launch gets that same port. A pod always uses
     8081: it is the port its proxy forwards."""
@@ -3288,7 +3344,13 @@ def run_server(host, port=None, password=None, password_arg=False):
     Handler.password = password or None
     Handler.local_only = not password
     Handler.password_arg = password_arg
-    Handler.port_fixed = port is not None
+    if os.environ.pop("FIZGIG_RESTARTED", None):     # Restart now: the old server may still be letting go
+        want = port or (PORT_DEFAULT if on_pod() else saved_port(load_prefs()))
+        for _ in range(60):
+            if not listening(want):
+                break
+            time.sleep(0.25)
+    Handler.port_fixed = port is not None and not os.environ.get("FIZGIG_APP_KEY")   # the app window passes its saved port
     if port is not None or on_pod():
         srv, port = _bind(host, port or PORT_DEFAULT, walk=False)
     else:
@@ -3302,8 +3364,13 @@ def run_server(host, port=None, password=None, password_arg=False):
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
+    if password and not on_pod() and host not in ("127.0.0.1", "localhost", "::1"):
+        _lan_announce(port)                    # other computers' Pods tabs find this one by themselves
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
+    if open_browser:                           # Fizgig in browser: the page, once this is listening
+        import webbrowser
+        threading.Timer(0.5, webbrowser.open, args=(f"http://127.0.0.1:{port}/",)).start()
     def _term(*_a):                            # a service manager's stop: end the run with it, as Ctrl+C does
         raise KeyboardInterrupt
     try:
@@ -3317,8 +3384,26 @@ def run_server(host, port=None, password=None, password_arg=False):
     finally:
         _stop()
         captions.unload()
-        live.remove(live.LIVE_WEB)
         srv.server_close()
+        if _RESTART[0]:
+            _respawn()
+
+
+_RESTART = [False]
+
+
+def _respawn():
+    """Restart now: the same command again, once this one has let go of its port (the app window's key and parent
+    travel in the environment, so the window stays logged in)."""
+    args = [sys.executable, os.path.abspath(sys.argv[0])] + [a for a in sys.argv[1:] if a != "--open"]
+    kw = {}
+    if os.name == "nt":
+        import ctypes
+        if not ctypes.windll.kernel32.GetConsoleWindow():      # no console (the app window's): none for it either
+            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    else:
+        kw["start_new_session"] = True
+    subprocess.Popen(args, cwd=os.getcwd(), env=dict(os.environ, FIZGIG_RESTARTED="1"), **kw)
 
 
 def main(argv=None):
@@ -3328,10 +3413,13 @@ def main(argv=None):
                                                  "password)")
     ap.add_argument("--port", type=int, default=None, help="Port to serve on (default: the one in Preferences, "
                                                             "8081 at first; a taken one moves to the next free one)")
+    ap.add_argument("--open", action="store_true", help="Open the web UI in the browser once it is up (and if "
+                                                         "Fizgig is running already, just open it)")
     ap.add_argument("--password", default=None, help="Login password, 8 characters or more (default: "
                                                      "FIZGIG_PASSWORD, then on a pod VNC_PASSWORD, then the one in "
                                                      "Preferences)")
     a = ap.parse_args(argv)
+    user_data.migrate()                       # Fizgig 7's loose files into user_data, before anything reads them
     # a pod: its VNC_PASSWORD, the remote desktop's, so one password opens both. Elsewhere VNC_PASSWORD is ignored (a
     # stray one would open the web UI to the network while Preferences says no password).
     saved = str(load_prefs().get("web_password") or "").strip()
@@ -3346,7 +3434,15 @@ def main(argv=None):
     if host not in ("127.0.0.1", "localhost", "::1") and not pwd:
         sys.exit("Listening beyond localhost needs a password: set one in Preferences > Web UI (web_password in "
                  "prefs.json), or use FIZGIG_PASSWORD or --password.")
-    run_server(host, a.port, password=pwd, password_arg=bool(a.password))
+    if a.open and not on_pod():
+        from fizgig.web.port import is_fizgig
+        running = a.port or saved_port(load_prefs())
+        if is_fizgig(running):                 # Fizgig is up already (the app window's, say): the browser on it
+            import webbrowser
+            print(f"Fizgig is already running on port {running}: opening it.")
+            webbrowser.open(f"http://127.0.0.1:{running}/")
+            return
+    run_server(host, a.port, password=pwd, password_arg=bool(a.password), open_browser=a.open and not on_pod())
 
 
 if __name__ == "__main__":

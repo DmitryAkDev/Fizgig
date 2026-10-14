@@ -61,6 +61,8 @@ async function boot() {
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
+  S.hostName = pr.host_name || "";
+  if (S.podLocal && S.podLocal.list.length) podLocalDraw();   // drawn before login: now it can say where it sends to
   S.passwordOn = pr.password_on;
   S.portFixed = pr.port_fixed;
   S.pw = {saved: pr.password_saved, env: pr.password_env, lan: pr.lan_ip || ""};
@@ -263,24 +265,6 @@ function renderRow(r) {
   return wrap;
 }
 
-// preview settings the two apps share per model (fizgig/web/live.py SHARED_SAMPLE_KEYS): a change here goes to the
-// desktop app too - its boxes if it's open, its saved settings if not
-const SHARED_SAMPLE_KEYS = ["SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_EVERY_N_EPOCHS", "FAMILY_TURBO_STRENGTH",
-  "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"];
-S.toDesktop = {};
-const sendDesktopSoon = debounce(() => {
-  for (const [family, values] of Object.entries(S.toDesktop))
-    api("/api/desktop/samples", {family, values}).catch(() => {});
-  S.toDesktop = {};
-}, 800);
-function shareSamples(keys) {
-  const k = keys.filter((x) => SHARED_SAMPLE_KEYS.includes(x));
-  if (!k.length) return;
-  const m = S.toDesktop[S.family] = S.toDesktop[S.family] || {};
-  for (const x of k) m[x] = S.values[x];
-  sendDesktopSoon();
-}
-
 // Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's
 function blockPicker(r, wrap) {
   const sel = () => ({...(S.values[r.key] || {})});
@@ -309,8 +293,6 @@ function blockPicker(r, wrap) {
 
 function onValue(r, val) {
   S.values[r.key] = val;
-  shareSamples([r.key]);
-  if (r.key === "FAMILY_TURBO_STRENGTH") S.turboByUser = true;   // the steps / CFG it moves go to the desktop too
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
@@ -389,8 +371,6 @@ function turboFollow() {
   for (const k of moved) S.values[k] = want[k];
   S.values.__turbo_live = live;
   syncInputs(moved);
-  if (S.turboByUser) shareSamples(moved);
-  S.turboByUser = false;
   saveStateSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);
@@ -516,8 +496,7 @@ function foldersCard() {
       settingRow("profiles_dir", "Profiles:", "Where the Profiler's reports go (Studio finds a LoRA's profile there).", "profiles inside Fizgig"),
       settingRow("cache_dir", "Cache:", "Cached latents and text encodings: each training folder gets its own folder in here.", "cache inside Fizgig"),
       settingRow("input_lora_dir", "LoRA loading:", "Where the pickers for LoRAs start: Studio, Royale, Profiler, Extract, Context LoRA."),
-      settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale."),
-      el("div", {class: "field-hint", text: "The same settings as the desktop app's Preferences > Output / Input Directories."})));
+      settingRow("input_ref_dir", "Reference images:", "Where the pickers for reference pictures start: Studio and Royale.")));
 }
 
 // the workbench tools' memory and speed (Studio, Royale, Profiler, Extract): the desktop's Inference Performance card
@@ -645,8 +624,7 @@ function gpuPickCard() {
   sel.disabled = !!g.envLocked;
   const hint = el("div", {class: "field-hint", text: g.envLocked ?
     "CUDA_VISIBLE_DEVICES is set where Fizgig was started, and it wins over this setting." :
-    "The card every run started from here trains on, and the one the memory meter shows. The desktop app uses " +
-    "the same setting. A run already going keeps its card."});
+    "The card every run trains on, and the one the memory meter shows. A run already going keeps its card."});
   sel.addEventListener("change", async () => {
     try { await api("/api/prefs", {changes: {cuda_device: sel.value}}); g.chosen = sel.value; }
     catch (e) { hint.textContent = e.message; }
@@ -678,8 +656,7 @@ function outputFolderCard() {
     placeholder: "output_loras inside Fizgig"});
   const hint = el("div", {class: "field-hint", text: "Where a model's LoRAs and checkpoints go until you pick a " +
     "folder for it on the Training tab (that one is kept for that model; Reset to default comes back here). Leave " +
-    "it empty for output_loras inside Fizgig. The desktop app's Preferences > Output Directories > LoRA output is " +
-    "the same setting."});
+    "it empty for output_loras inside Fizgig."});
   const save = async () => {
     try {
       await api("/api/prefs", {changes: {lora_output_dir: input.value.trim()}});
@@ -708,8 +685,7 @@ function dataFolderCard() {
   };
   input.addEventListener("change", save);
   const hint = el("div", {class: "field-hint", text: "Where uploaded training data goes, each upload in its own folder " +
-    "inside it, and where the folder pickers start. Leave it empty for Fizgig's own training_data folder. The " +
-    "desktop app's Preferences > Input Directories > Training images is the same setting."});
+    "inside it, and where the folder pickers start. Leave it empty for Fizgig's own training_data folder."});
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "Training data folder"})),
     el("div", {class: "card-content"},
@@ -760,28 +736,81 @@ function webPasswordRows() {
   const base = () => (P.env ? "A password given when Fizgig was started (FIZGIG_PASSWORD or --password) is used instead of this one. " : "") +
     "Empty: the web UI opens on this machine only. Set (8 characters or more): other devices can open it too, after " +
     "logging in. Whoever has it can use Fizgig and open files on this machine, so treat it like a remote-desktop " +
-    "password. Saved in prefs.json as plain text. It applies the next time Fizgig starts.";
+    "password. Saved in prefs.json as plain text.";
+  // the running web UI still has the old password (or none) until it restarts
+  const restart = el("button", {class: "btn btn-sm btn-primary", text: "Restart Fizgig now", style: "display:none",
+    title: "Fizgig starts again with the new password (a run going stops it: wait for that first)", onclick: async () => {
+      restart.disabled = true; say.textContent = "Restarting Fizgig...";
+      try { await api("/api/restart", {}); } catch (e) { say.textContent = e.message; restart.disabled = false; return; }
+      await new Promise((ok) => setTimeout(ok, 1500));
+      for (let i = 0; i < 120; i++) {                // back when its page answers again
+        try { if ((await fetch("/icon.png", {cache: "no-store"})).ok) break; } catch (e) { /* not yet */ }
+        await new Promise((ok) => setTimeout(ok, 500));
+      }
+      const a = window.pywebview && window.pywebview.api;
+      if (a && a.home && !pageIsElsewhere()) a.home(); else location.reload();   // the window logs itself in again
+    }});
+  const stale = () => !P.env && P.saved !== !!S.passwordOn || P.changed;
   const links = el("div", {class: "field-hint"});
   const remove = el("button", {class: "btn btn-sm", text: "Remove", onclick: () => save("")});
   const paint = () => {
     remove.style.display = P.saved ? "" : "none";
+    restart.style.display = stale() ? "" : "none";
     const port = S.portNow || S.webPort;
-    links.textContent = P.lan ? (P.saved ? `Other devices on your network: http://${P.lan}:${port}/ (from the next start).` +
+    links.textContent = P.lan ? (P.saved ? `Other devices on your network: http://${P.lan}:${port}/` + (stale() ? " (once Fizgig has restarted)." : ".") +
       (navigator.platform.startsWith("Win") ? " The first time, Windows may ask to let Python through the firewall: allow it on private networks." : "")
       : "Set a password to open it from other devices.") : "";
   };
   const save = async (v) => {
     try {
       const r = await api("/api/prefs/password", {password: v});
-      P.saved = r.saved; input.value = "";
+      P.saved = r.saved; P.changed = true; input.value = "";
       input.placeholder = P.saved ? "saved - type a new one to replace it" : "8 characters or more";
-      say.textContent = (r.saved ? "Saved. " : "Removed. ") + base(); paint();
+      say.textContent = (r.saved ? "Saved: restart Fizgig for it to apply. " : "Removed: restart Fizgig for it to apply. ") + base(); paint();
     } catch (e) { say.textContent = e.message; }
   };
   input.addEventListener("change", () => input.value.trim() && save(input.value.trim()));
   say.textContent = base(); paint();
   return [el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Password:"}), input,
-    el("label", {class: "checkbox-label"}, show, " Show"), remove), say, links];
+    el("label", {class: "checkbox-label"}, show, " Show"), remove, restart), say, links, firewallRow()];
+}
+
+// Windows Firewall, on the computer Fizgig runs on: is Fizgig let through on this network, and a button that lets it
+// (our two rules, private networks only; Windows asks for an administrator's OK). A page from elsewhere gets nothing.
+function firewallRow() {
+  const row = el("div", {class: "field-row", style: "display:none"});
+  const say = el("div", {class: "field-hint", style: "display:none"});
+  const box = el("div", {}, row, say);
+  const btn = el("button", {class: "btn btn-sm", text: "Allow on my network"});
+  const show = (d) => {
+    if (!d || d.windows === false || !S.pw.saved) { row.style.display = say.style.display = "none"; return; }
+    row.style.display = say.style.display = "";
+    if (d.error) { say.textContent = d.error; say.className = "field-hint warn"; return; }
+    const all = d.networks || [];
+    const nets = all.some((n) => n.lan) ? all.filter((n) => n.lan) : all;   // the home network, not a VPN's adapter
+    const pub = d.allowed ? [] : nets.filter((n) => n.category === "Public");   // allowed there too: nothing to change
+    const ok = d.allowed && !d.blocked && nets.length;
+    row.replaceChildren(el("span", {class: "field-label", text: "Network:"}), btn);
+    btn.textContent = "Allow on my network";
+    btn.style.display = ok ? "none" : "";          // allowed: nothing to do (it comes back, with why, if that changes)
+    const lines = [];
+    if (pub.length) lines.push(`Windows calls ${pub.map((n) => `"${n.name}"`).join(", ")} a Public network and lets no ` +
+      "other device in there. If it's your home network, make it Private: Settings > Network & internet > Wi-Fi or " +
+      "Ethernet > your network > Network profile type > Private.");
+    if (d.blocked) lines.push("Windows Firewall blocks Fizgig's Python (its question was cancelled once). Allow on my network takes that block off.");
+    if (!d.allowed) lines.push("Windows Firewall doesn't let Fizgig in on this port yet. Allow on my network adds two rules " +
+      `for private networks only: the web UI's port (and the few above it Fizgig moves to when it's taken) and the one other computers find Fizgig on. Windows asks for an administrator's OK.`);
+    if (ok) lines.push("✓ Allowed on your network: your other computers find this one in their Pods tab and can open it.");
+    say.textContent = lines.join(" ");
+    say.className = "field-hint" + (ok ? "" : " warn");
+  };
+  btn.onclick = async () => {
+    btn.disabled = true; say.textContent = "Waiting for Windows (it asks for an administrator's OK)..."; say.className = "field-hint";
+    try { show(await api("/api/lan/firewall", {})); } catch (e) { say.textContent = e.message; say.className = "field-hint warn"; }
+    btn.disabled = false;
+  };
+  api("/api/lan/firewall").then(show).catch(() => {});
+  return box;
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
@@ -869,19 +898,37 @@ async function check() {
 }
 
 async function start(path) {
-  const cmd = {"/api/pause": "pause", "/api/stop": "stop", "/api/resume": "resume"}[path];
-  if (S.mode === "desktop" && cmd) {              // the desktop app's run: its own buttons do the work
-    S.ackBefore = (S.run.desktop && S.run.desktop.ack && S.run.desktop.ack.at) || 0;   // the PC's clock, not ours
-    try { await api("/api/desktop", {cmd}); $("runStatus").textContent = "Sent to the desktop app…"; }
-    catch (e) { $("runStatus").textContent = e.message; }
-    return setTimeout(pollRun, 1200);
-  }
   try {
     const r = await api(path, path === "/api/start" ? runBody() : {});
-    showProblems(r.problems);
-    if (r.error) $("runStatus").textContent = r.error;
+    showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     pollRun();
-  } catch (e) { $("runStatus").textContent = e.message; }
+  } catch (e) { showProblems([e.message]); }
+}
+
+// Resume: the paused run's own settings, unless the form now has another picture size for it (Target Megapixels,
+// a clip family's clip size): then a choice - as it was, or at the new size (the cache is made again first, keeping
+// what still fits). Training at a bigger size for the last epochs, say.
+const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
+async function resumeClick() {
+  const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
+  const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
+    String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
+  if (!diff.length) { box.style.display = "none"; return start("/api/resume"); }
+  const say = diff.map((k) => `${SIZE_KEYS[k]} ${was[k] || "?"} → ${S.values[k]}`).join(", ");
+  const go = (body) => async () => {
+    box.style.display = "none";
+    try { const x = await api("/api/resume", body); showProblems(x.problems || (x.error ? [x.error] : [])); }
+    catch (e) { showProblems([e.message]); }
+    pollRun();
+  };
+  box.replaceChildren(
+    el("span", {text: `The form's size differs from the run's (${say}). Resume:`}),
+    el("button", {class: "btn btn-sm btn-primary", text: "At the new size",
+      title: "Caches the pictures again at the new size first (what already fits is kept), then trains on from where it paused",
+      onclick: go(Object.fromEntries(diff.map((k) => [k, S.values[k]])))}),
+    el("button", {class: "btn btn-sm", text: "As it was", onclick: go({})}),
+    el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { box.style.display = "none"; }}));
+  box.style.display = "";
 }
 
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
@@ -894,71 +941,60 @@ async function pollRun() {
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
-  const d = r.desktop;
-  // the desktop app's run shows here whenever this page has none of its own going
-  const deskBusy = d && (d.running || ["running", "pausing"].includes(d.state));
-  // a run paused there is on show too, but the GPU is free: Start still begins a run here
-  const deskPaused = d && !deskBusy && d.state === "paused";
-  // ...and a run it just finished stays on show (Finished / Failed / Stopped) until either side starts another
-  const deskDone = d && !deskBusy && !deskPaused && d.last_result && d.last_result.at > (r.ended_at || 0);
-  const mode = !live && (deskBusy || deskPaused || deskDone) ? "desktop" : "web";
-  if (mode !== S.mode) switchConsole(mode);
-  if (mode === "desktop") {
-    const res = deskDone ? {finished: "completed", failed: "failed", stopped: "stopped"}[d.last_result.result] : null;
-    const state = res || d.state;
-    const label = RUN_LABELS[state] || state;
-    S.run.output_dir = d.output_dir;          // previews and checkpoints follow the desktop's run
-    const when = deskDone ? " · " + new Date(d.last_result.at * 1000).toLocaleTimeString() : "";
-    $("runStatus").textContent = `${label}: ${(deskDone ? d.last_result.lora : d.lora) || "(unnamed)"}` +
-      (deskDone ? when : d.stage ? " · " + d.stage : "");
-    const ack = d.ack && S.ackBefore !== undefined && d.ack.at > S.ackBefore ? " " + d.ack.note : "";
-    $("runSource").textContent = (deskPaused ?
-      `This is a run paused in the desktop app (${d.family}), not your settings above: ${d.lora} in ` +
-      `${d.output_dir}. Resume carries it on; Start Training begins your run here instead - nothing is ` +
-      "using the GPU while it's paused." : deskDone ?
-      `The last run started in the desktop app (${d.family}) ended. Its previews and checkpoints are below; ` +
-      "Start begins a new run here." :
-      `This run was started in the desktop app (${d.family}). Pause, Stop and Resume here work on it. Start is ` +
-      "off until it finishes, so the two don't share the GPU." +
-      (d.unresponsive ? " The desktop app isn't answering right now (busy for a moment?), so Pause, Stop and " +
-        "Resume wait until it does." : "")) + ack;
-    $("runBadge").textContent = label;
-    $("runBadge").dataset.state = state;
-    $("runCardBadge").textContent = label;
-    $("runCardBadge").dataset.state = state;
-    showProgress(deskDone ? d.last_result.progress : d.progress, state, deskDone ? d.last_result.lora : d.lora,
-      deskDone ? "" : d.stage);
-    $("btnStart").disabled = !(deskDone || deskPaused);
-    $("btnPause").disabled = !(d.running && d.state === "running");
-    $("btnStop").disabled = !d.running;
-    $("btnResume").style.display = !d.running && d.state === "paused" ? "" : "none";
-  } else {
-    const label = RUN_LABELS[r.state] || r.state;
-    $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
-    $("runSource").textContent = d ? "The desktop app is open too. A run started there shows here." : "";
-    $("runBadge").textContent = label;
-    $("runBadge").dataset.state = r.state;
-    $("runCardBadge").textContent = label;
-    $("runCardBadge").dataset.state = r.state;
-    showProgress(r.progress, r.state, r.lora, r.stage);
-    $("btnStart").disabled = live;
-    $("btnPause").disabled = !r.running;
-    // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
-    const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
-    $("btnPause").style.display = runFam.no_pause ? "none" : "";
-    $("btnStop").disabled = !live;
-    $("btnResume").style.display = !live && r.resume ? "" : "none";
-  }
-  renderQueue(r.queue || []);
+  const label = RUN_LABELS[r.state] || r.state;
+  $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
+  $("runBadge").textContent = label;
+  $("runBadge").dataset.state = r.state;
+  $("runCardBadge").textContent = label;
+  $("runCardBadge").dataset.state = r.state;
+  showProgress(r.progress, r.state, r.lora, r.stage);
+  $("btnStart").disabled = live;
+  $("btnPause").disabled = !r.running;
+  // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
+  const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
+  $("btnPause").style.display = runFam.no_pause ? "none" : "";
+  $("btnStop").disabled = !live;
+  $("btnResume").style.display = !live && r.resume ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
-  runLossTick(live || (d && (d.running || d.state === "running")));
+  queueSummary(r.web_queue || {items: []}, r);
+  runLossTick(live);
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
   const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
-  const nowOk = mode === "desktop" ? !!(d && d.running && d.state === "running") :
-    !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
+  const nowOk = !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
   for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
   if (!nowOk) $("runNowSay").textContent = "";
+}
+
+// the queue at a glance, from every tab (the sidebar, under the run) and at the top of the Run card: what's next, or
+// that it's held and why, with Start queue right there
+function toQueue() {
+  showTab("training");
+  setTimeout(() => $("webQueueCard").scrollIntoView({behavior: "smooth", block: "start"}), 50);
+}
+
+function queueSummary(q, r) {
+  const items = q.items || [], n = items.length;
+  const side = $("sideQueue"), up = $("runUpNext");
+  side.style.display = up.style.display = n ? "" : "none";
+  if (!n) return;
+  const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
+    q.waiting ? `Queue waiting: ${q.waiting}` : "";
+  side.classList.toggle("held", !!q.held);
+  const badge = $("sideQueueBadge");
+  badge.textContent = q.held ? "Held" : q.waiting ? "Waiting" : `${n} queued`;
+  badge.dataset.state = q.held ? "paused" : q.waiting ? "pausing" : "running";
+  $("sideQueueList").replaceChildren(...items.slice(0, 3).map((it, i) => el("div", {class: "side-queue-row"},
+    el("span", {class: "n", text: String(i + 1)}), el("span", {class: "name", text: it.lora, title: it.lora}))),
+    ...(n > 3 ? [el("div", {class: "side-queue-more", text: `+${n - 3} more`})] : []));
+  $("sideQueueHeld").textContent = q.held ? q.reason || "Press Start queue to carry on." : q.waiting || "";
+  $("sideQueueStart").style.display = q.held ? "" : "none";
+  up.classList.toggle("held", !!q.held);
+  up.replaceChildren(...[el("span", {text: q.held ? text : `Up next: ${items.slice(0, 3).map((it, i) => `${i + 1}. ${it.lora}`).join(" · ")}` +
+      (n > 3 ? ` · and ${n - 3} more` : "")}),
+    q.held ? el("button", {class: "btn btn-sm btn-primary", text: "Start queue",
+      onclick: () => api("/api/queue/start", {}).then(pollRun).catch((e) => showProblems([e.message]))}) : null,
+    el("a", {text: "See the queue", onclick: toQueue})].filter(Boolean));
 }
 
 // the web UI's own queue: reorder, remove, start or hold
@@ -997,53 +1033,10 @@ function renderWebQueue(q) {
       }})))));
 }
 
-function renderQueue(items) {
-  $("queueCard").style.display = items.length ? "" : "none";
-  const host = $("queueList");
-  host.innerHTML = "";
-  items.forEach((q, i) => host.append(el("div", {class: "checkpoint-row"},
-    el("span", {class: "checkpoint-name", text: `${i + 1}. ${q.name}`}),
-    el("span", {class: "field-hint", text: `${q.family} · ${q.folder}${q.queued_at ? " · queued " + q.queued_at : ""}`}))));
-}
-
-// the console shows this page's run (streamed) or the desktop app's (its console copy, polled)
-function switchConsole(mode) {
-  S.mode = mode;
-  $("console").textContent = "";
-  clearTimeout(S.deskLogTimer);
-  if (mode === "desktop") {
-    S.deskOffset = 0;
-    pollDesktopLog();
-  } else if (S.logSrc) {
-    S.logSrc.close();
-    S.logSince = 0;
-    followLog();
-  }
-  loadGallery(); loadCheckpoints();
-}
-
-async function pollDesktopLog() {
-  if (S.mode !== "desktop") return;
-  try {
-    const first = !S.deskOffset;
-    const r = await api("/api/desktop/log?offset=" + (S.deskOffset || 0) + (first ? "&tail=1" : ""));
-    const out = $("console");
-    if (r.offset < (S.deskOffset || 0)) out.textContent = "";        // a new run started the copy again
-    if (r.text) {
-      const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
-      out.textContent = (out.textContent + r.text).slice(-200000);
-      if (atEnd) out.scrollTop = out.scrollHeight;
-    }
-    S.deskOffset = r.offset;
-  } catch (e) { /* the server restarts */ }
-  S.deskLogTimer = setTimeout(pollDesktopLog, 1500);
-}
-
 function followLog() {
   const src = S.logSrc = new EventSource(`/api/log?since=${S.logSince}&t=${encodeURIComponent(TOKEN)}`);
   const out = $("console");
   src.onmessage = (e) => {
-    if (S.mode === "desktop") return;
     S.logSince = Number(e.lastEventId) || S.logSince;
     const line = JSON.parse(e.data);
     if (line === "\u0000clear\n") { out.textContent = ""; return; }   // a new run: its own log from here
@@ -1102,9 +1095,8 @@ function showProgress(p, state, name, extraNote) {
   $("runWhen").textContent = (p && p.note) || "";
 }
 
-// the run on show: the one training (here or in the desktop app), else the LoRA name in the form
-const currentRunName = () => (S.mode === "desktop" && S.run.desktop ? S.run.desktop.lora : S.run.lora) ||
-  S.values.LORA_NAME || "";
+// the run on show: the one training, else the LoRA name in the form
+const currentRunName = () => S.run.lora || S.values.LORA_NAME || "";
 
 // what a preview is, from its name (the server reads it): "Epoch 4 · Prompt 1 · strength 0.5"
 function previewLabel(it) {
@@ -1156,9 +1148,8 @@ async function loadGallery() {
   if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
   const sel = $("galleryRun");
   sel.innerHTML = "";
-  // "this run" while it trains (here or in the desktop app); once it has ended it is the last run
-  const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state) ||
-    (R.desktop && (R.desktop.running || ["running", "pausing"].includes(R.desktop.state))));
+  // "this run" while it trains; once it has ended it is the last run
+  const R = S.run || {}, liveNow = !!(R.running || ["starting", "running", "pausing"].includes(R.state));
   for (const r of g.runs) sel.append(el("option", {value: r, text: r + (r === cur ? (liveNow ? " (this run)" : " (last run)") : "")}));
   sel.value = run;
   $("galleryControls").style.display = g.runs.length ? "" : "none";
@@ -1596,7 +1587,7 @@ async function loadRuns() {
       el("div", {class: "run-row-head"},
         el("span", {class: "run-badge", "data-state": RESULT_STATE[run.result] || "idle", text: RESULT_LABEL[run.result] || run.result}),
         el("b", {text: run.lora || "(unnamed)"}),
-        el("span", {class: "field-hint", text: `${famName(run.family)} · ${run.source === "desktop" ? "desktop app" : "web UI"}`})),
+        el("span", {class: "field-hint", text: famName(run.family) + (run.source === "desktop" ? " · the old desktop app" : "")})),
       el("div", {class: "field-hint", text: [run.image_folder && `Trained on ${run.image_folder}`,
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
@@ -1604,8 +1595,8 @@ async function loadRuns() {
       el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, notesBtn, again, del), delBox, alertRow, notesBox, files,
       lgBox, ilBox));
   }
-  if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start, here or in " +
-    "the desktop app, is listed here with its results."}));
+  if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +
+    "with its results."}));
 }
 
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
@@ -3101,8 +3092,8 @@ async function studioOpen() {
     let r;
     try { r = await api("/api/studio/families"); }
     catch (e) {                                 // a server started before Studio existed: the page is newer than it
-      $("stStatus").textContent = "This web UI was started before Studio was added: restart it (Preferences > Web UI " +
-        "in the desktop app, or close and reopen the Fizgig window), then reload this page.";
+      $("stStatus").textContent = "This web UI was started before Studio was added: restart it (close and reopen " +
+        "the Fizgig window, or Fizgig in browser), then reload this page.";
       return;
     }
     const sel = $("stFamily");
@@ -4347,7 +4338,7 @@ function studioPresetSaveOpen() {
     try {
       const r = await api("/api/studio/preset_save", {family: S.st.layout.key, name: name.value, blocks, overwrite: !!overwrite});
       if (r.exists) { msg.replaceChildren(document.createTextNode("That name is taken. "), el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)})); return; }
-      host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved (the desktop's Repair Studio lists it too).";
+      host.innerHTML = ""; studioPresets(); $("stStatus").textContent = "Preset saved.";
     } catch (e) { msg.textContent = e.message; }
   };
   host.append(el("div", {class: "field-row"}, name, el("button", {class: "btn btn-primary", text: "Save", onclick: () => save(false)}),
@@ -4657,7 +4648,7 @@ function openInstr() {
   $("capInstrBox").style.display = "";
   $("capInstr").value = t.instruction;
   $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
-    ". Saved here, it is used by the desktop app's Captions tab and by the trainer's auto-recaption too.";
+    ". Saved here, the trainer's auto-recaption uses it too.";
   $("capInstrStatus").textContent = "";
 }
 
@@ -4729,7 +4720,7 @@ async function pollCaptions() {
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
   log.textContent = st.log.join("\n");
   if (atEnd) log.scrollTop = log.scrollHeight;
-  if (S.cap.lastState && ["running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();
+  if (S.cap.lastState && ["loading", "running", "translating"].includes(S.cap.lastState) && !busy) loadCaptions();   // done: the new captions
   else if (busy && Date.now() - (S.cap.liveAt || 0) > 5000) { S.cap.liveAt = Date.now(); captionsLive(); }
   S.cap.lastState = st.state;
   if (busy || document.querySelector("#tab-captions.active")) S.cap.timer = setTimeout(pollCaptions, busy ? 1500 : 5000);
@@ -4744,7 +4735,8 @@ function captionModelsChanged() {
 
 async function loadCaptions() {
   if (!S.cap.opts || S.cap.optsFamily !== S.family) {        // a model change can bring the song card
-    await loadCaptionOptions().catch(() => {});
+    await loadCaptionOptions().catch((e) => {        // said, and asked again next time the tab opens
+      S.cap.opts = null; $("capModelHint").textContent = `Couldn't get the caption models: ${e.message}`; });
     S.cap.optsFamily = S.family;
   }
   pollCaptions();
@@ -5444,7 +5436,9 @@ async function browse(path) {
 S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
-  stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"]};
+  stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
+  away: ["Not on your network now: is it on, awake and running Fizgig?", "muted"],
+  blocked: ["Found, but it doesn't let this computer in yet: on it, Preferences > Web UI > Allow on my network", "warn"]};
 
 async function podsLoad(quiet) {
   if (!quiet) $("podsNote").textContent = "Checking your pods...";
@@ -5455,12 +5449,13 @@ async function podsLoad(quiet) {
   $("podKeyNote").textContent = r.key_saved ? "Key saved: your Fizgig pods are listed above." : "";
   podsDraw();
   $("podsNote").textContent = r.error ? r.error : (S.pods.list.length ? "" :
-    "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key.");
+    "No pods yet. Add one below, or deploy one and it shows here once you've added your RunPod API key. Fizgig on " +
+    "your other computers shows here by itself once it has a password and is allowed on your network (its Preferences > Web UI).");
   // keep checking while the tab is open: every 6 s while one is on its way up (and open it when it's ready if asked
   // to), else every 30 s with an API key saved (a pod started or stopped on RunPod shows up by itself)
   clearTimeout(S.pods.timer);
   const starting = S.pods.list.some((p) => p.state === "waiting" || p._starting);
-  if (starting || S.pods.key) S.pods.timer = setTimeout(() => {
+  S.pods.timer = setTimeout(() => {          // the network's Fizgigs come and go too: every 30 s regardless
     if ($("tab-pods").classList.contains("active")) podsLoad(true);
   }, starting ? 6000 : 30000);
   const w = S.pods.waitFor && S.pods.list.find((p) => p.url === S.pods.waitFor);
@@ -5473,8 +5468,14 @@ function podsDraw() {
     const st = p._starting && p.state !== "ready" ? "starting" : p.state;
     const [label, tone] = POD_STATE[st] || [st, "muted"];
     const title = p.name || p.id || p.url;
-    const sub = [p.gpu, p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
-      !p.id && p.url !== title ? p.url : ""].filter(Boolean).join(" · ");
+    const build = {mine: "Newer Fizgig there: update this computer",
+      theirs: "Older Fizgig there: it opens as it is; update it when it's free",
+      other: "Different builds: update both when they're free"}[p.build] || "";
+    const queued = p.queued ? `${p.queued} queued` + (p.queue_held ? " (held)" : "") : "";
+    const sub = [p.lan ? "On your network" : "", p.gpu, p.busy ? `training ${p.busy}` : "", queued,
+      p.auto_login && inApp() ? "logs you in" : "",
+      p.cost ? `$${p.cost.toFixed(2)}/hr` : "", p.id && p.id !== title ? p.id : "",
+      !p.id && p.url !== title ? p.url.replace(/^https?:\/\/|\/$/g, "") : "", build].filter(Boolean).join(" · ");
     const btns = [];
     if (p.state === "ready") btns.push(el("button", {class: "btn btn-primary btn-sm", text: inApp() ? "Open" : "Open ↗",
       onclick: () => podOpen(p)}));
@@ -5488,7 +5489,7 @@ function podsDraw() {
     if (p.saved) btns.push(el("button", {class: "btn btn-sm", text: "Forget", title: "Take it off this list (the pod itself is untouched)",
       onclick: async () => { await api("/api/pods/forget", {url: p.url}).catch(() => {}); podsLoad(true); }}));
     return el("div", {class: "pod-row"},
-      el("span", {class: `pod-dot ${tone}`}),
+      el("span", {class: `pod-dot ${build ? "warn" : tone}`}),
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: title}),
         el("div", {class: "field-hint", text: `${label}${sub ? " · " + sub : ""}`})),
       el("div", {class: "pod-btns"}, ...btns));
@@ -5496,7 +5497,7 @@ function podsDraw() {
 }
 
 function podOpen(p) {
-  api("/api/pods/opened", {url: p.url, name: p.name || ""}).catch(() => {});
+  api("/api/pods/opened", {url: p.url, name: p.name || "", lan_id: p.lan_id || ""}).catch(() => {});
   if (inApp()) location.href = p.url;                 // the window goes there; Switch to this computer comes back
   else window.open(p.url, "_blank", "noopener");
 }
@@ -5672,21 +5673,51 @@ const appBridge = () => (window.pywebview && window.pywebview.api && window.pywe
   window.pywebview.api : null;
 const pageIsElsewhere = () => !["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname);
 
+S.podLocal = {list: [], root: "", busy: false};
+const PODLOCAL_SORT = {
+  new: (a, b) => (b.time || 0) - (a.time || 0), old: (a, b) => (a.time || 0) - (b.time || 0),
+  az: (a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"}),
+  za: (a, b) => b.name.localeCompare(a.name, undefined, {numeric: true, sensitivity: "base"}),
+  big: (a, b) => (b.bytes || 0) - (a.bytes || 0),
+  many: (a, b) => (b.pictures + b.clips + b.songs) - (a.pictures + a.clips + a.songs)};
+
 async function podLocalInit() {
   const api_ = appBridge();
   if (!api_ || !pageIsElsewhere()) return;
-  const card = $("podLocalCard");
-  card.style.display = "";
-  let r;
-  try { r = await api_.local_datasets(); } catch (e) { $("podLocalStatus").textContent = String(e.message || e); return; }
+  $("podLocalCard").style.display = "";
+  const sort = $("podLocalSort");
+  try { const s = localStorage.getItem("fizgig.podLocalSort"); if (PODLOCAL_SORT[s]) sort.value = s; } catch (e) { /* no storage */ }
+  sort.onchange = () => { try { localStorage.setItem("fizgig.podLocalSort", sort.value); } catch (e) { /* no storage */ } podLocalDraw(); };
+  $("podLocalReload").onclick = podLocalLoad;
+  podLocalLoad();
+}
+
+async function podLocalLoad() {
+  const btn = $("podLocalReload");
+  btn.disabled = true;
+  if (!S.podLocal.busy) $("podLocalStatus").textContent = "Looking at this computer's training folders...";
+  try {
+    const r = await appBridge().local_datasets();
+    S.podLocal.list = r.datasets || [];
+    S.podLocal.root = r.root || "";
+    if (!S.podLocal.busy) $("podLocalStatus").textContent = "";
+  } catch (e) { $("podLocalStatus").textContent = String(e.message || e); }
+  btn.disabled = false;
+  podLocalDraw();
+}
+
+function podLocalDraw() {
   const host = $("podLocalGrid");
   const mb = (n) => n >= 2 ** 30 ? (n / 2 ** 30).toFixed(1) + " GB" : Math.max(1, Math.round(n / 2 ** 20)) + " MB";
-  host.replaceChildren(...(r.datasets || []).map((d) => {
+  const list = [...S.podLocal.list].sort(PODLOCAL_SORT[$("podLocalSort").value] || PODLOCAL_SORT.new);
+  host.replaceChildren(...list.map((d) => {
     const total = d.pictures + d.clips + d.songs;
     const what = [d.pictures && `${d.pictures} picture${d.pictures === 1 ? "" : "s"}`,
       d.clips && `${d.clips} clip${d.clips === 1 ? "" : "s"}`, d.songs && `${d.songs} song${d.songs === 1 ? "" : "s"}`]
       .filter(Boolean).join(" · ");
-    const send = el("button", {class: "btn btn-sm btn-primary", text: "Send to this pod", onclick: () => podLocalSend(d, send)});
+    const send = el("button", {class: "btn btn-sm btn-primary", text: S.onPod ? "Send to this pod" :
+      `Send to ${S.hostName || "your other computer"}`, disabled: S.podLocal.busy,
+      onclick: () => podLocalSend(d)});
     return el("div", {class: "dataset-card", title: d.path},
       el("div", {class: "dataset-mosaic n" + Math.min(4, d.thumbs.length)},
         d.thumbs.length ? d.thumbs.map((src) => el("img", {alt: "", src})) :
@@ -5696,14 +5727,15 @@ async function podLocalInit() {
           text: d.captioned >= total ? "all captioned" : `${d.captioned} of ${total} captioned`}),
         el("div", {class: "dataset-actions"}, send)));
   }));
-  $("podLocalStatus").textContent = (r.datasets || []).length ? "" :
-    `No training folders on this computer yet (${r.root}).`;
+  if (!list.length && !S.podLocal.busy && !$("podLocalStatus").textContent)
+    $("podLocalStatus").textContent = `No training folders on this computer yet (${S.podLocal.root}).`;
 }
 
-async function podLocalSend(d, btn) {
+async function podLocalSend(d) {
   const api_ = appBridge();
   const say = (t, bad) => { $("podLocalStatus").textContent = t; $("podLocalStatus").classList.toggle("bad", !!bad); };
-  btn.disabled = true;
+  S.podLocal.busy = true;                     // one send at a time: every Send button waits, through a Refresh too
+  podLocalDraw();
   try {
     const files = await api_.local_files(d.path);
     const CHUNK = 2 * 2 ** 20;                 // what one bridge read carries
@@ -5718,7 +5750,8 @@ async function podLocalSend(d, btn) {
       }}));
     await uploadFiles(local, {name: d.name, say});
   } catch (e) { say(String(e.message || e), true); }
-  btn.disabled = false;
+  S.podLocal.busy = false;
+  podLocalDraw();
 }
 window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
 
@@ -5729,10 +5762,13 @@ function podBuildGuard() {
   if (!a || !pageIsElsewhere() || a.build || $("fizgigBuildBlock")) return;
   const o = el("div", {id: "fizgigBuildBlock", class: "build-block"},
     el("div", {class: "build-block-card"},
-      el("div", {class: "build-block-title", text: "This computer and the pod run different builds of Fizgig"}),
-      el("p", {text: "Fizgig on this computer is older than the pod's. Update it - close Fizgig and run update_fizgig.bat " +
+      el("div", {class: "build-block-title", text: S.onPod ? "This computer and the pod run different builds of Fizgig" :
+        "Your two computers run different builds of Fizgig"}),
+      el("p", {text: `Fizgig on this computer is older than ${S.onPod ? "the pod's" : "the one on " + (S.hostName || "your other computer")}. Update it - close Fizgig and run update_fizgig.bat ` +
         "(update_fizgig_rocm.bat on AMD; venv/bin/python update_fizgig.py on Linux or a Mac), then open it again."}),
-      a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null));
+      el("div", {class: "field-row"}, a.home ? el("button", {class: "btn", text: "Switch to this computer", onclick: () => a.home()}) : null,
+        el("button", {class: "btn", text: "Open anyway", title: "Use it as it is: most of it works, something newer than this computer's Fizgig may not",
+          onclick: () => o.remove()}))));
   document.body.append(o);
 }
 window.addEventListener("pywebviewready", podBuildGuard);
@@ -6095,22 +6131,31 @@ function wire() {
     try {
       const ed = S.editQueue;
       const r = await api(ed ? "/api/queue/update" : "/api/queue/add", ed ? {...runBody(), id: ed.id} : runBody());
-      showProblems(r.problems);
       if (r.ok) {
-        $("runStatus").textContent = ed ? `Saved: queued run ${r.position} has these settings now.` :
-          `Added to the queue (number ${r.position}).`;
+        const q = (S.run && S.run.web_queue && S.run.web_queue.items) || [], live = S.run.running || S.run.state === "starting";
+        const before = r.position > 1 ? (q[r.position - 2] || {}).lora : live ? S.run.lora : "";
+        const eta = r.position === 1 && live && S.run.progress && S.run.progress.eta;
+        showProblems([], ed ? `Saved: queued run ${r.position} has these settings now.` :
+          `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
+          ": it starts as soon as nothing else is training") + ".");
         queueEditing(null);
-      }
+      } else showProblems(r.problems || (r.error ? [r.error] : []));
       pollRun();
-    } catch (e) { $("runStatus").textContent = e.message; }
+    } catch (e) { showProblems([e.message]); }
   });
   $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
+  $("sideQueue").addEventListener("click", toQueue);
+  $("sideQueue").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toQueue(); } });
+  $("sideQueueStart").addEventListener("click", (e) => {
+    e.stopPropagation();                          // starts it; the panel's own click opens the queue
+    api("/api/queue/start", {}).then(pollRun).catch((er) => showProblems([er.message]));
+  });
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
-  $("btnResume").addEventListener("click", () => start("/api/resume"));
+  $("btnResume").addEventListener("click", resumeClick);
   const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })
     .catch((e) => { $("runNowSay").textContent = e.message; });
   $("btnSampleNow").addEventListener("click", () => now("sample", "Previews are made after the current step - " +

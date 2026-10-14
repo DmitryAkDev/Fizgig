@@ -94,7 +94,7 @@ Video, voice, Training mode and Gizmo are covered in [MINIMAX_H3.md](MINIMAX_H3.
 These follow the rotation cycle, not the Samples tab, on every family.
 
 - On Krea 2 and Qwen the card's **checkpoint + preview every K rotations** is the cadence, and the epoch boxes are greyed out. On MiniMax H3, **Max epochs** and **Save every** snap to cycle boundaries — the Save-every box follows the fine-tune controls live in the GUI and the trainer snaps it again at launch. Either way every checkpoint has each window trained equally.
-- **Previews ride the saves:** one render per saved checkpoint plus the final one, overriding the Samples tab's "every N epochs". Prompts, resolution, seed and the live sample override still come from the Samples tab and status bar. Every sample in the gallery maps to a deployable file. Krea 2 previews render on the training DiT with the Turbo LoRA.
+- **Previews ride the saves:** one render per saved checkpoint plus the final one, overriding the Samples tab's "every N epochs". Prompts, resolution, seed and the live preview change still come from the Samples tab. Every sample in the gallery maps to a deployable file. Krea 2 previews render on the training DiT with the Turbo LoRA.
 - **Checkpoints are numbered by epoch** (`-000004`, `-000008`, …) and numbering continues across Pause/Resume, so a resumed run never overwrites an earlier save.
 - **Adaptive LR is off** under fine-tune: rotation boundaries would read as instability to it. Judge the per-save previews, evaluate checkpoints in ComfyUI, or extract a LoRA and scrub the epochs in LoRA Royale.
 

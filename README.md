@@ -1,7 +1,7 @@
 <h1 align="center">Fizgig — LoRA & Fine-tune Studio for Klein 9B, Krea 2, MiniMax H3, Qwen Image 2.1, Z-Image Turbo, SDXL & Anima</h1>
 
 <p align="center">
-  <strong>Fine-tune base models on consumer GPUs — down to 8 GB. Fix broken LoRAs without retraining. Remix any LoRA into new variations in seconds.</strong><br>
+  <strong>Fine-tune base models on consumer GPUs — down to 8 GB. Fix broken LoRAs without retraining. Find the best epoch by eye.</strong><br>
   A train · fine-tune · repair · explore workbench built end-to-end for <strong>Flux 2 Klein 9B</strong>, <strong>Krea 2</strong>, <strong>MiniMax H3</strong>, <strong>Qwen Image 2.1</strong>, <strong>Z-Image Turbo</strong>, <strong>SDXL</strong> and <strong>Anima</strong> — training on photos, video, sound and voices, from quick LoRAs to the full base model.
 </p>
 
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.youtube.com/watch?v=yrz0l6URGGk"><img src="logo.jpg" alt="Fizgig LoRA & Fine-tune Studio — watch the full video tutorial" width="600"></a>
+  <a href="https://www.youtube.com/watch?v=yrz0l6URGGk"><img src="docs/assets/logo.jpg" alt="Fizgig LoRA & Fine-tune Studio — watch the full video tutorial" width="600"></a>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/RELEASE_NOTES_v7.3.0.md"><img src="assets/fizgig_meets_music.jpg" alt="Fizgig meets music" width="700"></a>
+  <a href="docs/RELEASE_NOTES_v7.3.0.md"><img src="docs/assets/fizgig_meets_music.jpg" alt="Fizgig meets music" width="700"></a>
 </p>
 
 > ### 📰 Latest news
@@ -48,15 +48,19 @@
 
 ## What Fizgig is
 
-A local trainer and workbench for image, video and music models. Every trainer makes LoRAs; Fizgig is also built around what you do with them afterwards:
+A trainer and workbench for image, video and music models, in its own window on your computer, in your browser, or on a rented GPU — and you can watch a run from your phone. Every trainer makes LoRAs; Fizgig is also built around what you do with them afterwards:
 
 - **Fix** a LoRA block by block without retraining: drag a slider per block, save a new `.safetensors`.
-- **Explore** variations: the app mutates a LoRA, you pick favourites, it evolves.
+- **Explore** variations: 🎲 I'm feeling lucky in Repair Studio rolls new block strengths within your limits; keep the ones you like.
 - **Find** the best epoch by eye: LoRA Royale renders every epoch on one seed with a crossfade, and exports shareable loops.
 - **Profile** which blocks carry identity, style and detail before you touch anything.
 - **Train beyond LoRAs:** LoKR, or the full base model itself: Anima on an 8 GB card, the larger models on 16 GB. A LoRA extracted from a fine-tune came out better than one trained directly at the same rank.
 
 Memory plans itself: precision, block swap and previews size to your free VRAM, and if a preview can't fit, training keeps going. Fizgig loads kohya, PEFT, OneTrainer, AI-Toolkit and LyCORIS LoRAs, and saves `.safetensors` that drop straight into ComfyUI. Free and open source.
+
+<!-- SCREENSHOT PLACEHOLDER: The Training tab: a run in progress with its loss graph, previews and checkpoints
+<p align="center"><img src="docs/assets/screenshots/training.png" alt="The Training tab: a run in progress with its loss graph, previews and checkpoints" width="800"></p>
+-->
 
 ## Supported models
 
@@ -71,17 +75,20 @@ Memory plans itself: precision, block swap and previews size to your free VRAM, 
 | **Anima** (2B), experimental | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [7.0 notes](docs/RELEASE_NOTES_v7.0.0.md) |
 | **ACE-Step 1.5 XL** (4B), experimental | songs | ✅ | — | ✅ slider | ✅ experimental | 16 GB | [ACE-Step](docs/ACESTEP.md) |
 
-Every image and video model gets all five workbench tools; ACE-Step has Repair Studio and Extract. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
+Every image and video model gets all four workbench tools; ACE-Step has Repair Studio and Extract. Qwen Image 2.1 trains on the base model and previews on Qwen's own Turbo (8 steps, CFG 1); your LoRAs work on both. MiniMax H3 also makes **RefMods**, tuned against H3 itself rather than a plain encode ([how do I…?](docs/REFMOD_HOWDOI.md)). Fizgig's training adapters for [Qwen Image 2.1](https://huggingface.co/ShootTheSound/Fizgig-Qwen-Image-2.1-Training-Adapter) and [Z-Image Turbo](https://huggingface.co/ShootTheSound/Fizgig-Z-Image-Turbo-Training-Adapter) are free on Hugging Face for any trainer. Full fine-tuning has [its own guide](docs/FINETUNE.md).
 
 ## The workbench
 
 Each tool works on your own runs **or any LoRA you've downloaded**, and they hand off to each other. [More detail](docs/TRAINING.md).
 
-- **Repair Studio** — a live slider per block with a side-by-side preview, donor-LoRA blending, and an exact baked save. On H3 the previews are clips with sound, with a background block library and first/last-frame pinning.
-- **LoRA the Explorer** — evolutionary discovery: four mutated variants, pick one, repeat.
+- **Repair Studio** — a live slider per block with a side-by-side preview, donor-LoRA blending, **🎲 I'm feeling lucky** for random variations within your limits, and an exact baked save. On H3 the previews are clips with sound, with a background block library and first/last-frame pinning.
 - **LoRA Royale** — every epoch on one seed, an optional likeness score, and MP4/GIF exports: epoch morphs, seed/prompt/strength travels, comparison sheets.
 - **Profiler** — a colour-coded per-block report that Repair Studio reads inline.
 - **Extract** — shrink any LoRA to a lower rank.
+
+<!-- SCREENSHOT PLACEHOLDER: Repair Studio: the per-block sliders beside the baseline and tweaked previews
+<p align="center"><img src="docs/assets/screenshots/repair_studio.png" alt="Repair Studio: the per-block sliders beside the baseline and tweaked previews" width="800"></p>
+-->
 
 ## Training features
 
@@ -98,7 +105,21 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.
 
-Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: [docs/CLI.md](docs/CLI.md). Or in a browser, from any device: [docs/WEB_UI.md](docs/WEB_UI.md).
+Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: [docs/CLI.md](docs/CLI.md).
+
+## One app, wherever you are
+
+- **In its own window** (`Launch Fizgig.bat`), or **in your browser** (`Launch Fizgig in browser.bat`) — the same app either way.
+- **On your phone or another computer**: set a password in Preferences and open it over your network; add it to your phone's home screen and it opens like an app.
+- **On your other computer's GPU**: train on your desktop's card from your laptop. Fizgig finds your other computers running it, and the **Pods** tab opens one as it does a pod ([how](docs/WEB_UI.md#two-computers-use-ones-gpu-from-the-other)).
+- **On a rented GPU**: the **Pods** tab deploys a RunPod pod, opens it in the same window (logged in for you), and sends a training folder from your computer straight to it.
+- **Runs & outputs** keeps every run with its loss graph, notes, previews and checkpoints, and starts any of them again with the same settings.
+
+<!-- SCREENSHOT PLACEHOLDER: The Pods tab, and a pod open in the Fizgig window with its 'Switch to this computer' bar
+<p align="center"><img src="docs/assets/screenshots/pods.png" alt="The Pods tab, and a pod open in the Fizgig window with its 'Switch to this computer' bar" width="800"></p>
+-->
+
+More: [docs/WEB_UI.md](docs/WEB_UI.md).
 
 ## Install
 
@@ -111,8 +132,8 @@ git clone https://github.com/shootthesound/Fizgig.git
 cd Fizgig
 ```
 
-- **Windows (NVIDIA):** double-click `install_fizgig.bat`, launch with `run_fizgig.bat`, update with `update_fizgig.bat`.
-- **Linux (NVIDIA):** `python install_fizgig.py`, then `./run_fizgig.sh`.
+- **Windows (NVIDIA):** double-click `install_fizgig.bat`, then launch with `Launch Fizgig.bat` (its own window) or `Launch Fizgig in browser.bat` (in your web browser); update with `update_fizgig.bat`.
+- **Linux (NVIDIA):** `python install_fizgig.py`, then `./launch_fizgig.sh` or `./launch_fizgig_browser.sh`.
 - **AMD ROCm:** see [docs/INSTALL.md](docs/INSTALL.md).
 
 Model files download from the **Preferences** tab: one **Download models for me** button per model.
@@ -123,7 +144,7 @@ The whole app runs in a browser tab on RunPod, with a file manager, one-click mo
 
 ## Getting started
 
-Work left to right through the numbered tabs:
+Work down through the numbered tabs:
 
 1. **Start** — set your training image folder.
 2. **Image Prep** (optional) — resize, face-crop, and filter out images that don't match the look.
@@ -131,9 +152,13 @@ Work left to right through the numbered tabs:
 4. **Samples** — the preview prompts that render during training.
 5. **Training** — pick a model and a preset, click **Start Training**.
 
+<!-- SCREENSHOT PLACEHOLDER: The Start tab: the model picker and the training folder
+<p align="center"><img src="docs/assets/screenshots/start.png" alt="The Start tab: the model picker and the training folder" width="800"></p>
+-->
+
 **Tip: give one sample prompt something your dataset doesn't have,** such as a specific pose, angle or setting that none of your photos show (for example "looking over her shoulder from a low angle" when your photos are all straight-on portraits). Early epochs follow it. When a LoRA starts to overtrain, that is the first thing to fail: the previews drift back to your dataset's framing even though the prompt asks for something else. The last epoch that still follows it is a good one to keep.
 
-The unnumbered tabs are the workbench (Profiler, Repair Studio, LoRA the Explorer, LoRA Royale, Extract) and Preferences. The [video tutorial](https://www.youtube.com/watch?v=yrz0l6URGGk) walks through all of it.
+The unnumbered tabs are Runs & outputs, the workbench (Profiler, Studio, LoRA Royale, RefMod Toolkit, Extract, Metadata), Preferences, and Pods. The [video tutorial](https://www.youtube.com/watch?v=yrz0l6URGGk) walks through all of it.
 
 **Community translation:** [Korean (한국어)](https://github.com/ssain3d-lgtm/Fizgig-Korean-Translated-Ver) by @ssain3d-lgtm, an unofficial add-on that translates the UI at runtime without touching Fizgig's files and uninstalls with one script. If you hit a bug with it installed, uninstall and reproduce before reporting here; translation issues go to its repo.
 
@@ -159,12 +184,12 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |
-| [Web UI](docs/WEB_UI.md) | Fizgig in a browser: starting it, its port and password, model downloads |
+| [The app](docs/WEB_UI.md) | Starting Fizgig, its window and browser, your phone, the port and password, pods |
 | [RunPod](docker/README.md) | The cloud image |
 
 ## License
 
-Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to use, modify, and redistribute, including commercially, with attribution and no warranty. Third-party components under compatible permissive licenses (and other terms where noted) are listed in **[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)**.
+Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to use, modify, and redistribute, including commercially, with attribution and no warranty. Third-party components under compatible permissive licenses (and other terms where noted) are listed in **[THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)**.
 
 The **Automagic v3 optimizer**, the Krea 2 **MMDiT backbone and flow-matching sampler**, and Ostris's MiniMax H3 **training adapter** all come from **[@ostris](https://github.com/ostris)** — the first two from [AI-Toolkit](https://github.com/ostris/ai-toolkit) under the MIT licence, the adapter downloaded as a model rather than bundled. The default H3 training adapter comes from **[circlestone-labs](https://huggingface.co/circlestone-labs)**, also downloaded as a model. Anima's model code is adapted from kohya-ss's [sd-scripts](https://github.com/kohya-ss/sd-scripts) under the Apache licence, and Z-Image's from Tongyi-MAI's [reference implementation](https://github.com/Tongyi-MAI/Z-Image), also Apache.
 

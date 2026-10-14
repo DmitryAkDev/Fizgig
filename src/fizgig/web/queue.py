@@ -1,6 +1,6 @@
 """The web UI's training queue: runs lined up to start one after another, kept by the web server.
 
-It is the web UI's own (.fizgig_web_queue.json in the Fizgig folder, git-ignored) - the desktop app keeps its own
+It is the web UI's own (user_data/web_queue.json in the Fizgig folder, git-ignored) - the desktop app keeps its own
 queue in presets/training_queue.json, and neither app edits the other's. One run trains at a time across both: the
 next queued run waits while the desktop app is training or making captions (and the desktop's queue waits for this
 one the same way).
@@ -16,8 +16,9 @@ import threading
 import time
 import uuid
 
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-QUEUE_FILE = os.path.join(BASE_DIR, ".fizgig_web_queue.json")
+QUEUE_FILE = user_file("web_queue.json")
 WAIT_S = 30                                   # how often a waiting queue looks again
 
 _lock = threading.Lock()

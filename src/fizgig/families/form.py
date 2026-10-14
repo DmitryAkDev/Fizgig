@@ -576,8 +576,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             continue
         if not launch.option_applies(o, media, vals, desc.options, finetune=kind == "finetune"):
             (disabled if o.always_shown else hidden).add(o.key)
-            if o.always_shown and o.unmet_notes:
-                notes[o.key] = o.unmet_notes[1] if len(o.unmet_notes) > 1 else o.unmet_notes[0]
+            if o.always_shown and o.unmet_notes:      # the note for the choice that owns it now (the desktop's)
+                key = o.requires.partition("=")[0]
+                owner = next((x for x in desc.options if x.key == key), None)
+                cur = owner.pick(vals.get(key, "")) if owner is not None else ""
+                notes[o.key] = next((n for n in o.unmet_notes if n[0] == cur), o.unmet_notes[0])[1]
     try:                                         # CFG 1 or less renders without the negative: no box for it
         if not desc.samples_cfg_free and float(str(values.get("SAMPLE_CFG_SCALE") or desc.preview_cfg)) <= 1.0:
             hidden.add("SAMPLE_NEGATIVE")

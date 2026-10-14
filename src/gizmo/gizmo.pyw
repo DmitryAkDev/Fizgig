@@ -4,7 +4,7 @@ The same shape as launch.pyw, and for the same reason: pythonw.exe hides the con
 also hides FAILURES. If the app dies on import the window simply never appears — no error, no
 clue. So every startup failure is reported through two channels that cannot themselves depend on
 what broke: a native Windows message box via ctypes (deliberately not a Tkinter dialog, since
-missing Tkinter is the classic cause) and gizmo_error.log beside this file.
+missing Tkinter is the classic cause) and gizmo_error.log in Fizgig's user_data folder.
 
 Gizmo has no dependency Fizgig does not already have — Tkinter is stdlib, PIL and imageio-ffmpeg
 are pinned in requirements.txt — so this needs no install of its own and nothing to re-run.
@@ -16,14 +16,16 @@ import sys
 import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VENV_PYTHONW = os.path.join(HERE, "venv", "Scripts", "pythonw.exe")
-LOG = os.path.join(HERE, "gizmo_error.log")
+FIZGIG_DIR = os.path.dirname(os.path.dirname(HERE))          # this file lives in src/gizmo
+VENV_PYTHONW = os.path.join(FIZGIG_DIR, "venv", "Scripts", "pythonw.exe")
+LOG = os.path.join(FIZGIG_DIR, "user_data", "gizmo_error.log")
 
 
 def _report(title, message, detail=""):
     """The failure path. Must not use Tkinter, and must not raise."""
     logged = False
     try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
         with open(LOG, "w", encoding="utf-8") as f:
             f.write(f"{title}\n\n{message}\n\n{detail}\n"
                     f"\npython: {sys.executable}\nversion: {sys.version}\n")
@@ -71,6 +73,12 @@ except Exception:
     pass
 
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))                 # src: Fizgig's user_data module
+try:
+    from fizgig import user_data
+    user_data.migrate(log=None)                          # Fizgig 7's gizmo_settings.json into user_data
+except Exception:
+    pass
 try:
     runpy.run_path(os.path.join(HERE, "gizmo.py"), run_name="__main__")
 except (SystemExit, KeyboardInterrupt):

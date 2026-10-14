@@ -1,4 +1,4 @@
-"""Fizgig as a desktop app window around the web UI (`lora_trainer_gui.py --app`), through pywebview: Windows'
+"""Fizgig as a desktop app window around the web UI (`fizgig.py`), through pywebview: Windows'
 WebView2, GTK/WebKit or Qt on Linux, WebKit on macOS - no browser, no address bar.
 
 It uses the web UI already running on the saved port when there is one (the desktop app's, say), else starts its own
@@ -23,8 +23,10 @@ import webbrowser
 
 from fizgig.web.port import free_from, is_fizgig, listening, saved_port
 
+from fizgig.user_data import user_file  # noqa: E402  (Fizgig's own files: user_data/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-PREFS_FILE = os.path.join(BASE_DIR, "prefs.json")
+from fizgig import user_data  # noqa: E402
+PREFS_FILE = user_data.PREFS_FILE
 
 
 def _prefs():
@@ -62,7 +64,7 @@ def _remember_last(url):
 
 def _icon(profile):
     """Fizgig's icon for the window: icon.png, made an .ico for Windows (which takes nothing else)."""
-    png = os.path.join(BASE_DIR, "icon.png")
+    png = os.path.join(BASE_DIR, "src", "fizgig", "web", "static", "icon.png")
     if not os.path.isfile(png):
         return None
     if os.name != "nt":
@@ -84,6 +86,14 @@ _BAR_JS = r"""
 (function (text, button, title, call, dismiss) {
   var old = document.getElementById('fizgigAppBar');
   if (old) old.remove();
+  // room above the page for the bar (and a build note under it), so neither covers the page's own top line
+  var sp = document.getElementById('fizgigAppBarSpace');
+  if (!sp) {
+    sp = document.createElement('div');
+    sp.id = 'fizgigAppBarSpace';
+    sp.style.cssText = 'flex:none;height:54px';
+    document.body.insertBefore(sp, document.body.firstChild);
+  }
   var b = document.createElement('div');
   b.id = 'fizgigAppBar';
   // the top middle: clear of the page's own top-right buttons (a full-screen picture's close)
@@ -106,7 +116,7 @@ _BAR_JS = r"""
     x.textContent = '✕';
     x.title = 'Hide this';
     x.style.cssText = 'background:none;color:#F0F4F8;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif;padding:2px 6px';
-    x.onclick = function () { b.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
+    x.onclick = function () { b.remove(); sp.remove(); if (window.pywebview && window.pywebview.api) window.pywebview.api.forget_pod(); };
     b.appendChild(x);
   }
   document.body.appendChild(b);
@@ -144,26 +154,34 @@ def _update_how():
     return "close Fizgig, run venv/bin/python update_fizgig.py in the Fizgig folder, then open it again"
 
 
-def build_verdict(pod_build):
-    """The rule: the window and the pod run the same build, or the pod's page is blocked with what to do. Which
-    side is behind decides it: a pod updates itself at each start; this computer with its updater."""
+def build_verdict(pod_build, pod=True, name=""):
+    """The window and a pod (or your other computer) on different builds. An OLDER one opens as it is, with a note:
+    its page only asks the window for what it already knew (the window keeps those names), and updating it would mean
+    stopping a run that may be hours in. A NEWER one, or one this computer has never seen, may ask for what this window
+    doesn't have yet: its page is covered with what to do, and Open anyway."""
     mine = _build()
     if not mine:
         return {"ok": True}
     theirs = str(pod_build or "").strip()
     if theirs == mine:
         return {"ok": True}
-    title = "This computer and the pod run different builds of Fizgig"
+    other = "the pod" if pod else (name or "your other computer")      # your computer by its name
+    title = ("This computer and the pod run different builds of Fizgig" if pod else
+             "Your two computers run different builds of Fizgig")
     mine_s, theirs_s = mine[:7], theirs[:7]
-    if theirs and _git("merge-base", "--is-ancestor", mine, theirs)[0] == 0 or (theirs and _git("cat-file", "-e", theirs + "^{commit}")[0] != 0):
-        # the pod's build is newer than this computer's, or one this computer has never seen
-        msg = (f"The pod runs build {theirs_s}, this computer build {mine_s}. Update Fizgig on this computer - "
-               f"{_update_how()} - and the two match.")
-    else:
-        said = f"The pod runs build {theirs_s}" if theirs else "The pod runs an older build"
-        msg = (f"{said}, this computer build {mine_s}. Restart the pod (stop it, then Start and open on the Pods "
-               "tab): a pod takes the newest Fizgig every time it starts.")
-    return {"ok": False, "title": title, "message": msg}
+    older = bool(theirs) and _git("merge-base", "--is-ancestor", theirs, mine)[0] == 0
+    if not older:
+        # the pod's build is newer than this computer's, one this computer has never seen, or off another line
+        said = f"runs build {theirs_s}" if theirs else "doesn't say which build it runs"
+        msg = (f"{other[:1].upper() + other[1:]} {said}, this computer build {mine_s}. Update Fizgig on this computer - "
+               f"{_update_how()} - and the two match. Opened anyway, most of it works; something newer than this "
+               f"computer's Fizgig may not.")
+        return {"ok": False, "title": title, "message": msg}
+    # older there: it works as it is, and a run on it carries on
+    note = (f"{other[:1].upper() + other[1:]} runs an older Fizgig ({theirs_s or 'an older build'}). It works as it is; to update it, " +
+            ("stop and start the pod when its run is done (a pod takes the newest Fizgig every time it starts)." if pod
+             else "run its updater when it's free."))
+    return {"ok": True, "older": True, "note": note}
 
 
 # a page in the window that runs a different build from this computer: covered, with what to do and the way back
@@ -187,19 +205,77 @@ _BLOCK_JS = r"""
   b.style.cssText = 'background:#F0F4F8;color:#1A2029;border:0;border-radius:999px;padding:6px 16px;cursor:pointer;' +
     'font:600 14px Segoe UI,system-ui,sans-serif';
   b.onclick = function () { if (window.pywebview && window.pywebview.api) window.pywebview.api.home(); };
-  c.appendChild(h); c.appendChild(p); c.appendChild(b); o.appendChild(c);
+  var a = document.createElement('button');
+  a.textContent = 'Open anyway';
+  a.title = "Use it as it is: most of it works, something newer than this computer's Fizgig may not";
+  a.style.cssText = 'margin-left:10px;background:none;color:#F0F4F8;border:1px solid #6B7280;border-radius:999px;' +
+    'padding:6px 16px;cursor:pointer;font:600 14px Segoe UI,system-ui,sans-serif';
+  a.onclick = function () { o.remove(); };
+  c.appendChild(h); c.appendChild(p); c.appendChild(b); c.appendChild(a); o.appendChild(c);
   document.body.appendChild(o);
 })(__ARGS__);
 """
 
+
+# an older build there: a note under the bar, not a wall (✕ hides it)
+_NOTE_JS = r"""
+(function (text) {
+  if (document.getElementById('fizgigBuildNote')) return;
+  var n = document.createElement('div');
+  n.id = 'fizgigBuildNote';
+  n.style.cssText = 'position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;' +
+    'align-items:center;gap:8px;max-width:70vw;padding:6px 8px 6px 14px;border-radius:10px;background:#3A2A08;' +
+    'border:1px solid #F59E0B;color:#FCD34D;font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.45)';
+  var t = document.createElement('span');
+  t.textContent = text;
+  var x = document.createElement('button');
+  x.textContent = '✕';
+  x.title = 'Hide this';
+  x.style.cssText = 'background:none;color:#FCD34D;border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
+  var sp = document.getElementById('fizgigAppBarSpace');
+  x.onclick = function () { n.remove(); if (sp) sp.style.height = '54px'; };
+  n.appendChild(t); n.appendChild(x);
+  document.body.appendChild(n);
+  if (sp) sp.style.height = (n.offsetHeight + 66) + 'px';     // the bar and this note both clear of the page
+})(__ARGS__);
+"""
+
 # on a pod's page: its build (its About, once logged in), checked against this computer's
+# a pod of your account, opened in the window: its login filled in with the password from its RunPod settings, once.
+# Whatever happens the login box stays usable - if that password doesn't work, it says to type it.
+_LOGIN_JS = r"""
+(function (pw) {
+  var tries = 0;
+  function go() {
+    var m = document.getElementById('loginModal'), i = document.getElementById('loginPassword'),
+        b = document.getElementById('loginButton');
+    if (!m || !i || !b) { if (++tries < 40) setTimeout(go, 250); return; }   // the page is still coming
+    if (!m.classList.contains('active')) { if (++tries < 40) setTimeout(go, 250); return; }   // logged in already
+    i.value = pw;
+    var r = document.getElementById('loginRemember'); if (r) r.checked = true;
+    b.click();
+    setTimeout(function () {
+      if (m.classList.contains('active')) {
+        i.value = '';
+        var e = document.getElementById('loginError');
+        if (e) e.textContent = "Fizgig couldn't log you in to this pod by itself (its password isn't the one in its " +
+          "RunPod settings). Type its password here.";
+      }
+    }, 4000);
+  }
+  go();
+})(__PW__);
+"""
+
+
 _CHECK_JS = r"""
 (function () {
   if (window.__fizgigBuildCheck) return;
   window.__fizgigBuildCheck = true;
   var tries = 0;
   function ask() {
-    fetch('/api/about', {credentials: 'same-origin'}).then(function (r) {
+    var t = document.querySelector('meta[name="fizgig-token"]');            // its API answers its own page only
+    fetch('/api/about', {credentials: 'same-origin', headers: {'X-Fizgig-Token': t ? t.content : ''}}).then(function (r) {
       if (!r.ok) throw new Error(r.status);
       return r.json();
     }).then(function (d) {
@@ -222,11 +298,16 @@ def _where(url):
 
 
 def _pod_name(url):
-    """The name the Pods tab saved it under, else where it is."""
+    """The name the Pods tab saved it under, else where it is. Another computer of yours: its name alone."""
     for p in _prefs().get("app_pods") or []:
         if isinstance(p, dict) and p.get("url") == url and p.get("name"):
-            return f"{p['name']} ({_where(url)})"
+            return p["name"] if p.get("lan_id") else f"{p['name']} ({_where(url)})"
     return _where(url)
+
+
+def _is_pod(url):
+    from urllib.parse import urlparse
+    return (urlparse(url or "").hostname or "").endswith(".proxy.runpod.net")
 
 
 def _is_local(url, port):
@@ -248,12 +329,20 @@ def _last_pod(port):
 
 
 def _start_server(port, key):
-    """The web UI on this computer only (as `--web` does with no password), the window's key in its environment."""
+    """The web UI as `--web` serves it (this computer only, unless a password is saved: then your other devices too),
+    the window's key in its environment."""
     env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", FIZGIG_APP_KEY=key,
                FIZGIG_APP_PARENT=str(os.getpid()))            # the server stops if this window's process goes
     kw = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
           if os.name == "nt" else {"start_new_session": True})
-    return subprocess.Popen([sys.executable, os.path.join(BASE_DIR, "lora_trainer_gui.py"), "--web", "--port",
+    exe = sys.executable
+    # the window runs on pythonw.exe (no console window of its own); the server on python.exe with a hidden console,
+    # which every run, caption job and tool under it shares - under pythonw each console tool they start (torch.compile's
+    # Triton builds, a compiler check) opened its own window, flashing up and away
+    con = os.path.join(os.path.dirname(exe), "python.exe")
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe" and os.path.isfile(con):
+        exe = con
+    return subprocess.Popen([exe, os.path.join(BASE_DIR, "fizgig.py"), "--web", "--port",
                              str(port)], cwd=BASE_DIR, env=env, stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL, **kw)
 
@@ -299,7 +388,74 @@ def _unhook_requests():
     ec.EdgeChrome.on_webview_ready = on_ready
 
 
+_MUTEX = []
+
+
+def _one_window() -> bool:
+    """Windows: one Fizgig window per Fizgig folder. Launched again while it's open, that window comes forward and
+    this launch ends (False). One still closing gets 15 s to go; one that never appeared (its WebView2 stuck, say,
+    on a profile the window before it hadn't let go of yet) is ended, so it can't keep a server - and an old
+    password - running unseen. True: carry on and open."""
+    if os.name != "nt":
+        return True
+    try:
+        import ctypes
+        import hashlib
+        from ctypes import wintypes
+        k, u = ctypes.windll.kernel32, ctypes.windll.user32
+        k.CreateMutexW.restype = wintypes.HANDLE
+        h = k.CreateMutexW(None, False, "Local\\FizgigAppWindow-" + hashlib.sha1(BASE_DIR.lower().encode()).hexdigest()[:12])
+        if not h:
+            return True
+        _MUTEX.append(h)
+        pid_file = user_file("app_window.pid")
+
+        def mine():
+            try:
+                with open(pid_file, "w") as f:
+                    f.write(str(os.getpid()))
+            except OSError:
+                pass
+            return True
+        if k.WaitForSingleObject(h, 0) in (0, 0x80):            # nobody else (0x80: one that crashed)
+            return mine()
+        try:
+            other = int(open(pid_file).read().strip() or 0)
+        except (OSError, ValueError):
+            other = 0
+        found = []
+        proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def each(hwnd, _):
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            n = u.GetWindowTextLengthW(hwnd)
+            buf = ctypes.create_unicode_buffer(n + 1)
+            u.GetWindowTextW(hwnd, buf, n + 1)
+            if u.IsWindowVisible(hwnd) and pid.value == other and (buf.value == "Fizgig" or buf.value.startswith("Fizgig — ")):
+                found.append(hwnd)
+            return True
+        u.EnumWindows(proc(each), 0)
+        if found:                                              # it's open: that one, not a second
+            if u.IsIconic(found[0]):
+                u.ShowWindow(found[0], 9)
+            u.SetForegroundWindow(found[0])
+            return False
+        if k.WaitForSingleObject(h, 15000) in (0, 0x80):        # it was closing
+            return mine()
+        if other:                                              # no window after all that: stuck, so ended
+            subprocess.run(["taskkill", "/PID", str(other), "/T", "/F"], capture_output=True,
+                           creationflags=0x08000000)
+            k.WaitForSingleObject(h, 5000)
+        return mine()
+    except Exception:
+        return True
+
+
 def main():
+    if not _one_window():
+        return
+    user_data.migrate()                       # Fizgig 7's loose files into user_data, before the prefs are read
     port = saved_port(_prefs())
     own, key = None, ""
     if not is_fizgig(port):
@@ -313,7 +469,7 @@ def main():
             time.sleep(0.25)
         if not is_fizgig(port):
             _stop(own)
-            sys.exit("Fizgig's web UI did not start. Run `python lora_trainer_gui.py --web` to see why.")
+            sys.exit("Fizgig's web UI did not start. Run `python fizgig.py --web` to see why.")
     url = f"http://127.0.0.1:{port}/" + (f"?app_key={key}" if key else "")
     home = f"http://127.0.0.1:{port}/"
     try:
@@ -345,10 +501,17 @@ def main():
                 return _build()
 
             def build_check(self, pod_build):
-                v = build_verdict(pod_build)
+                try:
+                    url = window.get_current_url() or ""
+                except Exception:
+                    url = ""
+                pod = ".proxy.runpod.net" in url or not url
+                v = build_verdict(pod_build, pod=pod, name="" if pod else _pod_name(url.split("#")[0]))
                 if not v["ok"]:
                     window.evaluate_js(_BLOCK_JS.replace("__ARGS__", json.dumps(v["title"]) + ", " +
                                                          json.dumps(v["message"])))
+                elif v.get("note"):
+                    window.evaluate_js(_NOTE_JS.replace("__ARGS__", json.dumps(v["note"])))
                 return v
 
             def local_datasets(self):
@@ -381,17 +544,36 @@ def main():
                 if _is_local(cur, port):
                     window.set_title("Fizgig")
                     if left[0]:
-                        window.evaluate_js(_bar(f"☁ {_pod_name(left[0])} is still running", "Switch to the pod",
-                                                "Back to the pod's Fizgig", "to_pod", dismiss=True))
+                        name = _pod_name(left[0])
+                        if _is_pod(left[0]):
+                            bar = (f"☁ {name} is still running", "Switch to the pod", "Back to the pod's Fizgig")
+                        else:
+                            bar = (f"🖥 {name} is still open", f"Switch to {name}", f"Back to Fizgig on {name}")
+                        window.evaluate_js(_bar(*bar, "to_pod", dismiss=True))
                     return
                 left[0] = cur.split("#")[0]
                 name = _pod_name(cur)
                 window.set_title(f"Fizgig — {name}")
-                window.evaluate_js(_bar(f"☁ You're on {name}", "Switch to this computer",
-                                        "Back to Fizgig on this computer (the pod keeps running)", "home"))
+                window.evaluate_js(_bar(f"☁ You're on {name}" if _is_pod(cur) else f"🖥 You're on {name}",
+                                        "Switch to this computer", "Back to Fizgig on this computer ("
+                                        + ("the pod" if _is_pod(cur) else name) + " keeps running)", "home"))
                 window.evaluate_js(_CHECK_JS)
+                if _is_pod(cur) and left[0] not in tried:
+                    tried.add(left[0])                    # once a window session: a refused one is left to you
+                    threading.Thread(target=_auto_login, args=(left[0],), daemon=True).start()
             except Exception:
                 pass
+
+        tried = set()
+
+        def _auto_login(pod):
+            try:
+                from fizgig.web import pod_stop, pods
+                pw = pods.login_password(pod_stop.api_key(_prefs()), pod)
+                if pw and (window.get_current_url() or "").startswith(pod.rstrip("/")):
+                    window.evaluate_js(_LOGIN_JS.replace("__PW__", json.dumps(pw)))
+            except Exception:
+                pass                                      # the login box as ever
         window.events.loaded += loaded
 
         def keep():
@@ -410,7 +592,12 @@ def main():
             webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True   # Buy me a coffee, RunPod, the docs
         except Exception:
             pass
-        profile = os.path.join(BASE_DIR, ".fizgig_app_profile")
+        def watchdog():                    # a window that never appears ends, its server with it, not left unseen
+            if not window.events.shown.wait(120):
+                _stop(own)
+                os._exit(1)
+        threading.Thread(target=watchdog, daemon=True).start()
+        profile = user_file("app_profile")
         webview.start(private_mode=False, storage_path=profile, icon=_icon(profile))
     except Exception as e:
         # no engine here (a Linux machine without GTK/WebKit or Qt): the browser, and how to get the window

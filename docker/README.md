@@ -10,8 +10,8 @@ Fizgig in your browser: the pod runs the app and you open it as a web page, from
 
 ## Storage
 
-**Give it 100 GB+, and mount it at `/workspace`.** The models are ~45 GB, and you want room for
-datasets and output LoRAs on top.
+**Give it 300 GB (the template's default), mounted at `/workspace`.** Each model's files run to tens of GB,
+so a few models, your datasets and their LoRAs fill 200 GB quickly; 100 GB is the least that works for one.
 
 Then the one thing to know: **stopping a pod keeps everything; terminating it does not.** Stop
 between sessions and your models, datasets and LoRAs are all still there when you start it again.
@@ -70,6 +70,8 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 \* The file manager needs 12+ characters, so a shorter password gets zeros added to the end **for port 8080 only** (`mypass` becomes `mypass000000`). Pick 12+ characters and both logins are identical.
 
 **Choosing the password.** On the deploy screen expand **Edit Template → Environment Variables** and add `FIZGIG_PASSWORD` (12+ characters). If you don't, the pod generates one on its first start, prints it in the log, and keeps it on your volume, so it stays the same every time you stop and start the pod. If the log seems to stop short of the banner, switch to another tab and back; RunPod's log view sometimes needs a nudge.
+
+**Opening it from Fizgig on your own computer.** With your RunPod API key saved in Fizgig's **Pods** tab, the Fizgig window opens your pod already logged in: it reads `FIZGIG_PASSWORD` from the pod's settings on RunPod each time, never saving it. That's one more reason to set `FIZGIG_PASSWORD` on the deploy screen as a plain value: a password kept as a RunPod secret, or one the pod made up, you type yourself.
 
 ### How the pod is secured
 

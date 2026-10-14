@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fizgig launcher for AMD ROCm on Linux - mirrors run_fizgig_rocm.bat env tuning.
+# Fizgig launcher for AMD ROCm on Linux - mirrors Launch Fizgig AMD.bat env tuning.
 # HIGHLY EXPERIMENTAL: Linux AMD training is best-effort only.
 cd "$(dirname "$0")"
 
@@ -8,7 +8,7 @@ source venv/bin/activate
 
 export MIOPEN_FIND_MODE=2
 export FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE
-# Allocator: upstream GUI honours FIZGIG_NO_EXPANDABLE=1 (A/B opt-out, lora_trainer_gui.py).
+# Allocator: upstream GUI honours FIZGIG_NO_EXPANDABLE=1 (A/B opt-out, fizgig.py).
 export FIZGIG_NO_EXPANDABLE=1
 export PYTORCH_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512,garbage_collection_threshold:0.8
@@ -17,14 +17,14 @@ export FIZGIG_GPU_BACKEND=rocm
 
 # BNB_ROCM_VERSION / ROCM_PATH / HIP_PATH - write_rocm_env.py
 # (install / first launch only; re-run write_rocm_env.py after a pull if rocm_env.sh is stale).
-if [[ -f rocm_env.sh ]]; then
-    # shellcheck source=rocm_env.sh
-    source rocm_env.sh
+if [[ -f user_data/rocm_env.sh ]]; then
+    # shellcheck source=user_data/rocm_env.sh
+    source user_data/rocm_env.sh
 elif [[ -x venv/bin/python ]]; then
     venv/bin/python write_rocm_env.py >/dev/null 2>&1 || true
-    if [[ -f rocm_env.sh ]]; then
-        # shellcheck source=rocm_env.sh
-        source rocm_env.sh
+    if [[ -f user_data/rocm_env.sh ]]; then
+        # shellcheck source=user_data/rocm_env.sh
+        source user_data/rocm_env.sh
     fi
 fi
 
@@ -56,8 +56,8 @@ export LD_LIBRARY_PATH
 
 # Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
 GPU_ARCH=""
-if [[ -x venv/bin/python && -f detect_gpu_linux.py ]]; then
-    GPU_ARCH="$(venv/bin/python detect_gpu_linux.py 2>/dev/null | tail -n1 | tr -d '[:space:]')" || true
+if [[ -x venv/bin/python && -f src/install/detect_gpu_linux.py ]]; then
+    GPU_ARCH="$(venv/bin/python src/install/detect_gpu_linux.py 2>/dev/null | tail -n1 | tr -d '[:space:]')" || true
 fi
 IS_LEGACY_GPU=0
 case "${GPU_ARCH}" in
@@ -104,5 +104,5 @@ else
     echo "[AMD-ROCm] BNB_ROCM_VERSION unset (bitsandbytes selects lib)  ROCM_PATH=${ROCM_PATH:-}"
 fi
 
-python lora_trainer_gui.py &
+python fizgig.py &
 disown

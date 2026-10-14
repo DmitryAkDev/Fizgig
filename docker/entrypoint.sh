@@ -117,8 +117,12 @@ python3 "$APP_DIR/uv_install_deps.py" "$APP_DIR/requirements.txt" "$VIRTUAL_ENV"
 # Point the portable output dirs at the volume. Model paths are left alone: fetch_models writes
 # those itself, and overwriting them here would stomp a path the user set by hand.
 python3 - <<'PY'
-import json, os
-p = "/workspace/Fizgig/prefs.json"
+import json, os, sys
+sys.path.insert(0, "/workspace/Fizgig/src")
+from fizgig import user_data
+user_data.migrate()                  # a volume from Fizgig 7: its prefs and state into user_data first
+p = user_data.PREFS_FILE
+os.makedirs(os.path.dirname(p), exist_ok=True)
 prefs = {}
 if os.path.exists(p):
     try:
@@ -159,17 +163,19 @@ stopping and restarting the pod. Anything outside /workspace does not.
 NOTE
 fi
 
-# fetch_models defaults to <repo>/models, which puts 32 GB of weights INSIDE the git clone that
+# fetch_models defaults to <repo>/user_data/models, which puts 32 GB of weights INSIDE the git clone that
 # this script runs `git reset --hard` on every boot. Point it at /workspace/models instead, next
 # to the datasets and outputs, so it survives a re-clone and is where anyone would look for it.
-if [ ! -L "$APP_DIR/models" ]; then
-    if [ -d "$APP_DIR/models" ] && [ -n "$(ls -A "$APP_DIR/models" 2>/dev/null)" ]; then
+MODELS_LINK="$APP_DIR/user_data/models"
+if [ ! -L "$MODELS_LINK" ]; then
+    if [ -d "$MODELS_LINK" ] && [ -n "$(ls -A "$MODELS_LINK" 2>/dev/null)" ]; then
         # Models already downloaded to the old location — move rather than orphan them.
         log "Moving existing models to /workspace/models"
-        mv "$APP_DIR/models"/* /workspace/models/ 2>/dev/null || true
+        mv "$MODELS_LINK"/* /workspace/models/ 2>/dev/null || true
     fi
-    rm -rf "$APP_DIR/models"
-    ln -s /workspace/models "$APP_DIR/models"
+    rm -rf "$MODELS_LINK"
+    mkdir -p "$APP_DIR/user_data"
+    ln -s /workspace/models "$MODELS_LINK"
 fi
 
 # Report the disk the models actually land on. Getting this wrong is expensive and silent: if the
@@ -189,7 +195,7 @@ fi
 if [ "$_total_gb" -lt 60 ]; then
     log "  WARN: that looks like the CONTAINER disk, not a volume. Krea 2 alone needs ~32 GB,"
     log "        and container disk is wiped when the pod stops. Check the template has a"
-    log "        Volume Disk of 100 GB+ AND a mount path of /workspace."
+    log "        Volume Disk of 300 GB (100 GB at least) AND a mount path of /workspace."
 fi
 
 # ---------------------------------------------------------------- optional model prefetch
@@ -258,7 +264,7 @@ child=0
 stopping=0
 trap 'stopping=1; [ "$child" -gt 0 ] && kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
 while true; do
-  python3 lora_trainer_gui.py --web &
+  python3 fizgig.py --web &
   child=$!
   set +e
   wait "$child"

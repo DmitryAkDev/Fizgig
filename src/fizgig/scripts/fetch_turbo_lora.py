@@ -21,6 +21,10 @@ import struct
 import sys
 
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if os.path.join(REPO_DIR, "src") not in sys.path:      # the updater runs this file by path
+    sys.path.insert(0, os.path.join(REPO_DIR, "src"))
+from fizgig import user_data  # noqa: E402
+user_data.migrate()                                     # an update from Fizgig 7: its prefs into user_data first
 
 # (pref key, filename, url, a key that must exist in the genuine file, minimum size, label)
 # The probe key catches truncated/HTML-error downloads beyond what a size check can.
@@ -141,14 +145,14 @@ def ensure_lora(pref_key, filename, url, probe_key, min_size, label, replaces=Fa
     took over a pref that held another one); a tuple of file names = earlier versions of this file, moved to it
     (any other file there is the user's own choice and kept)."""
     try:
-        prefs_file = os.path.join(repo_dir, "prefs.json")
+        prefs_file = os.path.join(repo_dir, "user_data", "prefs.json")
         current = str(_load_prefs(prefs_file).get(pref_key) or "").strip()
         old = isinstance(replaces, (tuple, list)) and os.path.basename(current) in replaces
         if current and os.path.isfile(current) and not old and (replaces is not True
                                                                 or os.path.basename(current) == filename):
             log(f"{label}: already present ({current})")
             return current
-        models_dir = os.path.join(repo_dir, "models")
+        models_dir = os.path.join(repo_dir, "user_data", "models")
         dest = os.path.join(models_dir, filename)
         if not (os.path.isfile(dest) and _valid_safetensors(dest, probe_key, min_size)):
             os.makedirs(models_dir, exist_ok=True)
@@ -182,7 +186,7 @@ def qwen_turbo_dit_hint(repo_dir: str = REPO_DIR, log=print):
     """A Qwen Image 2.1 install without the Turbo DiT gets told how to fetch it (7.3 GB - too big for the
     updater to pull unasked). Runs after the update's git pull, so it reaches this update, not the next."""
     try:
-        prefs = _load_prefs(os.path.join(repo_dir, "prefs.json"))
+        prefs = _load_prefs(os.path.join(repo_dir, "user_data", "prefs.json"))
         qwen = str(prefs.get("qwen21_dit") or "").strip()
         turbo = str(prefs.get("qwen21_turbo_dit") or "").strip()
         if qwen and os.path.isfile(qwen) and not (turbo and os.path.isfile(turbo)):

@@ -1241,6 +1241,27 @@ body { font-size: 13.5px; background: var(--bg-deep); }
 #sideRunName { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-run-text { font-size: 11.5px; color: var(--text-secondary); }
 .side-run-text:empty { display: none; }
+/* the queue under the run: what's next, or that it's held (and the one click that starts it again) */
+.side-queue { display: flex; flex-direction: column; gap: 6px; width: 100%; margin-top: 8px; padding: 10px 12px;
+  cursor: pointer; background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.side-queue:hover { border-color: var(--accent); }
+.side-queue.held { border-color: var(--warning); }
+.side-queue-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-queue-title { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-secondary); }
+.side-queue-list { display: flex; flex-direction: column; gap: 3px; }
+.side-queue-row { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 12px; color: var(--text-primary); }
+.side-queue-row .n { flex: none; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; font-size: 10px; font-weight: 700; background: var(--bg-raised); color: var(--text-secondary); }
+.side-queue-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-queue-more { font-size: 11px; color: var(--text-secondary); padding-left: 23px; }
+.side-queue-held { font-size: 11.5px; color: var(--warning); }
+.side-queue-held:empty { display: none; }
+.side-queue .btn { align-self: flex-start; }
+.run-upnext { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 8px; display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px 10px; }
+.run-upnext.held { color: var(--warning); }
+.run-upnext a { color: var(--accent); cursor: pointer; }
 
 /* status pills and progress bars */
 .run-badge { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 11px;
@@ -1914,3 +1935,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .build-block-card { max-width: 560px; background: var(--bg-surface); border: 2px solid var(--warning); border-radius: 12px;
   padding: 22px 24px; }
 .build-block-title { font-size: 18px; font-weight: 700; color: var(--warning); margin-bottom: 10px; }
+.card-title-tools { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+/* the Samples and Training tabs' Model picker: a card with no title, its one row centred top to bottom */
+.section-card.model-strip { padding-top: 0; padding-bottom: 0; }
+.model-strip > .card-content { padding: 14px 20px; }
+.model-strip .field-row { margin: 0; }

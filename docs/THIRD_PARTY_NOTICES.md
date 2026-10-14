@@ -131,7 +131,7 @@ Copyright the comfyui-rocm authors (patientx and contributors).
 comfyui-rocm is a Windows ROCm build of ComfyUI. Fizgig's AMD ROCm Windows
 installer uses code from that project as follows:
 
-- `detect_gpu.py` — copied verbatim from comfyui-rocm's `detect_gpu.py`
+- `src/install/detect_gpu.py` — copied verbatim from comfyui-rocm's `detect_gpu.py`
   (AMD GPU → gfx architecture detection on Windows). **Unmodified.** This file
   is **GPL-3.0 only**; it is not relicensed under Apache-2.0.
 - `install_fizgig_rocm.bat` — Fizgig-authored installer that **calls**
@@ -139,7 +139,7 @@ installer uses code from that project as follows:
   comfyui-rocm's `install.bat` (adapted for Fizgig's venv and
   requirements). The batch file itself is Apache-2.0; the bundled
   `detect_gpu.py` remains GPL-3.0.
-- `run_fizgig_rocm.bat` / `run_fizgig_rocm.sh` — Fizgig-authored launchers.
+- `Launch Fizgig AMD.bat` / `launch_fizgig_amd.sh` — Fizgig-authored launchers.
   Legacy RDNA1/2 SDP overrides, aotriton gating, and MIOpen/rocBLAS tensile
   DB path setup are adapted from comfyui-rocm's `comfyui-rocm.bat`. The
   launchers themselves are Apache-2.0; Windows detection still goes through
