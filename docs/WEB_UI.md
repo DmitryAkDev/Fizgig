@@ -18,6 +18,27 @@ On a pod in the Fizgig window, the Start tab's **From this computer** card lists
 
 Logging in on a pod, tick **Keep me logged in on this device** and it remembers you for 30 days, through pod restarts.
 
+## Two computers: use one's GPU from the other
+
+The Pods tab isn't only for RunPod. If you have two computers on the same network, say a desktop with an RTX 5090 and a laptop with a smaller card, Fizgig on the laptop can open Fizgig on the desktop and train on its GPU, the same way it opens a pod.
+
+On the computer with the GPU you want to use (the desktop):
+
+1. Install Fizgig as usual, set its models up in Preferences, and run its updater so it's on the same version as the other computer (see below).
+2. In **Preferences → Web UI**, set a **Password** (8 characters or more). Without one, Fizgig only answers on that computer itself.
+3. Close Fizgig and start it again (**Launch Fizgig.bat** or **Launch Fizgig in browser.bat**). It now listens on your network. The first time, Windows may ask whether Python can use the network: allow it on **private networks**.
+4. Find the computer's address on your network: run `ipconfig` and take its **IPv4 Address** (for example `192.168.0.20`). Preferences → Web UI shows the port, 8081 unless you changed it.
+
+On the other computer (the laptop):
+
+1. In the **Pods** tab, under **Add a pod**, paste `192.168.0.20:8081` (your address and port), give it a name such as "Desktop" and press **Add**.
+2. Press **Open** and log in with the desktop's password. You're now using the desktop's Fizgig on the desktop's GPU, with "You're on Desktop" at the top right and **Switch to this computer** to come back.
+3. In the Fizgig window, the Start tab's **From this computer** card sends a training folder from the laptop to the desktop, as it does for a pod.
+
+Keep Fizgig running on the desktop: if you started it with **Launch Fizgig.bat**, closing its window stops it. Training runs on the desktop, so you can close the laptop's window, or switch the laptop off, and open it again later to check in. Both computers need the same version of Fizgig: if one is behind, the window says so when you open the other one; run the updater on whichever is behind and start it again.
+
+This is for your own network. To reach the desktop from outside your home, use a VPN such as Tailscale (then use the address Tailscale gives the desktop), not a port forwarded on your router: see [The password](#the-password).
+
 ## On your own computer
 
 Double-click **Launch Fizgig.bat** for Fizgig in its own window (below), or **Launch Fizgig in browser.bat** (`./launch_fizgig_browser.sh` on Linux): it starts the web UI and opens your browser on it once it's up (with Fizgig already running, it just opens the browser). Or open a terminal in the Fizgig folder and run:
