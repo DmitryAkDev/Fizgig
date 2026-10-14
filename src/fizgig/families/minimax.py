@@ -130,8 +130,8 @@ OPTIONS = (
                       "likeness (Default). Blocks 0-5 are in neither: they deform anatomy and pull the dataset's "
                       "colour into the render.",
                  summary="blocks {}", setting="MINIMAX_BLOCKS", requires="H3_LIKENESS_MODE=Off", section="other", always_shown=True, counts_blocks=50, unmet_notes=(
-                     ("Default", "Owned by the Training mode above: photos and clips 20-49, and voice the same. Set the mode to Off to hand-pick.", "photos and clips: 20-49"),
-                     ("More Blocks", "Owned by the Training mode above: every step type trains 6-49. Set the mode to Off to hand-pick.", "every step type: 6-49")), pady=(8, 2)),
+                     ("Default", "Set by Training mode (Default): blocks 20-49 for photos, clips and voice. To choose the blocks yourself, set Training mode to Off.", "photos and clips: 20-49"),
+                     ("More Blocks", "Set by Training mode (More Blocks): blocks 6-49 for photos, clips and voice. To choose the blocks yourself, set Training mode to Off.", "every step type: 6-49")), pady=(8, 2)),
     FamilyOption("H3_DISTILL", "Learn identity from my dataset (reference distillation)", kind="check",
                  tokens="distill=1 aux:distill=1 --dit=pref:minimax_ref_dit",
                  hint="Experiment. Teaches the LoRA to reproduce identity the way H3 does from a reference photo. "
