@@ -1630,7 +1630,10 @@
       <div class="lightbox-cap" id="lightboxCap" style="display:none">
         <textarea id="lightboxCapText" rows="3" spellcheck="true"></textarea>
         <div class="lightbox-cap-row"><button class="btn btn-primary btn-sm" id="lightboxCapSave"
-          title="Save the caption (Ctrl+Enter)">Save</button><span class="field-hint" id="lightboxCapNote"></span></div>
+          title="Save the caption (Ctrl+Enter)">Save</button>
+          <button class="btn btn-sm" id="lightboxCapRecap" title="Write this file's caption again with the model and task on the Captions tab">Re-caption</button>
+          <button class="btn btn-sm" id="lightboxCapRemove" title="Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).">Remove</button>
+          <span class="field-hint" id="lightboxCapNote"></span></div>
       </div></figure>
     <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
   </div>
