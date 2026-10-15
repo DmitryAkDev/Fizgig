@@ -106,6 +106,8 @@ FLUX3 = FamilyDescription(
     edit_note=("Pairs of an original and its edited version, the same crop and shape - about 40 pairs is a good "
                "start (20 at least). Each photo 1 MP or larger; Fizgig resizes them."),
     train_preview_checkpoint=True,    # training previews on the distilled (16 steps, no CFG), as Klein's Distilled
+    preview_checkpoint_tick="Use the distilled model for samples (16 steps, no CFG - quick)",
+    preview_checkpoint_steps_note="Base samples only - the distilled samples use their own 16 steps",
     workbench_follows_samples=True,   # Base CFG needs the Samples tab's negative (empty = the reference's uncond)
 
     sampling=(

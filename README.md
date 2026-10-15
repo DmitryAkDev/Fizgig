@@ -30,6 +30,7 @@
 </p>
 
 > ### 📰 Latest news
+> - **Flux 3 Image Klein, from day one.** Black Forest Labs' new 5.6B text-to-image and edit model trains in Fizgig the day it came out: LoRAs, LoKRs, edit LoRAs from before/after pairs, slider LoRAs and full fine-tuning, from an 8 GB card, with previews on the distilled model and every workbench tool, prompt travel and edit chains in LoRA Royale included. [Flux 3 guide](docs/FLUX3.md)
 > - **Fizgig 8 — the new app (yes, the web UI).** Fizgig opens in its own window or your browser, and your phone can watch a run. One **Pods** tab opens your other computers' GPUs, found on your network by themselves, and RunPod pods, logged in for you. What's training and what's up next sit in the sidebar on every tab, and **Runs & outputs** keeps every run. Updating keeps your settings, presets, folders and queued runs; a welcome tour on the first start shows where everything went. [Release notes](docs/RELEASE_NOTES_v8.0.0.md) · [The app](docs/WEB_UI.md)
 > - **Fizgig 7.3 — music with ACE-Step 1.5 XL.** Train LoRAs on your own songs, music sliders and full fine-tuning, previews you play in the gallery, and Repair Studio as a DAW for AI music: covers, repaint and extend, a model EQ. Gizmo gets a Music tab for cutting songs into sections. [Release notes](docs/RELEASE_NOTES_v7.3.0.md) · [ACE-Step guide](docs/ACESTEP.md)
 > - **Fizgig 7.2 — Qwen Image 2.1 Turbo.** Repair Studio, LoRA the Explorer and LoRA Royale preview on Qwen's new Turbo model, and training previews use Comfy-Org's new Turbo LoRA: 8 steps, CFG 1, about four times faster, and LoRAs trained on the base keep their likeness on it. Plus MiniMax H3 long captions on V100-class cards by @Hell-Bent-Fox. [Release notes](docs/RELEASE_NOTES_v7.2.0.md)
@@ -65,7 +66,7 @@ https://github.com/user-attachments/assets/2db82d0d-e7ed-4f60-a79c-d2ac1f4984ac
 | Model | Trains on | LoRA | LoKR | Slider / Edit LoRA | Full fine-tune | Smallest card | Guide |
 |---|---|---|---|---|---|---|---|
 | **Flux 2 Klein 9B** | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | 10 GB | [Klein 9B](docs/KLEIN.md) |
-| **Flux 3 Image Klein** (5.6B), experimental | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | 8 GB | [model card](https://huggingface.co/black-forest-labs/flux-3-image-klein) |
+| **Flux 3 Image Klein** (5.6B), experimental | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | 8 GB | [Flux 3 Image Klein](docs/FLUX3.md) |
 | **Krea 2** (12.9B) | photos | ✅ | ✅ | ✅ slider | ✅ experimental | 8 GB | [Krea 2](docs/KREA2.md) |
 | **MiniMax H3** (33B) | photos, video clips, sound, voice | ✅ | ✅ | ✅ slider | ✅ experimental | 16 GB | [MiniMax H3](docs/MINIMAX_H3.md) |
 | **Qwen Image 2.1** | photos | ✅ | ✅ | ✅ slider + edit | ✅ experimental | 10 GB | [Qwen Image 2.1](docs/QWEN_IMAGE.md) |
@@ -97,7 +98,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Context LoRA**: train on top of a frozen, active LoRA so the two coexist (a face on a style, an outfit on a character). No other trainer does this.
 - **Pause and resume** with full state, plus a **training queue** for back-to-back runs.
 - **The trainer curates your dataset while it trains** (every model except MiniMax H3). Every image starts as useful training data; the watch follows each one's loss, and only when an image stops teaching the model does it step in: throttle it, recaption it, and as a last resort set it aside. It also tells you when the whole run has plateaued. No other trainer does this.
-- **Fast previews** in a few steps on a turbo or distilled model where one exists: Klein's Distilled, the Turbo LoRAs for Krea 2, MiniMax H3, Qwen Image 2.1 and Anima, and Qwen Image 2.1's Turbo model.
+- **Fast previews** in a few steps on a turbo or distilled model where one exists: Klein's and Flux 3 Image Klein's distilled models, the Turbo LoRAs for Krea 2, MiniMax H3, Qwen Image 2.1 and Anima, and Qwen Image 2.1's Turbo model.
 - **A sample gallery that scores likeness** live, and a run visualiser to scrub epochs.
 - **Dataset prep**: AI captions with Qwen3-VL or Florence-2, bilingual captions, face crops, and a Look Consistency Filter.
 - **Gizmo** (MiniMax H3): cut clips with scene detection, crop to the subject, and record or segment a voice dataset with Whisper transcription.
@@ -184,7 +185,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | Guide | What's in it |
 |---|---|
 | [Install and requirements](docs/INSTALL.md) | Hardware, system RAM, AMD ROCm, model downloads, VRAM tables |
-| [Klein 9B](docs/KLEIN.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) | Each model: presets, features, memory |
+| [Klein 9B](docs/KLEIN.md) · [Flux 3 Image Klein](docs/FLUX3.md) · [Krea 2](docs/KREA2.md) · [MiniMax H3](docs/MINIMAX_H3.md) · [Qwen Image 2.1](docs/QWEN_IMAGE.md) | Each model: presets, features, memory |
 | [Training and the workbench](docs/TRAINING.md) | The shared features and tools in detail |
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |

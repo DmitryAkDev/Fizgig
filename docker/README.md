@@ -92,7 +92,7 @@ In the pod's **Connect** menu, open **HTTP port 8081** and log in with that pass
 ## First run
 
 1. Open **port 8081** and log in.
-2. **Preferences → ⬇ Download models for me.** Krea 2 is ~45 GB and needs no Hugging Face account; gated models (Klein) ask for a free token.
+2. **Preferences → ⬇ Download models for me.** Krea 2 is ~45 GB and needs no Hugging Face account; gated models (Klein, Flux 3 Image Klein) ask for a free token.
 3. **Start tab → Upload a training folder**, or drag a folder into `/workspace/datasets` on **port 8080**.
 4. **Training → Start.**
 
@@ -143,8 +143,8 @@ Environment variables, set on the deploy screen under **Edit Template**:
 | Variable | Values | |
 |---|---|---|
 | `FIZGIG_PASSWORD` | your choice (not a very common one) | Fizgig *and* the file manager. Generated on the first start if unset, then kept. (`VNC_PASSWORD`, the classic template's name, works too.) |
-| `HF_TOKEN` | `hf_…` | Only needed for Klein, which is gated. Krea 2 needs nothing. |
-| `FETCH_MODELS` | `krea2`, `klein`, `minimax`, `tools` — comma-separated | Download at boot instead of clicking the button in Preferences. `minimax` includes the Circlestone and both Ostris training adapters. `tools` is the Florence-2 captioner, the EN→ZH translator for bilingual captions, and the face model the Look Filter uses. |
+| `HF_TOKEN` | `hf_…` | Only needed for Klein and Flux 3 Image Klein, which are gated. Krea 2 needs nothing. |
+| `FETCH_MODELS` | `krea2`, `klein`, `flux3`, `minimax`, `tools` — comma-separated | Download at boot instead of clicking the button in Preferences. `minimax` includes the Circlestone and both Ostris training adapters. `tools` is the Florence-2 captioner, the EN→ZH translator for bilingual captions, and the face model the Look Filter uses. |
 | `FIZGIG_REF` | branch or tag | Which Fizgig to run. Defaults to `master`, so the app updates itself at every pod start. |
 
 Nothing is compulsory — the defaults are the intended setup, and everything here can be done from
