@@ -78,6 +78,9 @@ class ImageDatasetParams(BaseDatasetParams):
     # Regularisation set: trained at a fixed reduced LR and exempt from the loss watch.
     # A prior anchor, not a subject — see the trainer's reg handling.
     is_reg: bool = False
+    # Caption rewrites applied as each caption is read, the user's .txt files untouched: [[from, to], ...], whole
+    # words, case-insensitive, in order (multi-person mode fuses "zwxem, a woman" into "zwxemwoman")
+    caption_replace: Optional[list] = None
 
 
 @dataclass
@@ -139,6 +142,7 @@ class ConfigSanitizer:
         "cache_directory": str,
         "control_directory": str,
         "is_reg": bool,
+        "caption_replace": [[str]],
     }
 
     # Options that come from argparse only (not from user config)

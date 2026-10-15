@@ -1,0 +1,131 @@
+"""Multi-person mode: a LoRA of one or more people where everyone else in a picture stays themselves.
+
+Four parts, all model-agnostic (measured on Krea 2, 15 Oct 2026; branch experiment/dop):
+- DOP every second step at twice the weight (the trainer's --dop): no subject in a prompt that doesn't name one.
+- 16 side-by-side composites per subject - a training photo beside one of 32 fixed base-model strangers - trained at
+  twice the LR on their own steps (--lr_boost): inside one picture, the other person stays a stranger.
+- The composite captions name the stranger before the trigger: the text encoders are causal, so words after a
+  trigger carry it; the stranger's described first are clean.
+- Fused triggers: "zwxem, a woman" is read as "zwxemwoman" (the dataset's caption_replace, the user's .txt files
+  untouched), so the subject never shares the generic " woman" token every other woman uses.
+
+The strangers are a fixed, pinned set on Hugging Face, downloaded once into user_data on first use.
+"""
+from __future__ import annotations
+
+import collections
+import json
+import os
+import random
+import re
+
+REPO = "ShootTheSound/fizgig-multi-person-strangers"
+REVISION = "bcca46fd140fd6fac2d3a79fffe9e701d2b061ad"      # pinned: a run's composites never change underneath it
+PREFIX = "fizgig_mp_"                                       # the composites' file names (the trainer's --lr_boost)
+PER_SUBJECT = 16
+LR_BOOST = 2.0
+PANEL = 512                                                 # each half of a 1024 x 512 composite
+TAIL = "two people side by side, two close-up portraits"
+_IMG = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
+
+def strangers():
+    """[(path, description), ...] - the 32 strangers, downloaded on first use (about 21 MB)."""
+    from huggingface_hub import snapshot_download
+    from fizgig.user_data import user_file
+    d = snapshot_download(REPO, repo_type="dataset", revision=REVISION, local_dir=user_file("multi_person_strangers"))
+    with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
+        rows = json.load(f)
+    return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
+
+
+def _captions(folder, ext):
+    try:
+        names = [n for n in os.listdir(folder) if n.lower().endswith(ext.lower())]
+    except OSError:
+        return []
+    out = []
+    for n in names:
+        try:
+            with open(os.path.join(folder, n), encoding="utf-8", errors="replace") as f:
+                out.append(f.read().strip())
+        except OSError:
+            pass
+    return out
+
+
+def subject(folder, trigger, cls="", ext=".txt"):
+    """One subject's fused trigger: {"trigger", "phrase" ("a woman"), "fused" ("zwxemwoman"), "rules" (the dataset's
+    caption_replace)}, or a reason it can't be made. The class comes from `cls` (the folder's DOP "replace it with")
+    when given, else from the captions' most common "<trigger>, a <word>"."""
+    trigger = str(trigger or "").strip()
+    if not trigger:
+        return None, "no trigger word"
+    phrase = str(cls or "").strip()
+    if not phrase:
+        pat = re.compile(r"^\s*" + re.escape(trigger) + r"\s*,?\s*(an?\s+[A-Za-z]+)\b", re.I)
+        found = collections.Counter(m.group(1).lower() for c in _captions(folder, ext) if (m := pat.match(c)))
+        if not found:
+            return None, (f"its captions don't start \"{trigger}, a woman\" (or a man, a dog...) - type what the "
+                          "subject is in that folder's \"replace it with\" box")
+        phrase = found.most_common(1)[0][0]
+    if not re.match(r"^an?\s", phrase, re.I):
+        phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase
+    noun = phrase.split()[-1]
+    fused = re.sub(r"\s+", "", trigger) + noun.lower()
+    return {"trigger": trigger, "phrase": phrase, "fused": fused,
+            "rules": [[f"{trigger}, {phrase}", fused], [f"{trigger} {phrase}", fused], [trigger, fused]]}, ""
+
+
+def _square(im, size=PANEL):
+    from PIL import Image
+    w, h = im.size
+    m = min(w, h)
+    left, top = (w - m) // 2, (h - m) // 2
+    return im.crop((left, top, left + m, top + m)).resize((size, size), Image.LANCZOS)
+
+
+def build(subjects, ext=".txt", seed=42, log=print):
+    """Each subject's composites: {"folder", "fused", "out", "index"} -> PER_SUBJECT side-by-sides in `out` (a
+    training photo next to a stranger, side at random, the caption stranger-first with the fused trigger). Rebuilt
+    only when what it was built from changes."""
+    from PIL import Image
+    people = strangers()
+    for s in subjects:
+        photos = sorted(n for n in os.listdir(s["folder"]) if n.lower().endswith(_IMG))
+        if not photos:
+            raise ValueError(f"no photos in {s['folder']}")
+        sig = {"photos": photos, "fused": s["fused"], "n": PER_SUBJECT, "seed": seed, "index": s["index"],
+               "revision": REVISION, "ext": ext}
+        mark = os.path.join(s["out"], "fizgig_mp_built.json")
+        try:
+            with open(mark, encoding="utf-8") as f:
+                if json.load(f) == sig:
+                    log(f"[multi-person] {s['fused']}: composites already built - {s['out']}")
+                    continue
+        except (OSError, ValueError):
+            pass
+        os.makedirs(s["out"], exist_ok=True)
+        for n in os.listdir(s["out"]):
+            if n.startswith(PREFIX):
+                os.remove(os.path.join(s["out"], n))
+        rng = random.Random(seed * 1000 + s["index"])
+        order = list(range(len(people)))
+        rng.shuffle(order)
+        for k in range(PER_SUBJECT):
+            path, desc = people[order[k % len(order)]]
+            mine = rng.choice(photos)
+            left = rng.random() < 0.5
+            a = _square(Image.open(os.path.join(s["folder"], mine)).convert("RGB"))
+            b = _square(Image.open(path).convert("RGB"))
+            sheet = Image.new("RGB", (2 * PANEL, PANEL))
+            sheet.paste(a if left else b, (0, 0))
+            sheet.paste(b if left else a, (PANEL, 0))
+            name = f"{PREFIX}{k:02d}"
+            sheet.save(os.path.join(s["out"], name + ".png"))
+            me, them = ("left", "right") if left else ("right", "left")
+            with open(os.path.join(s["out"], name + ext), "w", encoding="utf-8") as f:
+                f.write(f"{desc} on the {them}, and {s['fused']} on the {me}, {TAIL}")
+        with open(mark, "w", encoding="utf-8") as f:
+            json.dump(sig, f)
+        log(f"[multi-person] {s['fused']}: {PER_SUBJECT} composites -> {s['out']}")

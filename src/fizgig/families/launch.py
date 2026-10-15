@@ -533,8 +533,11 @@ def train_command(desc, inputs, plan):
     if ctx and not ft_on(desc, st):         # a fine-tune trains the base itself: there is no LoRA to stack on
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
-    if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st)):
+    mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
+    if (st.get("FAMILY_DOP") or mp_subs) and not (slider_on(desc, st) or edit_on(desc, st)):
         trig, cls = dop_rules(st)
+        if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
+            trig, cls = [s["fused"] for s in mp_subs], [s["phrase"] for s in mp_subs]
         every = 2 if _s(st.get("FAMILY_DOP_EVERY")).lower().startswith("every second") else 1
         try:
             weight = float(_s(st.get("FAMILY_DOP_WEIGHT")) or 1.0)
@@ -644,6 +647,10 @@ def train_command(desc, inputs, plan):
         if val:
             cmd += [flag, val]
     trig = _s(st.get("METADATA_TRIGGER_PHRASE")) or _s(st.get("caption_trigger"))
+    if mp_subs:
+        from fizgig.families import multi_person as _mp
+        trig = ", ".join(s["fused"] for s in mp_subs)        # the LoRA answers to the fused words
+        cmd += ["--lr_boost", f"{_mp.PREFIX}={_mp.LR_BOOST:g}"]
     if trig and trig.lower() != "trigger_word":
         cmd += ["--metadata_trigger_phrase", trig]
     cmd += _preview_flags(desc, st, plan, cmd)
@@ -840,9 +847,17 @@ def dataset_toml(desc, inputs):
     if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
     reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
+    mp = {f: (s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s} \
+        if multi_person_on(desc, inputs) else {}
+
+    def _fuse(f):
+        if f in mp:          # TOML arrays of strings read as JSON writes them
+            import json as _json
+            lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:
         lines.append(f"num_repeats = {reps[folder]}")
+    _fuse(folder)
     if edit_on(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_EDIT_DIR")).replace(chr(92), "/")}"')
     elif slider_on(desc, inputs, "pairs"):
@@ -854,8 +869,13 @@ def dataset_toml(desc, inputs):
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"']
         if reps.get(f, 1) > 1:
             lines.append(f"num_repeats = {reps[f]}")
+        _fuse(f)
         if root:
             lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+    for f, (_s_, w) in mp.items():        # multi-person mode: each subject's composites, already captioned fused
+        lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
+        if root:
+            lines.append(f'cache_directory = "{cache_dir_for(root, w).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)
     if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"']
@@ -926,8 +946,39 @@ def dop_rules(st):
     return trig, cls
 
 
+def multi_person_on(desc, st):
+    """Multi-person mode (families/multi_person.py): a standard LoRA run with the tick on."""
+    return bool(st.get("FAMILY_MULTI_PERSON")) and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+
+
+def multi_person_subjects(desc, st):
+    """[(folder, subject or None, problem, composites folder)] for each subject folder, in order: its one trigger
+    word fused with its class ("zwxem" + "a woman" -> "zwxemwoman"), and where its composites are built."""
+    from fizgig.families import multi_person as mp
+    folders = [_s(st.get("image_folder"))] + ([_s(f) for f in st.get("extra_folders") or []]
+                                              if st.get("multiconcept") else [])
+    ext = _s(st.get("caption_ext")) or ".txt"
+    root = _s(st.get("cache_root"))
+    out = []
+    for folder, (name, t, c) in zip(folders, _dop_folders(st)):
+        where = (cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson"
+        if len(t) != 1:
+            out.append((folder, None, f"Multi-person mode: the {name.lower()} needs exactly one trigger word "
+                                      f"({len(t)} given) - one person per folder", where))
+            continue
+        sub, why = mp.subject(folder, t[0], c[0] if c else "", ext)
+        out.append((folder, sub, f"Multi-person mode: the {name.lower()} - {why}" if why else "", where))
+    return out
+
+
+def multi_person_problems(desc, v):
+    if not multi_person_on(desc, v):
+        return []
+    return [why for _f, _s_, why, _w in multi_person_subjects(desc, v) if why]
+
+
 def dop_problems(desc, v):
-    if not v.get("FAMILY_DOP") or slider_on(desc, v) or edit_on(desc, v):
+    if not (v.get("FAMILY_DOP") or multi_person_on(desc, v)) or slider_on(desc, v) or edit_on(desc, v):
         return []
     out = []
     for name, t, c in _dop_folders(v):
@@ -954,6 +1005,7 @@ def start_problems(desc, inputs):
     out += checks.learning_rate_range(v)
     out += multi_concept_problems(desc, v)
     out += dop_problems(desc, v)
+    out += multi_person_problems(desc, v)
     if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
         try:
             lr = float(v.get("LEARNING_RATE"))
@@ -1060,6 +1112,12 @@ def plan(desc, inputs):
         return p                        # nothing to write or run
     p.files.append((inputs["DATASET_CONFIG"], p.dataset_toml))
     train = train_command(desc, inputs, p)
+    if multi_person_on(desc, inputs):
+        cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "multi_person.py"),
+               "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        for f, s, _why, w in multi_person_subjects(desc, inputs):
+            cmd += ["--subject", f, s["fused"], w]
+        p.stages.append(Stage("Multi-person composites", cmd))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]

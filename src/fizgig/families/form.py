@@ -45,7 +45,7 @@ DEFAULTS = {
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
-    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_DOP_TRIGGER": "",
+    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP_TRIGGER": "",
     "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "", "FAMILY_DOP_WEIGHT": "1.0",
     "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
@@ -164,6 +164,13 @@ def slider_sources(desc):
 
 
 CONCEPT_COUNTS = ("2 subjects", "3 subjects", "4 subjects")
+MULTI_PERSON_HINT = ("For people who appear together with others: in a group photo the other people keep their own "
+                     "faces instead of turning into your subject. Turns DOP on, adds 16 side-by-side training pictures "
+                     "per subject (one of their photos next to one of 32 fixed strangers, downloaded once, ~21 MB) and "
+                     "reads each trigger fused with what the subject is: \"zwxem, a woman\" becomes \"zwxemwoman\" "
+                     "(your caption files are not changed). Prompt the LoRA with the fused word, e.g. \"zwxemwoman and "
+                     "two friends at a cafe\". One trigger per folder; if the captions don't start \"zwxem, a "
+                     "woman\", type what the subject is in the folder's \"replace it with\" box.")
 DOP_EVERY = ("Every step", "Every second step (faster)")
 DOP_HINT = ("Stops the subject showing up in prompts without its trigger. Every step trains the photo twice: once "
             "with its caption as written, and once with the trigger word removed (“zwxem, a woman smiling” becomes "
@@ -291,6 +298,7 @@ def form(desc):
                  "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats."),
         ]
     params += [
+        _row("FAMILY_MULTI_PERSON", "Multi-person mode (everyone else stays themselves)", "check", MULTI_PERSON_HINT),
         _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check", DOP_HINT),
         _row("FAMILY_DOP_TRIGGER", "Training folder: word to remove", hint="The trigger word in this folder's captions. "
              "Empty = the folder's trigger word from the Captions tab. Two people in one folder: both, comma-separated "
@@ -673,6 +681,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("FAMILY_FAST_ID")
     if kind not in ("standard", "finetune"):          # DOP keeps a subject apart: a LoRA's or a fine-tune's job
         hidden.add("FAMILY_DOP")
+    if kind != "standard":                            # multi-person mode: a LoRA (its LR boost is per step)
+        hidden.add("FAMILY_MULTI_PERSON")
+    elif values.get("FAMILY_MULTI_PERSON"):           # it runs on DOP
+        force["FAMILY_DOP"] = True
+        disabled.add("FAMILY_DOP")
+        values = {**values, "FAMILY_DOP": True}
+        notes["SAMPLE_PROMPT"] = ("Multi-person mode: prompt with each subject's fused trigger, e.g. zwxemwoman "
+                                  "(the trigger joined to what the subject is), not \"zwxem, a woman\".")
     if kind not in ("standard", "finetune") or not values.get("FAMILY_DOP"):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"} | DOP_EXTRA_ROWS
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject

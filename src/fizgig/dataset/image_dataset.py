@@ -612,7 +612,11 @@ class ImageDirectoryDatasource:
         control_directory: Optional[str] = None,
         extra_extensions: tuple = (),
         family=None,
+        caption_replace=None,
     ):
+        import re
+        self.caption_replace = [(re.compile(r"(?<!\w)" + re.escape(str(a)) + r"(?!\w)", re.I), str(b))
+                                for a, b in (caption_replace or []) if str(a)]
         self.image_directory = image_directory
         self.caption_extension = caption_extension
         self.control_directory = control_directory
@@ -773,7 +777,10 @@ class ImageDirectoryDatasource:
             return image_path, ""
         with open(caption_path, "rb") as f:
             raw = f.read()
-        return image_path, decode_caption(raw, caption_path).strip()
+        caption = decode_caption(raw, caption_path).strip()
+        for pat, to in self.caption_replace:
+            caption = pat.sub(lambda _m, t=to: t, caption)
+        return image_path, caption
 
     def __iter__(self):
         self._current_idx = 0
@@ -825,6 +832,7 @@ class ImageDataset(torch.utils.data.Dataset):
         architecture: str = ARCHITECTURE_KLEIN_9B,
         is_reg: bool = False,
         clip_megapixels: Optional[float] = None,
+        caption_replace: Optional[list] = None,
         **kwargs,
     ):
         super().__init__()
@@ -868,7 +876,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.extra_extensions = _extra
         self.datasource = ImageDirectoryDatasource(image_directory, caption_extension,
                                                    control_directory, extra_extensions=_extra,
-                                                   family=self.family)
+                                                   family=self.family, caption_replace=caption_replace)
 
         if self.cache_directory is None:
             self.cache_directory = self.image_directory
