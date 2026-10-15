@@ -346,6 +346,10 @@ async function refreshState() {
   document.querySelectorAll(".form-row[data-key]").forEach((row) => {
     const k = row.dataset.key;
     row.style.display = hidden.has(k) ? "none" : "";
+    // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
+    const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
+      .find((r) => r && r.key === k));
+    if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
     // a greyed box shows what that run will really use (the Distilled's steps / CFG), the form's own value kept
     const shown = (S.state.shown || {})[k], box = $("f_" + k);

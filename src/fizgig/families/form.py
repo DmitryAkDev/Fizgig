@@ -52,6 +52,7 @@ DEFAULTS = {
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "",
     "FAMILY_EDIT_DIR": "", "FAMILY_EDIT_REF": "", "FAMILY_EDIT_CAPTION": "",
+    "FAMILY_EDIT_PICTURES": launch.EDIT_PHOTO_ONLY, "FAMILY_EDIT_EXTRAS_DIR": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
@@ -283,13 +284,19 @@ def form(desc):
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
-            # a multi-reference edit (description edit_references): extra pictures beside an original
+            # a multi-picture edit (description edit_references > 1): the choice, then its own folder (step 2)
+            _row("FAMILY_EDIT_PICTURES", "What the edit uses", "radio", choices=[launch.EDIT_PHOTO_ONLY, launch.EDIT_WITH_EXTRAS], hint=
+                 "The photo only: an edit that changes how a photo looks (a grade, a relight, a retouch). The photo + "
+                 "extra pictures: an edit that brings something from other pictures into it (a person, an object, a "
+                 "place).", default=launch.EDIT_PHOTO_ONLY) if desc.edit_references > 1 else None,
             _row("FAMILY_EDIT_DIR", "1. Originals folder (before editing)", "folder",
-                 "Your original, unedited photos. No captions needed." + (
-                     f" To bring another person, an object or a place into an edit, add up to "
-                     f"{desc.edit_references - 1} more pictures beside its original, named photo_1.png, photo_2.png "
-                     "... for photo.png - any shape." if desc.edit_references > 1 else ""),
-                 upload=True, start="data"),
+                 "Your original, unedited photos. No captions needed.", upload=True, start="data"),
+            _row("FAMILY_EDIT_EXTRAS_DIR", "2. Extra pictures folder", "folder",
+                 "Pictures to bring into the edits - a person, an object, a place - named after the photo they "
+                 f"belong to: photo_1.png, photo_2.png ... for photo.png. Any shape, up to "
+                 f"{desc.edit_references - 1} per photo.", upload=True, start="data")
+            if desc.edit_references > 1 else None,
+            _row("_edit_extras_found", "", "note") if desc.edit_references > 1 else None,
             _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "
                  "with the same file names as the originals. It is the training folder on the Start tab - change it "
                  "there."),
@@ -608,10 +615,6 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
         disabled.add("LEARNING_RATE")
-        lo, hi = DEFAULTS["ADAPTIVE_LR_MIN"], DEFAULTS["ADAPTIVE_LR_MAX"]   # the desktop's Reset Defaults
-        if (str(values.get("ADAPTIVE_LR_MIN") or lo).split(" ")[0], str(values.get("ADAPTIVE_LR_MAX") or hi).split(" ")[0])                 != (lo, hi) and "ADAPTIVE_LR_MAX" not in actions:
-            actions["ADAPTIVE_LR_MAX"] = {"label": f"Reset to {lo} / {hi}",
-                                          "values": {"ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi}}
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
@@ -693,7 +696,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             hidden.add("SAMPLE_NEGATIVE")
     except ValueError:
         pass
-    shown = {}
+    shown, labels = {}, {}
+    if desc.edit_training and getattr(desc, "edit_references", 1) > 1:
+        if launch.edit_extras_on(desc, values):
+            labels = {"_edit_edited_dir": "3. Edited folder (after editing)", "FAMILY_EDIT_CAPTION": "4. Edit instruction",
+                      "FAMILY_EDIT_REF": "5. Test photo (optional)"}
+            notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
+        else:
+            hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
         # the Distilled: Steps and CFG switch to its own values and stay editable (the tick's follow), as the Turbo
         # LoRA's do; CFG 1 hides the negative (above)
@@ -701,7 +711,25 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
-            "shown": shown, "checkpoint_file": bool(checkpoint_file)}
+            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels}
+
+
+def _extras_found(desc, values, image_folder):
+    """The Extra pictures folder's readout: how many edited photos have extra pictures, and how many each."""
+    xdir = str(values.get("FAMILY_EDIT_EXTRAS_DIR") or "").strip()
+    if not xdir or not os.path.isdir(xdir) or not image_folder or not os.path.isdir(image_folder):
+        return ""
+    try:
+        found, orphans, misnamed = launch.edit_extras(image_folder, xdir)
+        total = sum(1 for f in os.listdir(image_folder) if os.path.splitext(f)[1].lower() in launch.PAIR_EXTS)
+    except OSError:
+        return ""
+    counts = sorted(len(v) for v in found.values())
+    line = (f"Found: {total} edited photos, {len(found)} with extra pictures"
+            + (f" ({counts[0]}-{counts[-1]} each)" if counts and counts[0] != counts[-1] else
+               f" ({counts[0]} each)" if counts else ""))
+    loose = len(orphans) + len(misnamed)
+    return line + (f". {loose} picture(s) here match no photo's name." if loose else ".")
 
 
 def _timestep_note(values):

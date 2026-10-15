@@ -617,10 +617,12 @@ class ImageDirectoryDatasource:
         control_directory: Optional[str] = None,
         extra_extensions: tuple = (),
         family=None,
+        extra_reference_directory: Optional[str] = None,
     ):
         self.image_directory = image_directory
         self.caption_extension = caption_extension
         self.control_directory = control_directory
+        self.extra_reference_directory = extra_reference_directory
         self.extra_extensions = tuple(extra_extensions)
         # the FamilyDescription whose clips these are (its clip_spec checks and decodes them); None = stills only
         self.family = family
@@ -681,6 +683,9 @@ class ImageDirectoryDatasource:
             # a dataset that globs clips (H3) pairs a clip with a clip: a clip-pair slider's other pole
             _vid = tuple(e for e in self.extra_extensions if e in VIDEO_EXTENSIONS)
             all_ctrl = set(glob_images(self.control_directory, extra_extensions=_vid))
+            # a multi-picture edit: its extra pictures (photo_1, photo_2 ...) match by name from their own folder
+            if self.extra_reference_directory:
+                all_ctrl |= set(glob_images(self.extra_reference_directory))
 
             for img_path in sorted_by_len:
                 base_no_ext = os.path.splitext(os.path.basename(img_path))[0].casefold()   # IMG_1 pairs with img_1
@@ -825,6 +830,7 @@ class ImageDataset(torch.utils.data.Dataset):
         bucket_no_upscale: bool,
         image_directory: Optional[str] = None,
         control_directory: Optional[str] = None,
+        extra_reference_directory: Optional[str] = None,
         cache_directory: Optional[str] = None,
         debug_dataset: bool = False,
         architecture: str = ARCHITECTURE_KLEIN_9B,
@@ -844,6 +850,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.bucket_no_upscale = bucket_no_upscale if enable_bucket else False
         self.image_directory = image_directory
         self.control_directory = control_directory
+        self.extra_reference_directory = extra_reference_directory
         self.cache_directory = cache_directory
         self.debug_dataset = debug_dataset
         self.architecture = architecture
@@ -873,7 +880,8 @@ class ImageDataset(torch.utils.data.Dataset):
         self.extra_extensions = _extra
         self.datasource = ImageDirectoryDatasource(image_directory, caption_extension,
                                                    control_directory, extra_extensions=_extra,
-                                                   family=self.family)
+                                                   family=self.family,
+                                                   extra_reference_directory=extra_reference_directory)
 
         if self.cache_directory is None:
             self.cache_directory = self.image_directory

@@ -75,6 +75,8 @@ class ImageDatasetParams(BaseDatasetParams):
 
     image_directory: Optional[str] = None
     control_directory: Optional[str] = None
+    # a multi-picture edit's extra pictures (photo_1, photo_2 ... for photo.png), beside control_directory's originals
+    extra_reference_directory: Optional[str] = None
     # Regularisation set: trained at a fixed reduced LR and exempt from the loss watch.
     # A prior anchor, not a subject — see the trainer's reg handling.
     is_reg: bool = False
@@ -138,6 +140,7 @@ class ConfigSanitizer:
         "image_directory": str,
         "cache_directory": str,
         "control_directory": str,
+        "extra_reference_directory": str,
         "is_reg": bool,
     }
 
