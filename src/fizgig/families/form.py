@@ -465,6 +465,12 @@ def form(desc):
                                f"Set the {sp.name} in Preferences for fast Turbo previews; without it previews use "
                                "the plain model."))
     add("samples", "Previews during training", "samples", [
+        # an edit run's previews come from the Edit pairs card, not these prompts (shown only while Edit is picked)
+        _row("_edit_samples_note", "Edit LoRA previews: each round makes one picture from your edit instruction and "
+             "test photo (Training tab, Edit pairs" + (", with its extra pictures" if desc.edit_references > 1 else "")
+             + "). The prompts below are not used - to try other instructions while it trains, type them below "
+             "(one per line) and tick Change the previews of the run going now.", "note")
+        if desc.edit_training else None,
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
@@ -656,6 +662,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
     if kind in ("edit", "slider"):
         hidden.add("_overtrain_tip")
+    if kind != "edit":
+        hidden.add("_edit_samples_note")
     ts = _timestep_note(values)
     if ts:
         notes["MAX_TIMESTEP"] = ts
