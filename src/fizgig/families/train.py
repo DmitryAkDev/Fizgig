@@ -708,7 +708,8 @@ class _FineTune:
     whole-rotation length and cadence, a fresh optimizer per window, and the full-checkpoint save."""
 
     def __init__(self, driver, desc, dit, net, dit_path, device, *, max_train_epochs, rotations, save_every_rotations,
-                 rotate_every, start_window, epochs_done, fused, lr, master_dir, mp=None, group=None, max_parts=0):
+                 rotate_every, start_window, epochs_done, fused, lr, master_dir, mp=None, group=None, max_parts=0,
+                 held_grads=False):
         from fizgig.families import ft
         from fizgig.utils.device import plannable_free_vram
         self.ft, self.driver, self.desc, self.dit, self.src, self.lr = ft, driver, desc, dit, dit_path, lr
@@ -736,7 +737,7 @@ class _FineTune:
                     f"{plannable_free_vram():.2f} GB free")
         windows, stream, why, usable = self.be.plan(
             plannable_free_vram(), allow_stream=os.environ.get("FIZGIG_NO_FT_STREAM") != "1", mp=mp,
-            max_parts=max_parts)
+            max_parts=max_parts, held_grads=held_grads)
         for line in why:
             logger.info(f"[finetune] {line}")
         if windows is None:
@@ -1189,7 +1190,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         save_every_rotations=ft_save_every_rotations, rotate_every=ft_rotate_every,
                         start_window=ft_start_window, epochs_done=ft_epochs_done, fused=ft_fused_backward,
                         lr=learning_rate, master_dir=output_dir, mp=_largest_bucket_mp(group), group=group,
-                        max_parts=ft_max_parts)
+                        max_parts=ft_max_parts, held_grads=bool(dop_cond))
         max_train_epochs, save_every_n_epochs = ftr.epochs, ftr.save_every
         if ftr.streamer is not None:
             swapped = 1          # blocks stream: previews and caption re-encodes must not park + restore the whole DiT
