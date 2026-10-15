@@ -298,7 +298,8 @@ def form(desc):
                  "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats."),
         ]
     params += [
-        _row("FAMILY_MULTI_PERSON", "Multi-person mode (everyone else stays themselves)", "check", MULTI_PERSON_HINT),
+        _row("FAMILY_MULTI_PERSON", "Multi-person mode (everyone else stays themselves)", "check", MULTI_PERSON_HINT,
+             sets={"true": {"FAMILY_DOP": True, "FAMILY_DOP_EVERY": DOP_EVERY[1]}}),   # the measured recipe
         _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check", DOP_HINT),
         _row("FAMILY_DOP_TRIGGER", "Training folder: word to remove", hint="The trigger word in this folder's captions. "
              "Empty = the folder's trigger word from the Captions tab. Two people in one folder: both, comma-separated "
@@ -686,6 +687,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     elif values.get("FAMILY_MULTI_PERSON"):           # it runs on DOP
         force["FAMILY_DOP"] = True
         disabled.add("FAMILY_DOP")
+        if desc.loss_watch:             # a new AI caption would be encoded with the trigger unfused
+            disabled.add("KREA2_AUTO_RECAPTION")
+            force["KREA2_AUTO_RECAPTION"] = False
+            notes["KREA2_AUTO_RECAPTION"] = "Off in multi-person mode."
         values = {**values, "FAMILY_DOP": True}
         notes["SAMPLE_PROMPT"] = ("Multi-person mode: prompt with each subject's fused trigger, e.g. zwxemwoman "
                                   "(the trigger joined to what the subject is), not \"zwxem, a woman\".")

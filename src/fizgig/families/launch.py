@@ -603,6 +603,8 @@ def train_command(desc, inputs, plan):
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}
     watch = [("detect", "--log_per_image_loss"), ("per_image_lr", "--per_image_lr"), ("warmup", "--warmup_look_outliers")]
     can_recaption = bool(st.get("captioner"))   # every family captions with the shared captioner
+    # multi-person mode reads triggers fused as captions load; a new AI caption is encoded as written, unfused
+    can_recaption = can_recaption and not multi_person_on(desc, st)
     if can_recaption:
         watch.append(("recaption", "--auto_recaption"))
     if bs1:
