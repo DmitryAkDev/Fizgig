@@ -1074,6 +1074,8 @@ function renderWebQueue(q) {
     items.length ? "The first starts as soon as nothing else is training." : "";
   $("webQueueStart").style.display = q.held ? "" : "none";
   $("webQueueHold").style.display = q.held || !items.length ? "none" : "";
+  $("webQueueClear").style.display = items.length ? "" : "none";
+  S.queueIds = items.map((it) => it.id);
   const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
   const host = $("webQueueList");
   host.innerHTML = "";
@@ -5462,6 +5464,16 @@ function rmWire() {
     rmSetCurve("Fc", p.curve); rmChanged();
     $("rmStatus").textContent = `Fade from ${p.name}: ${p.curve[0]} / ${p.curve[1]} / ${Number(p.curve[2]).toFixed(2)}.`;
   });
+  $("rmGraphImport").addEventListener("click", () => {     // a graph preset from anywhere (the desktop's Import…)
+    const folder = $("rmFolder").value.trim();
+    pick(folder ? folder + "/graph_presets" : "", false, async (p) => {
+      try {
+        const r = await api("/api/refmod/graph", {path: p});
+        rmSetCurve("Fc", r.curve); rmChanged();
+        $("rmStatus").textContent = `Fade from ${p.split(/[\\/]/).pop()}: ${r.curve[0]} / ${r.curve[1]} / ${Number(r.curve[2]).toFixed(2)}.`;
+      } catch (e) { $("rmStatus").textContent = e.message; }
+    });
+  });
   // actions
   $("rmOutPick").addEventListener("click", () => pick($("rmOut").value, true, (p) => { $("rmOut").value = p; rmRemember(); }));
   $("rmSavePrev").addEventListener("click", () => {
@@ -6488,6 +6500,19 @@ function wire() {
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));
   $("webQueueHold").addEventListener("click", () => api("/api/queue/hold", {}).then(pollRun));
+  $("webQueueClear").addEventListener("click", async () => {      // the desktop's Clear queue: asked on the button
+    const b = $("webQueueClear"), ids = S.queueIds || [];
+    if (!ids.length) return;
+    if (!b.dataset.sure) {
+      b.dataset.sure = "1"; b.textContent = `Clear ${ids.length} queued run${ids.length > 1 ? "s" : ""}?`;
+      setTimeout(() => { delete b.dataset.sure; b.textContent = "Clear queue"; }, 4000);
+      return;
+    }
+    delete b.dataset.sure; b.textContent = "Clear queue";
+    if (S.editQueue) queueEditing(null);
+    for (const id of ids) await api("/api/queue/remove", {id}).catch(() => {});
+    pollRun();
+  });
   $("sideQueue").addEventListener("click", toQueue);
   $("sideQueue").addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toQueue(); } });
   $("sideQueueStart").addEventListener("click", (e) => {

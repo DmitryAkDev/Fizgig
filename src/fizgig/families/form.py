@@ -372,6 +372,8 @@ def form(desc):
                     "fraction of the LR: 0.1-0.3 keeps them a light anchor; at 1.0 they are a second subject set.",
                     choices=FT_REG_MULT)]
               if getattr(desc, "ft_regularisation", True) else []),
+            _row("_ft_to_lora", "To share a fine-tune as ordinary LoRAs (several ranks at once), use Extract > From a "
+                 "fine-tune with the checkpoint it saves.", "note"),
         ])
     precisions = ["auto"] + [p for p in ("bf16", "int8", "nf4", "hqq") if p in desc.precisions]
     labels = {**launch.PRECISION_LABELS, **dict(desc.precision_labels or ())}
@@ -596,6 +598,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
         disabled.add("LEARNING_RATE")
+        lo, hi = DEFAULTS["ADAPTIVE_LR_MIN"], DEFAULTS["ADAPTIVE_LR_MAX"]   # the desktop's Reset Defaults
+        if (str(values.get("ADAPTIVE_LR_MIN") or lo).split(" ")[0], str(values.get("ADAPTIVE_LR_MAX") or hi).split(" ")[0])                 != (lo, hi) and "ADAPTIVE_LR_MAX" not in actions:
+            actions["ADAPTIVE_LR_MAX"] = {"label": f"Reset to {lo} / {hi}",
+                                          "values": {"ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi}}
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})

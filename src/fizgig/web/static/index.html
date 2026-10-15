@@ -522,7 +522,8 @@
               <div class="field-hint" id="webQueueState"></div>
               <div id="webQueueList" class="checkpoint-list"></div>
               <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
-                <button class="btn" id="webQueueHold">Hold</button></div>
+                <button class="btn" id="webQueueHold">Hold</button>
+                <button class="btn" id="webQueueClear" title="Take every queued run off the queue (a run training now carries on)">Clear queue</button></div>
             </div>
           </div>
           <div class="section-card">
@@ -1167,7 +1168,8 @@
                 <input type="text" id="rmCurveName" class="w-num rm-name" placeholder="name">
                 <button class="btn btn-sm" id="rmCurveSave">Save</button><button class="btn btn-sm" id="rmCurveDel">Delete</button></div>
               <div class="field-row"><span class="field-label">ComfyUI graph preset:</span><select id="rmGraph" class="w-combo st-small-select"></select>
-                <button class="btn btn-sm" id="rmGraphUse">Use for the fade</button><span class="field-hint" id="rmGraphNote"></span></div>
+                <button class="btn btn-sm" id="rmGraphUse">Use for the fade</button>
+                <button class="btn btn-sm" id="rmGraphImport" title="A graph preset kept anywhere else: a .png (or .json) the pack's Apply node saved">Import…</button><span class="field-hint" id="rmGraphNote"></span></div>
             </div>
           </div>
           <div class="section-card">
