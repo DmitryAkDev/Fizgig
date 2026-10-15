@@ -553,7 +553,7 @@
               <div class="field-row"><span class="field-label">Primary LoRA:</span>
                 <input type="text" id="stPrimary" class="w-path" placeholder="the LoRA to repair (.safetensors)">
                 <button class="btn" id="stPrimaryPick">Choose…</button>
-                <span class="field-label">at strength</span><input type="text" id="stPScale" class="w-num" value="1">
+                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">at strength</span><input type="text" id="stPScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">
                 <button class="btn" id="stEqP" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div id="stMixRows" style="display:none">
                 <div class="field-row"><span class="field-label">Mix:</span>
@@ -574,7 +574,7 @@
                 <input type="text" id="stDonor" class="w-path" placeholder="optional: a second LoRA to mix in, block by block">
                 <button class="btn" id="stDonorPick">Choose…</button>
                 <button class="btn" id="stDonorUnload">Unload donor</button>
-                <span class="field-label">at strength</span><input type="text" id="stDScale" class="w-num" value="1">
+                <span class="field-label" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">at strength</span><input type="text" id="stDScale" class="w-num" value="1" title="The strength this LoRA is meant to be used at (not always 1.0). The block sliders are relative to it: a block at 1.0 is that block at this strength, 0.5 is half of it. The saved file keeps the LoRA's own scale, so use it at this strength and it looks exactly like the preview.">
                 <button class="btn" id="stEqD" style="display:none" title="Model EQ Mode: this row becomes the model's own weights (the Model EQ LoRA set in Preferences) at strength 1 - every block slider then reads 1.0 = the stock model, below 1 turns that block's main directions down, above 1 up. Press it again for your own LoRA back.">Model EQ Mode</button></div>
               <div id="stDmixRows" style="display:none">
                 <div class="field-row"><span class="field-label">Donor epoch blend:</span>
@@ -631,7 +631,7 @@
                 <label class="checkbox-label" id="stTurboRow"><input type="checkbox" id="stTurbo" checked> Turbo Preview
                   (late-block changes render almost at once; the same picture as a full render)</label></div>
               <div id="stVideoRows" style="display:none">
-                <div class="field-row"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select"></select>
+                <div class="field-row"><span class="field-label">Model:</span><select id="stH3Model" class="w-combo st-small-select" title="The Reference model takes up to two photos (Frames below): say &lt;Picture 1&gt; / &lt;Picture 2&gt; in the prompt for them. Switching reloads the model at the next Start / Update (about 25 s)."></select>
                   <span class="field-label">Base:</span><select id="stH3Base" class="w-combo st-small-select"></select></div>
                 <div class="field-row"><span class="field-label">Clip:</span>
                   <span class="st-inline"><select id="stH3Len" class="w-combo st-small-select"></select>

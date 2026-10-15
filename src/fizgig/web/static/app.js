@@ -426,6 +426,7 @@ function renderPrefs() {
     // shut - you open the one you want
     if (!S.prefsOpen) S.prefsOpen = new Set();
     const body = el("div", {class: "card-content" + (S.prefsOpen.has(f.key) ? "" : " collapsed")});
+    if (f.prefs_intro) body.append(el("div", {class: "card-desc prefs-intro", text: f.prefs_intro}));
     const files = new Map(f.model_files.map((m) => [m.pref_key, m]));
     for (const key of f.model_keys) {
       const m = files.get(key) || {label: key, note: "", hint: ""};
@@ -455,6 +456,7 @@ function renderPrefs() {
       body.append(el("div", {class: "pref-file"}, row, hint ? el("div", {class: "field-hint", text: hint}) : null,
         dl ? el("div", {class: "field-hint", text: dl}) : null));
     }
+    if (f.prefs_note) body.append(el("div", {class: "field-hint prefs-note", text: f.prefs_note}));
     const fetchBox = fetchRow(f);
     if (fetchBox) body.append(fetchBox);
     host.append(el("div", {class: "section-card"},
@@ -3257,7 +3259,8 @@ function studioSlots() {
   const ref = !!S.st.layout.video.references[$("stH3Model").value];
   $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
   $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (this checkpoint's " +
-    "references), each cropped to the clip's shape - you place the crop when you pick one." :
+    "references), each cropped to the clip's shape - you place the crop when you pick one. Say <Picture 1> and " +
+    "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along a beach\"." :
     "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
     "you place the crop when you pick one.";
   const host = $("stFrameSlots");

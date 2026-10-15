@@ -357,7 +357,9 @@ def form(desc):
         _row("COMPILE_BLOCKS", "Compile Blocks", "choice", desc.compile_hint, ["Auto", "On", "Off"])
         if desc.compiles else None,
         _row("RESUME_TRAINING", "Resume Training", "folder", "Empty for a normal run. A state folder "
-             "(myLora-000012-state) continues that run."),
+             "(myLora-000012-state) continues that run, with its optimizer, learning rate and seed as they were. To "
+             "train a finished LoRA further, pick its last state and raise Max Train Epochs first, or it ends at once. "
+             "Pause and Resume fill this in for you."),
         _row("SAVE_STATE", "Save state at each checkpoint", "check"),
         _row("SAVE_STATE_ON_TRAIN_END", "Save state at the end of training", "check"),
         _row("KEEP_LAST_N_STATES", "Keep last N states", hint="States are big (a LoRA plus its optimizer)."),
