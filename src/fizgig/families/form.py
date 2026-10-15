@@ -225,7 +225,8 @@ def form(desc):
              upload=True, start="lora"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
-             "Images are resized to this area. Any aspect ratio; 4.2 MP wants 24-32 GB.", MEGAPIXELS),
+             "Images are resized to this area, any aspect ratio: 0.25 = about 512 x 512, 1.0 = 1024 x 1024, 2.4 = 1536 x "
+             "1536, 4.2 = 2048 x 2048. 4.2 MP wants 24-32 GB.", MEGAPIXELS),
         _row("CLIP_MEGAPIXELS", "Clip Target Megapixels", "combo",
              "The size your video clips are cached and trained at; photos keep the Target Megapixels. A clip takes "
              "far more memory and time than a photo of the same size, so e.g. photos at 1.0 with clips at 0.25 "
@@ -391,7 +392,9 @@ def form(desc):
     add("optimizer", "Optimizer", "training", [
         _row("OPTIMIZER_TYPE", "Optimizer Type", "choice", choices=_optimizers()),
         _row("OPTIMIZER_ARGS", "Optimizer Args"),
-        _row("GRADIENT_ACCUMULATION", "Gradient Accumulation"),
+        _row("GRADIENT_ACCUMULATION", "Gradient Accumulation", hint="Every model trains one image at a time. For a "
+             "larger effective batch, raise this: the same averaged gradient as a bigger batch, at the memory of "
+             "batch 1."),
         _row("MAX_GRAD_NORM", "Max Grad Norm"),
     ], collapsed=True)
     add("other", "Other Options", "training", [
