@@ -47,10 +47,10 @@ DEFAULTS = {
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP_TRIGGER": "",
     "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
-    "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "", "FAMILY_DOP_WEIGHT": "1.0",
-    "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
+    "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "",
+    "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "FAMILY_SUBJECTS": "1 subject", "FAMILY_PEOPLE_MODE": "Off - a normal LoRA", "FAMILY_SUBJECT_FIX": False,
-    "FAMILY_PEOPLE_MORE": False, "FAMILY_MP_MANUAL": False,
+    "FAMILY_MP_MANUAL": False,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -183,22 +183,6 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.")
-MULTI_PERSON_HINT = ("For people who appear together with others: in a group photo the other people keep their own "
-                     "faces instead of turning into your subject. Turns DOP on, adds 16 side-by-side training pictures "
-                     "per subject (one of their photos next to one of 32 fixed strangers, downloaded once, ~21 MB) and "
-                     "reads each trigger fused with what the subject is: \"zwxem, a woman\" becomes \"zwxemwoman\" "
-                     "(your caption files are not changed). Prompt the LoRA with the fused word, e.g. \"zwxemwoman and "
-                     "two friends at a cafe\". One trigger per folder; if the captions don't start \"zwxem, a "
-                     "woman\", type what the subject is in the folder's \"replace it with\" box.")
-DOP_EVERY = ("Every step", "Every second step (faster)")
-DOP_HINT = ("Stops the subject showing up in prompts without its trigger. Every step trains the photo twice: once "
-            "with its caption as written, and once with the trigger word removed (“zwxem, a woman smiling” becomes "
-            "“a woman smiling”). On that second pass the LoRA is held to exactly what the base model does on its own, "
-            "so without the trigger the LoRA changes nothing. A caption with both subjects' triggers has both removed. "
-            "About 1.5-2x the time per step. (Differential Output Preservation, from AI-Toolkit.)")
-MULTICONCEPT_HINT = ("Each folder needs its own trigger word, in every caption: that is the only thing telling the "
-                     "subjects apart. Caption and prep every folder yourself first; this box is training-only.")
-
 
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
@@ -324,8 +308,7 @@ def form(desc):
              default=PEOPLE_MODES[0], hint_labels=True,           # one line per choice, its name in bold
              sets={PEOPLE_MODES[0]: {"FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False},
                    PEOPLE_MODES[1]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": False},
-                   PEOPLE_MODES[2]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": True,
-                                     "FAMILY_DOP_EVERY": DOP_EVERY[1]}}),          # the measured recipe
+                   PEOPLE_MODES[2]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": True}}),
         _row("FAMILY_MP_MANUAL", "Use my captions exactly as written", "check",
              "No joining or guessing: Fizgig trains on your captions as they are. Write each subject's joined word "
              "(zwxemwoman) into the captions yourself. The side-by-side pictures and the training recipe stay on.",
@@ -343,12 +326,7 @@ def form(desc):
         _row("FAMILY_DOP_CLASS3", "Subject 3: what it is", hint="Empty = read from the captions."),
         _row("FAMILY_DOP_TRIGGER4", "Subject 4: trigger word", hint="Empty = read from the captions."),
         _row("FAMILY_DOP_CLASS4", "Subject 4: what it is", hint="Empty = read from the captions."),
-        _row("FAMILY_PEOPLE_MORE", "Change how strongly it keeps to the trigger word", "check",
-             "Set to the tested recipe. Change only to experiment."),
-        _row("FAMILY_DOP_EVERY", "How often", "choice", "Every second step: the same hold on average, about half the "
-             "extra time.", DOP_EVERY),
-        _row("FAMILY_DOP_WEIGHT", "Strength", hint="1.0 = as strong as the training itself. Higher keeps prompts "
-             "without the trigger closer to the base model, but can soften the likeness."),
+        # how often and how strongly the trigger-free pass runs is the tested recipe (every second step, x2): no control
     ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",
@@ -773,13 +751,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     notes["_subject1_folder"] = image_folder or "Not chosen yet - pick it on the Start tab"
     dop = bool(values.get("FAMILY_DOP")) and kind in ("standard", "finetune")
     if not dop:
-        hidden |= {"FAMILY_SUBJECT_FIX", "FAMILY_PEOPLE_MORE"}
+        hidden.add("FAMILY_SUBJECT_FIX")
     if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):
         hidden.add("FAMILY_MP_MANUAL")
     if not (dop and values.get("FAMILY_SUBJECT_FIX")):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
-    if not (dop and values.get("FAMILY_PEOPLE_MORE")):
-        hidden |= {"FAMILY_DOP_EVERY", "FAMILY_DOP_WEIGHT"}
     for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:
             hidden |= {d, t, c, f"_subject{i}_as"}

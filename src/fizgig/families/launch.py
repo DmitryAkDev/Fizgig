@@ -624,13 +624,10 @@ def train_command(desc, inputs, plan):
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
             trig, cls = [s["fused"] for s in mp_subs], [s["phrase"] for s in mp_subs]
-        every = 2 if _s(st.get("FAMILY_DOP_EVERY")).lower().startswith("every second") else 1
-        try:
-            weight = float(_s(st.get("FAMILY_DOP_WEIGHT")) or 1.0)
-        except ValueError:
-            weight = 1.0
-        # on half the steps at twice the weight: the same preservation on average (the weight scales the DOP
-        # pass's loss, never the run's learning rate - its gradient joins the step's own)
+        # the tested recipe, always (Peter, 16 Oct 2026: every second step is proven, every step not needed): on half
+        # the steps at twice the weight - the same preservation on average, about half the extra time (the weight
+        # scales the DOP pass's loss, never the run's learning rate - its gradient joins the step's own)
+        every, weight = 2, 1.0
         cmd += ["--dop", "--dop_weight", f"{weight * every:g}", "--dop_every", str(every)]
         if trig:
             cmd += ["--dop_trigger", ", ".join(trig), "--dop_class", ", ".join(cls)]
