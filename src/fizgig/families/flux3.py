@@ -52,6 +52,7 @@ FLUX3 = FamilyDescription(
         block_modules=_MODULES,
         alpha_key="{prefix}.alpha",
         kohya=True,
+        lokr_kohya_stems=True,         # LoKR under the same lora_unet_ names, so ComfyUI's Flux3 q/k/v map applies
         file_prefix="lora_unet_",
         note="kohya keys over the reference module names; ComfyUI maps lora_unet_<path>_q_proj / _k_proj / _v_proj "
              "onto thirds of its fused qkv.",
@@ -69,7 +70,7 @@ FLUX3 = FamilyDescription(
     train_memory={"bf16": (((0.25, 12.3), (1.0, 12.7)), 0.245), "int8": (((0.25, 8.7), (1.0, 9.1)), 0.12),
                   "nf4": (((0.25, 5.8), (1.0, 6.2)), 0.0)},
     optimizers=("adamw", "adamw8bit"),
-    network_types=("lora",),
+    network_types=("lora", "lokr"),
     ema_default="0.98",
     compiles=True,
     compile_boundary="outside",       # as Qwen 2.1's: the checkpoint wraps the compiled block
