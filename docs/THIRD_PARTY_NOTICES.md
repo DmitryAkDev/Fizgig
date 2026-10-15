@@ -100,6 +100,14 @@ see "Note on model weights" below.)
 
 ---
 
+## FLUX 3 Image Klein (Black Forest Labs) — Apache License 2.0
+
+Upstream: https://github.com/black-forest-labs/flux-3-image-klein
+
+`src/fizgig/flux3/` (the DiT, autoencoder, text-encoder wrapper and sampler) is adapted from the FLUX 3 Image Klein reference implementation; its licence is in `src/fizgig/flux3/LICENSE`. Licensed under the Apache License, Version 2.0. (Model weights are distributed separately under the FLUX Kommunity License — see "Note on model weights" below.)
+
+---
+
 ## Diffusers / Qwen-Image VAE — Apache License 2.0
 
 Upstream: https://github.com/huggingface/diffusers

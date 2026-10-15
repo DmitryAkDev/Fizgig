@@ -62,6 +62,9 @@ class FTSpec:
     blocks: str = "blocks"
     components: tuple = ()
     always_on: tuple = ()
+    # False: the model's forward can't stream out-of-window blocks (they don't run in one ordered list), so plans
+    # only use windows that fit with every frozen block resident
+    streams: bool = True
     overhead_gb: Optional[float] = None
     trunk_gb_per_block: Optional[float] = None
     slots_gb: float = 1.5
@@ -471,6 +474,7 @@ class Rotator:
 
 
 def _plan(comp_gb, n_blocks, trunk, spec: FTSpec, usable, allow_stream=True, mp=None, spans=None, max_parts=0):
+    allow_stream = allow_stream and spec.streams
     if spec.window_factor != 1.0:      # a family whose windows cost more than their weights (FTSpec.window_factor)
         comp_gb = {p: g * spec.window_factor for p, g in comp_gb.items()}
     overhead = spec.overhead_gb if spec.overhead_gb is not None else trunk * n_blocks + 3.5

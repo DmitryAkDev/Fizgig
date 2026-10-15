@@ -76,6 +76,58 @@ def edit_on(desc, inputs):
     return bool(desc.edit_training and inputs.get("FAMILY_EDIT"))
 
 
+# the Edit pairs card's "What the edit uses" choice (a family with edit_references > 1)
+EDIT_PHOTO_ONLY, EDIT_WITH_EXTRAS = "The photo only", "The photo + extra pictures"
+
+
+def edit_extras_on(desc, inputs):
+    """An edit with extra pictures from their own folder (photo_1, photo_2 ... for photo.png)."""
+    return (edit_on(desc, inputs) and getattr(desc, "edit_references", 1) > 1
+            and _s(inputs.get("FAMILY_EDIT_PICTURES")) == EDIT_WITH_EXTRAS)
+
+
+def preview_extras(desc, inputs, photo, exts=PAIR_EXTS):
+    """The Extra pictures folder's pictures for `photo` (photo_1, photo_2 ... by their number), up to the model's
+    count; [] outside a multi-picture edit."""
+    xdir = _s(inputs.get("FAMILY_EDIT_EXTRAS_DIR"))
+    if not edit_extras_on(desc, inputs) or not xdir or not os.path.isdir(xdir):
+        return []
+    stem = os.path.splitext(os.path.basename(photo))[0].casefold()
+    found = []
+    for f in os.listdir(xdir):
+        b, e = os.path.splitext(f)
+        head, _, n = b.rpartition("_")
+        if e.lower() in exts and n.isdigit() and head.casefold() == stem:
+            found.append((int(n), os.path.join(xdir, f)))
+    return [p for _, p in sorted(found)][:max(0, desc.edit_references - 1)]
+
+
+def edit_extras(after_dir, extras_dir, exts=PAIR_EXTS, test_photo=""):
+    """({edited photo: its extra pictures}, extras with no edited photo, extras named exactly as a photo) for the
+    Extra pictures folder: photo_1.png, photo_2.png ... belong to photo.png. The test photo's own extras (test_1 ...
+    for the previews) are neither."""
+    photos = {os.path.splitext(f)[0].casefold(): f for f in os.listdir(after_dir)
+              if os.path.splitext(f)[1].lower() in exts}
+    found, orphans, misnamed = {}, [], []
+    for f in sorted(os.listdir(extras_dir)):
+        b, e = os.path.splitext(f)
+        if e.lower() not in exts:
+            continue
+        if b.casefold() in photos:
+            misnamed.append(f)
+            continue
+        stem, _, n = b.rpartition("_")
+        owner = photos.get(stem.casefold()) if n.isdigit() else None
+        test_stem = os.path.splitext(os.path.basename(test_photo))[0].casefold() if test_photo else ""
+        if owner is None and n.isdigit() and test_stem and stem.casefold() == test_stem:
+            continue                      # the test photo's extras: its previews use them
+        if owner is None:
+            orphans.append(f)
+        else:
+            found.setdefault(owner, []).append(f)
+    return found, orphans, misnamed
+
+
 def slider_on(desc, inputs, source=None):
     """Slider mode for a family that offers it; source "pairs" / "prompts" narrows it to one kind."""
     on = bool(desc.slider_training and inputs.get("FAMILY_SLIDER"))
@@ -200,10 +252,22 @@ def caches(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- pairs
-def pairs(after_dir, before_dir, exts=PAIR_EXTS):
-    """(photos without a partner, photos with more than one, first partner's path) for an edit's or a slider's
+def _pair_order(stem):
+    """The dataset loader's order for a photo's partners: photo.<ext> first, then photo_1, photo_2 ..."""
+    def key(name):
+        bn = os.path.splitext(name)[0].casefold()
+        if bn == stem.casefold():
+            return 0
+        suffix = bn.rsplit("_", 1)[-1]
+        return int(suffix) + 1 if suffix.isdigit() else 999999
+    return key
+
+
+def pairs(after_dir, before_dir, exts=PAIR_EXTS, limit=1):
+    """(photos without a partner, photos with more than `limit`, first partner's path) for an edit's or a slider's
     two folders, matched the way the dataset loader matches them: a partner of photo.png is photo.<ext> or
-    photo_<anything>.<ext>, ignoring case. exts: what counts as an item (a clip family's sliders add .mp4)."""
+    photo_<anything>.<ext>, ignoring case. exts: what counts as an item (a clip family's sliders add .mp4). limit:
+    partners a photo may have (a multi-reference edit: the family's edit_references)."""
     befores = sorted(f for f in os.listdir(before_dir) if os.path.splitext(f)[1].lower() in exts)
     missing, multiple, first = [], [], None
     for f in sorted(os.listdir(after_dir)):
@@ -214,9 +278,9 @@ def pairs(after_dir, before_dir, exts=PAIR_EXTS):
              or x.casefold().startswith(b.casefold() + "_")]
         if not m:
             missing.append(f)
-        elif len(m) > 1:
+        elif len(m) > limit:
             multiple.append(f)
-        first = first or (os.path.join(before_dir, m[0]) if m else None)
+        first = first or (os.path.join(before_dir, sorted(m, key=_pair_order(b))[0]) if m else None)
     return missing, multiple, first
 
 
@@ -232,9 +296,9 @@ def pair_problems(after_dir, before_dir, caption_ext=".txt", exts=PAIR_EXTS):
             continue
         if not os.path.exists(os.path.join(after_dir, b + caption_ext)):
             uncaptioned.append(f)
-        m = [x for x in befores if x.casefold().startswith(b.casefold() + ".")
-             or x.casefold().startswith(b.casefold() + "_")]
-        if len(m) == 1 and e.lower() in PAIR_EXTS:
+        m = sorted((x for x in befores if x.casefold().startswith(b.casefold() + ".")
+                    or x.casefold().startswith(b.casefold() + "_")), key=_pair_order(b))
+        if m and e.lower() in PAIR_EXTS:     # the original (the first): extra references may be any shape
             try:
                 with Image.open(os.path.join(after_dir, f)) as ia, Image.open(os.path.join(before_dir, m[0])) as ib:
                     ra, rb = ia.width / ia.height, ib.width / ib.height
@@ -301,14 +365,16 @@ def problems(desc, inputs):
         if not before or not os.path.isdir(before):
             errors.append("Edit LoRA is on: set the Originals folder (Training tab, Edit pairs)")
         elif os.path.isdir(folder):
-            missing, multiple, _ = pairs(folder, before)
+            limit = 1          # one original per edited photo; extra pictures have their own folder
+            missing, multiple, _ = pairs(folder, before, limit=limit)
             if missing:
                 errors.append(f"Edit LoRA: {len(missing)} edited photo(s) have no original with the same file "
                               f"name in {before} (e.g. {', '.join(missing[:3])})")
             if multiple:
                 errors.append(f"Edit LoRA: {len(multiple)} edited photo(s) match more than one original (e.g. "
-                              f"{', '.join(multiple[:3])}) - keep one original per edited photo, with the "
-                              f"same file name")
+                              f"{', '.join(multiple[:3])}) - keep one original per edited photo, with the same "
+                              "file name" + (" (extra pictures go in their own folder: pick The photo + extra "
+                              "pictures)" if getattr(desc, "edit_references", 1) > 1 else ""))
             uncaptioned, shapes = pair_problems(folder, before, ext)
             if uncaptioned:
                 errors.append(f"Edit LoRA: {len(uncaptioned)} edited photo(s) have no caption (e.g. "
@@ -318,6 +384,26 @@ def problems(desc, inputs):
                               f"original (e.g. {', '.join(shapes[:3])}) - export both at the same crop")
         if ref and not os.path.isfile(ref):
             errors.append(f"Edit LoRA test photo for previews does not exist: {ref}")
+        if edit_extras_on(desc, inputs):
+            xdir = _s(inputs.get("FAMILY_EDIT_EXTRAS_DIR"))
+            most = desc.edit_references - 1
+            if not xdir or not os.path.isdir(xdir):
+                errors.append("Edit LoRA with extra pictures: set the Extra pictures folder (Training tab, Edit pairs)")
+            elif os.path.isdir(folder):
+                found, orphans, misnamed = edit_extras(folder, xdir, test_photo=ref)
+                over = [p for p, xs in found.items() if len(xs) > most]
+                if not found:
+                    errors.append(f"Edit LoRA: no extra pictures in {xdir} belong to an edited photo - name them "
+                                  "after it: photo_1.png, photo_2.png ... for photo.png")
+                if over:
+                    errors.append(f"Edit LoRA: {len(over)} photo(s) have more than {most} extra pictures (e.g. "
+                                  f"{', '.join(over[:3])}) - {desc.display_name} takes up to {most} per photo")
+                if misnamed:
+                    errors.append(f"Edit LoRA: {len(misnamed)} extra picture(s) are named exactly as a photo (e.g. "
+                                  f"{', '.join(misnamed[:3])}) - add _1, _2 ... (photo_1.png for photo.png)")
+                if orphans:
+                    errors.append(f"Edit LoRA: {len(orphans)} extra picture(s) belong to no edited photo (e.g. "
+                                  f"{', '.join(orphans[:3])}) - name each after its photo: photo_1.png for photo.png")
     if slider_on(desc, inputs, "pairs"):
         other = _s(inputs.get("FAMILY_SLIDER_DIR"))
         _ex = PAIR_EXTS | ({".mp4"} if "clip" in desc.media else set())    # H3: clip pairs too
@@ -794,7 +880,9 @@ def _preview_flags(desc, st, plan, cmd):
                 except OSError:
                     ref = ""
             if ref:
-                out += ["--sample_reference", ref]
+                # a multi-picture edit previews with the photo's own extras (test.jpg -> test_1, test_2 ... in the
+                # Extra pictures folder; the first original's when no test photo is set)
+                out += ["--sample_reference", ref, *preview_extras(desc, st, ref)]
         ck = desc.preview_checkpoint()
         if (desc.train_preview_checkpoint and ck and sm.get("checkpoint") and not slider_on(desc, st)
                 and not ft_on(desc, st)):      # a fine-tune previews the model it trains, not the Distilled
@@ -862,6 +950,8 @@ def dataset_toml(desc, inputs):
     _fuse(folder)
     if edit_on(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_EDIT_DIR")).replace(chr(92), "/")}"')
+        if edit_extras_on(desc, inputs):
+            lines.append(f'extra_reference_directory = "{_s(inputs.get("FAMILY_EDIT_EXTRAS_DIR")).replace(chr(92), "/")}"')
     elif slider_on(desc, inputs, "pairs"):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_SLIDER_DIR")).replace(chr(92), "/")}"')
     root = _s(inputs.get("cache_root"))

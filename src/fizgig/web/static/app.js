@@ -270,7 +270,11 @@ function renderRow(r) {
     if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
-  if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
+  if (r.hint) {                                   // a hint of several lines keeps its line breaks
+    const h = el("div", {class: "field-hint", text: r.hint});
+    if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
+    wrap.append(h);
+  }
   return wrap;
 }
 
@@ -346,7 +350,15 @@ async function refreshState() {
   document.querySelectorAll(".form-row[data-key]").forEach((row) => {
     const k = row.dataset.key;
     row.style.display = hidden.has(k) ? "none" : "";
+    // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
+    const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
+      .find((r) => r && r.key === k));
+    if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
+    // a greyed box shows what that run will really use (the Distilled's steps / CFG), the form's own value kept
+    const shown = (S.state.shown || {})[k], box = $("f_" + k);
+    if (box && shown !== undefined && disabled.has(k)) { box.value = shown; box.dataset.shown = "1"; }
+    else if (box && box.dataset.shown) { delete box.dataset.shown; syncInputs([k]); }
     const n = $("note_" + k);
     if (n) {
       if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }
@@ -367,21 +379,30 @@ async function refreshState() {
 // file set in Preferences AND strength above 0 - else the plain model's (Qwen: 25, CFG 3). They switch on a first visit
 // or when the turbo turned on or off since last seen (the file set, or the strength moved across 0), and only a box
 // still on the other side's default, so a value you typed is never replaced.
+// A preview-checkpoint tick (Klein's / Flux 3's distilled) does the same with its row's follow: ticked with the file
+// set, Steps shows the distilled's own count (Flux 3: 16), unticked the Base's (50).
 function turboFollow() {
-  let row = null;
-  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.turbo) row = r;
-  if (!row) return;
-  const raw = S.values.FAMILY_TURBO_STRENGTH;
-  const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
-  const live = !!S.state.turbo_file && strength > 0;
-  if (S.values.__turbo_live === live) return;
-  const want = live ? row.turbo.on : row.turbo.off, other = live ? row.turbo.off : row.turbo.on;
-  const moved = Object.keys(want).filter((k) => S.values[k] === undefined || S.values[k] === "" ||
-    parseFloat(S.values[k]) === parseFloat(other[k]));          // "3.0" is the default 3
-  for (const k of moved) S.values[k] = want[k];
-  S.values.__turbo_live = live;
-  syncInputs(moved);
-  saveStateSoon();
+  for (const s of S.fam.form.sections) for (const row of s.rows) {
+    if (!row || !(row.turbo || row.follow)) continue;
+    let live, flag, sides;
+    if (row.turbo) {
+      const raw = S.values.FAMILY_TURBO_STRENGTH;
+      const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
+      live = !!S.state.turbo_file && strength > 0; flag = "__turbo_live"; sides = row.turbo;
+    } else {
+      const v = S.values[row.key];
+      live = !!S.state.checkpoint_file && !!(v === undefined ? row.default : v);
+      flag = "__follow_" + row.key; sides = row.follow;
+    }
+    if (S.values[flag] === live) continue;
+    const want = live ? sides.on : sides.off, other = live ? sides.off : sides.on;
+    const moved = Object.keys(want).filter((k) => S.values[k] === undefined || S.values[k] === "" ||
+      parseFloat(S.values[k]) === parseFloat(other[k]));        // "3.0" is the default 3
+    for (const k of moved) S.values[k] = want[k];
+    S.values[flag] = live;
+    syncInputs(moved);
+    saveStateSoon();
+  }
 }
 const refreshStateSoon = debounce(refreshState, 250);
 
@@ -6055,6 +6076,11 @@ async function podLocalSend(d) {
   podLocalDraw();
 }
 window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
+// tell the app window the page runs in it (app_window.py gives a white window up for the browser otherwise)
+window.addEventListener("pywebviewready", () => {
+  const a = window.pywebview && window.pywebview.api;
+  if (a && a.ready) a.ready();
+});
 
 // the app window and a pod must run the same build (app_window.py blocks the page when they don't). A window from
 // before that check has no build() to ask: it is older than this pod, so the page says to update this computer

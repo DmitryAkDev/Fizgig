@@ -17,7 +17,7 @@ Pull requests are welcome — bug fixes, features, docs, pod/RunPod improvements
 
 - One concern per PR where possible.
 - Say what you tested and on what hardware (GPU/VRAM matters a lot here).
-- Fizgig targets Flux 2 Klein 9B and Krea 2 only — see CLAUDE.md for the codebase map.
+- Fizgig trains the models in the README's model table — adding one is a family on the driver system (docs/drivers/README.md).
 - Match the surrounding code's style, and prefer editing `COLORS[...]`/shared helpers over
   hardcoding UI values.
 

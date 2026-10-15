@@ -1,6 +1,6 @@
 # Adding a model to Fizgig: the driver system
 
-Every model Fizgig trains — Klein 9B, MiniMax H3, Krea 2, Qwen Image 2.1, Z-Image Turbo, SDXL and Anima — runs through one shared layer in `src/fizgig/families/`. A model is added as a **family**, and a family is three pieces:
+Every model Fizgig trains — Klein 9B, Flux 3 Image Klein, MiniMax H3, Krea 2, Qwen Image 2.1, Z-Image Turbo, SDXL and Anima — runs through one shared layer in `src/fizgig/families/`. A model is added as a **family**, and a family is three pieces:
 
 | Piece | Where | What it holds |
 |---|---|---|
@@ -37,6 +37,7 @@ The existing families are the best reference. Read them side by side:
 |---|---|---|---|
 | Qwen Image 2.1 | `families/qwen_image.py` | `qwen_image21/driver.py` | The leanest complete stills driver: edit training, sliders, prompt travel, fine-tune |
 | Klein 9B | `families/klein.py` | `klein/driver.py` | A preview checkpoint (Distilled), fp8 files, Model Area presets, Repair Studio categories |
+| Flux 3 Image Klein | `families/flux3.py` | `flux3/driver.py` | A vendored reference model, references as latents (edit), a distilled preview model, prompts of varying length in prompt travel, an NF4 model that parks for previews on small cards |
 | Krea 2 | `families/krea2.py` | `krea2/driver.py` | Named block areas (text fusion, I/O), a vision path for reference pictures, compile |
 | MiniMax H3 | `families/minimax.py` | `minimax/driver.py` | Video and sound, family options, its own cache layout and workbench engine |
 | SDXL | `families/sdxl.py` | `sdxl/driver.py` | A UNet through diffusers, any single-file checkpoint, conv LoRAs, kohya LDM names (`alias_flat`), a default negative |

@@ -1,4 +1,4 @@
-"""The standard layer's workbench engine: Repair Studio (and later the Explorer and Royale) for any described family.
+"""The standard layer's workbench engine: Repair Studio and Royale for any described family.
 
 One engine over a family's driver (model code) and the family LoRA layer (adapters, block controls, bake). It speaks
 the same protocol as the H3 engine (repair_studio/h3_engine.py), so the tabs drive

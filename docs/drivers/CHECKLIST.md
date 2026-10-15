@@ -35,7 +35,7 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 
 ## Workbench
 
-- [ ] Each tab named in `workbench` loads the family and renders: Repair Studio (I'm feeling lucky included), the Profiler (a quick profile writes its report), Extract (a rank-reduced file), LoRA Royale (two checkpoints).
+- [ ] Each tab named in `workbench` loads the family and renders: Repair Studio (I'm feeling lucky included), the Profiler (a quick profile writes its report), Extract (a rank-reduced file), LoRA Royale (two checkpoints, seed travel, and prompt travel - it needs `pad_conditioning`, and without it Royale quietly offers no prompt travel).
 - [ ] **Save Repaired is faithful:** a LoRA saved with some blocks switched off renders the same as the live preview it was saved from.
 - [ ] With `activation_cache`: a slider change renders the **same picture** with Turbo Preview on as with it off.
 

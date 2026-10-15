@@ -79,4 +79,4 @@ Clips multiply memory by their frame count, so a video family usually needs its 
 
 ## What's still H3-specific
 
-Two tools are built around H3 today: RefMod Studio, and Gizmo's clip lengths (its spec is H3's). A new video family trains, previews (the training gallery plays whatever `save_preview` writes), and opens in Repair Studio, the Explorer, the Profiler, Extract and LoRA Royale without either.
+Two tools are built around H3 today: RefMod Studio, and Gizmo's clip lengths (its spec is H3's). A new video family trains, previews (the training gallery plays whatever `save_preview` writes), and opens in Repair Studio, the Profiler, Extract and LoRA Royale without either.

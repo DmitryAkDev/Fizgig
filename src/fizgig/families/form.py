@@ -22,7 +22,7 @@ import os
 
 from fizgig.families import launch
 
-ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4 - rank 4/8 only", "3e-4 - low-rank only")
+ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4", "3e-4")
 ADAPTIVE_MAX = ("1e-4", "2e-4", "3e-4", "4e-4")
 MEGAPIXELS = ("0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2")
 SWAP = ("Auto (detect from GPU)", "0  (No swap — 16GB fp8 / 24GB bf16)", "4  (Light — 14GB fp8 / 20GB bf16)",
@@ -56,6 +56,7 @@ DEFAULTS = {
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
     "FAMILY_CONCEPT_DIR3": "", "FAMILY_CONCEPT_DIR4": "", "FAMILY_CONCEPT_BALANCE": False,
     "FAMILY_EDIT_DIR": "", "FAMILY_EDIT_REF": "", "FAMILY_EDIT_CAPTION": "",
+    "FAMILY_EDIT_PICTURES": launch.EDIT_PHOTO_ONLY, "FAMILY_EDIT_EXTRAS_DIR": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
@@ -331,17 +332,39 @@ def form(desc):
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
+            # a multi-picture edit (description edit_references > 1): the choice, then its own folder (step 2)
+            _row("FAMILY_EDIT_PICTURES", "What the edit uses", "radio", choices=[launch.EDIT_PHOTO_ONLY, launch.EDIT_WITH_EXTRAS], hint=
+                 "The photo only: an edit that changes how a photo looks (a grade, a relight, a retouch). The photo + "
+                 "extra pictures: an edit that brings something from other pictures into it (a person, an object, a "
+                 "place).", default=launch.EDIT_PHOTO_ONLY) if desc.edit_references > 1 else None,
             _row("FAMILY_EDIT_DIR", "1. Originals folder (before editing)", "folder",
                  "Your original, unedited photos. No captions needed.", upload=True, start="data"),
+            _row("FAMILY_EDIT_EXTRAS_DIR", "2. Extra pictures folder", "folder",
+                 "The pictures to bring into the edits: a person, an object, a place.\n"
+                 "Name each after the photo it belongs to, adding _1, _2 ...: for beach.jpg, its extras are "
+                 "beach_1.jpg, beach_2.jpg.\n"
+                 "The number is the order the model sees them in: beach_1 is the second picture after the original, "
+                 "beach_2 the third. Say so in the edit instruction, e.g. \"Put the man from the second picture into "
+                 "this scene.\"\n"
+                 f"A photo can have none (it trains as a normal pair) or up to {desc.edit_references - 1}. Any shape "
+                 "or file type.", upload=True, start="data")
+            if desc.edit_references > 1 else None,
+            _row("_edit_extras_found", "", "note") if desc.edit_references > 1 else None,
             _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "
                  "with the same file names as the originals. It is the training folder on the Start tab - change it "
                  "there."),
             _row("FAMILY_EDIT_CAPTION", "3. Edit instruction", hint="What the edit is, e.g. \"Apply my concert grade.\" "
                  "Write captions saves it as the caption of every photo in the Edited folder.",
                  action="write_captions"),
-            _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path", "An original photo that is in neither folder: "
-                 "the previews show the edit applied to it. Any size - it is fitted to the preview size. Leave empty "
-                 "to use the first original.", upload=True, start="data"),
+            _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path",
+                 "Optional - you can leave this empty. A photo for the previews to edit, so you can watch the LoRA "
+                 "learn: an original, unedited photo that is in neither folder. One it never trains on shows whether "
+                 "it learned the edit itself. Any size.\n"
+                 "Left empty, the previews use your first original - that works, but it is a photo the LoRA trains on, "
+                 "so the previews can look better than the LoRA really is." + (
+                     "\nWith extra pictures: put the test photo's own in the Extra pictures folder the same way "
+                     "(test_1.jpg, test_2.jpg ... for test.jpg)." if desc.edit_references > 1 else ""),
+                 upload=True, start="data"),
         ])
     if desc.slider_training:
         srcs = slider_sources(desc)
@@ -493,6 +516,12 @@ def form(desc):
                                f"Set the {sp.name} in Preferences for fast Turbo previews; without it previews use "
                                "the plain model."))
     add("samples", "Previews during training", "samples", [
+        # an edit run's previews come from the Edit pairs card, not these prompts (shown only while Edit is picked)
+        _row("_edit_samples_note", "Edit LoRA previews: each round makes one picture from your edit instruction and "
+             "test photo (Training tab, Edit pairs" + (", with its extra pictures" if desc.edit_references > 1 else "")
+             + "). The prompts below are not used - to try other instructions while it trains, type them below "
+             "(one per line) and tick Change the previews of the run going now.", "note")
+        if desc.edit_training else None,
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
@@ -525,7 +554,12 @@ def form(desc):
              "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
         if desc.preview_strengths else None,
         _row("SAMPLE_AT_FIRST", "Preview before training starts", "check"),
-        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on),
+        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on,
+                **({"follow": {"on": {"SAMPLE_STEPS": str(desc.preview_checkpoint_sampling.steps),
+                                      "SAMPLE_CFG_SCALE": f"{desc.preview_checkpoint_sampling.cfg:g}"},
+                               "off": {"SAMPLE_STEPS": str(desc.preview_steps),
+                                       "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
+                   if desc.preview_checkpoint_sampling else {})),
            _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
                 default="auto")] if desc.train_preview_checkpoint else []),
     ])
@@ -662,10 +696,6 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
         disabled.add("LEARNING_RATE")
-        lo, hi = DEFAULTS["ADAPTIVE_LR_MIN"], DEFAULTS["ADAPTIVE_LR_MAX"]   # the desktop's Reset Defaults
-        if (str(values.get("ADAPTIVE_LR_MIN") or lo).split(" ")[0], str(values.get("ADAPTIVE_LR_MAX") or hi).split(" ")[0])                 != (lo, hi) and "ADAPTIVE_LR_MAX" not in actions:
-            actions["ADAPTIVE_LR_MAX"] = {"label": f"Reset to {lo} / {hi}",
-                                          "values": {"ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi}}
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
@@ -722,6 +752,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
     if kind in ("edit", "slider"):
         hidden.add("_overtrain_tip")
+    if kind != "edit":
+        hidden.add("_edit_samples_note")
     ts = _timestep_note(values)
     if ts:
         notes["MAX_TIMESTEP"] = ts
@@ -770,10 +802,41 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             hidden.add("SAMPLE_NEGATIVE")
     except ValueError:
         pass
+    shown, labels = {}, {}
+    if desc.edit_training and getattr(desc, "edit_references", 1) > 1:
+        if kind == "edit" and str(values.get("FAMILY_EDIT_PICTURES") or "") == launch.EDIT_WITH_EXTRAS:
+            labels = {"_edit_edited_dir": "3. Edited folder (after editing)", "FAMILY_EDIT_CAPTION": "4. Edit instruction",
+                      "FAMILY_EDIT_REF": "5. Test photo (optional)"}
+            notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
+        else:
+            hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
-        disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
+        # the Distilled: Steps and CFG switch to its own values and stay editable (the tick's follow), as the Turbo
+        # LoRA's do; CFG 1 hides the negative (above)
+        if desc.preview_checkpoint_sampling is None:
+            disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
-            "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions}
+            "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
+            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels}
+
+
+def _extras_found(desc, values, image_folder):
+    """The Extra pictures folder's readout: how many edited photos have extra pictures, and how many each."""
+    xdir = str(values.get("FAMILY_EDIT_EXTRAS_DIR") or "").strip()
+    if not xdir or not os.path.isdir(xdir) or not image_folder or not os.path.isdir(image_folder):
+        return ""
+    try:
+        found, orphans, misnamed = launch.edit_extras(image_folder, xdir,
+                                                      test_photo=str(values.get("FAMILY_EDIT_REF") or ""))
+        total = sum(1 for f in os.listdir(image_folder) if os.path.splitext(f)[1].lower() in launch.PAIR_EXTS)
+    except OSError:
+        return ""
+    counts = sorted(len(v) for v in found.values())
+    line = (f"Found: {total} edited photos, {len(found)} with extra pictures"
+            + (f" ({counts[0]}-{counts[-1]} each)" if counts and counts[0] != counts[-1] else
+               f" ({counts[0]} each)" if counts else ""))
+    loose = len(orphans) + len(misnamed)
+    return line + (f". {loose} picture(s) here match no photo's name." if loose else ".")
 
 
 def _timestep_note(values):

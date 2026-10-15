@@ -1,4 +1,4 @@
-"""The workbench for video families: clips in Repair Studio, the Explorer and LoRA Royale.
+"""The workbench for video families: clips in Repair Studio and LoRA Royale.
 
 Two pieces:
 
