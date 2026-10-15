@@ -763,6 +763,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         logger.info(f"[sample] {speed_desc.name} at strength 0 - previews render without it")
         speed_lora = speed_desc = None
     # --speed_lora on its own means the turbo's own recipe (strength, steps); the GUI passes its Samples-tab values
+    asked_steps, asked_cfg = sample_steps, sample_cfg_scale   # a preview checkpoint takes these when given
     sample_steps = sample_steps or (speed_desc.settings.steps if speed_desc else desc.preview_steps)
     sample_cfg_scale = desc.preview_cfg if sample_cfg_scale is None else sample_cfg_scale
     sample_width = sample_width or desc.preview_width
@@ -1343,8 +1344,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if ckpt_previews is not None and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
             ckpt_previews.render(dit, net, ema, lambda m, fl, swp: _render_previews(
-                driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name, steps=ck.steps, cfg=ck.cfg,
-                neg=None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
+                driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name,
+                steps=asked_steps or ck.steps, cfg=ck.cfg if asked_cfg is None else asked_cfg,
+                neg=neg if asked_cfg is not None and asked_cfg > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
             last_prompt[0] = prompts[-1] if prompts else None
             return
         _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,

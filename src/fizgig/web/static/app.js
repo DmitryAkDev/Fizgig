@@ -371,21 +371,30 @@ async function refreshState() {
 // file set in Preferences AND strength above 0 - else the plain model's (Qwen: 25, CFG 3). They switch on a first visit
 // or when the turbo turned on or off since last seen (the file set, or the strength moved across 0), and only a box
 // still on the other side's default, so a value you typed is never replaced.
+// A preview-checkpoint tick (Klein's / Flux 3's distilled) does the same with its row's follow: ticked with the file
+// set, Steps shows the distilled's own count (Flux 3: 16), unticked the Base's (50).
 function turboFollow() {
-  let row = null;
-  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.turbo) row = r;
-  if (!row) return;
-  const raw = S.values.FAMILY_TURBO_STRENGTH;
-  const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
-  const live = !!S.state.turbo_file && strength > 0;
-  if (S.values.__turbo_live === live) return;
-  const want = live ? row.turbo.on : row.turbo.off, other = live ? row.turbo.off : row.turbo.on;
-  const moved = Object.keys(want).filter((k) => S.values[k] === undefined || S.values[k] === "" ||
-    parseFloat(S.values[k]) === parseFloat(other[k]));          // "3.0" is the default 3
-  for (const k of moved) S.values[k] = want[k];
-  S.values.__turbo_live = live;
-  syncInputs(moved);
-  saveStateSoon();
+  for (const s of S.fam.form.sections) for (const row of s.rows) {
+    if (!row || !(row.turbo || row.follow)) continue;
+    let live, flag, sides;
+    if (row.turbo) {
+      const raw = S.values.FAMILY_TURBO_STRENGTH;
+      const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
+      live = !!S.state.turbo_file && strength > 0; flag = "__turbo_live"; sides = row.turbo;
+    } else {
+      const v = S.values[row.key];
+      live = !!S.state.checkpoint_file && !!(v === undefined ? row.default : v);
+      flag = "__follow_" + row.key; sides = row.follow;
+    }
+    if (S.values[flag] === live) continue;
+    const want = live ? sides.on : sides.off, other = live ? sides.off : sides.on;
+    const moved = Object.keys(want).filter((k) => S.values[k] === undefined || S.values[k] === "" ||
+      parseFloat(S.values[k]) === parseFloat(other[k]));        // "3.0" is the default 3
+    for (const k of moved) S.values[k] = want[k];
+    S.values[flag] = live;
+    syncInputs(moved);
+    saveStateSoon();
+  }
 }
 const refreshStateSoon = debounce(refreshState, 250);
 

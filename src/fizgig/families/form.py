@@ -477,7 +477,12 @@ def form(desc):
              "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
         if desc.preview_strengths else None,
         _row("SAMPLE_AT_FIRST", "Preview before training starts", "check"),
-        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on),
+        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on,
+                **({"follow": {"on": {"SAMPLE_STEPS": str(desc.preview_checkpoint_sampling.steps),
+                                      "SAMPLE_CFG_SCALE": f"{desc.preview_checkpoint_sampling.cfg:g}"},
+                               "off": {"SAMPLE_STEPS": str(desc.preview_steps),
+                                       "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
+                   if desc.preview_checkpoint_sampling else {})),
            _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
                 default="auto")] if desc.train_preview_checkpoint else []),
     ])
@@ -685,19 +690,13 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         pass
     shown = {}
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
-        # the Distilled renders its own way: its steps and CFG show greyed in the boxes (the form's own values stay
-        # for when the tick is off), and with no CFG there is no negative
-        disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE"}
-        pcs = desc.preview_checkpoint_sampling
-        if pcs is not None:
-            shown = {"SAMPLE_STEPS": str(pcs.steps), "SAMPLE_CFG_SCALE": f"{pcs.cfg:g}"}
-            if pcs.cfg <= 1.0:
-                hidden.add("SAMPLE_NEGATIVE")
-        else:
-            disabled.add("SAMPLE_NEGATIVE")
+        # the Distilled: Steps and CFG switch to its own values and stay editable (the tick's follow), as the Turbo
+        # LoRA's do; CFG 1 hides the negative (above)
+        if desc.preview_checkpoint_sampling is None:
+            disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
-            "shown": shown}
+            "shown": shown, "checkpoint_file": bool(checkpoint_file)}
 
 
 def _timestep_note(values):
