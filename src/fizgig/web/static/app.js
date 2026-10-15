@@ -4888,10 +4888,25 @@ function renderCaptions() {
     };
     const recap = isAudio || !trainsPictures ? null : el("button", {class: "btn btn-sm", text: "Re-caption",
       title: "Write this file's caption again with the model and task above", onclick: () => recapRun()});
+    // a clip with its sound (not Gizmo's _mute): Whisper its speech onto the caption, "... saying "words""
+    const speechRun = kind === "mp4" && !/_mute$/i.test(it.name.replace(/\.[^.]+$/, "")) ? async (say = (t) => { status.textContent = t; }) => {
+      say("Transcribing… (the first time downloads Whisper, ~300 MB)");
+      try {
+        const r = await api("/api/captions/transcribe", {family: S.family, folder: S.imageFolder, name: it.name});
+        if (!r.text) { say("Whisper heard no words in this clip."); return; }
+        const cap = ta.value.trim().replace(/\.$/, "");
+        ta.value = (cap ? cap + " " : "") + `saying "${r.text}"`;
+        await saveCap();
+        say("Transcript appended and saved - edit it freely.");
+        return ta.value;
+      } catch (e) { say(e.message); }
+    } : null;
+    const speech = speechRun ? el("button", {class: "btn btn-sm", text: "🎤 Append speech",
+      title: "Whisper this clip's speech and add it to the end of the caption: … saying \"the words\"", onclick: () => speechRun()}) : null;
     const media = mediaFor(it);
     const card = el("div", {class: "caption-card"});
     // the big view edits, saves, re-captions and removes the same caption
-    card._cap = {ta, it, save: saveCap, recap: recap ? recapRun : null, remove: () => capRemove(it, card, status)};
+    card._cap = {ta, it, save: saveCap, recap: recap ? recapRun : null, speech: speechRun, remove: () => capRemove(it, card, status)};
     const remove = el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
@@ -4899,7 +4914,7 @@ function renderCaptions() {
     card.append(media, el("div", {class: "caption-card-body"},
       el("div", {class: "caption-card-title", text: mediaLabel(it)}),
       size ? el("div", {class: "field-hint caption-card-size", text: size}) : null, ta,
-      el("div", {class: "field-row"}, save, recap, remove, status)));
+      el("div", {class: "field-row"}, save, recap, speech, remove, status)));
     host.append(card);
   }
 }
@@ -6186,6 +6201,7 @@ function lightboxShow(i) {
   $("lightbox").classList.toggle("with-cap", !!pic.cap);
   if (pic.cap) {
     $("lightboxCapRecap").style.display = pic.cap.recap ? "" : "none";
+    $("lightboxCapSpeech").style.display = pic.cap.speech ? "" : "none";
     $("lightboxCapText").value = pic.cap.ta.value;
     $("lightboxCapNote").textContent = "Changes save when you move to the next picture or close.";
   }
@@ -6239,6 +6255,12 @@ function wireLightbox() {
     const pic = S.lb.list[S.lb.at];
     if (!pic || !pic.cap || !pic.cap.recap || !(await lightboxCapFlush())) return;
     await pic.cap.recap((t) => { $("lightboxCapNote").textContent = t; });
+  });
+  $("lightboxCapSpeech").addEventListener("click", async () => {
+    const pic = S.lb.list[S.lb.at];
+    if (!pic || !pic.cap || !pic.cap.speech || !(await lightboxCapFlush())) return;
+    const text = await pic.cap.speech((t) => { $("lightboxCapNote").textContent = t; });
+    if (text && S.lb.list[S.lb.at] === pic) $("lightboxCapText").value = text;
   });
   $("lightboxCapRemove").addEventListener("click", async () => {
     const pic = S.lb.list[S.lb.at];

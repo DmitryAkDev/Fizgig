@@ -3150,6 +3150,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json(prep_jobs.test_faces(str(b.get("path") or ""), str(b.get("face") or "")))
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/captions/transcribe":   # the desktop's Append Transcription: a clip's speech
+                _, folder, *_ = _caption_args(b)
+                name = os.path.basename(str(b.get("name") or ""))
+                clip = os.path.join(folder, name)
+                if not (name.lower().endswith(".mp4") and os.path.isfile(clip)):
+                    return self.json({"error": "That clip isn't in the training folder."}, 400)
+                if os.path.splitext(name)[0].lower().endswith("_mute"):
+                    return self.json({"error": "This clip is muted (_mute): it trains without its sound."}, 400)
+                try:
+                    p = subprocess.run([sys.executable, "-m", "fizgig.scripts.transcribe_clip", clip],
+                                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                       timeout=900, cwd=BASE_DIR, env=dict(os.environ, PYTHONIOENCODING="utf-8",
+                                       PYTHONPATH=os.path.join(BASE_DIR, "src")),
+                                       **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}))
+                    line = next((ln for ln in reversed(p.stdout.splitlines()) if ln.startswith("{")), "")
+                    r = json.loads(line) if line else {"error": (p.stderr or "Whisper didn't answer").strip()[-300:]}
+                except subprocess.TimeoutExpired:
+                    r = {"error": "Whisper took too long on this clip."}
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/captions/static":
                 _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
