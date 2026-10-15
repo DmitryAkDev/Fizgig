@@ -292,9 +292,14 @@ def form(desc):
             _row("FAMILY_EDIT_DIR", "1. Originals folder (before editing)", "folder",
                  "Your original, unedited photos. No captions needed.", upload=True, start="data"),
             _row("FAMILY_EDIT_EXTRAS_DIR", "2. Extra pictures folder", "folder",
-                 "Pictures to bring into the edits - a person, an object, a place - named after the photo they "
-                 f"belong to: photo_1.png, photo_2.png ... for photo.png. Any shape, up to "
-                 f"{desc.edit_references - 1} per photo.", upload=True, start="data")
+                 "The pictures to bring into the edits: a person, an object, a place.\n"
+                 "Name each after the photo it belongs to, adding _1, _2 ...: for beach.jpg, its extras are "
+                 "beach_1.jpg, beach_2.jpg.\n"
+                 "The number is the order the model sees them in: beach_1 is the second picture after the original, "
+                 "beach_2 the third. Say so in the edit instruction, e.g. \"Put the man from the second picture into "
+                 "this scene.\"\n"
+                 f"A photo can have none (it trains as a normal pair) or up to {desc.edit_references - 1}. Any shape "
+                 "or file type.", upload=True, start="data")
             if desc.edit_references > 1 else None,
             _row("_edit_extras_found", "", "note") if desc.edit_references > 1 else None,
             _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "

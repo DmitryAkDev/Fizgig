@@ -270,7 +270,11 @@ function renderRow(r) {
     if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
-  if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
+  if (r.hint) {                                   // a hint of several lines keeps its line breaks
+    const h = el("div", {class: "field-hint", text: r.hint});
+    if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
+    wrap.append(h);
+  }
   return wrap;
 }
 
