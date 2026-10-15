@@ -99,6 +99,7 @@ FLUX3 = FamilyDescription(
     compile_payback_steps={"bf16": 600, "int8": 600},
     int8_attention=True,              # workbench renders: 4.55 -> 4.25 s at 1024 (1.07x), 30.4 dB to the bf16 render
     finetune=True,                    # driver.ft_spec: every block's Linears on an NF4 trunk, no streaming
+    ft_learning_rate=5e-5,            # the rate ticking Fine-tune sets, as the Fine-tune preset (weights as Z-Image's)
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     edit_training=True,               # up to 10 references (pipeline.py MAX_REFERENCES), each its own l index
     reference_strength=True,          # the workbench's reference strength + previous-frame latent chain, as Klein's
