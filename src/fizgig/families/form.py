@@ -656,6 +656,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     media = launch.dataset_media(image_folder) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")
+    # what the run ignores (launch.plan): a slider or a fine-tune trains its own blocks (Model Area), and a
+    # fine-tune every noise level (the timestep range)
+    if kind in ("slider", "finetune"):
+        hidden |= {"TARGET_LAYERS", "TRAINING_BLOCKS"}
+    if kind == "finetune":
+        hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP"}
     if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
         hidden.add("TRAINING_BLOCKS")
     vals = _option_values(desc, values)
