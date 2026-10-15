@@ -13,7 +13,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Fizgig">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <link rel="stylesheet" href="/style.css">
+  <script>
+    // a pod's proxy can fail one request just after the pod comes up: the page then arrived without its styles.
+    // A stylesheet or script that fails is fetched again, a little later each time.
+    function fizgigRetry(el) {
+      var n = +(el.dataset.tries || 0) + 1, at = el.tagName === "LINK" ? "href" : "src";
+      if (n > 8) return;
+      setTimeout(function () {
+        var c = document.createElement(el.tagName);
+        for (var i = 0; i < el.attributes.length; i++) c.setAttribute(el.attributes[i].name, el.attributes[i].value);
+        c.dataset.tries = n;
+        c.setAttribute(at, el.getAttribute(at).split("?")[0] + "?r=" + n);
+        el.replaceWith(c);
+      }, 400 * n);
+    }
+  </script>
+  <link rel="stylesheet" href="/style.css" onerror="fizgigRetry(this)">
 </head>
 <body>
   <header class="window-titlebar">
@@ -1661,7 +1676,7 @@
     <button class="btn lightbox-step" id="lightboxNext" title="Next (→)">›</button>
   </div>
 
-  <script src="/qrcode.js"></script>
-  <script src="/app.js"></script>
+  <script src="/qrcode.js" onerror="fizgigRetry(this)"></script>
+  <script src="/app.js" onerror="fizgigRetry(this)"></script>
 </body>
 </html>
