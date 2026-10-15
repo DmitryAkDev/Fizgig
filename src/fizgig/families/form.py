@@ -4,7 +4,7 @@ this (the web UI today) with no change to that front end.
 
 form(desc) -> {"sections": [{"id", "title", "tab", "rows": [row, ...]}, ...], "presets": [...]}. A row is a plain
 dict: key, label, kind ("entry" | "choice" | "combo" (editable) | "check" | "text" (several lines) | "path" | "folder"
-| "radio" | "note"), default, hint, choices (labels) and, for a family option, option=True. upload=True marks a file or a
+| "radio" | "note" | "shown": a read-only value the state fills), default, hint, choices (labels) and, for a family option, option=True. upload=True marks a file or a
 folder of training data that may be on another computer than the one training (a browser front end offers to upload
 it); output and resume folders never are. start ("data" | "output") is where a picker for it opens. Only rows the family can
 ever show are in it (its abilities decide: Adaptive LR, loss watch, EMA, precisions, kinds of training, ...).
@@ -289,10 +289,13 @@ def form(desc):
         add("slider", "Slider", "training", [
             _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=[SLIDER_SOURCES[x] for x in srcs],
                  default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
-            _row("FAMILY_SLIDER_DIR", "-1 end folder", "folder",
-                 "The same shots showing the -1 end (e.g. not smiling), each with the same file name as its +1 photo "
-                 "in the training folder (the +1 end). No captions in this folder.", upload=True, start="data"),
-            _row("FAMILY_SLIDER_CAPTION", "Caption for every pair", hint="Describe what the two photos of a pair have "
+            _row("_slider_plus_dir", "1. +1 end folder", "shown", "Photos showing the +1 end of the dial (e.g. the "
+                 "person smiling). The captions go in this folder (step 3). It is the training folder on the Start "
+                 "tab - change it there."),
+            _row("FAMILY_SLIDER_DIR", "2. -1 end folder", "folder",
+                 "The same shots showing the -1 end (e.g. not smiling), each with the same file name as its +1 photo. "
+                 "No captions in this folder.", upload=True, start="data"),
+            _row("FAMILY_SLIDER_CAPTION", "3. Caption for every pair", hint="Describe what the two photos of a pair have "
                  "in common, and leave out the difference. For a smile dial, where each +1 photo shows someone smiling "
                  "and its -1 photo the same person not smiling, the caption is \"a portrait photo of a person\" - not "
                  "\"a smiling person\", because the smile is the difference the dial learns from the photos. For a dial "
@@ -601,7 +604,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
-                "_slider_help_prompts"} if pairs else {"FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION", "_slider_help_pairs"})
+                "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
+                                                       "_slider_help_pairs"})
+    if pairs:
+        notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
     media = launch.dataset_media(image_folder) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")

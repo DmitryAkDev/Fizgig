@@ -135,7 +135,7 @@ const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageF
 
 function defaults() {
   const v = {};
-  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note") v[r.key] = r.default;
+  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") v[r.key] = r.default;
   return v;
 }
 
@@ -166,8 +166,14 @@ function renderSections(tab, host) {
 function renderRow(r) {
   // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
   // across the card - from the schema's row kind, so every model's form lays out the same way
-  const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide"}[r.kind] || "field";
+  const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind, "data-key": r.key});
+  if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
+    wrap.append(el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
+      el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1})));
+    if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
+    return wrap;
+  }
   if (r.kind === "note") {                        // its own text, and any the form's state writes (RefMod's tokens)
     if (r.label) wrap.append(el("div", {class: "field-hint", text: r.label}));
     wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
@@ -343,6 +349,7 @@ async function refreshState() {
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
     const n = $("note_" + k);
     if (n) {
+      if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }
       n.textContent = S.state.notes[k] || "";
       const act = (S.state.actions || {})[k];      // a hint's one-click change (the desktop's: Use 1e-4)
       if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
