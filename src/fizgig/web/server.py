@@ -700,9 +700,9 @@ def _refmod_plan(values, image_folder):
     return None, st, p
 
 
-def _multi_person_notes(vals, image_folder):
-    """Multi-person mode's preview, under each folder's DOP trigger row: the word it trains as and the class it was
-    read as (the folder's "replace it with" box overrides), or why it can't be made."""
+def _multi_person_notes(vals, image_folder, multi_person=True):
+    """The Subjects card's line under each subject: its trigger word, or (other people keeping their faces) the word
+    it trains as and what it was read as - the subject's own boxes override - or why it can't be made."""
     from fizgig.families import multi_person as mp
     ext = str(vals.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt"
     rows = [(str(image_folder or "").strip(), "FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS")]
@@ -710,19 +710,23 @@ def _multi_person_notes(vals, image_folder):
         rows += [(str(vals.get(d) or "").strip(), t, c)
                  for d, t, c in form.CONCEPT_ROWS[:form.concept_count(vals) - 1]]
     notes, classes = {}, []
-    for folder, tkey, ckey in rows:
+    for n, (folder, tkey, ckey) in enumerate(rows, start=1):
         if not folder:
             continue
         trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
+        if not multi_person:
+            notes[f"_subject{n}_as"] = (f"Trigger word: {trig}" if trig else
+                                        "No trigger word found in this folder's captions.")
+            continue
         s, why = mp.subject(folder, trig, str(vals.get(ckey) or "").strip(), ext)
         if s:
             classes.append(s["phrase"])
-        notes[tkey] = (f"Trains as {s['fused']} ({s['phrase']}) - prompt with {s['fused']}. Not right? Type what the "
-                       f"subject is in \"replace it with\" below." if s else f"Multi-person mode: {why}")
+        notes[f"_subject{n}_as"] = (f"Trains as {s['fused']} ({s['phrase']}) - prompt with {s['fused']}." if s
+                                    else f"Can't keep other people's faces with this folder: {why}")
     same = sorted({c for c in classes if classes.count(c) > 1})
     if same:                 # two women measured: right at epoch 16 where a woman and a man were at 10
-        notes["MAX_TRAIN_EPOCHS"] = (f"Multi-person mode: {len([c for c in classes if c in same])} subjects are "
-                                     f"{' / '.join(same)} - subjects of the same class can need more epochs.")
+        notes["MAX_TRAIN_EPOCHS"] = (f"{len([c for c in classes if c in same])} subjects are {' / '.join(same)}: "
+                                     f"subjects of the same kind can need about 1.6x the epochs.")
     return notes
 
 
@@ -2774,8 +2778,10 @@ class Handler(BaseHTTPRequestHandler):
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)))
-                if st["kind"] == "standard" and vals.get("FAMILY_MULTI_PERSON"):   # what each folder trains as
-                    st["notes"].update(_multi_person_notes(vals, b.get("image_folder") or ""))
+                if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
+                    st["notes"].update(_multi_person_notes(
+                        vals, b.get("image_folder") or "",
+                        multi_person=st["kind"] == "standard" and bool(vals.get("FAMILY_MULTI_PERSON"))))
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(

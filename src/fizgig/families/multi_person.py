@@ -78,8 +78,9 @@ def subject(folder, trigger, cls="", ext=".txt"):
             words = collections.Counter(w.lower() for c in caps if trig.search(c) for w in anywhere.findall(c))
             found = collections.Counter({("an " if w[0] in "aeiou" else "a ") + w: n for w, n in words.items()})
         if not found:
-            return None, (f"its captions never say what {trigger} is (woman, man, girl, dog...) - type it in that "
-                          "folder's \"replace it with\" box, e.g. a woman")
+            return None, (f"its captions never say what {trigger} is (woman, man, girl, dog...) - tick Correct a "
+                          "trigger word on the Subjects card and type it in that subject's \"what it is\" box, e.g. "
+                          "woman")
         phrase = found.most_common(1)[0][0]
     if not re.match(r"^an?\s", phrase, re.I):
         phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase

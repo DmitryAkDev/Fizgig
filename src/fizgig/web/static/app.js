@@ -332,7 +332,11 @@ function fillCombo(sel, choices, v, labels) {
 function syncInputs(keys) {
   for (const k of keys) {
     const i = $("f_" + k);
-    if (!i) continue;
+    if (!i) {                                     // a choice of pills: its radio inputs share the name
+      document.querySelectorAll(`input[type="radio"][name="f_${k}"]`).forEach((rb) => {
+        rb.checked = rb.value === String(S.values[k] ?? ""); });
+      continue;
+    }
     if (i.tagName === "SELECT" && [...i.options].some((o) => o.value === "__other")) {
       const row = (S.fam.form.sections.flatMap((s) => s.rows).find((r) => r && r.key === k)) || {choices: []};
       fillCombo(i, row.choices, S.values[k], row.labels);

@@ -988,21 +988,21 @@ def multi_concept_problems(desc, inputs):
     wanted = list(inputs.get("extra_folders") or [])
     for i, f in enumerate(wanted, start=2):
         if not _s(f):
-            out.append(f"Multi Concept: set the subject {i} folder, or pick fewer subjects.")
+            out.append(f"Subjects: set the subject {i} folder, or pick fewer subjects.")
     extra = [_s(f) for f in wanted if _s(f)]
     if not wanted:
-        out.append("Multi Concept is on but no second subject folder is set — pick one, or turn the mode off.")
+        out.append("Subjects: no folder set for subject 2 - pick one, or choose 1 subject.")
     ext = _s(inputs.get("caption_ext")) or ".txt"
     for f in extra:
         if norm(f) in seen:
-            out.append(f"Multi Concept: {f} is the same folder as another subject — each needs its own folder.")
+            out.append(f"Subjects: {f} is the same folder as another subject - each needs its own folder.")
             continue
         seen.add(norm(f))
         if not os.path.isdir(f):
-            out.append(f"Multi Concept: folder does not exist: {f}")
+            out.append(f"Subjects: folder does not exist: {f}")
         elif not any(fn.lower().endswith(ext.lower()) for fn in os.listdir(f)):
-            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training — each "
-                       f"subject needs its own trigger word in every caption, or they will blend.")
+            out.append(f"Subjects: no {ext} captions in {f}. Caption every subject's folder before training - "
+                       f"each needs its own trigger word in every caption, or they will blend.")
     return out
 
 
@@ -1014,11 +1014,11 @@ def _dop_folders(st):
     """DOP's per-folder (name, words to remove, replacements): the training folder's, then subject 2's (Multi
     Concept). A folder's box left empty takes that folder's own trigger word (the Captions tab's, which the web
     server puts in DOP_FOLDER_TRIGGER / DOP_FOLDER_TRIGGER2)."""
-    out = [("Training folder", _s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGER"))
+    out = [("Subject 1", _s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGER"))
             or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")), _s(st.get("FAMILY_DOP_CLASS")))]
     if st.get("multiconcept"):
         for i, _f in enumerate(st.get("extra_folders") or [], start=2):
-            out.append((f"Subject {i} folder", _s(st.get(f"FAMILY_DOP_TRIGGER{i}")) or _s(st.get(f"DOP_FOLDER_TRIGGER{i}")),
+            out.append((f"Subject {i}", _s(st.get(f"FAMILY_DOP_TRIGGER{i}")) or _s(st.get(f"DOP_FOLDER_TRIGGER{i}")),
                         _s(st.get(f"FAMILY_DOP_CLASS{i}"))))
     rows = []
     for name, trig, cls in out:
@@ -1055,11 +1055,11 @@ def multi_person_subjects(desc, st):
     for folder, (name, t, c) in zip(folders, _dop_folders(st)):
         where = (cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson"
         if len(t) != 1:
-            out.append((folder, None, f"Multi-person mode: the {name.lower()} needs exactly one trigger word "
-                                      f"({len(t)} given) - one person per folder", where))
+            out.append((folder, None, f"Other people keep their faces: {name.lower()} needs exactly one trigger "
+                                      f"word ({len(t)} given) - one person per folder", where))
             continue
         sub, why = mp.subject(folder, t[0], c[0] if c else "", ext)
-        out.append((folder, sub, f"Multi-person mode: the {name.lower()} - {why}" if why else "", where))
+        out.append((folder, sub, f"Other people keep their faces: {name.lower()} - {why}" if why else "", where))
     return out
 
 
@@ -1075,11 +1075,12 @@ def dop_problems(desc, v):
     out = []
     for name, t, c in _dop_folders(v):
         if not t:
-            out.append(f"DOP: the {name.lower()} has no word to remove - type its trigger word, or set the folder's "
-                       "trigger word on the Captions tab.")
+            out.append(f"Subjects: no trigger word found for {name.lower()} - tick "
+                       "Correct a trigger word and type it, or caption the folder with one.")
         elif len(c) != len(t):
-            out.append(f"DOP: the {name.lower()} has {len(t)} words to remove ({', '.join(t)}) but {len(c)} "
-                       "replacements - give one for each, in the same order, one for them all, or none.")
+            out.append(f"Subjects: {name.lower()} has {len(t)} trigger words "
+                       f"({', '.join(t)}) but {len(c)} 'what it is' words - give one for each, in the same order, one "
+                       "for them all, or none.")
     return out
 
 

@@ -49,6 +49,8 @@ DEFAULTS = {
     "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "", "FAMILY_DOP_WEIGHT": "1.0",
     "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
+    "FAMILY_SUBJECTS": "1 subject", "FAMILY_PEOPLE_MODE": "Off - a normal LoRA", "FAMILY_SUBJECT_FIX": False,
+    "FAMILY_PEOPLE_MORE": False,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -165,6 +167,18 @@ def slider_sources(desc):
 
 
 CONCEPT_COUNTS = ("2 subjects", "3 subjects", "4 subjects")
+SUBJECT_COUNTS = ("1 subject",) + CONCEPT_COUNTS
+# the Subjects card's "When other people are in the picture": off / DOP / DOP + multi-person (the measured recipe)
+PEOPLE_MODES = ("Off - a normal LoRA", "On - only where you use its trigger word",
+                "On - and in group pictures, the other people keep their faces")
+PEOPLE_HINT = ("Off: the subject's face can turn up on other people, in any prompt.\n"
+               "Only where you use its trigger word: prompts without the trigger give the base model's people, not "
+               "your subject. About 1.5x the time per step.\n"
+               "And in group pictures: as well as that, in a scene with your subject, everyone else keeps their own "
+               "face. For people. Downloads 21 MB of example people once. Prompt with the word shown under each "
+               "subject (e.g. zwxemwoman).")
+SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
+                 "how the LoRA tells them apart. Caption each folder first.")
 MULTI_PERSON_HINT = ("For people who appear together with others: in a group photo the other people keep their own "
                      "faces instead of turning into your subject. Turns DOP on, adds 16 side-by-side training pictures "
                      "per subject (one of their photos next to one of 32 fixed strangers, downloaded once, ~21 MB) and "
@@ -285,42 +299,48 @@ def form(desc):
         params.append(_row("FAMILY_FAST_ID", "Fast Identity Mode", "check",
                            f"Trains only the identity blocks ({a}-{b}): about 1.5x faster."))
     params += by_section("training", "after", "lora")
-    if desc.multi_concept:          # the desktop's box: a click applies the family's recipe (still editable)
-        params += [
-            _row("FAMILY_MULTICONCEPT", "Multi Concept - a second subject in its own folder", "check",
-                 " ".join(t for t in (MULTICONCEPT_HINT, desc.multi_concept_hint) if t),
-                 sets={"true": dict(desc.multi_concept_defaults)} if desc.multi_concept_defaults else None),
-            _row("FAMILY_CONCEPT_COUNT", "How many subjects", "choice", "The training folder is subject 1.",
-                 CONCEPT_COUNTS),
-            _row("FAMILY_CONCEPT_DIR", "Subject 2 folder", "folder", upload=True, start="data"),
-            _row("FAMILY_CONCEPT_DIR3", "Subject 3 folder", "folder", upload=True, start="data"),
-            _row("FAMILY_CONCEPT_DIR4", "Subject 4 folder", "folder", upload=True, start="data"),
-            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
-                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats."),
-        ]
-    params += [
-        _row("FAMILY_MULTI_PERSON", "Multi-person mode (everyone else stays themselves)", "check", MULTI_PERSON_HINT,
-             sets={"true": {"FAMILY_DOP": True, "FAMILY_DOP_EVERY": DOP_EVERY[1]}}),   # the measured recipe
-        _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check", DOP_HINT),
-        _row("FAMILY_DOP_TRIGGER", "Training folder: word to remove", hint="The trigger word in this folder's captions. "
-             "Empty = the folder's trigger word from the Captions tab. Two people in one folder: both, comma-separated "
-             "(zwxem, qrtpl)."),
-        _row("FAMILY_DOP_CLASS", "Training folder: replace it with", hint="Optional. Leave it empty when the captions "
-             "already say what the subject is (“zwxem, a woman smiling” becomes “a woman smiling”). Otherwise the "
-             "word to put in its place, e.g. woman (two triggers: woman, man)."),
-        _row("FAMILY_DOP_TRIGGER2", "Subject 2 folder: word to remove", hint="The trigger word in the subject 2 "
-             "folder's captions. Empty = that folder's trigger word from the Captions tab."),
-        _row("FAMILY_DOP_CLASS2", "Subject 2 folder: replace it with", hint="Optional, as for the training folder."),
-        _row("FAMILY_DOP_TRIGGER3", "Subject 3 folder: word to remove", hint="Empty = that folder's trigger word from "
-             "the Captions tab."),
-        _row("FAMILY_DOP_CLASS3", "Subject 3 folder: replace it with", hint="Optional, as for the training folder."),
-        _row("FAMILY_DOP_TRIGGER4", "Subject 4 folder: word to remove", hint="Empty = that folder's trigger word from "
-             "the Captions tab."),
-        _row("FAMILY_DOP_CLASS4", "Subject 4 folder: replace it with", hint="Optional, as for the training folder."),
-        _row("FAMILY_DOP_EVERY", "How often", "choice", "Every second step does the DOP pass on half the steps at "
-             "twice the strength: the same preservation on average, for about half the extra time.", DOP_EVERY),
-        _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
-             "plain prompts closer to the base model but can soften the likeness."),
+    # who the LoRA is of and how it treats other people: the Subjects card (after Training Parameters)
+    mc = dict(desc.multi_concept_defaults or {})
+    subjects = [
+        _row("FAMILY_SUBJECTS", "Who is this LoRA of?", "radio",
+             " ".join(t for t in (SUBJECTS_HINT, desc.multi_concept_hint) if t), SUBJECT_COUNTS,
+             default=SUBJECT_COUNTS[0],
+             sets={SUBJECT_COUNTS[0]: {"FAMILY_MULTICONCEPT": False},
+                   **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
+        if desc.multi_concept else None,
+        _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
+        _row("_subject1_as", "", "note"),
+        *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"), _row("_subject2_as", "", "note"),
+           _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"), _row("_subject3_as", "", "note"),
+           _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"), _row("_subject4_as", "", "note"),
+           _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
+                "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
+          if desc.multi_concept else []),
+        _row("FAMILY_PEOPLE_MODE", "Keep the subject's face off other people", "radio", PEOPLE_HINT, PEOPLE_MODES,
+             default=PEOPLE_MODES[0],
+             sets={PEOPLE_MODES[0]: {"FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False},
+                   PEOPLE_MODES[1]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": False},
+                   PEOPLE_MODES[2]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": True,
+                                     "FAMILY_DOP_EVERY": DOP_EVERY[1]}}),          # the measured recipe
+        _row("FAMILY_SUBJECT_FIX", "Correct a trigger word, or what a subject is", "check",
+             "Fizgig reads each subject's trigger word, and what it is (a woman, a man, a dog), from its captions - "
+             "shown under its folder. Tick to type them yourself when that is wrong."),
+        _row("FAMILY_DOP_TRIGGER", "Subject 1: trigger word", hint="Empty = read from the captions. Two people in one "
+             "folder: both, comma-separated (zwxem, qrtpl)."),
+        _row("FAMILY_DOP_CLASS", "Subject 1: what it is", hint="e.g. woman. Empty = read from the captions (two "
+             "triggers: woman, man)."),
+        _row("FAMILY_DOP_TRIGGER2", "Subject 2: trigger word", hint="Empty = read from the captions."),
+        _row("FAMILY_DOP_CLASS2", "Subject 2: what it is", hint="Empty = read from the captions."),
+        _row("FAMILY_DOP_TRIGGER3", "Subject 3: trigger word", hint="Empty = read from the captions."),
+        _row("FAMILY_DOP_CLASS3", "Subject 3: what it is", hint="Empty = read from the captions."),
+        _row("FAMILY_DOP_TRIGGER4", "Subject 4: trigger word", hint="Empty = read from the captions."),
+        _row("FAMILY_DOP_CLASS4", "Subject 4: what it is", hint="Empty = read from the captions."),
+        _row("FAMILY_PEOPLE_MORE", "Change how strongly it keeps to the trigger word", "check",
+             "Set to the tested recipe. Change only to experiment."),
+        _row("FAMILY_DOP_EVERY", "How often", "choice", "Every second step: the same hold on average, about half the "
+             "extra time.", DOP_EVERY),
+        _row("FAMILY_DOP_WEIGHT", "Strength", hint="1.0 = as strong as the training itself. Higher keeps prompts "
+             "without the trigger closer to the base model, but can soften the likeness."),
     ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",
@@ -329,6 +349,7 @@ def form(desc):
         params.append(_row("FAMILY_EMA", "Weight averaging (EMA)", "choice", desc.ema_hint or EMA_HINT,
                            EMA + ((EMA_SHORT,) if desc.ema_short_run else ())))
     add("params", "Training Parameters", "training", params)
+    add("subjects", "Subjects", "training", subjects)
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
@@ -720,20 +741,38 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         if desc.loss_watch:             # a new AI caption would be encoded with the trigger unfused
             disabled.add("KREA2_AUTO_RECAPTION")
             force["KREA2_AUTO_RECAPTION"] = False
-            notes["KREA2_AUTO_RECAPTION"] = "Off in multi-person mode."
+            notes["KREA2_AUTO_RECAPTION"] = "Off while other people keep their faces (Subjects card)."
         values = {**values, "FAMILY_DOP": True}
-        notes["SAMPLE_PROMPT"] = ("Multi-person mode: prompt with each subject's fused trigger, e.g. zwxemwoman "
-                                  "(the trigger joined to what the subject is), not \"zwxem, a woman\".")
-    if kind not in ("standard", "finetune") or not values.get("FAMILY_DOP"):
-        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"} | DOP_EXTRA_ROWS
+        notes["SAMPLE_PROMPT"] = ("Prompt with each subject's word from the Subjects card on the Training tab, e.g. "
+                                  "zwxemwoman, not \"zwxem, a woman\".")
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
-        hidden.add("FAMILY_MULTICONCEPT")
+        hidden.add("subjects")
     n_sub = concept_count(values) if kind not in ("edit", "slider") and values.get("FAMILY_MULTICONCEPT") else 1
+    # the card's two choices follow the settings under them (a preset, a saved run, an older setup)
+    want = SUBJECT_COUNTS[n_sub - 1] if desc.multi_concept else SUBJECT_COUNTS[0]
+    if str(values.get("FAMILY_SUBJECTS") or "") != want:
+        force["FAMILY_SUBJECTS"] = want
+    mode = PEOPLE_MODES[2 if values.get("FAMILY_MULTI_PERSON") and kind == "standard" else
+                        1 if values.get("FAMILY_DOP") else 0]
+    if str(values.get("FAMILY_PEOPLE_MODE") or "") != mode:
+        force["FAMILY_PEOPLE_MODE"] = mode
+    if kind == "finetune" and values.get("FAMILY_MULTI_PERSON"):
+        notes["FAMILY_PEOPLE_MODE"] = "A fine-tune trains as On - only where you use its trigger word; the " \
+                                      "group-picture option is for LoRAs."
+    hidden.add("FAMILY_CONCEPT_COUNT")
     if n_sub == 1:
-        hidden |= {"FAMILY_CONCEPT_COUNT", "FAMILY_CONCEPT_BALANCE"}
-    for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder and DOP pair, up to the count
+        hidden.add("FAMILY_CONCEPT_BALANCE")
+    notes["_subject1_folder"] = image_folder or "Not chosen yet - pick it on the Start tab"
+    dop = bool(values.get("FAMILY_DOP")) and kind in ("standard", "finetune")
+    if not dop:
+        hidden |= {"FAMILY_SUBJECT_FIX", "FAMILY_PEOPLE_MORE"}
+    if not (dop and values.get("FAMILY_SUBJECT_FIX")):
+        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
+    if not (dop and values.get("FAMILY_PEOPLE_MORE")):
+        hidden |= {"FAMILY_DOP_EVERY", "FAMILY_DOP_WEIGHT"}
+    for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:
-            hidden |= {d, t, c}
+            hidden |= {d, t, c, f"_subject{i}_as"}
     
     kn = _kind_notes(desc)
     if len(kinds(desc)) > 1:
