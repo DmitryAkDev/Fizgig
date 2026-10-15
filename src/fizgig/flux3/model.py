@@ -16,6 +16,8 @@ from torch import Tensor, nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torch.utils.checkpoint import checkpoint
 
+from fizgig.modules import int8_attention as _i8a
+
 MODES = ("image", "image_cond", "text")  # sorted; the order tokens take inside a sample
 IN_CHANNELS = {"image": 128, "image_cond": 128, "text": 20480}
 HIDDEN = 3072
@@ -86,8 +88,11 @@ def packed_attention(q: Tensor, k: Tensor, v: Tensor, bounds: list) -> Tensor:
     for start, end in bounds:
         if start == end:
             continue
-        with sdpa_kernel(backend):
-            chunk = F.scaled_dot_product_attention(q[:, :, start:end], k[:, :, start:end], v[:, :, start:end])
+        qs, ks, vs = q[:, :, start:end], k[:, :, start:end], v[:, :, start:end]
+        chunk = _i8a.attend(qs, ks, vs)          # workbench renders: the INT8 kernel when it's switched on
+        if chunk is None:
+            with sdpa_kernel(backend):
+                chunk = F.scaled_dot_product_attention(qs, ks, vs)
         out[start:end] = chunk[0].transpose(0, 1).reshape(end - start, heads * dim)
     return out
 

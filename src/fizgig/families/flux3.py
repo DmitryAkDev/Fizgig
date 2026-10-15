@@ -71,6 +71,11 @@ FLUX3 = FamilyDescription(
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora",),
     ema_default="0.98",
+    compiles=True,
+    compile_boundary="outside",       # as Qwen 2.1's: the checkpoint wraps the compiled block
+    # 28 single blocks compiled: 0.31 -> 0.26 s/step (1.19x) at 0.25 MP bf16, ~10 s warm-up per shape (15 Oct 2026)
+    compile_payback_steps={"bf16": 600, "int8": 600},
+    int8_attention=True,              # workbench renders: 4.55 -> 4.25 s at 1024 (1.07x), 30.4 dB to the bf16 render
     train_preview_checkpoint=True,    # training previews on the distilled (16 steps, no CFG), as Klein's Distilled
     workbench_follows_samples=True,   # Base CFG needs the Samples tab's negative (empty = the reference's uncond)
 

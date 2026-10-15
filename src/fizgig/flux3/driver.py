@@ -49,6 +49,10 @@ class Flux3Driver(FamilyDriver):
     def enable_gradient_checkpointing(self, dit, on=True):
         dit.enable_gradient_checkpointing(on)
 
+    def compile_targets(self, dit):
+        """The 28 single blocks (most of the compute; the 15 per-mode blocks see only their own tokens)."""
+        return dit.single_blocks
+
     # ---- block swap: the single blocks (model.py) -----------------------------------------------------------------
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.single_blocks) if dit is not None else N_SINGLE) - 2
