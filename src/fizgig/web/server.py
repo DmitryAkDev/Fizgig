@@ -710,19 +710,51 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
         rows += [(str(vals.get(d) or "").strip(), t, c)
                  for d, t, c in form.CONCEPT_ROWS[:form.concept_count(vals) - 1]]
     notes, classes = {}, []
+    dop = bool(vals.get("FAMILY_DOP"))
+    fused_rules = []
     for n, (folder, tkey, ckey) in enumerate(rows, start=1):
         if not folder:
             continue
         trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
+        cls = str(vals.get(ckey) or "").strip()
+        cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
+        lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
+                 f"One of its captions: {cap}" if cap else "One of its captions: none found - caption the folder first"]
         if not multi_person:
-            notes[f"_subject{n}_as"] = (f"Trigger word: {trig}" if trig else
-                                        "No trigger word found in this folder's captions.")
+            if dop and cap and trig:
+                pairs = list(zip([t.strip() for t in trig.split(",") if t.strip()],
+                                 [c.strip() for c in cls.split(",")] * 8))
+                kept = mp.dop_caption(cap, pairs)
+                lines += [f"Trains on: {cap}", f"And keeps as the model made it: {kept}" if kept else
+                          "And keeps as the model made it: nothing - this caption has no trigger word"]
+            elif cap:
+                lines.append(f"Trains on: {cap} (as written)")
+            notes[f"_subject{n}_as"] = "\n".join(lines)
             continue
-        s, why = mp.subject(folder, trig, str(vals.get(ckey) or "").strip(), ext)
-        if s:
-            classes.append(s["phrase"])
-        notes[f"_subject{n}_as"] = (f"Trains as {s['fused']} ({s['phrase']}) - prompt with {s['fused']}." if s
-                                    else f"Can't keep other people's faces with this folder: {why}")
+        s, why = mp.subject(folder, trig, cls, ext)
+        if not s:
+            notes[f"_subject{n}_as"] = "\n".join(lines + [f"Can't keep other people's faces with this folder: {why}"])
+            continue
+        classes.append(s["phrase"])
+        fused_rules += s["rules"]
+        lines[0] = (f"Trains as: {s['fused']} - Fizgig joins the trigger word to what the subject is "
+                    f"(\"{s['trigger']}, {s['phrase']}\" becomes \"{s['fused']}\"), which keeps the subjects apart. "
+                    f"Your caption files aren't changed. Use {s['fused']} in your prompts.")
+        if cap:
+            fused = mp.fuse(cap, s["rules"])
+            kept = mp.dop_caption(fused, [(s["fused"], s["phrase"])])
+            who = mp.stranger_example() or "one of 32 example people, described"
+            lines += [f"Trains on: {fused}",
+                      f"And keeps as the model made it: {kept}" if kept else
+                      "And keeps as the model made it: nothing - this caption has no trigger word",
+                      f"Plus {mp.PER_SUBJECT} side-by-side pictures of {s['fused']} next to a stranger, e.g.: {who} on "
+                      f"the left, and {s['fused']} on the right, {mp.TAIL}"]
+        notes[f"_subject{n}_as"] = "\n".join(lines)
+    if multi_person and fused_rules:          # the previews' prompts, as they will be read
+        prompts = [ln.strip() for ln in str(vals.get("SAMPLE_PROMPT") or "").splitlines() if ln.strip()]
+        read = [mp.fuse(p, fused_rules) for p in prompts]
+        if any(a != b for a, b in zip(prompts, read)):
+            notes["SAMPLE_PROMPT"] = "Previews will use: " + " | ".join(read)
     same = sorted({c for c in classes if classes.count(c) > 1})
     if same:                 # two women measured: right at epoch 16 where a woman and a man were at 10
         notes["MAX_TRAIN_EPOCHS"] = (f"{len([c for c in classes if c in same])} subjects are {' / '.join(same)}: "

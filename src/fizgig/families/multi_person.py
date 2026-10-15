@@ -32,6 +32,63 @@ CLASS_WORDS = ("woman", "man", "girl", "boy", "lady", "guy", "person", "child", 
                "puppy", "kitten", "horse")
 
 
+def dop_caption(caption, pairs):
+    """DOP's caption (the trainer's): every trigger in it swapped for its class word (dropped when that is empty), or
+    None when the caption has none of the triggers - that image has nothing to keep apart."""
+    if not caption:
+        return None
+    out, hit = caption, False
+    for trigger, cls in pairs:
+        pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I)
+        if pat.search(out):
+            hit = True
+            out = pat.sub(lambda _m, c=cls: c, out)
+    if not hit:
+        return None
+    out = re.sub(r"\s*,\s*(?:,\s*)+", ", ", out)            # a dropped trigger leaves ", ," or a stray comma behind
+    out = re.sub(r"^\s*,\s*|\s*,\s*$", "", out)
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
+def fuse(text, rules):
+    """A caption or prompt read with a subject's fused trigger (the dataset's caption_replace, in order)."""
+    for a, b in rules or ():
+        if str(a):
+            text = re.sub(r"(?<!\w)" + re.escape(str(a)) + r"(?!\w)", lambda _m, t=str(b): t, text, flags=re.I)
+    return text
+
+
+def sample_caption(folder, trigger, ext=".txt"):
+    """The folder's first caption (by file name) that holds the trigger, for the Subjects card's preview."""
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.lower().endswith(ext.lower()))
+    except OSError:
+        return ""
+    pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I) if trigger else None
+    first = ""
+    for n in names:
+        try:
+            with open(os.path.join(folder, n), encoding="utf-8", errors="replace") as f:
+                c = f.read().strip()
+        except OSError:
+            continue
+        first = first or c
+        if pat is None or pat.search(c):
+            return c
+    return first
+
+
+def stranger_example():
+    """One stranger's description for the composite caption preview, when the set is already downloaded (the
+    preview never downloads)."""
+    from fizgig.user_data import user_file
+    try:
+        with open(os.path.join(user_file("multi_person_strangers"), "strangers.json"), encoding="utf-8") as f:
+            return json.load(f)[0]["description"]
+    except (OSError, ValueError, KeyError, IndexError):
+        return ""
+
+
 def strangers():
     """[(path, description), ...] - the 32 strangers, downloaded on first use (about 21 MB)."""
     from huggingface_hub import snapshot_download

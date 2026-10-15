@@ -425,21 +425,9 @@ def _dop_pairs(triggers, classes):
 
 
 def _dop_caption(caption, pairs):
-    """DOP's caption: every trigger in it swapped for its class word (dropped when that is empty), or None when the
-    caption has none of the triggers - that image has nothing to keep apart."""
-    if not caption:
-        return None
-    out, hit = caption, False
-    for trigger, cls in pairs:
-        pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I)
-        if pat.search(out):
-            hit = True
-            out = pat.sub(lambda _m, c=cls: c, out)
-    if not hit:
-        return None
-    out = re.sub(r"\s*,\s*(?:,\s*)+", ", ", out)            # a dropped trigger leaves ", ," or a stray comma behind
-    out = re.sub(r"^\s*,\s*|\s*,\s*$", "", out)
-    return re.sub(r"\s{2,}", " ", out).strip()
+    """DOP's caption (multi_person.dop_caption, which the Subjects card's preview shows)."""
+    from fizgig.families.multi_person import dop_caption
+    return dop_caption(caption, pairs)
 
 
 def _dop_captions(group):

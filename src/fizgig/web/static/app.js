@@ -176,7 +176,8 @@ function renderRow(r) {
   }
   if (r.kind === "note") {                        // its own text, and any the form's state writes (RefMod's tokens)
     if (r.label) wrap.append(el("div", {class: "field-hint", text: r.label}));
-    wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+    wrap.append(el("div", {class: "field-hint row-note" + (r.hint_labels ? " hint-lines note-lines" : ""),
+      id: "note_" + r.key}));
     return wrap;
   }
   const v = S.values[r.key];
@@ -374,7 +375,13 @@ async function refreshState() {
     const n = $("note_" + k);
     if (n) {
       if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }
-      n.textContent = S.state.notes[k] || "";
+      if (n.classList.contains("note-lines")) {    // one line each, "Label: text" with the label bold (Subjects card)
+        n.replaceChildren(...String(S.state.notes[k] || "").split("\n").filter(Boolean).map((line) => {
+          const at = line.indexOf(": ");
+          return at > 0 ? el("div", {}, el("b", {text: line.slice(0, at) + ": "}), line.slice(at + 2))
+                        : el("div", {text: line});
+        }));
+      } else n.textContent = S.state.notes[k] || "";
       const act = (S.state.actions || {})[k];      // a hint's one-click change (the desktop's: Use 1e-4)
       if (act) n.append(" ", el("button", {class: "btn btn-sm", text: act.label, onclick: () => {
         Object.assign(S.values, act.values); syncInputs(Object.keys(act.values)); refreshStateSoon(); saveStateSoon(); }}));

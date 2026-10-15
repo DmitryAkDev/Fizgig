@@ -828,6 +828,10 @@ def _preview_flags(desc, st, plan, cmd):
             ln = ln.split(" --")[0].strip()      # drop Klein-style inline flags
             if ln:
                 lines.append(ln)
+        if multi_person_on(desc, st):            # the previews read the prompts fused, as training reads the captions
+            from fizgig.families import multi_person as mp
+            rules = [r for _f, s, _w, _x in multi_person_subjects(desc, st) if s for r in s["rules"]]
+            lines = [mp.fuse(ln, rules) for ln in lines]
         plan.dirs.append(samples_dir)            # the sample folder exists either way
         if lines or _sample_image(desc, sm):     # a reference alone previews too ('generate from this picture')
             prompts = os.path.join(samples_dir, f"{desc.key}_prompts.txt")

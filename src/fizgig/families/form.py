@@ -169,14 +169,16 @@ def slider_sources(desc):
 CONCEPT_COUNTS = ("2 subjects", "3 subjects", "4 subjects")
 SUBJECT_COUNTS = ("1 subject",) + CONCEPT_COUNTS
 # the Subjects card's "When other people are in the picture": off / DOP / DOP + multi-person (the measured recipe)
-PEOPLE_MODES = ("Off - a normal LoRA", "On - only where you use its trigger word",
-                "On - and in group pictures, the other people keep their faces")
-PEOPLE_HINT = ("Off: your subject's face can appear on other people, in any picture.\n"
-               "Only where you use its trigger word: leave the trigger word out and you get ordinary people, not "
-               "your subject. Training takes about 1.5x as long.\n"
-               "And in group pictures: your subject only appears where you use its trigger word, and the other "
-               "people in a picture with your subject keep their own faces. Best for people. Training takes about "
-               "1.5x as long. Downloads 21 MB of example photos once. Prompt with the word shown under "
+PEOPLE_MODES = ("Off - a normal LoRA", "Leave the rest of the model alone",
+                "Works with other people in the picture")
+PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in prompts that don't use its trigger "
+               "word.\n"
+               "Leave the rest of the model alone: ask for \"a man at a party\" without the trigger word and you get "
+               "a stranger, just as the model made before you trained. Your subject only appears when you call for "
+               "them.\n"
+               "Works with other people in the picture: your subjects can stand together in one picture, or next to "
+               "someone the model already knows, like a celebrity, and every face stays right. Best for people. "
+               "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown under "
                "each subject, e.g. zwxemwoman.")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.")
@@ -310,14 +312,14 @@ def form(desc):
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
         _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
-        _row("_subject1_as", "", "note"),
-        *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"), _row("_subject2_as", "", "note"),
-           _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"), _row("_subject3_as", "", "note"),
-           _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"), _row("_subject4_as", "", "note"),
+        _row("_subject1_as", "", "note", hint_labels=True),
+        *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"), _row("_subject2_as", "", "note", hint_labels=True),
+           _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"), _row("_subject3_as", "", "note", hint_labels=True),
+           _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"), _row("_subject4_as", "", "note", hint_labels=True),
            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
           if desc.multi_concept else []),
-        _row("FAMILY_PEOPLE_MODE", "Keep the subject's face off other people", "radio", PEOPLE_HINT, PEOPLE_MODES,
+        _row("FAMILY_PEOPLE_MODE", "Your subject and other people", "radio", PEOPLE_HINT, PEOPLE_MODES,
              default=PEOPLE_MODES[0], hint_labels=True,           # one line per choice, its name in bold
              sets={PEOPLE_MODES[0]: {"FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False},
                    PEOPLE_MODES[1]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": False},
@@ -744,8 +746,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             force["KREA2_AUTO_RECAPTION"] = False
             notes["KREA2_AUTO_RECAPTION"] = "Off while other people keep their faces (Subjects card)."
         values = {**values, "FAMILY_DOP": True}
-        notes["SAMPLE_PROMPT"] = ("Prompt with each subject's word from the Subjects card on the Training tab, e.g. "
-                                  "zwxemwoman, not \"zwxem, a woman\".")
+        notes["SAMPLE_PROMPT"] = ("Write prompts as your captions are (\"zwxem, a woman at a cafe\"): previews read "
+                                  "them the way training reads the captions.")
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
         hidden.add("subjects")
     n_sub = concept_count(values) if kind not in ("edit", "slider") and values.get("FAMILY_MULTICONCEPT") else 1
