@@ -518,7 +518,14 @@ def train_command(desc, inputs, plan):
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
     if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st)):
         trig, cls = dop_rules(st)
-        cmd += ["--dop", "--dop_weight", _s(st.get("FAMILY_DOP_WEIGHT")) or "1.0"]
+        every = 2 if _s(st.get("FAMILY_DOP_EVERY")).lower().startswith("every second") else 1
+        try:
+            weight = float(_s(st.get("FAMILY_DOP_WEIGHT")) or 1.0)
+        except ValueError:
+            weight = 1.0
+        # on half the steps at twice the weight: the same preservation on average (the weight scales the DOP
+        # pass's loss, never the run's learning rate - its gradient joins the step's own)
+        cmd += ["--dop", "--dop_weight", f"{weight * every:g}", "--dop_every", str(every)]
         if trig:
             cmd += ["--dop_trigger", ", ".join(trig), "--dop_class", ", ".join(cls)]
     if st.get("ADAPTIVE_LR") and desc.adaptive_lr:

@@ -495,7 +495,7 @@ Every family, Standard LoRA runs only. `--dop` adds a second pass to each step: 
 | `--dop_trigger zwxem` | the word in the captions that means the subject; several subjects comma-separated (`zwxem, qrtpl`). Default `--trigger_word` |
 | `--dop_class woman` | what replaces each trigger: one per trigger in order (`woman, man`) or one for all; empty = the triggers are just left out |
 | `--dop_weight 1.0` | the preservation loss's weight |
-| `--dop_every 1` | a preservation pass every N steps |
+| `--dop_every 1` | a preservation pass every N steps; raise `--dop_weight` by the same factor to keep the same preservation on average (the web UI's "Every second step" sends `--dop_every 2` with the weight doubled) |
 
 A caption with several triggers (a photo of both people) has each one swapped. Images whose caption has no trigger train as usual. Each epoch logs the preservation loss: how far the LoRA moves the trigger-free prompt from the base model.
 

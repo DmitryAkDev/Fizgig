@@ -46,7 +46,8 @@ DEFAULTS = {
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_DOP_TRIGGER": "",
-    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "", "FAMILY_DOP_WEIGHT": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
+    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "", "FAMILY_DOP_WEIGHT": "1.0",
+    "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -160,6 +161,7 @@ def slider_sources(desc):
             if s in SLIDER_SOURCES]
 
 
+DOP_EVERY = ("Every step", "Every second step (faster)")
 DOP_HINT = ("Stops the subject showing up in prompts without its trigger. Every step trains the photo twice: once "
             "with its caption as written, and once with the trigger word removed (“zwxem, a woman smiling” becomes "
             "“a woman smiling”). On that second pass the LoRA is held to exactly what the base model does on its own, "
@@ -290,6 +292,8 @@ def form(desc):
         _row("FAMILY_DOP_TRIGGER2", "Subject 2 folder: word to remove", hint="The trigger word in the subject 2 "
              "folder's captions. Empty = that folder's trigger word from the Captions tab."),
         _row("FAMILY_DOP_CLASS2", "Subject 2 folder: replace it with", hint="Optional, as for the training folder."),
+        _row("FAMILY_DOP_EVERY", "How often", "choice", "Every second step does the DOP pass on half the steps at "
+             "twice the strength: the same preservation on average, for about half the extra time.", DOP_EVERY),
         _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
              "plain prompts closer to the base model but can soften the likeness."),
     ]
@@ -638,7 +642,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"FAMILY_FAST_ID", "FAMILY_DOP"}          # DOP keeps a subject apart: a plain LoRA's job
     if kind != "standard" or not values.get("FAMILY_DOP"):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2",
-                   "FAMILY_DOP_WEIGHT"}
+                   "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"}
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
         hidden |= {"FAMILY_MULTICONCEPT", "FAMILY_CONCEPT_DIR"}
     if kind in ("edit", "slider") or not values.get("FAMILY_MULTICONCEPT"):
