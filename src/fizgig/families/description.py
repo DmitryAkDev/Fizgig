@@ -507,6 +507,9 @@ class FamilyDescription:
     # block positions in the block map, each held block rolled within [low, high] instead. The dice never untick a
     # block. () = nothing held
     lucky_zones: tuple = ()
+    # Repair Studio's Alternate / Toggle detail blocks buttons: the model's detail-end block ids (Toggle switches them
+    # together; Alternate ticks even / unticks odd across the main blocks). () = no such buttons
+    detail_blocks: tuple = ()
     # what each block carries, measured with the Profiler: ((block id, category), ...), category one of
     # "identity" / "look" / "style_ident_overlap" (Repair Studio's colours). Unlisted blocks stay uncoloured.
     block_categories: tuple = ()

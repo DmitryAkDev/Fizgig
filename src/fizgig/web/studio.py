@@ -786,6 +786,7 @@ def layout(desc, prefs, pref_path, samples=None):
             if desc.category_masters else [],
             "category_of": cats if desc.category_masters else {},
             "presets": presets, "lucky_zones": [list(z) for z in (desc.lucky_zones or ())],
+            "detail_blocks": list(desc.detail_blocks or ()),
             "reference_kind": desc.reference_kind or "", "reference_strength": bool(desc.reference_strength),
             "size": str(desc.repair_size or 768), "sizes": SONG_LENGTHS if kind == "audio" else STILLS_SIZES,
             "default_strength": float(desc.repair_default_strength or 1.0),

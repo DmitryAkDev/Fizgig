@@ -178,6 +178,7 @@ MINIMAX = FamilyDescription(
     gui_label="MiniMax H3",
     lora_name_suffix="mmh3",
     experimental=True,
+    detail_blocks=("h3blk_46", "h3blk_47", "h3blk_48", "h3blk_49"),
     hidden=False,
 
     # the Preferences rows (the old hand-built "Model Paths (MiniMax H3)" section, texts unchanged)

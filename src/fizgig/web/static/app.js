@@ -4271,6 +4271,8 @@ function studioActivity() {
   });
   if (reset) studioSync();
   document.querySelectorAll(".st-donor-only").forEach((x) => { x.style.display = S.st.donor ? "" : "none"; });
+  document.querySelectorAll(".st-detail-only").forEach((x) => {
+    x.style.display = S.st.layout && (S.st.layout.detail_blocks || []).length ? "" : "none"; });
   $("stTargetDonor").disabled = !S.st.donor;
 }
 
@@ -4387,11 +4389,11 @@ function studioBulk(kind) {
   const bound = (id, d) => { const t = $(id).value.trim(), x = Number(t); return t === "" || !isFinite(x) ? d : Math.max(-3, Math.min(3, x)); };
   const [lo, hi] = [bound("stLuckyLo", 0), bound("stLuckyHi", 1.5)].sort((x, y) => x - y);
   const order = L.groups.flatMap((g) => g.blocks.map((b) => b.id));
-  // Alternate / Toggle detail blocks (the desktop's, for H3's 0-49 and 46-49): the model's main blocks, its
-  // biggest group
+  // Alternate / Toggle detail blocks (the desktop's, H3's 0-49 and 46-49): for a model naming its detail blocks
+  // (description detail_blocks); Alternate runs over its main blocks, its biggest group
   const main = L.groups.reduce((a, g) => (g.blocks.length > a.length ? g.blocks : a), []).map((b) => b.id);
   if (kind === "alternate" || kind === "detail") {
-    const tail = main.slice(-4).filter((id) => S.st.blocks[id] && !S.st.locks.has(id));
+    const tail = (L.detail_blocks || []).filter((id) => S.st.blocks[id] && !S.st.locks.has(id));
     const on = kind === "detail" && !tail.every((id) => S.st.blocks[id].pe);
     (kind === "detail" ? tail : main).forEach((id, i) => {
       if (S.st.blocks[id] && !S.st.locks.has(id)) S.st.blocks[id].pe = kind === "detail" ? on : i % 2 === 0;
