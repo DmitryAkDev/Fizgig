@@ -99,6 +99,7 @@ FLUX3 = FamilyDescription(
     compile_payback_steps={"bf16": 600, "int8": 600},
     int8_attention=True,              # workbench renders: 4.55 -> 4.25 s at 1024 (1.07x), 30.4 dB to the bf16 render
     finetune=True,                    # driver.ft_spec: every block's Linears on an NF4 trunk, no streaming
+    ft_learning_rate=5e-5,            # the rate ticking Fine-tune sets, as the Fine-tune preset
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     edit_training=True,               # up to 10 references (pipeline.py MAX_REFERENCES), each its own l index
     reference_strength=True,          # the workbench's reference strength + previous-frame latent chain, as Klein's
@@ -131,8 +132,9 @@ FLUX3 = FamilyDescription(
         ("✨ Flux 3 Edit (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),
         ("✨ Flux 3 Edit Strong (rank 32) - trickier edits", _preset(32, epochs=12, edit=True)),
         ("✨ Flux 3 Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True, mp="0.5")),
-        # full fine-tune at Krea 2's rate (the shared 1e-5)
-        ("✨ Flux 3 Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
+        # full fine-tune at 5e-5, not Krea 2's 1e-5 (Peter, 15 Oct 2026): Flux 3's block weights are Z-Image's size
+        # (median |w| 0.066 vs 0.082), where 1e-5 barely moved them
+        ("✨ Flux 3 Fine-tune (5e-5)", _preset(16, lr=5e-5, ft=True)),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
