@@ -1052,6 +1052,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     logger.info(f"[dop] {len(caps) - len(dop_cond)} image(s) have no trigger in the caption - "
                                 "they train as usual, with no preservation step")
     dop_every = max(1, int(dop_every or 1))
+    if dop_cond:
+        # each new shape compiles its own graph. The DOP pass's trigger-free captions bring text lengths the run's
+        # own captions don't; with automatic dynamic shapes, the dynamic graph that follows failed to compile on
+        # Krea 2 (inductor: KeyError 'unbacked_bindings', the step after the first DOP pass); off, the same run went
+        # 30 steps clean. A run without DOP is left as it was
+        import torch._dynamo as _dyn
+        _dyn.config.automatic_dynamic_shapes = False
     dop_sum = [0.0, 0]
     sample_dir = os.path.join(output_dir, "sample")
     if sample_reference and not driver.supports_references:
