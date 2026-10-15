@@ -53,6 +53,20 @@ class Flux3Driver(FamilyDriver):
         """The 28 single blocks (most of the compute; the 15 per-mode blocks see only their own tokens)."""
         return dit.single_blocks
 
+    # ---- full fine-tune (families/ft.py) ---------------------------------------------------------
+    def ft_spec(self, dit):
+        # the per-mode blocks (image, reference, text) then the single blocks as one cycle; each block's six Linears
+        # are the parts (the planner packs as many per window as the card holds). The embedders, modulations and final
+        # layer stay frozen. The per-mode blocks run interleaved by depth, not as one ordered list, so frozen blocks
+        # can't stream: plans keep the whole NF4 trunk resident (5.6B: ~3 GB)
+        from fizgig.families.ft import FTSpec
+        return FTSpec(blocks=("content_mode_blocks.image", "content_mode_blocks.image_cond", "txt_mode_blocks",
+                              "single_blocks"),
+                      components=BLOCK_MODULES, streams=False,
+                      # whole model in one window: 12.6 GB at 0.25 MP, 14.0 at 1.0 (RTX 5090, 15 Oct 2026); the
+                      # default 4 GB/MP planned 15.4 at 1.0. 8.4 puts the 1.0 MP estimate 0.5 GB over
+                      overhead_gb=8.4, calib_mp=1.0, act_gb_per_mp=1.9)
+
     # ---- block swap: the single blocks (model.py) -----------------------------------------------------------------
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.single_blocks) if dit is not None else N_SINGLE) - 2
