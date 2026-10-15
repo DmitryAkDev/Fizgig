@@ -27,6 +27,9 @@ LR_BOOST = 2.0
 PANEL = 512                                                 # each half of a 1024 x 512 composite
 TAIL = "two people side by side, two close-up portraits"
 _IMG = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+# what a subject can be, read from the captions when the folder's "replace it with" box is empty
+CLASS_WORDS = ("woman", "man", "girl", "boy", "lady", "guy", "person", "child", "kid", "baby", "teenager", "dog", "cat",
+               "puppy", "kitten", "horse")
 
 
 def strangers():
@@ -63,11 +66,20 @@ def subject(folder, trigger, cls="", ext=".txt"):
         return None, "no trigger word"
     phrase = str(cls or "").strip()
     if not phrase:
-        pat = re.compile(r"^\s*" + re.escape(trigger) + r"\s*,?\s*(an?\s+[A-Za-z]+)\b", re.I)
-        found = collections.Counter(m.group(1).lower() for c in _captions(folder, ext) if (m := pat.match(c)))
+        # the trigger, then "a" / "an", up to three describing words, then a known class word: "zwxem, a young woman"
+        # gives "a woman" (never "a young")
+        pat = re.compile(r"^\s*" + re.escape(trigger) + r"\s*,?\s*(an?)\s+(?:[A-Za-z'-]+\s+){0,3}?(" +
+                         "|".join(CLASS_WORDS) + r")\b", re.I)
+        caps = _captions(folder, ext)
+        found = collections.Counter(f"{m.group(1).lower()} {m.group(2).lower()}" for c in caps if (m := pat.match(c)))
+        if not found:        # no "<trigger>, a woman" opening: the class word the trigger's captions use most
+            anywhere = re.compile(r"(?<!\w)(" + "|".join(CLASS_WORDS) + r")(?!\w)", re.I)
+            trig = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I)
+            words = collections.Counter(w.lower() for c in caps if trig.search(c) for w in anywhere.findall(c))
+            found = collections.Counter({("an " if w[0] in "aeiou" else "a ") + w: n for w, n in words.items()})
         if not found:
-            return None, (f"its captions don't start \"{trigger}, a woman\" (or a man, a dog...) - type what the "
-                          "subject is in that folder's \"replace it with\" box")
+            return None, (f"its captions never say what {trigger} is (woman, man, girl, dog...) - type it in that "
+                          "folder's \"replace it with\" box, e.g. a woman")
         phrase = found.most_common(1)[0][0]
     if not re.match(r"^an?\s", phrase, re.I):
         phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase
