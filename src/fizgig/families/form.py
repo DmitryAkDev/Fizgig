@@ -22,7 +22,7 @@ import os
 
 from fizgig.families import launch
 
-ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4", "3e-4 - low-rank only")
+ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4", "3e-4")
 ADAPTIVE_MAX = ("1e-4", "2e-4", "3e-4", "4e-4")
 MEGAPIXELS = ("0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2")
 SWAP = ("Auto (detect from GPU)", "0  (No swap — 16GB fp8 / 24GB bf16)", "4  (Light — 14GB fp8 / 20GB bf16)",
