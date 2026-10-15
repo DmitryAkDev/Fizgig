@@ -855,7 +855,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_start_window=0,
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
-                 dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8):
+                 dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
+                 lr_boost=None):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1671,6 +1672,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 global_step += 1
                 progress.update(1)
                 continue
+            if lr_boost:             # experimental: items whose name holds a pattern train at a multiple of the LR
+                _ik = " ".join(str(k) for k in batch.get("item_keys") or [])
+                _lrm *= next((m for pat, m in lr_boost if pat in _ik), 1.0)
             lr_acc.append(_lrm)
             latents = batch["latents"].to(device)
             if slider:
@@ -1976,6 +1980,8 @@ def setup_parser():
                    "trigger in order); empty = the triggers are dropped")
     p.add_argument("--dop_weight", type=float, default=1.0, help="DOP: the preservation loss's weight")
     p.add_argument("--dop_every", type=int, default=1, help="DOP: a preservation pass every N steps")
+    p.add_argument("--lr_boost", action="append", default=[], metavar="PATTERN=MULT",
+                   help="experimental: items whose name contains PATTERN train at MULT x the LR on their step")
     p.add_argument("--dop_ft_samples", type=int, default=8,
                    help="DOP on a fine-tune: the original model's predictions made per image before the first step")
     return p
@@ -2033,7 +2039,8 @@ def main():
         preview_int8=a.preview_int8,
         family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),
         dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every,
-        dop_ft_samples=a.dop_ft_samples)
+        dop_ft_samples=a.dop_ft_samples,
+        lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None)
 
 
 if __name__ == "__main__":
