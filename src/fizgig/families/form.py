@@ -57,7 +57,7 @@ DEFAULTS = {
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
-    "ENABLE_CACHE": True, "ATTENTION_MECHANISM": "sdpa",
+    "ENABLE_CACHE": True,
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
@@ -405,8 +405,6 @@ def form(desc):
         _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
                                                                  "cosine_with_restarts", "linear", "polynomial"]),
         _row("LR_WARMUP_STEPS", "Warmup steps"),
-        _row("ATTENTION_MECHANISM", "Attention", "choice", "sdpa runs on any GPU. flash3 needs flash-attn and a "
-             "Hopper or Blackwell card (H100, RTX 5090).", ["sdpa", "flash3"]),
         *by_section("training", "other", "lora"),
         _row("METADATA_TITLE", "Title"), _row("METADATA_AUTHOR", "Author"),
         _row("METADATA_DESCRIPTION", "Description"), _row("METADATA_LICENSE", "License"),
