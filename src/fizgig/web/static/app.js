@@ -347,6 +347,10 @@ async function refreshState() {
     const k = row.dataset.key;
     row.style.display = hidden.has(k) ? "none" : "";
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
+    // a greyed box shows what that run will really use (the Distilled's steps / CFG), the form's own value kept
+    const shown = (S.state.shown || {})[k], box = $("f_" + k);
+    if (box && shown !== undefined && disabled.has(k)) { box.value = shown; box.dataset.shown = "1"; }
+    else if (box && box.dataset.shown) { delete box.dataset.shown; syncInputs([k]); }
     const n = $("note_" + k);
     if (n) {
       if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }

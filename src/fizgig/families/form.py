@@ -683,10 +683,21 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             hidden.add("SAMPLE_NEGATIVE")
     except ValueError:
         pass
+    shown = {}
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
-        disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
+        # the Distilled renders its own way: its steps and CFG show greyed in the boxes (the form's own values stay
+        # for when the tick is off), and with no CFG there is no negative
+        disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE"}
+        pcs = desc.preview_checkpoint_sampling
+        if pcs is not None:
+            shown = {"SAMPLE_STEPS": str(pcs.steps), "SAMPLE_CFG_SCALE": f"{pcs.cfg:g}"}
+            if pcs.cfg <= 1.0:
+                hidden.add("SAMPLE_NEGATIVE")
+        else:
+            disabled.add("SAMPLE_NEGATIVE")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
-            "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions}
+            "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
+            "shown": shown}
 
 
 def _timestep_note(values):
