@@ -94,11 +94,11 @@ space — see the regularisation answer below.
 
 At the default training resolution:
 
-| Your card | Krea 2 — photos | H3 — photos | H3 — voice | H3 — video, confirmed | H3 — video on likeness blocks, expected |
-|---|---|---|---|---|---|
-| **16 GB** | ✅ | ✅ | ✅ | ✅ up to **2.3 s** | up to **3.8 s** |
-| **24 GB** | ✅ | ✅ | ✅ | ✅ up to **2.3 s** | up to **5.2 s** |
-| **32 GB** | ✅ | ✅ | ✅ | ✅ up to **3.8 s** | up to **5.2 s** |
+| Your card | Flux 3 Image Klein — photos | Krea 2 — photos | H3 — photos | H3 — voice | H3 — video, confirmed | H3 — video on likeness blocks, expected |
+|---|---|---|---|---|---|---|
+| **16 GB** | ✅ | ✅ | ✅ | ✅ | ✅ up to **2.3 s** | up to **3.8 s** |
+| **24 GB** | ✅ | ✅ | ✅ | ✅ | ✅ up to **2.3 s** | up to **5.2 s** |
+| **32 GB** | ✅ | ✅ | ✅ | ✅ | ✅ up to **3.8 s** | up to **5.2 s** |
 
 12 GB cards train **LoRAs**, not fine-tunes — 16 GB is the tested fine-tune floor. Every
 confirmed cell comes from a measured run; the expected column is conservative arithmetic
