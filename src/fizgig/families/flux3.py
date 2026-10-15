@@ -102,6 +102,7 @@ FLUX3 = FamilyDescription(
     preview_width=1024,
     preview_height=1024,
     workbench=("repair", "profiler", "extract", "royale"),
+    activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
 
     notes=(
         ("Text conditioning keeps the padding: prompts are padded to a multiple of 80 tokens and the DiT attends "

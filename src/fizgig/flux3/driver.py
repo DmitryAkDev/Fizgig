@@ -221,15 +221,18 @@ class Flux3Driver(FamilyDriver):
         neg = neg_cond["tokens"] if neg_cond is not None else None
         if cfg != 1.0 and neg is None and not dit.flow_map:
             raise ValueError("Flux 3 Base samples with CFG against an encoded empty prompt; none was given")
-        return S.sample(dit, cond["tokens"], height, width, steps=steps, seed=seed, cfg=cfg, neg_txt=neg,
+        tokens = S.sample(dit, cond["tokens"], height, width, steps=steps, seed=seed, cfg=cfg, neg_txt=neg,
                         noise=noise, on_step=on_step, sigmas=sigmas, alpha=dict(options).get("alpha", S.ALPHA),
-                        refs=refs or None)
+                        refs=[r[0] if r.dim() == 4 else r for r in refs] if refs else None)   # the workbench's
+        #                                                       references carry a batch dim; the sampler's are (C, h, w)
+        # (1, C, h, w) as every driver's: the workbench keeps lat[0] as a travel frame's reference
+        return S.to_latents(tokens, height // S.DOWNSAMPLING_RATIO, width // S.DOWNSAMPLING_RATIO)[None]
 
     @torch.no_grad()
     def decode(self, vae, latents, width, height):
         from PIL import Image
         h, w = height // S.DOWNSAMPLING_RATIO, width // S.DOWNSAMPLING_RATIO
-        tokens = latents if latents.dim() == 2 else S.to_tokens(latents)
+        tokens = latents if latents.dim() == 2 else S.to_tokens(latents[0] if latents.dim() == 4 else latents)
         p = next(vae.parameters())
         img = vae.decode(tokens.to(p.device), S.latent_ids(h, w, p.device)).float().clamp(-1, 1)
         return Image.fromarray(((img + 1) * 127.5).to(torch.uint8).permute(1, 2, 0).cpu().numpy())
