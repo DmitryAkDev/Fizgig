@@ -175,7 +175,7 @@ function renderRow(r) {
     return wrap;
   }
   if (r.kind === "note") {                        // its own text, and any the form's state writes (RefMod's tokens)
-    if (r.label) wrap.append(el("div", {class: "field-hint", text: r.label}));
+    if (r.label) wrap.append(el("div", {class: r.hint_labels ? "field-label" : "field-hint", text: r.label}));
     wrap.append(el("div", {class: "field-hint row-note" + (r.hint_labels ? " hint-lines note-lines" : ""),
       id: "note_" + r.key}));
     return wrap;

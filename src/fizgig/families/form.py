@@ -178,7 +178,7 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "them.\n"
                "Works with other people in the picture: your subjects can stand together in one picture, or next to "
                "someone the model already knows, like a celebrity, and every face stays right. Best for people. "
-               "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown under "
+               "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
@@ -297,10 +297,9 @@ def form(desc):
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
         _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
-        _row("_subject1_as", "", "note", hint_labels=True),
-        *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"), _row("_subject2_as", "", "note", hint_labels=True),
-           _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"), _row("_subject3_as", "", "note", hint_labels=True),
-           _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"), _row("_subject4_as", "", "note", hint_labels=True),
+        *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"),
+           _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"),
+           _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"),
            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
           if desc.multi_concept else []),
@@ -324,6 +323,9 @@ def form(desc):
                  hint="One word: woman, man, girl, boy, dog, cat ...\n"
                       "The box shows what Fizgig found. Type over it only if that is wrong."))],
         # how often and how strongly the trigger-free pass runs is the tested recipe (every second step, x2): no control
+        # last, under everything that changes them: what training will use, per subject (one of its own captions)
+        *[_row(f"_subject{n}_as", f"Subject {n} - what training will use", "note", hint_labels=True)
+          for n in ((1, 2, 3, 4) if desc.multi_concept else (1,))],
     ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",

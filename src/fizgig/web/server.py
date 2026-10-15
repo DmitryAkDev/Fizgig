@@ -715,6 +715,8 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
     found = {}                     # the correction boxes' greyed text: the trigger word and class Fizgig read
     for n, (folder, tkey, ckey) in enumerate(rows, start=1):
         if not folder:
+            notes[f"_subject{n}_as"] = ("Pick the training folder on the Start tab to see it here." if n == 1 else
+                                        f"Pick subject {n}'s folder above to see it here.")
             continue
         trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
         cls = str(vals.get(ckey) or "").strip()
