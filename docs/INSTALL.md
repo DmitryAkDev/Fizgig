@@ -19,6 +19,7 @@ Fizgig ships as a ready-made cloud image: the whole app in a browser tab, not a 
 - **Disk** — ~10 GB for the venv, plus ~40 GB for model files.
 - **Full fine-tuning** (experimental, Krea 2 & MiniMax H3) — see [Full fine-tuning](#full-fine-tuning).
 - **Visual Studio Build Tools** (Windows only) — for InsightFace and the torch.compile speedup: **[aka.ms/vs/17/release/vs_BuildTools.exe](https://aka.ms/vs/17/release/vs_BuildTools.exe)**, tick **"Desktop development with C++"**. Without it everything works except the compile speedup.
+- **Microsoft Edge WebView2 Runtime** (Windows 10) — Fizgig's app window runs on it. Windows 11 has it built in, but it isn't always installed on Windows 10. If the window opens white, install it from **[developer.microsoft.com/microsoft-edge/webview2](https://developer.microsoft.com/microsoft-edge/webview2/)** (the **Evergreen Bootstrapper**). Without it, Fizgig opens in your browser instead.
 
 ### System RAM
 
