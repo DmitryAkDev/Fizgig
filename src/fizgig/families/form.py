@@ -174,8 +174,8 @@ PEOPLE_MODES = ("Off - a normal LoRA", "On - only where you use its trigger word
 PEOPLE_HINT = ("Off: your subject's face can appear on other people, in any picture.\n"
                "Only where you use its trigger word: leave the trigger word out and you get ordinary people, not "
                "your subject. Training takes about 1.5x as long.\n"
-               "And in group pictures: as well, the other people in a picture with your subject keep their own "
-               "faces. Best for people. Downloads 21 MB of example photos once. Prompt with the word shown under "
+               "And in group pictures: the same, and the other people in a picture with your subject also keep "
+               "their own faces. Best for people. Downloads 21 MB of example photos once. Prompt with the word shown under "
                "each subject, e.g. zwxemwoman.")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.")
