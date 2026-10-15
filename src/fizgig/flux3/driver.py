@@ -7,7 +7,7 @@
 * sampling: the reference's shifted schedule (alpha 6.93); Base with CFG against the empty prompt, the distilled
   checkpoint as a flow map without CFG (sampling.py)
 
-Not built yet: block swap, edit training (references), sliders' pair weighting, fine-tune, compile.
+Not built yet: edit training (references), sliders' pair weighting, fine-tune, compile.
 """
 import logging
 
@@ -48,6 +48,66 @@ class Flux3Driver(FamilyDriver):
 
     def enable_gradient_checkpointing(self, dit, on=True):
         dit.enable_gradient_checkpointing(on)
+
+    # ---- block swap: the single blocks (model.py) -----------------------------------------------------------------
+    def max_blocks_to_swap(self, dit=None):
+        return (len(dit.single_blocks) if dit is not None else N_SINGLE) - 2
+
+    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
+        dit.enable_block_swap(num_blocks, device, supports_backward)
+        dit.move_to_device_except_swap_blocks(device)
+
+    def block_swap_mode(self, dit, inference):
+        if inference:
+            dit.switch_block_swap_for_inference()
+        else:
+            dit.switch_block_swap_for_training()
+
+    # ---- training previews on the distilled checkpoint (Klein's Distilled handoff; adapted from Qwen 2.1's) ----------
+    def park_for_preview(self, dit, device):
+        """Stream all but two of the training model's single blocks so the distilled fits beside it; an NF4 base
+        cannot stream and is small - left as it is (token None)."""
+        if getattr(dit, "_nf4_quantized", False):
+            return None
+        orig = int(dit.blocks_to_swap or 0)
+        dit.enable_block_swap(len(dit.single_blocks) - 2, torch.device(device), True)
+        dit.prepare_block_swap_before_forward()
+        return orig
+
+    def load_preview_checkpoint(self, path, device, int8=False):
+        """The distilled DiT for this preview round, sized to the VRAM left beside the parked training model: bf16 when
+        it fits with room for the render, else INT8, else INT8 with blocks streamed (forward-only)."""
+        import os
+        from fizgig.families import quant
+        torch.cuda.empty_cache()
+        free = quant.free_vram_gb()       # FIZGIG_SIM_VRAM_GB: the simulated card's
+        size = os.path.getsize(path) / 1024 ** 3
+        room = 4.0                          # 1024 px render + VAE decode
+        precision = "int8" if int8 or free < size + room else "bf16"
+        need = (size / 2 if precision == "int8" else size) + room
+        swap = 0
+        if free < need:
+            per_block = (size / 2) / (N_SINGLE + 3 * N_MODE)                  # INT8 GB per block
+            swap = min(self.max_blocks_to_swap(), max(1, int((need - free) / max(per_block, 1e-3)) + 2))
+        m, swapped = quant.load_base(self, path, device, precision, swap, supports_backward=False)
+        if swapped:
+            self.block_swap_mode(m, inference=True)
+        logger.info(f"[sample] distilled checkpoint: {precision}, {swapped} blocks streamed ({free:.1f} GB free)")
+        return m.eval().requires_grad_(False), swapped
+
+    def unpark_after_preview(self, dit, device, token):
+        """The run's own swap back, or with none the sample-time offloader torn down and the model back on the GPU."""
+        if token is None:
+            return
+        device = torch.device(device)
+        if token > 0:
+            dit.enable_block_swap(token, device, True)
+            dit.move_to_device_except_swap_blocks(device)
+        else:
+            from fizgig.families import quant
+            dit.disable_block_swap()
+            quant.move(dit, device)
+        dit.switch_block_swap_for_training()
 
     # ---- encoding -------------------------------------------------------------------------------
     @torch.no_grad()

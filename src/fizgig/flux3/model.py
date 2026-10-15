@@ -180,11 +180,57 @@ class Flux3DiT(nn.Module):
         self.txt_mode_blocks = nn.ModuleList([Block(HIDDEN, HEADS, MLP_RATIO) for _ in range(DEPTH)])
         self.single_blocks = nn.ModuleList([Block(HIDDEN, HEADS, MLP_RATIO) for _ in range(DEPTH_SINGLE)])
         self.final_layer = nn.ModuleDict({"image": LastLayer(HIDDEN, IN_CHANNELS["image"])})
+        self.blocks_to_swap = 0
+        self.offloader = None
 
     def enable_gradient_checkpointing(self, on: bool = True) -> None:
         self.gradient_checkpointing = on
 
+    # ---- block swap: the 28 single blocks stream between CPU and GPU (the shared offloader, as Qwen 2.1's) ----------
+    def enable_block_swap(self, num_blocks: int, device, supports_backward: bool = True):
+        from fizgig.modules.offloading import ModelOffloader
+        if self.offloader is not None:
+            self.offloader.remove_hooks()       # stale backward hooks double-swap blocks ("mat2 is on cpu")
+        n = len(self.single_blocks)
+        if not 0 < num_blocks <= n - 2:
+            raise ValueError(f"block swap: 1..{n - 2} blocks, got {num_blocks}")
+        self.blocks_to_swap = num_blocks
+        self.offloader = ModelOffloader("flux3", list(self.single_blocks), n, num_blocks, supports_backward,
+                                        torch.device(device))
+
+    def move_to_device_except_swap_blocks(self, device):
+        """Everything to `device` except the swapped blocks' weights (the model is assumed to be on CPU)."""
+        blocks = self.single_blocks
+        self.single_blocks = nn.ModuleList()
+        try:
+            self.to(device)
+        finally:
+            self.single_blocks = blocks
+        self.prepare_block_swap_before_forward()
+
+    def prepare_block_swap_before_forward(self):
+        if self.blocks_to_swap:
+            self.offloader.prepare_block_devices_before_forward(list(self.single_blocks))
+
+    def disable_block_swap(self):
+        if self.offloader is not None:
+            self.offloader.remove_hooks()
+        self.offloader = None
+        self.blocks_to_swap = 0
+
+    def switch_block_swap_for_inference(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(True)
+            self.prepare_block_swap_before_forward()
+
+    def switch_block_swap_for_training(self):
+        if self.blocks_to_swap:
+            self.offloader.set_forward_only(False)
+            self.prepare_block_swap_before_forward()
+
     def _run(self, block, *args):
+        if getattr(block, "_handles_checkpointing", False):    # compiled: the wrapper checkpoints itself
+            return block(*args)
         if self.gradient_checkpointing and self.training and torch.is_grad_enabled():
             return checkpoint(block, *args, use_reentrant=False)
         return block(*args)
@@ -231,8 +277,13 @@ class Flux3DiT(nn.Module):
         h = torch.cat(chunks)
         freqs_sm = rope_embed(torch.cat(id_chunks)[None])
         mods = tuple(torch.cat(c) for c in mods)
-        for block in self.single_blocks:
+        blocks = list(self.single_blocks) if self.blocks_to_swap else None
+        for index, block in enumerate(self.single_blocks):
+            if self.blocks_to_swap:
+                self.offloader.wait_for_block(index)
             h = self._run(block, h, freqs_sm, bounds, mods)
+            if self.blocks_to_swap:
+                self.offloader.submit_move_blocks_forward(blocks, index)
 
         image = torch.empty_like(x["image"])
         for m, a, b, start in placement:

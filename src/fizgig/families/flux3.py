@@ -66,6 +66,7 @@ FLUX3 = FamilyDescription(
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora",),
     ema_default="0.98",
+    train_preview_checkpoint=True,    # training previews on the distilled (16 steps, no CFG), as Klein's Distilled
     workbench_follows_samples=True,   # Base CFG needs the Samples tab's negative (empty = the reference's uncond)
 
     sampling=(
