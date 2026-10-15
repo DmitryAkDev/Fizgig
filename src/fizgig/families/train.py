@@ -347,18 +347,23 @@ SLIDER_PREVIEW_MULTIPLIERS = (-1.0, 0.0, 1.0)
 def _slider_strip(frames, multipliers):
     from PIL import Image, ImageDraw, ImageFont
     w, h = frames[0].size
-    gap, band = 8, 30
-    strip = Image.new("RGB", (w * len(frames) + gap * (len(frames) - 1), h + band), (16, 16, 16))
-    draw = ImageDraw.Draw(strip)
+    gap = 8
     try:
         font = ImageFont.load_default(size=max(14, w // 40))
     except Exception:
         font = ImageFont.load_default()
-    for k, (im, m) in enumerate(zip(frames, multipliers)):
+    labels = ["strength 0 (slider off)" if m == 0 else f"strength {m:+g}" for m in multipliers]
+    # the band fits the text (the font grows with the picture): its full height, descenders too, padded evenly
+    probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    top, bottom = min(probe.textbbox((0, 0), t, font=font)[1] for t in labels),         max(probe.textbbox((0, 0), t, font=font)[3] for t in labels)
+    pad = max(6, (bottom - top) // 3)
+    band = (bottom - top) + 2 * pad
+    strip = Image.new("RGB", (w * len(frames) + gap * (len(frames) - 1), h + band), (16, 16, 16))
+    draw = ImageDraw.Draw(strip)
+    for k, (im, label) in enumerate(zip(frames, labels)):
         x = k * (w + gap)
         strip.paste(im, (x, band))
-        draw.text((x + 8, 7), "strength 0 (slider off)" if m == 0 else f"strength {m:+g}", fill=(236, 236, 236),
-                  font=font)
+        draw.text((x + 8, pad - top), label, fill=(236, 236, 236), font=font)
     return strip
 
 
