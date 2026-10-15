@@ -736,6 +736,36 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
 _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 
 
+# a prompt slider's live prompts: the request the web UI writes, and what the trainer took (fizgig.families.train's
+# SLIDER_LIVE / SLIDER_LIVE_APPLIED - named here so the server never imports torch)
+SLIDER_LIVE, SLIDER_LIVE_APPLIED = ".slider_prompts.json", ".slider_prompts_applied.json"
+_SLIDER_LIVE_KEYS = {"base": "FAMILY_SLIDER_BASE", "pos": "FAMILY_SLIDER_POS", "neg": "FAMILY_SLIDER_NEG",
+                     "guidance": "FAMILY_SLIDER_GUIDANCE"}
+
+
+def _prompt_slider_run(run) -> bool:
+    """The run going is a prompt slider (its prompts can change while it trains)."""
+    v = run.get("values") or {}
+    desc = get_family(run.get("family") or "")
+    if desc is None or not getattr(desc, "slider_training", False) or form._kind(desc, v) != "slider":
+        return False                                  # the run's values hold the Kind label, as the form does
+    srcs = form.slider_sources(desc)
+    return srcs == ["prompts"] or (len(srcs) > 1 and str(v.get("FAMILY_SLIDER_SOURCE") or "") == "Prompts")
+
+
+def _slider_live_status(run):
+    """{base, pos, neg, guidance, epoch (when the trainer last took new ones, else None), waiting} for the Training
+    tab's Slider prompts panel, or None for any other run."""
+    if not _prompt_slider_run(run):
+        return None
+    v, out = run.get("values") or {}, run.get("output_dir") or ""
+    want = _read_json(os.path.join(out, SLIDER_LIVE)) if out else {}
+    got = _read_json(os.path.join(out, SLIDER_LIVE_APPLIED)) if out else {}
+    same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
+    return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()}, "epoch": got.get("epoch"),
+            "waiting": bool(want) and not (got and same(want, got))}
+
+
 def _size_changed(lora, out_dir, values):
     """A resume that trains at another size from now on (Target Megapixels, a clip family's clip size) caches again
     first; a run Fizgig has no record of does too, to be safe. Unchanged: the cache is used as it is."""
@@ -2407,6 +2437,7 @@ class Handler(BaseHTTPRequestHandler):
             r["web_queue"] = webqueue.status()
             from fizgig.web import pod_stop
             r["pod_stop"] = pod_stop.status()
+            r["slider_live"] = _slider_live_status(r) if r["running"] else None
             return self.json(r)
         if path == "/api/log":
             return self._log_stream(int((qs.get("since") or ["0"])[0] or 0))
@@ -2842,6 +2873,29 @@ class Handler(BaseHTTPRequestHandler):
                                                + last["resume"]}, 400)
                 return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"],
                                         note=f"=== Resuming from {last['resume']} ==="))
+            if path == "/api/run/slider_prompts":    # a prompt slider's new ends, taken at its next epoch boundary
+                with _lock:
+                    running = _run["proc"] is not None and _run["proc"].poll() is None
+                    run = {k: _run.get(k) for k in ("family", "values", "output_dir", "history_id")}
+                if not running or not _prompt_slider_run(run):
+                    return self.json({"error": "No prompt slider is training right now."}, 400)
+                new = {k: str(b.get(k) or "").strip() for k in ("base", "pos", "neg")}
+                try:
+                    g = float(str(b.get("guidance") or "").strip())
+                except ValueError:
+                    g = 0.0
+                if not all(new.values()):
+                    return self.json({"error": "Fill in all three: what the picture is, and what each end adds."}, 400)
+                if g <= 0:
+                    return self.json({"error": "Guidance must be a number above 0."}, 400)
+                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g})
+                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}"}.items()}
+                with _lock:                              # a Pause and Resume, or Start again, keeps them
+                    if isinstance(_run.get("values"), dict):
+                        _run["values"].update(changes)
+                if run.get("history_id"):
+                    history.set_values(run["history_id"], changes)
+                return self.json({"ok": True})
             if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
                 with _lock:
                     out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""

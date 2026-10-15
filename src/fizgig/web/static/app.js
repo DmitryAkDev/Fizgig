@@ -986,6 +986,37 @@ async function pollRun() {
   const nowOk = !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
   for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
   if (!nowOk) $("runNowSay").textContent = "";
+  sliderLiveDraw(r.slider_live);
+}
+
+// ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
+const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance"};
+S.sl = {shown: null, edited: false};
+function sliderLiveDraw(sl) {
+  const box = $("sliderLive");
+  box.style.display = sl ? "" : "none";
+  if (!sl) { S.sl = {shown: null, edited: false}; return; }
+  const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance]);
+  if (!S.sl.edited && S.sl.shown !== now) {           // the run's prompts, unless you're part-way through an edit
+    for (const [k, id] of Object.entries(SL_FIELDS)) $(id).value = sl[k];
+    S.sl.shown = now;
+  }
+  $("slSay").textContent = sl.waiting ? "Waiting for the end of this epoch…" :
+    sl.epoch != null ? `Training on these since epoch ${sl.epoch + 1}.` : "";
+}
+
+function wireSliderLive() {
+  for (const id of Object.values(SL_FIELDS)) $(id).addEventListener("input", () => { S.sl.edited = true; });
+  $("slReset").addEventListener("click", () => { S.sl = {shown: null, edited: false}; pollRun(); });
+  $("slApply").addEventListener("click", async () => {
+    const body = Object.fromEntries(Object.entries(SL_FIELDS).map(([k, id]) => [k, $(id).value.trim()]));
+    try {
+      await api("/api/run/slider_prompts", body);
+      S.sl = {shown: null, edited: false};
+      $("slSay").textContent = "Waiting for the end of this epoch…";
+      pollRun();
+    } catch (e) { $("slSay").textContent = e.message; }
+  });
 }
 
 // the queue at a glance, from every tab (the sidebar, under the run) and at the top of the Run card: what's next, or
@@ -6408,6 +6439,7 @@ function wire() {
   $("btnSaveNow").addEventListener("click", () => now("save", "The LoRA is saved after the current step, as " +
     "<name>-step<step>.safetensors beside its checkpoints."));
   wirePods();
+  wireSliderLive();
 }
 
 // the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()

@@ -247,6 +247,23 @@ def _read_sample_override(output_dir):
     return None
 
 
+SLIDER_LIVE = ".slider_prompts.json"            # written by the web UI while a prompt slider trains
+SLIDER_LIVE_APPLIED = ".slider_prompts_applied.json"   # what the trainer took, and at which epoch (the UI reads it)
+
+
+def _read_slider_live(output_dir):
+    """A prompt slider's new prompts, set while it trains: {base, pos, neg, guidance} or None - the form's own three
+    (what the picture is, what each end adds), all needed, as at launch."""
+    try:
+        with open(os.path.join(output_dir, SLIDER_LIVE), encoding="utf-8") as f:
+            d = json.load(f)
+        out = {"base": str(d.get("base") or "").strip(), "pos": str(d.get("pos") or "").strip(),
+               "neg": str(d.get("neg") or "").strip(), "guidance": float(d.get("guidance"))}
+        return out if out["base"] and out["pos"] and out["neg"] and out["guidance"] > 0 else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def _encode_override(driver, te_path, prompts, dit, device, parkable=True, references=None):
     """Encode the override's prompts mid-run. The text encoder loads beside the training DiT when it fits; otherwise the
     DiT waits on CPU for the encode (a block-swapped DiT is small enough to stay, and the driver picks a smaller
@@ -1018,13 +1035,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             blocks = set(train_blocks)
             logger.info(f"[blocks] the LoRA trains {len(blocks)} of {len(known)} blocks only: {', '.join(train_blocks)}")
         net.add_trainable(network_dim, network_alpha, blocks=blocks, kind=network_type, factor=lokr_factor)
-    if slider_prompts:
-        # the practice bank: the base model's own renders of the neutral prompt (adapter at 0, training adapter
-        # off, the speed LoRA on when it is loaded), decoded and re-encoded into training latents
-        import numpy as np
+    def render_bank():
+        """The practice bank: the base model's own renders of the neutral prompt (adapter at 0, training adapter
+        off, the speed LoRA on when it is loaded), decoded and re-encoded into training latents."""
+        nonlocal vae
         if vae is None:
             vae = driver.load_vae(vae_path, device)
         n_c = {k: v[0].to(device) for k, v in slider_enc[0].items()}
+        was_training = dit.training
         net.set_trainable_multiplier(0.0)
         net.set_enabled(ADAPTER, False)
         use_speed = speed_lora is not None and speed_desc is not None and net.has(SPEED)
@@ -1049,9 +1067,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             net.move_adapter(SPEED, "cpu")
         net.set_enabled(ADAPTER, True)
         net.set_trainable_multiplier(1.0)
+        if was_training:
+            dit.train()
         group.latents = bank
         torch.cuda.empty_cache()
         logger.info("[slider] %d practice images rendered at %dx%d", len(bank), slider_bank_res, slider_bank_res)
+
+    if slider_prompts:
+        render_bank()
     if do_compile:                       # decided before the load (below the Auto plan), applied last
         driver.compile_blocks(dit, "outside" if do_compile == "outside" else "inside",
                               blocks_to_swap if swapped else 0)
@@ -1159,6 +1182,55 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 scheduler.step()
 
     last_prompt = [None]
+    slider_history = []                     # [{epoch, prompts, guidance}] - each live change, for the saved metadata
+
+    def slider_live(done):
+        """A prompt slider's new prompts (the web UI's Slider prompts panel), taken at an epoch boundary: the poles
+        encoded again, and a new base renders a new practice bank and becomes the previews' prompt. Training goes on
+        from where it is, toward the new ends."""
+        nonlocal slider_prompts, slider_guidance, slider_enc, encoded, sample_prompts
+        new = _read_slider_live(output_dir) if slider_prompts else None
+        if new is None:
+            return
+        # each end is the base and its own words, as the launch builds them (families/launch.py)
+        prompts = [new["base"], f"{new['base']} {new['pos']}", f"{new['base']} {new['neg']}"]
+        if prompts == [str(x) for x in slider_prompts] and new["guidance"] == float(slider_guidance):
+            return
+        base_changed = prompts[0] != str(slider_prompts[0])
+        logger.info("[slider] new prompts from epoch %d: base '%s' | +1 -> '%s' | -1 -> '%s' (guidance %g)",
+                    done + 1, *prompts, new["guidance"])
+        parked = []
+        try:
+            enc = _encode_override(driver, te_path, prompts, dit, device, parkable=not swapped)
+            slider_enc = [{k: v[None] for k, v in c.items()} for c in enc]
+            if base_changed:
+                if desc.preview_park_optimizer and optimizer is not None:     # room for the renders, as previews do
+                    for st in optimizer.state.values():
+                        for k, v in st.items():
+                            if torch.is_tensor(v) and v.is_cuda:
+                                st[k] = v.to("cpu")
+                                parked.append((st, k))
+                    torch.cuda.empty_cache()
+                render_bank()
+                if prompts[0] and sample_prompts == [str(slider_prompts[0])]:   # the previews followed the old base
+                    sample_prompts = [prompts[0]]
+                    if encoded is not None and not sample_reference and not (sample_image and desc.preview_image):
+                        encoded = [enc[0]]                  # text-only previews: the new base's own encoding
+        except Exception as exc:
+            logger.warning(f"[slider] could not take the new prompts ({type(exc).__name__}: {str(exc)[:200]}) - "
+                           "training goes on with the ones it had", exc_info=True)
+            return
+        finally:
+            for st, k in parked:
+                st[k] = st[k].to(device)
+        slider_prompts, slider_guidance = prompts, new["guidance"]
+        slider_history.append({"epoch": done, "prompts": prompts, "guidance": new["guidance"]})
+        try:
+            with open(os.path.join(output_dir, SLIDER_LIVE_APPLIED), "w", encoding="utf-8") as f:
+                json.dump({"epoch": done, "base": new["base"], "pos": new["pos"], "neg": new["neg"],
+                           "guidance": new["guidance"], "practice_rerendered": base_changed, "at": time.time()}, f)
+        except OSError:
+            pass
 
     def metadata(epoch):
         thumb = None if (metadata_thumbnail or "").lower() in ("off", "none") else (
@@ -1186,6 +1258,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if slider_prompts:
                 md.update({"ss_slider_prompts": json.dumps([str(x) for x in slider_prompts]),
                            "ss_slider_guidance": f"{float(slider_guidance):g}"})
+                if slider_history:          # the prompts it was steered through, from which epoch
+                    md.update({"ss_slider_prompt_history": json.dumps(slider_history)})
             else:
                 md.update({"ss_slider_diff_weight": f"{float(slider_diff_weight):g}"})
         if train_blocks:
@@ -1301,6 +1375,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     steplog = StepLog(output_dir, output_name, start_step=step_off + global_step)
     for _w in ("sample", "save"):          # a request left from an earlier run is not this one's
         take_request(output_dir, _w)
+    for _f in (SLIDER_LIVE, SLIDER_LIVE_APPLIED):   # nor live slider prompts (a resume has the latest in its arguments)
+        try:
+            os.remove(os.path.join(output_dir, _f))
+        except OSError:
+            pass
     progress = tqdm(total=steps_per_epoch * max_train_epochs, initial=global_step, desc="steps", smoothing=0)
     dit.train()
     pending = 0                            # micro-batches backpropagated since the last optimizer step
@@ -1522,6 +1601,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 state(done)
             progress.close()
             sys.exit(0)
+        if slider_prompts and done < max_train_epochs:
+            _tp = time.time()
+            slider_live(done)
+            progress.start_t += time.time() - _tp       # the bar's s/it is training speed
 
     progress.close()
     steplog.flush()

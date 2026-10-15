@@ -1944,6 +1944,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .phone-qr.blurred svg { filter: blur(7px); opacity: .55; }
 .phone-qr .phone-msg { color: #1A2029; font-size: 13px; line-height: 1.4; text-align: center; padding: 6px; }
 .phone-side { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 10px; }
+.slider-live { margin: 12px 0 6px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg-inset); display: flex; flex-direction: column; gap: 8px; }
+.slider-live-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.slider-live-row { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; }
+.slider-live-row span { color: var(--text-secondary); }
+.slider-live-row input { width: 100%; box-sizing: border-box; }
+@media (max-width: 760px) { .slider-live-row { grid-template-columns: 1fr; gap: 4px; } }
 .pick-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 12px; }
 .pick-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .pick-row label[hidden] { display: none; }

@@ -113,6 +113,20 @@ def start(source, family, lora, output_dir, image_folder, values, resume=False):
     return rec["id"]
 
 
+def set_values(run_id, changes):
+    """Settings changed while the run trains (a prompt slider's live prompts): its record's, so Start again uses
+    them."""
+    try:
+        with _Lock():
+            runs = _read()
+            for r in runs:
+                if r.get("id") == run_id and isinstance(r.get("values"), dict):
+                    r["values"].update(changes)
+            _write(runs)
+    except OSError:
+        pass
+
+
 def set_notes(run_id, text):
     """The run's notes (Runs & outputs): what you tried, what you thought of it."""
     try:
