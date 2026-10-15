@@ -4839,6 +4839,8 @@ async function loadCaptions() {
     `&ext=${encodeURIComponent(capExt())}&t=${encodeURIComponent(TOKEN)}`;
   $("dsZip").href = zipUrl(false); $("dsZipCaps").href = zipUrl(true);
   for (const id of ["dsZip", "dsZipCaps"]) $(id).style.display = S.imageFolder ? "" : "none";
+  $("capFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
+    "Choose the training folder on the Start tab first.";
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}`);
