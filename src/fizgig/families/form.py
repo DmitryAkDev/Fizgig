@@ -589,7 +589,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not captioner:
         hidden |= {"KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
     kind = _kind(desc, values)
-    lokr = str(values.get("NETWORK_TYPE", "")).startswith("LoKR")
+    lokr = str(values.get("NETWORK_TYPE", "")).startswith("LoKR") and kind not in ("slider", "finetune")
     hidden |= {"NETWORK_DIM", "NETWORK_ALPHA"} if lokr else {"LOKR_FACTOR"}
     if lokr:
         notes["NETWORK_TYPE"] = "LoKR selected: set your learning rate to 5e-5 - or with Adaptive LR, set Max 1e-4 " \
@@ -659,9 +659,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     # what the run ignores (launch.plan): a slider or a fine-tune trains its own blocks (Model Area), and a
     # fine-tune every noise level (the timestep range)
     if kind in ("slider", "finetune"):
-        hidden |= {"TARGET_LAYERS", "TRAINING_BLOCKS"}
-    if kind == "finetune":
-        hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP"}
+        hidden |= {"TARGET_LAYERS", "TRAINING_BLOCKS", "NETWORK_TYPE", "LOKR_FACTOR"}   # a slider is always a LoRA
+    if kind == "finetune":       # the model itself trains: no LoRA (rank, alpha), every noise level, its own continue
+        hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP", "NETWORK_DIM", "NETWORK_ALPHA", "RESUME_TRAINING"}
     if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
         hidden.add("TRAINING_BLOCKS")
     vals = _option_values(desc, values)
