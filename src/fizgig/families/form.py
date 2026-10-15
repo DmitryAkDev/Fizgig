@@ -282,22 +282,56 @@ def form(desc):
     if desc.slider_training:
         srcs = slider_sources(desc)
         pn = {k: (h, t) for k, h, t in (getattr(desc, "slider_prompt_notes", ()) or ())}
-        prompt_row = lambda key, label: _row(key, pn.get(key, (label, ""))[0], hint=pn.get(key, (label, ""))[1])
+        # the desktop's wording (lora_trainer_gui's Slider card), unless the family says it its own way
+        prompt_row = lambda key, label, hint: _row(key, pn.get(key, (label, hint))[0], hint=pn.get(key, (label, hint))[1])
+        clips = "clip" in desc.media
         add("slider", "Slider", "training", [
             _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=[SLIDER_SOURCES[x] for x in srcs],
                  default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
-            _row("FAMILY_SLIDER_DIR", "Second-look folder", "folder",
-                 "The other end of the dial: one photo per training photo, same file names.", upload=True,
-                 start="data"),
-            _row("FAMILY_SLIDER_CAPTION", "Caption for every pair", hint="What the two photos of a pair have in "
-                 "common, leaving out the difference (\"a portrait photo of a person\" for a smile dial). Write "
-                 "captions saves it as the caption of every photo in the training (+1) folder.",
-                 action="write_captions"),
-            prompt_row("FAMILY_SLIDER_BASE", "Base prompt"),
-            prompt_row("FAMILY_SLIDER_POS", "Positive prompt"),
-            prompt_row("FAMILY_SLIDER_NEG", "Negative prompt"),
-            _row("FAMILY_SLIDER_GUIDANCE", "Guidance", default=f"{desc.slider_guidance:g}"),
-            _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check") if desc.slider_ultra_blocks else None,
+            _row("FAMILY_SLIDER_DIR", "-1 end folder", "folder",
+                 "The same shots showing the -1 end (e.g. not smiling), each with the same file name as its +1 photo "
+                 "in the training folder (the +1 end). No captions in this folder.", upload=True, start="data"),
+            _row("FAMILY_SLIDER_CAPTION", "Caption for every pair", hint="Describe what the two photos of a pair have "
+                 "in common, and leave out the difference. For a smile dial, where each +1 photo shows someone smiling "
+                 "and its -1 photo the same person not smiling, the caption is \"a portrait photo of a person\" - not "
+                 "\"a smiling person\", because the smile is the difference the dial learns from the photos. For a dial "
+                 "about something else, describe the subject the same way, e.g. \"a photo of a room\" for a lighting "
+                 "dial. Write captions saves the same line as the caption of every photo in the training (+1) folder, so "
+                 "keep it general enough to fit every pair.", action="write_captions"),
+            prompt_row("FAMILY_SLIDER_BASE", "1. What the picture is",
+                       "The start of the prompt. Each end's words are added after it with a space, so end this line "
+                       "with a comma if you want one. One person: describe them, e.g. \"a close-up photo of a young "
+                       "woman with short dark hair,\" - the dial changes the expression and keeps her the same. Anyone: "
+                       "keep it general, e.g. \"a close-up photo of a person who is\" - the practice pictures show a "
+                       "different person each time, so the dial learns only the change and works on anyone."),
+            prompt_row("FAMILY_SLIDER_POS", "2. The +1 end adds",
+                       "e.g. \"happy\" - with the general line above the prompt reads \"a close-up photo of a person "
+                       "who is happy\"."),
+            prompt_row("FAMILY_SLIDER_NEG", "3. The -1 end adds",
+                       "e.g. \"sad\". Words like this can bring more than a face (grey light, rain); if the whole scene "
+                       "changes, try a narrower word such as \"unsmiling\"."),
+            _row("FAMILY_SLIDER_GUIDANCE", "4. Push strength", default=f"{desc.slider_guidance:g}",
+                 hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
+                      f"thing you asked for (a frown can turn into a different, older man). Start on "
+                      f"{desc.slider_guidance:g}. You can change the prompts and this while it trains, on the Run card."),
+            _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check",
+                 hint="Allows use at a much higher range of strengths. Affects fine detail less than a regular slider "
+                      "LoRA. Best for sliders from prompts; with photo pairs, best when the change is compositional "
+                      "(pose, framing, layout).") if desc.slider_ultra_blocks else None,
+            # how it works, at the bottom: the source's own help (the desktop's "Where the two ends come from")
+            _row("_slider_help_pairs", "Photo pairs: two folders of the same shots, one for each end of the dial (e.g. "
+                 "the same person smiling, and not smiling). 4 to 10 pairs, each pair framed the same. For a dial about "
+                 "people, use a different person in each pair if you can: the dial then learns only the change, and "
+                 "works on anyone. A dial about something else (lighting, colour, a scene) works the same way: the same "
+                 "subject at both ends of a pair, and a different one in each pair." + (
+                     " Clips work too: a pair can be two clips with the same file name, the +1 clip and the same clip "
+                     "with the look you want at the other end (a frame-skip look, a visual effect, a rendering style). "
+                     "Looks that only exist in motion train this way, and the previews play -1, 0 and +1 side by side "
+                     "as one clip." if clips else ""), "note"),
+            _row("_slider_help_prompts", "Prompts: no photos - you describe the picture and what each end adds, and "
+                 "Fizgig renders its own practice pictures from the description and trains on them. The practice "
+                 "pictures are the size Target Megapixels sets (0.5 = 704 x 704). The previews are strips of three "
+                 "pictures on one seed, at -1, 0 and +1.", "note"),
         ])
     if desc.finetune:
         add("finetune", "Fine-tune", "training", [
@@ -563,8 +597,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     srcs = slider_sources(desc)
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
-    hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE"} if pairs
-               else {"FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION"})
+    hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
+                "_slider_help_prompts"} if pairs else {"FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION", "_slider_help_pairs"})
     media = launch.dataset_media(image_folder) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")
