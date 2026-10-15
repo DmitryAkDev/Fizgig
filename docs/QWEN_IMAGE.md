@@ -110,7 +110,7 @@ Describe one person in the first line ("a close-up photo of a young woman with s
 
 **Steer it while it trains:** pushing one thing tends to drag others along (a "details" slider drifting toward realism, say). While a slider from prompts trains, the Training tab's **Slider prompts** panel has its three lines and the push strength: change them and press **Apply at the next epoch**, and it trains on toward the new ends from where it has got to, with no restart. A new "What the picture is" line renders new practice pictures first. A Pause and Resume keeps the latest, and the saved LoRA records every change and the epoch it came in.
 
-**Previews** are strips of three pictures on one seed, at strength -1, 0 and +1. They use the slider's own prompt (the shared caption, or the "What the picture is" line) until you set a live preview prompt on the Samples tab while it trains; the Samples tab also sets the seed, size and steps.
+**Previews** are strips of three pictures on one seed, at strength -1, 0 and +1. They use the slider's own prompt (the shared caption, or the "What the picture is" line, the latest one if you change it while it trains); the Samples tab sets the seed, size and steps.
 
 Sliders are always a plain LoRA (a LoKR setting is switched to LoRA for the run), and Adaptive LR, EMA and the per-image loss watch are off for them. A Context LoRA works: the dial is learned on top of it, so use the slider with the same context LoRA at the same strength. In ComfyUI, load the slider like any LoRA and set its strength.
 

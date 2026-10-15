@@ -1313,7 +1313,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
-        ov = _read_sample_override(output_dir)     # a slider's too: its strip shows the dial on the prompt you choose
+        ov = _read_sample_override(output_dir)
+        if ov and slider:       # a slider preview is its own prompt across strengths: an override never applies
+            logger.info("[sample override] ignored - slider previews always show the slider's own prompt")
+            ov = None
         if ov:
             logger.info(f"[sample override] active - {len(ov['prompts'])} prompt(s), '{ov['prompt'][:60]}' "
                         f"seed={ov['seed']} {ov['width']}x{ov['height']}")
