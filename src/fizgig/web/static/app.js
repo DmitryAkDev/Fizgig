@@ -270,7 +270,15 @@ function renderRow(r) {
     if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
-  if (r.hint) {                                   // a hint of several lines keeps its line breaks
+  if (r.hint && r.hint_labels) {                  // one spaced line per choice, "Name: what it does" with the name bold
+    const h = el("div", {class: "field-hint hint-lines"});
+    for (const line of r.hint.split("\n")) {
+      const at = line.indexOf(": ");
+      h.append(at > 0 ? el("div", {}, el("b", {text: line.slice(0, at) + ": "}), line.slice(at + 2))
+                      : el("div", {text: line}));
+    }
+    wrap.append(h);
+  } else if (r.hint) {                            // a hint of several lines keeps its line breaks
     const h = el("div", {class: "field-hint", text: r.hint});
     if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
     wrap.append(h);

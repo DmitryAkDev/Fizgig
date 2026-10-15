@@ -2012,3 +2012,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card.model-strip { padding-top: 0; padding-bottom: 0; }
 .model-strip > .card-content { padding: 14px 20px; }
 .model-strip .field-row { margin: 0; }
+
+/* a hint with one line per choice (Subjects card): spaced, each choice's name bold and white as the tick titles */
+.hint-lines > div { margin: 0 0 6px; }
+.hint-lines b { font-style: normal; font-weight: 700; color: var(--text-primary); }

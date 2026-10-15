@@ -171,12 +171,12 @@ SUBJECT_COUNTS = ("1 subject",) + CONCEPT_COUNTS
 # the Subjects card's "When other people are in the picture": off / DOP / DOP + multi-person (the measured recipe)
 PEOPLE_MODES = ("Off - a normal LoRA", "On - only where you use its trigger word",
                 "On - and in group pictures, the other people keep their faces")
-PEOPLE_HINT = ("Off: the subject's face can turn up on other people, in any prompt.\n"
-               "Only where you use its trigger word: prompts without the trigger give the base model's people, not "
-               "your subject. About 1.5x the time per step.\n"
-               "And in group pictures: as well as that, in a scene with your subject, everyone else keeps their own "
-               "face. For people. Downloads 21 MB of example people once. Prompt with the word shown under each "
-               "subject (e.g. zwxemwoman).")
+PEOPLE_HINT = ("Off: your subject's face can appear on other people, in any picture.\n"
+               "Only where you use its trigger word: leave the trigger word out and you get ordinary people, not "
+               "your subject. Training takes about 1.5x as long.\n"
+               "And in group pictures: as well, the other people in a picture with your subject keep their own "
+               "faces. Best for people. Downloads 21 MB of example photos once. Prompt with the word shown under "
+               "each subject, e.g. zwxemwoman.")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.")
 MULTI_PERSON_HINT = ("For people who appear together with others: in a group photo the other people keep their own "
@@ -317,7 +317,7 @@ def form(desc):
                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
           if desc.multi_concept else []),
         _row("FAMILY_PEOPLE_MODE", "Keep the subject's face off other people", "radio", PEOPLE_HINT, PEOPLE_MODES,
-             default=PEOPLE_MODES[0],
+             default=PEOPLE_MODES[0], hint_labels=True,           # one line per choice, its name in bold
              sets={PEOPLE_MODES[0]: {"FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False},
                    PEOPLE_MODES[1]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": False},
                    PEOPLE_MODES[2]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": True,
