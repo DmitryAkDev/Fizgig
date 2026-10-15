@@ -271,8 +271,9 @@ def form(desc):
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
-            _row("FAMILY_EDIT_DIR", "Edited photos folder", "folder",
-                 "The edited version of each photo in the training folder, under the same file name.", upload=True,
+            _row("FAMILY_EDIT_DIR", "Originals folder (before editing)", "folder",
+                 "Your original, unedited photos, each with the same file name as its edited version. No captions "
+                 "needed here. The edited photos are the training folder on the Start tab.", upload=True,
                  start="data"),
             _row("FAMILY_EDIT_CAPTION", "Edit instruction", hint="What the edit does, e.g. \"Apply my concert grade.\" "
                  "Write captions saves it as the caption of every photo in the training (edited) folder.",

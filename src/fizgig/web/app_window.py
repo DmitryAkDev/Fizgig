@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 
 from fizgig.web.port import free_from, is_fizgig, listening, saved_port
@@ -587,6 +588,32 @@ def main():
             except Exception:
                 pass
         window.events.closing += keep
+
+        def closing():
+            """Quitting while a run trains: it would train on with no server to stop it - so say so, and stop it."""
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/app/busy", data=b"{}", method="POST",
+                                             headers={"X-Fizgig-App-Key": key, "Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    busy = json.loads(r.read() or b"{}")
+            except Exception:
+                return True                               # no answer: nothing of ours to stop
+            if not busy.get("training"):
+                return True
+            name = busy.get("lora") or "A run"
+            if not window.create_confirmation_dialog(
+                    "Quit Fizgig?", f"{name} is training. Quitting stops it: the epochs it has saved stay, and you "
+                    f"can pick it up again from its last saved state.\n\nPause it first instead to resume it "
+                    f"exactly. Quit and stop the run?"):
+                return False                              # stay open
+            try:
+                req = urllib.request.Request(f"http://127.0.0.1:{port}/api/app/stop_run", data=b"{}", method="POST",
+                                             headers={"X-Fizgig-App-Key": key, "Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=30).read()
+            except Exception:
+                pass
+            return True
+        window.events.closing += closing
         try:
             webview.settings["ALLOW_DOWNLOADS"] = True       # Runs & outputs' Download saves where you choose
             webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True   # Buy me a coffee, RunPod, the docs

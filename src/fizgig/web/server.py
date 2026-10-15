@@ -1334,6 +1334,19 @@ def _run_stages(stages, out_dir):
         pod_stop.maybe_start(load_prefs(), append_log)
 
 
+def _stop_and_wait(timeout=20.0):
+    """Stop the run (if one is training) and wait until its record says so - before the server goes away."""
+    if not _stop():
+        return False
+    t = time.time()
+    while time.time() - t < timeout:
+        with _lock:
+            if _run["proc"] is None:
+                break
+        time.sleep(0.25)
+    return True
+
+
 def _stop():
     with _lock:
         proc = _run["proc"]
@@ -2639,10 +2652,24 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+    def _app_window(self):
+        """A call from the Fizgig window that started this server: it carries that window's key."""
+        key = os.environ.get("FIZGIG_APP_KEY", "")
+        return bool(key) and hmac.compare_digest(self.headers.get("X-Fizgig-App-Key") or "", key)
+
     def _post(self):
         if not self._host_ok():
             return self.json({"error": "bad host"}, 403)
         path = urlparse(self.path).path
+        if path in ("/api/app/busy", "/api/app/stop_run"):   # the window, closing: is a run training? stop it
+            if not self._app_window():
+                return self.json({"error": "no"}, 403)
+            with _lock:
+                busy = _run["proc"] is not None and _run["proc"].poll() is None
+                lora = _run.get("lora") or ""
+            if path == "/api/app/busy":
+                return self.json({"training": busy, "lora": lora})
+            return self.json({"stopped": _stop_and_wait()})
         if path == "/api/login":
             if self.headers.get("X-Fizgig-Token") != TOKEN:
                 return self.json({"error": "Reload the page."}, 403)
@@ -3472,6 +3499,10 @@ def _follow_parent(pid):
             alive = False
         if not alive:
             try:
+                _stop_and_wait()                  # a run doesn't train on, orphaned, with no server to stop it
+            except Exception:
+                pass
+            try:
                 studio.stop_worker()
             except Exception:
                 pass
@@ -3522,6 +3553,8 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
             logger.info(f"Port {want} is in use; the web UI takes {port} and keeps it (Preferences > Web UI)")
         if str(load_prefs().get("web_port") or "") != str(port):
             update_prefs({"web_port": str(port)})
+    if history.close_orphans():                        # a run left "running" by a stopped or crashed server
+        logger.info("A run from before was still recorded as running: it is recorded as stopped now")
     webqueue.load()                                    # held if it holds anything: a restart never launches a run
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)

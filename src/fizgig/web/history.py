@@ -206,6 +206,25 @@ def remove(run_id):
         pass
 
 
+def close_orphans():
+    """At the server's start: a run still recorded as running has nothing behind it now (its server stopped or
+    crashed, and the training process went with it), so it is recorded as stopped. Returns how many."""
+    n = 0
+    try:
+        with _Lock():
+            rs = _read()
+            for r in rs:
+                if r.get("result") == "running":
+                    r["result"] = "stopped"
+                    r["ended_at"] = r.get("ended_at") or time.time()
+                    n += 1
+            if n:
+                _write(rs)
+    except OSError:
+        pass
+    return n
+
+
 def runs():
     """Newest first. A run still marked running whose app is gone for good (a crash) reads as ended unknown, a week on."""
     out = list(reversed(_read()))
