@@ -362,6 +362,23 @@ def problems(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- commands
+def _media_count(folder):
+    """Training items (photos, clips, songs) in a folder."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    try:
+        return sum(1 for n in os.listdir(folder) if os.path.splitext(n)[1].lower() in exts)
+    except OSError:
+        return 0
+
+
+def _balance_repeats(folders):
+    """Multi Concept's balance: each folder repeated so its items come to about the largest folder's."""
+    counts = {f: _media_count(f) for f in folders}
+    top = max(counts.values() or [0])
+    return {f: max(1, round(top / c)) for f, c in counts.items() if c}
+
+
 def dataset_media(folder):
     """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions)."""
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
@@ -822,7 +839,10 @@ def dataset_toml(desc, inputs):
         cmp_ = 0.0
     if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
+    reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
+    if reps.get(folder, 1) > 1:
+        lines.append(f"num_repeats = {reps[folder]}")
     if edit_on(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_EDIT_DIR")).replace(chr(92), "/")}"')
     elif slider_on(desc, inputs, "pairs"):
@@ -832,6 +852,8 @@ def dataset_toml(desc, inputs):
         lines.append(f'cache_directory = "{cache_dir_for(root, folder).replace(chr(92), "/")}"')
     for f in extra:                      # Multi Concept: each subject its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"']
+        if reps.get(f, 1) > 1:
+            lines.append(f"num_repeats = {reps[f]}")
         if root:
             lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)
@@ -851,8 +873,12 @@ def multi_concept_problems(desc, inputs):
         return []
     norm = lambda f: f.lower().replace("\\", "/").rstrip("/")
     seen, out = {norm(_s(inputs.get("image_folder")))}, []
-    extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)]
-    if not extra:
+    wanted = list(inputs.get("extra_folders") or [])
+    for i, f in enumerate(wanted, start=2):
+        if not _s(f):
+            out.append(f"Multi Concept: set the subject {i} folder, or pick fewer subjects.")
+    extra = [_s(f) for f in wanted if _s(f)]
+    if not wanted:
         out.append("Multi Concept is on but no second subject folder is set — pick one, or turn the mode off.")
     ext = _s(inputs.get("caption_ext")) or ".txt"
     for f in extra:
@@ -878,9 +904,10 @@ def _dop_folders(st):
     server puts in DOP_FOLDER_TRIGGER / DOP_FOLDER_TRIGGER2)."""
     out = [("Training folder", _s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGER"))
             or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")), _s(st.get("FAMILY_DOP_CLASS")))]
-    if st.get("multiconcept") and st.get("extra_folders"):
-        out.append(("Subject 2 folder", _s(st.get("FAMILY_DOP_TRIGGER2")) or _s(st.get("DOP_FOLDER_TRIGGER2")),
-                    _s(st.get("FAMILY_DOP_CLASS2"))))
+    if st.get("multiconcept"):
+        for i, _f in enumerate(st.get("extra_folders") or [], start=2):
+            out.append((f"Subject {i} folder", _s(st.get(f"FAMILY_DOP_TRIGGER{i}")) or _s(st.get(f"DOP_FOLDER_TRIGGER{i}")),
+                        _s(st.get(f"FAMILY_DOP_CLASS{i}"))))
     rows = []
     for name, trig, cls in out:
         t = [x for x in (y.strip() for y in trig.split(",")) if x]

@@ -715,8 +715,9 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
         values["CAPTION_TRIGGER_WORD"] = trig.rstrip(",").strip()
     # DOP's word to remove when a folder's box is empty: that folder's own trigger word
     values["DOP_FOLDER_TRIGGER"] = folder_trigger(image_folder).rstrip(",").strip() if image_folder else ""
-    concept = str(values.get("FAMILY_CONCEPT_DIR") or "").strip()
-    values["DOP_FOLDER_TRIGGER2"] = folder_trigger(concept).rstrip(",").strip() if concept else ""
+    for i, (d, _t, _c) in enumerate(form.CONCEPT_ROWS, start=2):
+        concept = str(values.get(d) or "").strip()
+        values[f"DOP_FOLDER_TRIGGER{i}"] = folder_trigger(concept).rstrip(",").strip() if concept else ""
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))

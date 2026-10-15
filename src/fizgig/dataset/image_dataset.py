@@ -584,6 +584,10 @@ class BucketBatchManager:
         # Per-image identity for the (passive) per-image loss logger. Harmless list of strings that
         # trainers ignore unless logging is enabled.
         stacked["item_keys"] = [item_info.item_key for item_info in bucket[start:end]]
+        # the key is the file's name, so two folders' IMG_0001s share one; the text cache path is the item's own
+        # (each folder caches in its own folder) - DOP's per-item caption and targets key on it
+        stacked["item_te_paths"] = [str(getattr(item_info, "text_encoder_output_cache_path", "") or "")
+                                    for item_info in bucket[start:end]]
 
         return stacked
 

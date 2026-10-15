@@ -441,22 +441,36 @@ def _dop_caption(caption, pairs):
 
 
 def _dop_captions(group):
-    """item_key -> the caption its text cache was written from (every family's text cache keeps it as caption1)."""
+    """item_key -> (the caption its text cache was written from - every family's text cache keeps it as caption1 -,
+    that cache file's path)."""
     from safetensors import safe_open
     out = {}
     for ds in group.datasets:
         bm = getattr(ds, "batch_manager", None)
         for bucket in (bm.buckets.values() if bm is not None else ()):
             for it in bucket:
-                k, path = str(it.item_key), getattr(it, "text_encoder_output_cache_path", None)
+                path = getattr(it, "text_encoder_output_cache_path", None)
+                k = str(path or "")            # an item's own (two folders' same-named files share an item_key)
                 if k in out or not path:
                     continue
                 try:
                     with safe_open(path, framework="pt") as f:
-                        out[k] = (f.metadata() or {}).get("caption1")
+                        out[k] = ((f.metadata() or {}).get("caption1"), path)
                 except Exception:
-                    out[k] = None
+                    out[k] = (None, path)
     return out
+
+
+def _dop_path(te_path):
+    """Where an item's trigger-free text encoding is kept: beside its own text cache."""
+    root, ext = os.path.splitext(te_path)
+    return root + "_dop" + (ext or ".safetensors")
+
+
+def _load_dop_cond(path):
+    """A DOP text encoding from its file, batched as the loader batches the cache."""
+    from safetensors.torch import load_file
+    return {k[len("cond__"):]: v[None] for k, v in load_file(path).items() if k.startswith("cond__")}
 
 
 def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, accum):
@@ -484,7 +498,7 @@ def _dop_ft_targets(driver, dit, loader, dop_cond, cond_for, device, *, samples,
     out = {}
     with torch.no_grad():
         for batch in tqdm(loader, desc="[dop] the original model's predictions"):
-            keys = [str(k) for k in batch.get("item_keys") or []]
+            keys = [str(k) for k in batch.get("item_te_paths") or []]
             dc = cond_for(batch, driver.batch_cond(batch, device))
             if dc is None or keys[0] in out:
                 continue
@@ -1056,28 +1070,34 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.warning(f"[dop] off: {why}")
         else:
             caps = _dop_captions(group)
-            todo = {k: c2 for k, c in caps.items() if (c2 := _dop_caption(c, pairs)) is not None}
+            todo = {k: c2 for k, (c, _p) in caps.items() if (c2 := _dop_caption(c, pairs)) is not None}
+            from fizgig.families import cache as _cache
+            new = [k for k in sorted(todo) if not _cache.cond_file_matches(_dop_path(caps[k][1]), todo[k])]
             shown = ", ".join(f"'{t}' -> '{c}'" if c else f"'{t}' dropped" for t, c in pairs)
             if not todo:
                 logger.warning(f"[dop] off: no caption contains {'any of ' if len(pairs) > 1 else ''}{shown}")
             else:
-                te = driver.load_text_encoder(te_path, device)
-                try:
-                    keys = sorted(todo)
-                    for i in range(0, len(keys), 4):
-                        chunk = keys[i:i + 4]
-                        for k, c in zip(chunk, driver.encode_text(te, [todo[k] for k in chunk])):
-                            dop_cond[k] = {n: (v[None].cpu() if torch.is_tensor(v) else v) for n, v in c.items()}
-                finally:
-                    driver.unload_text_encoder(te)
-                    del te
-                    torch.cuda.empty_cache()
+                keys = sorted(todo)
+                if new:          # written beside each item's own text cache, so a re-run reads them back
+                    te = driver.load_text_encoder(te_path, device)
+                    try:
+                        for i in tqdm(range(0, len(new), 4), desc="[dop] trigger-free captions"):
+                            chunk = new[i:i + 4]
+                            for k, c in zip(chunk, driver.encode_text(te, [todo[k] for k in chunk])):
+                                _cache.save_cond_file(desc, _dop_path(caps[k][1]), todo[k], c, k)
+                    finally:
+                        driver.unload_text_encoder(te)
+                        del te
+                        torch.cuda.empty_cache()
+                dop_cond.update({k: _dop_path(caps[k][1]) for k in keys})
+                logger.info(f"[dop] trigger-free captions: {len(new)} encoded, {len(keys) - len(new)} already in "
+                            "the cache")
                 logger.info(f"[dop] Differential Output Preservation on {len(dop_cond)} of {len(caps)} images "
                             f"(x{dop_weight:g}, every {max(1, int(dop_every))} step(s)); {shown}: without the trigger the "
                             f"LoRA is held to the base model. e.g. '{todo[keys[0]][:120]}'")
                 if len(pairs) > 1:
                     for t, _c in pairs:
-                        n = sum(1 for k in todo if re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", caps[k], re.I))
+                        n = sum(1 for k in todo if re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", caps[k][0], re.I))
                         logger.info(f"[dop]   '{t}': {n} image(s)")
                 if len(dop_cond) < len(caps):
                     logger.info(f"[dop] {len(caps) - len(dop_cond)} image(s) have no trigger in the caption - "
@@ -1096,13 +1116,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def dop_cond_for(batch, cond):
         """This item's conditioning with its trigger-free text, or None when the item has no DOP pass (no trigger,
         an edit pair, sound only)."""
-        keys = [str(k) for k in batch.get("item_keys") or []]
+        keys = [str(k) for k in batch.get("item_te_paths") or []]
         if (not dop_cond or len(keys) != 1 or keys[0] not in dop_cond or any(k.startswith("latents_control_")
                                                                              for k in batch)
                 or bool(torch.as_tensor(batch.get("audio_only", False)).any())):
             return None
         dc = dict(cond)
-        for n, v in dop_cond[keys[0]].items():
+        for n, v in _load_dop_cond(dop_cond[keys[0]]).items():
             if n not in dc:      # the cache keeps the text under other names: DOP can't swap it
                 raise RuntimeError(f"[dop] {desc.display_name}'s encoded text has '{n}', which its cached "
                                    f"conditioning doesn't ({', '.join(sorted(cond))})")
@@ -1703,7 +1723,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     mult = watch.multiplier(batch)  # per-image LR (batch size 1): the raw loss is still what's recorded
                 _scaled = loss * mult if mult != 1.0 else loss
                 _dc = dop_cond_for(batch, cond) if dop_cond and global_step % dop_every == 0 else None
-                _dk = str((batch.get("item_keys") or [None])[0])
+                _dk = str((batch.get("item_te_paths") or [None])[0])
                 if _dc is not None and ftr is not None and dop_ft and _dk in dop_ft:
                     # one backward for both: the free-each-gradient fine-tune steps each weight as its gradient
                     # lands, so a second backward would be a second optimizer step

@@ -46,13 +46,15 @@ DEFAULTS = {
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_DOP_TRIGGER": "",
-    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "", "FAMILY_DOP_WEIGHT": "1.0",
+    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "",
+    "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "", "FAMILY_DOP_WEIGHT": "1.0",
     "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
-    "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "",
+    "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
+    "FAMILY_CONCEPT_DIR3": "", "FAMILY_CONCEPT_DIR4": "", "FAMILY_CONCEPT_BALANCE": False,
     "FAMILY_EDIT_DIR": "", "FAMILY_EDIT_REF": "", "FAMILY_EDIT_CAPTION": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
     "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
@@ -161,6 +163,7 @@ def slider_sources(desc):
             if s in SLIDER_SOURCES]
 
 
+CONCEPT_COUNTS = ("2 subjects", "3 subjects", "4 subjects")
 DOP_EVERY = ("Every step", "Every second step (faster)")
 DOP_HINT = ("Stops the subject showing up in prompts without its trigger. Every step trains the photo twice: once "
             "with its caption as written, and once with the trigger word removed (“zwxem, a woman smiling” becomes "
@@ -279,7 +282,13 @@ def form(desc):
             _row("FAMILY_MULTICONCEPT", "Multi Concept - a second subject in its own folder", "check",
                  " ".join(t for t in (MULTICONCEPT_HINT, desc.multi_concept_hint) if t),
                  sets={"true": dict(desc.multi_concept_defaults)} if desc.multi_concept_defaults else None),
+            _row("FAMILY_CONCEPT_COUNT", "How many subjects", "choice", "The training folder is subject 1.",
+                 CONCEPT_COUNTS),
             _row("FAMILY_CONCEPT_DIR", "Subject 2 folder", "folder", upload=True, start="data"),
+            _row("FAMILY_CONCEPT_DIR3", "Subject 3 folder", "folder", upload=True, start="data"),
+            _row("FAMILY_CONCEPT_DIR4", "Subject 4 folder", "folder", upload=True, start="data"),
+            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
+                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats."),
         ]
     params += [
         _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check", DOP_HINT),
@@ -292,6 +301,12 @@ def form(desc):
         _row("FAMILY_DOP_TRIGGER2", "Subject 2 folder: word to remove", hint="The trigger word in the subject 2 "
              "folder's captions. Empty = that folder's trigger word from the Captions tab."),
         _row("FAMILY_DOP_CLASS2", "Subject 2 folder: replace it with", hint="Optional, as for the training folder."),
+        _row("FAMILY_DOP_TRIGGER3", "Subject 3 folder: word to remove", hint="Empty = that folder's trigger word from "
+             "the Captions tab."),
+        _row("FAMILY_DOP_CLASS3", "Subject 3 folder: replace it with", hint="Optional, as for the training folder."),
+        _row("FAMILY_DOP_TRIGGER4", "Subject 4 folder: word to remove", hint="Empty = that folder's trigger word from "
+             "the Captions tab."),
+        _row("FAMILY_DOP_CLASS4", "Subject 4 folder: replace it with", hint="Optional, as for the training folder."),
         _row("FAMILY_DOP_EVERY", "How often", "choice", "Every second step does the DOP pass on half the steps at "
              "twice the strength: the same preservation on average, for about half the extra time.", DOP_EVERY),
         _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
@@ -538,10 +553,12 @@ def apply_preset(desc, values, preset, whole=False):
             p[new] = p.pop(old)
     if "MINIMAX_MULTICONCEPT" in p and "FAMILY_MULTICONCEPT" not in p:
         p["FAMILY_MULTICONCEPT"] = p.pop("MINIMAX_MULTICONCEPT")
-    if "MINIMAX_CONCEPT_DIRS" in p:                      # a list (one folder today)
+    if "MINIMAX_CONCEPT_DIRS" in p:                      # a list: subject 2, 3, 4
         dirs = p.pop("MINIMAX_CONCEPT_DIRS") or []
         dirs = [dirs] if isinstance(dirs, str) else list(dirs)
-        p["FAMILY_CONCEPT_DIR"] = str(dirs[0]).strip() if dirs else ""
+        for (d, _t, _c), f in zip(CONCEPT_ROWS, list(dirs) + [""] * len(CONCEPT_ROWS)):
+            p[d] = str(f or "").strip()
+        p.setdefault("FAMILY_CONCEPT_COUNT", CONCEPT_COUNTS[min(max(len(dirs), 1), len(CONCEPT_COUNTS)) - 1])
     if not whole:
         p = {k: v for k, v in p.items() if not _not_in_preset(k)}
     rows = {r["key"]: r for sec in form(desc)["sections"] for r in sec["rows"] if r}
@@ -582,12 +599,26 @@ def to_preset(desc, values):
     model_keys = {o.key for o in desc.options if o.tab == "model"}
     kind = _kind(desc, values)
     out = {k: v for k, v in values.items() if not k.startswith("__") and k not in model_keys and k != "FAMILY_KIND"
-           and not _not_in_preset(k) and k != "FAMILY_CONCEPT_DIR"
+           and not _not_in_preset(k) and k not in {d for d, _t, _c in CONCEPT_ROWS}
            and not (k == "LORA_OUTPUT_DIR" and not str(v or "").strip())}      # an empty folder = the default
     out.update(FAMILY_EDIT=kind == "edit", FAMILY_SLIDER=kind == "slider", FAMILY_FT=kind == "finetune")
     if desc.multi_concept:
-        out["MINIMAX_CONCEPT_DIRS"] = [str(values.get("FAMILY_CONCEPT_DIR") or "").strip()]
+        out["MINIMAX_CONCEPT_DIRS"] = [str(values.get(d) or "").strip()
+                                       for d, _t, _c in CONCEPT_ROWS[:concept_count(values) - 1]]
     return out
+
+
+# subject 2, 3, 4: its folder, and its DOP word to remove / replacement
+CONCEPT_ROWS = (("FAMILY_CONCEPT_DIR", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2"),
+                ("FAMILY_CONCEPT_DIR3", "FAMILY_DOP_TRIGGER3", "FAMILY_DOP_CLASS3"),
+                ("FAMILY_CONCEPT_DIR4", "FAMILY_DOP_TRIGGER4", "FAMILY_DOP_CLASS4"))
+DOP_EXTRA_ROWS = {k for _d, t, c in CONCEPT_ROWS for k in (t, c)}
+
+
+def concept_count(values):
+    """Subjects in a Multi Concept run, the training folder included (2-4)."""
+    v = str(values.get("FAMILY_CONCEPT_COUNT") or CONCEPT_COUNTS[0])
+    return next((i + 2 for i, c in enumerate(CONCEPT_COUNTS) if c == v or c.split(" ")[0] == v.split(" ")[0]), 2)
 
 
 def _kind(desc, values):
@@ -643,14 +674,16 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if kind not in ("standard", "finetune"):          # DOP keeps a subject apart: a LoRA's or a fine-tune's job
         hidden.add("FAMILY_DOP")
     if kind not in ("standard", "finetune") or not values.get("FAMILY_DOP"):
-        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2",
-                   "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"}
+        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"} | DOP_EXTRA_ROWS
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
-        hidden |= {"FAMILY_MULTICONCEPT", "FAMILY_CONCEPT_DIR"}
-    if kind in ("edit", "slider") or not values.get("FAMILY_MULTICONCEPT"):
-        hidden |= {"FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2"}
-    if not values.get("FAMILY_MULTICONCEPT"):
-        hidden.add("FAMILY_CONCEPT_DIR")
+        hidden.add("FAMILY_MULTICONCEPT")
+    n_sub = concept_count(values) if kind not in ("edit", "slider") and values.get("FAMILY_MULTICONCEPT") else 1
+    if n_sub == 1:
+        hidden |= {"FAMILY_CONCEPT_COUNT", "FAMILY_CONCEPT_BALANCE"}
+    for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder and DOP pair, up to the count
+        if i > n_sub:
+            hidden |= {d, t, c}
+    
     kn = _kind_notes(desc)
     if len(kinds(desc)) > 1:
         notes["FAMILY_KIND"] = kn.get(kind, ("", ""))[1] or KIND_HINTS.get(kind, "")
@@ -848,8 +881,10 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                      "int8": bool(inference_int8)} if desc.train_preview_checkpoint else {})},
         samples_dir=samples_dir, edit_caption=s("FAMILY_EDIT_CAPTION"),
         multiconcept=b("FAMILY_MULTICONCEPT") and desc.multi_concept and kind not in ("edit", "slider"),
-        extra_folders=[s("FAMILY_CONCEPT_DIR")] if (b("FAMILY_MULTICONCEPT") and s("FAMILY_CONCEPT_DIR") and
-                                                     desc.multi_concept and kind not in ("edit", "slider")) else [],
+        # subject 2 on, in order; a blank folder stays in its place so the plan can name it
+        extra_folders=([s(d) for d, _t, _c in CONCEPT_ROWS[:concept_count(v) - 1]]
+                       if b("FAMILY_MULTICONCEPT") and desc.multi_concept and kind not in ("edit", "slider") else []),
+        concept_balance=b("FAMILY_CONCEPT_BALANCE"),
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     return d
