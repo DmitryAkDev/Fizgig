@@ -594,7 +594,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if lokr:
         notes["NETWORK_TYPE"] = "LoKR selected: set your learning rate to 5e-5 - or with Adaptive LR, set Max 1e-4 " \
                                 "and Min 5e-5."
-    if not values.get("ADAPTIVE_LR"):
+    if not values.get("ADAPTIVE_LR") or kind == "slider":    # a slider trains at the Learning Rate box
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
         disabled.add("LEARNING_RATE")
@@ -660,6 +660,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     # fine-tune every noise level (the timestep range)
     if kind in ("slider", "finetune"):
         hidden |= {"TARGET_LAYERS", "TRAINING_BLOCKS", "NETWORK_TYPE", "LOKR_FACTOR"}   # a slider is always a LoRA
+    if kind == "slider":         # the trainer turns these off for a slider: a slider step has two targets, not one
+        hidden |= {"ADAPTIVE_LR", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "FAMILY_EMA", "KREA2_LOSS_WATCH",
+                   "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
     if kind == "finetune":       # the model itself trains: no LoRA (rank, alpha), every noise level, its own continue
         hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP", "NETWORK_DIM", "NETWORK_ALPHA", "RESUME_TRAINING"}
     if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
