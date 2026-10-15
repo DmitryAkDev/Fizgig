@@ -11,6 +11,27 @@ _CARD = "https://huggingface.co/black-forest-labs/flux-3-image-klein"
 _REF = "https://github.com/black-forest-labs/flux-3-image-klein"
 _MODULES = ("q_proj", "k_proj", "v_proj", "attn_out", "mlp_in", "mlp_out")   # model.py Block, every Linear
 
+
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", edit=False, slider=False, ft=False):
+    # Qwen Image 2.1's preset set, as Z-Image's (Peter, 7 Oct 2026: "Qwen is a good model for the presets across the
+    # various modes"): 0.5 MP, 30 epochs saved every epoch; adaptive=(min, max) turns Adaptive LR on (the run starts
+    # at the geometric midpoint and the LR box is ignored), None trains flat at lr. No training adapter (Flux 3 Base
+    # is undistilled). Not yet measured on Flux 3.
+    lo, hi = adaptive or ("2e-4", "4e-4")
+    return {
+        "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
+        "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
+        "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
+        "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
+        "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
+        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
+        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": edit, "FAMILY_SLIDER": slider,
+        "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "2",
+        **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
+    }
+
+
 FLUX3 = FamilyDescription(
     key="flux3",
     arch_id="flux3klein",
@@ -101,6 +122,21 @@ FLUX3 = FamilyDescription(
     preview_negative="",              # the reference's unconditional is the empty prompt
     preview_width=1024,
     preview_height=1024,
+    presets=(
+        # Qwen Image 2.1's modes at Qwen's values (its notes give the measurements behind each)
+        ("✨ Flux 3 Fast (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"))),
+        ("✨ Flux 3 Standard (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
+        # Style: flat, because style loss descends steadily and Adaptive LR climbs toward its ceiling there
+        ("✨ Flux 3 Style (rank 16, 1.5e-4)", _preset(16, lr=1.5e-4)),
+        ("✨ Flux 3 Edit (rank 8, adaptive LR)", _preset(8, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),
+        ("✨ Flux 3 Edit Strong (rank 16, adaptive LR) - trickier edits",
+         _preset(16, adaptive=("1e-4", "2e-4"), epochs=12, edit=True)),
+        ("✨ Flux 3 Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, slider=True)),
+        # full fine-tune at Z-Image's rates, not the shared 1e-5: Adam moves each weight by ~the rate, and Flux 3's
+        # block weights are as large as Z-Image's (median |w| 0.066 vs Z-Image 0.082, Qwen 2.1 0.024)
+        ("✨ Flux 3 Fine-tune (5e-5)", _preset(16, lr=5e-5, ft=True)),
+        ("✨ Flux 3 Fine-tune Strong (1e-4)", _preset(16, lr=1e-4, ft=True)),
+    ),
     workbench=("repair", "profiler", "extract", "royale"),
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render
 
