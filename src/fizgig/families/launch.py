@@ -516,6 +516,12 @@ def train_command(desc, inputs, plan):
     if ctx and not ft_on(desc, st):         # a fine-tune trains the base itself: there is no LoRA to stack on
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
+    if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st)):
+        cmd += ["--dop", "--dop_class", _s(st.get("FAMILY_DOP_CLASS")),
+                "--dop_weight", _s(st.get("FAMILY_DOP_WEIGHT")) or "1.0"]
+        dop_trig = dop_triggers(st)
+        if dop_trig:
+            cmd += ["--dop_trigger", dop_trig]
     if st.get("ADAPTIVE_LR") and desc.adaptive_lr:
         cmd += ["--adaptive_lr",
                 "--adaptive_lr_min", str(st.get("ADAPTIVE_LR_MIN", "1e-4")).split(" ")[0],
@@ -646,6 +652,8 @@ def train_command(desc, inputs, plan):
                     cmd += [flag, _model(st, desc, role)]
         else:
             cmd.append("--slider_pairs")
+    if "--dop" in cmd and "--text_encoder" not in cmd:
+        cmd += ["--text_encoder", _model(st, desc, "text_encoder")]   # the swapped captions are encoded at the start
     if desc.options:
         cmd = _dedupe_flags(cmd + option_tokens(desc, st)[0])
     cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
@@ -858,6 +866,27 @@ def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
 
 
+def dop_triggers(st):
+    """DOP's triggers: the box, else every subject folder's own (the training folder's, then Multi Concept's
+    subject 2), comma-separated."""
+    return (_s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGERS"))
+            or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")))
+
+
+def dop_problems(desc, v):
+    if not v.get("FAMILY_DOP") or slider_on(desc, v) or edit_on(desc, v) or ft_on(desc, v):
+        return []
+    trig = [t for t in (x.strip() for x in dop_triggers(v).split(",")) if t]
+    if not trig:
+        return ["Keep the subject to its trigger (DOP) needs the trigger word: type it in DOP trigger words, or set "
+                "the folder's trigger word on the Captions tab."]
+    cls = [c.strip() for c in _s(v.get("FAMILY_DOP_CLASS")).split(",")]
+    if len(cls) > 1 and len(cls) != len(trig):
+        return [f"DOP has {len(trig)} trigger word(s) ({', '.join(trig)}) but {len(cls)} words in Replace with: give "
+                "one for each trigger, in the same order, or one word for them all."]
+    return []
+
+
 def start_problems(desc, inputs):
     """Everything Start refuses, in the order the desktop app lists it: the shared checks (fizgig.families.checks)
     with the family's own (problems) in their place. The dataset TOML is written by the plan itself, so only its
@@ -871,6 +900,7 @@ def start_problems(desc, inputs):
     out += problems(desc, inputs)
     out += checks.learning_rate_range(v)
     out += multi_concept_problems(desc, v)
+    out += dop_problems(desc, v)
     if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
         try:
             lr = float(v.get("LEARNING_RATE"))

@@ -409,6 +409,72 @@ def _prompt_slider_step(driver, dit, net, latents, enc, gen, *, guidance, min_t,
     return total, state["t"]
 
 
+def _dop_pairs(triggers, classes):
+    """--dop_trigger "zwxem, qrtpl" + --dop_class "woman, man" -> [(trigger, class), ...]: one class for every
+    trigger when only one is given, nothing (the trigger dropped) when none."""
+    trig = [t.strip() for t in str(triggers or "").split(",") if t.strip()]
+    cls = [c.strip() for c in str(classes or "").split(",")]
+    if len(cls) == 1:
+        cls = cls * len(trig)
+    if len(cls) != len(trig):
+        raise RuntimeError(f"[dop] {len(trig)} trigger(s) ({', '.join(trig)}) but {len(cls)} replacement(s) - give "
+                           "one replacement for each trigger, in the same order, or one for them all")
+    return list(zip(trig, cls))
+
+
+def _dop_caption(caption, pairs):
+    """DOP's caption: every trigger in it swapped for its class word (dropped when that is empty), or None when the
+    caption has none of the triggers - that image has nothing to keep apart."""
+    if not caption:
+        return None
+    out, hit = caption, False
+    for trigger, cls in pairs:
+        pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I)
+        if pat.search(out):
+            hit = True
+            out = pat.sub(lambda _m, c=cls: c, out)
+    if not hit:
+        return None
+    out = re.sub(r"\s*,\s*(?:,\s*)+", ", ", out)            # a dropped trigger leaves ", ," or a stray comma behind
+    out = re.sub(r"^\s*,\s*|\s*,\s*$", "", out)
+    return re.sub(r"\s{2,}", " ", out).strip()
+
+
+def _dop_captions(group):
+    """item_key -> the caption its text cache was written from (every family's text cache keeps it as caption1)."""
+    from safetensors import safe_open
+    out = {}
+    for ds in group.datasets:
+        bm = getattr(ds, "batch_manager", None)
+        for bucket in (bm.buckets.values() if bm is not None else ()):
+            for it in bucket:
+                k, path = str(it.item_key), getattr(it, "text_encoder_output_cache_path", None)
+                if k in out or not path:
+                    continue
+                try:
+                    with safe_open(path, framework="pt") as f:
+                        out[k] = (f.metadata() or {}).get("caption1")
+                except Exception:
+                    out[k] = None
+    return out
+
+
+def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, accum):
+    """Differential Output Preservation (AI-Toolkit's DOP, by Ostris): the same picture, freshly noised, with the
+    trigger swapped for the class word. The target is the model's own prediction there with the adapter at 0, so
+    without the trigger the LoRA learns to change nothing. Backpropagated here; returns the detached loss."""
+    state = driver.noise_latents(latents, gen, min_t=min_t, max_t=max_t)
+    try:
+        net.set_trainable_multiplier(0.0)
+        with torch.no_grad():
+            target = driver.predict(dit, state, cond).float()
+    finally:
+        net.set_trainable_multiplier(1.0)
+    loss = F.mse_loss(driver.predict(dit, state, cond).float(), target)
+    (loss * weight / accum).backward()
+    return loss.item()
+
+
 def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_name, steps, cfg, neg, width,
                      height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False,
                      strengths=()):
@@ -742,7 +808,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
                  ft_start_window=0,
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
-                 preview_checkpoint_cache="auto", preview_int8=False, family_options=None):
+                 preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
+                 dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -945,6 +1012,47 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         driver.unload_text_encoder(te)
         del te
         torch.cuda.empty_cache()
+    # ---- DOP: each image's caption with the trigger swapped for the class word, encoded once ------------------
+    dop_cond = {}
+    if dop:
+        trig = str(dop_trigger or trigger_word or metadata_trigger_phrase or "").strip()
+        pairs = _dop_pairs(trig, dop_class) if trig else []
+        why = ("a slider trains a dial, not a subject" if slider else
+               "a fine-tune has no LoRA to switch off" if finetune else
+               "it needs the trigger word (--dop_trigger)" if not trig else
+               "it needs the text encoder (--text_encoder)" if not te_path else "")
+        if why:
+            logger.warning(f"[dop] off: {why}")
+        else:
+            caps = _dop_captions(group)
+            todo = {k: c2 for k, c in caps.items() if (c2 := _dop_caption(c, pairs)) is not None}
+            shown = ", ".join(f"'{t}' -> '{c}'" if c else f"'{t}' dropped" for t, c in pairs)
+            if not todo:
+                logger.warning(f"[dop] off: no caption contains {'any of ' if len(pairs) > 1 else ''}{shown}")
+            else:
+                te = driver.load_text_encoder(te_path, device)
+                try:
+                    keys = sorted(todo)
+                    for i in range(0, len(keys), 4):
+                        chunk = keys[i:i + 4]
+                        for k, c in zip(chunk, driver.encode_text(te, [todo[k] for k in chunk])):
+                            dop_cond[k] = {n: (v[None].cpu() if torch.is_tensor(v) else v) for n, v in c.items()}
+                finally:
+                    driver.unload_text_encoder(te)
+                    del te
+                    torch.cuda.empty_cache()
+                logger.info(f"[dop] Differential Output Preservation on {len(dop_cond)} of {len(caps)} images "
+                            f"(x{dop_weight:g}, every {max(1, int(dop_every))} step(s)); {shown}: without the trigger the "
+                            f"LoRA is held to the base model. e.g. '{todo[keys[0]][:120]}'")
+                if len(pairs) > 1:
+                    for t, _c in pairs:
+                        n = sum(1 for k in todo if re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", caps[k], re.I))
+                        logger.info(f"[dop]   '{t}': {n} image(s)")
+                if len(dop_cond) < len(caps):
+                    logger.info(f"[dop] {len(caps) - len(dop_cond)} image(s) have no trigger in the caption - "
+                                "they train as usual, with no preservation step")
+    dop_every = max(1, int(dop_every or 1))
+    dop_sum = [0.0, 0]
     sample_dir = os.path.join(output_dir, "sample")
     if sample_reference and not driver.supports_references:
         logger.warning(f"[sample] {desc.display_name} has no edit previews - ignoring --sample_reference")
@@ -1519,6 +1627,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     mult = watch.multiplier(batch)  # per-image LR (batch size 1): the raw loss is still what's recorded
                 _scaled = loss * mult if mult != 1.0 else loss
                 (_scaled / accum if accum > 1 else _scaled).backward()
+                _dk = [str(k) for k in batch.get("item_keys") or []]
+                if (dop_cond and not refs and not bool(torch.as_tensor(batch.get("audio_only", False)).any()) and len(_dk) == 1
+                        and _dk[0] in dop_cond and global_step % dop_every == 0):
+                    _dc = dict(cond)
+                    for _n, _v in dop_cond[_dk[0]].items():
+                        if _n not in _dc:      # the cache keeps the text under other names: DOP can't swap it
+                            raise RuntimeError(f"[dop] {desc.display_name}'s encoded text has '{_n}', which its "
+                                               f"cached conditioning doesn't ({', '.join(sorted(cond))})")
+                        _dc[_n] = _v.to(device) if torch.is_tensor(_v) else _v
+                    dop_sum[0] += _dop_step(driver, dit, net, latents, _dc, gen, weight=dop_weight,
+                                            min_t=min_timestep, max_t=max_timestep, accum=accum)
+                    dop_sum[1] += 1
                 for _p in _frozen_now:
                     _p.requires_grad_(True)
             pending += 1
@@ -1551,6 +1671,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()
+        if dop_sum[1]:
+            logger.info(f"[dop] epoch {epoch + 1}: preservation loss {dop_sum[0] / dop_sum[1]:.5f} over {dop_sum[1]} "
+                        "step(s) - how far the LoRA moves the class prompt from the base model")
+            dop_sum[0], dop_sum[1] = 0.0, 0
         if adaptive:
             adaptive.epoch_boundary(epoch, recorder.moving_average, net.trainable_modules(), optimizer)
         # problem-image verdicts + queued caption fixes / auto-recaptions, re-encoded before the next epoch
@@ -1745,6 +1869,15 @@ def setup_parser():
     p.add_argument("--lr_warmup_steps", type=int, default=0)
     p.add_argument("--lr_scheduler_num_cycles", type=int, default=1)
     p.add_argument("--lr_scheduler_power", type=float, default=1.0)
+    p.add_argument("--dop", action="store_true",
+                   help="Differential Output Preservation: without the trigger the LoRA is held to the base model")
+    p.add_argument("--dop_trigger", default=None, help="DOP: the trigger(s) in the captions, comma-separated for several subjects "
+                   "(default --trigger_word)")
+    p.add_argument("--dop_class", default="",
+                   help="DOP: what replaces each trigger, e.g. 'woman, man' (one for all, or one per "
+                   "trigger in order); empty = the triggers are dropped")
+    p.add_argument("--dop_weight", type=float, default=1.0, help="DOP: the preservation loss's weight")
+    p.add_argument("--dop_every", type=int, default=1, help="DOP: a preservation pass every N steps")
     return p
 
 
@@ -1798,7 +1931,8 @@ def main():
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,
         preview_checkpoint=a.preview_checkpoint, preview_checkpoint_cache=a.preview_checkpoint_cache,
         preview_int8=a.preview_int8,
-        family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o))
+        family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),
+        dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every)
 
 
 if __name__ == "__main__":

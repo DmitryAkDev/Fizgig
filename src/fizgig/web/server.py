@@ -713,6 +713,10 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     trig = folder_trigger(image_folder)
     if trig:                                         # the folder's own trigger word (Captions tab)
         values["CAPTION_TRIGGER_WORD"] = trig.rstrip(",").strip()
+    dop_folders = [image_folder] + ([values.get("FAMILY_CONCEPT_DIR")]
+                                    if desc.multi_concept and values.get("FAMILY_MULTICONCEPT") else [])
+    dop_trigs = [t for t in (folder_trigger(f).rstrip(",").strip() for f in dop_folders if f) if t]
+    values["DOP_FOLDER_TRIGGERS"] = ", ".join(dict.fromkeys(dop_trigs))   # DOP's subjects when its box is empty
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))

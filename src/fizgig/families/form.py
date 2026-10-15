@@ -45,7 +45,8 @@ DEFAULTS = {
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
-    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
+    "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_DOP_TRIGGER": "",
+    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_WEIGHT": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -225,6 +226,18 @@ def form(desc):
              "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
              upload=True, start="lora"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
+        _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check",
+             "Stops the subject leaking into prompts without the trigger: each step also shows the model the photo's "
+             "caption with the trigger swapped for the class word, and holds the LoRA to what the base model does "
+             "there. About 1.5-2x the time per step (Differential Output Preservation, from AI-Toolkit)."),
+        _row("FAMILY_DOP_TRIGGER", "DOP trigger words", hint="The word in your captions that means each subject; "
+             "two people: both, comma-separated (zwxem, qrtpl). Empty = the Captions tab's trigger word for the "
+             "training folder, plus Multi Concept's subject 2 folder."),
+        _row("FAMILY_DOP_CLASS", "Replace with", hint="What each subject is without its trigger, in the same order "
+             "(woman, man), or one word for them all. Empty = the trigger is just left out (right when the caption "
+             "already says \"a woman\"). A photo of both swaps both."),
+        _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
+             "plain prompts closer to the base model but can soften the likeness."),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area, any aspect ratio: 0.25 = about 512 x 512, 1.0 = 1024 x 1024, 2.4 = 1536 x "
              "1536, 4.2 = 2048 x 2048. 4.2 MP wants 24-32 GB.", MEGAPIXELS),
@@ -615,7 +628,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}
         hidden |= {"CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH"}
     if kind != "standard":
-        hidden.add("FAMILY_FAST_ID")
+        hidden |= {"FAMILY_FAST_ID", "FAMILY_DOP"}          # DOP keeps a subject apart: a plain LoRA's job
+    if kind != "standard" or not values.get("FAMILY_DOP"):
+        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_WEIGHT"}
     if not values.get("FAMILY_MULTICONCEPT"):
         hidden.add("FAMILY_CONCEPT_DIR")
     kn = _kind_notes(desc)
