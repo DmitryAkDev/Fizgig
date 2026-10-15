@@ -156,6 +156,9 @@ QWEN_IMAGE_21 = FamilyDescription(
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     edit_training=True,             # one checkpoint for text-to-image and edits (up to 10 references)
+    # the edited photo first, then up to 9 supporting references (qwen.ai/blog?id=qwen-image-2.1). The text encoder sees
+    # them too: the dataset's resize (own shape, the 32 px grid) is what both the vision pass and the latents get
+    edit_references=10,
     slider_training=True,
     workbench_follows_samples=True,   # Peter, 1 Oct 2026: the workbench previews as the Samples tab says
     # the reference default is CFG 1 (none); community reports find a little CFG helps 2.1 (1.5-3), higher
