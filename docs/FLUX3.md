@@ -8,8 +8,8 @@ Flux 3 support is new and marked experimental: the presets start from Krea 2's p
 
 ## Getting set up
 
-1. Accept the licence on the [model page](https://huggingface.co/black-forest-labs/flux-3-image-klein) (the files are gated) and make a free Hugging Face token.
-2. On the **Preferences** tab, press **Download models for me** in the Flux 3 Image Klein section and paste the token. It fetches the Base model, the distilled model, the FLUX.2 autoencoder and the Qwen3-VL-4B text encoder (about 31 GB), plus Krea 2's Qwen3-VL-4B captioner for the Captions tab (about 5 GB) if you don't have it.
+1. The files are gated, like Klein's. On the **Preferences** tab, the Flux 3 Image Klein section links its licence page ([black-forest-labs/flux-3-image-klein-comfy](https://huggingface.co/black-forest-labs/flux-3-image-klein-comfy)): sign in to Hugging Face, accept the licence there, and create a free read token.
+2. Paste the token into the section's token box and press **Download models for me**. The token is used for that download only and never saved (on a machine or pod with `HF_TOKEN` set, leave the box empty). It fetches the Base model, the distilled model, the FLUX.2 autoencoder and the Qwen3-VL-4B text encoder (about 31 GB), plus Krea 2's Qwen3-VL-4B captioner for the Captions tab (about 5 GB) if you don't have it.
 3. On the **Training** tab, pick **Flux 3 Image Klein** as the Base Model and load a preset.
 
 From the command line (needs a token):
