@@ -2,7 +2,7 @@
 
 **Flux 3 Image Klein trains in Fizgig from day one.** Black Forest Labs' new 5.6B model for text-to-image and editing joins with everything the other image models have:
 
-- **LoRAs and LoKRs**, with seven ✨ presets: Ultra Fast, Standard, Style, Edit, Edit Strong, Slider and Fine-tune.
+- **LoRAs and LoKRs**, with seven presets: Ultra Fast, Standard, Style, Edit, Edit Strong, Slider and Fine-tune.
 - **Edit LoRAs** from pairs of original and edited photos: teach it a grade, a look or a retouch, then apply it to any photo.
 - **Slider LoRAs** from photo pairs or three prompts.
 - **Full fine-tuning** of the model itself.
