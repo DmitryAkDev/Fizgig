@@ -314,18 +314,15 @@ def form(desc):
              "(zwxemwoman) into the captions yourself. The side-by-side pictures and the training recipe stay on.",
              link={"href": GUIDE + "#captioning-it-yourself", "text": "How to caption for this"}),
         _row("FAMILY_SUBJECT_FIX", "Correct a trigger word, or what a subject is", "check",
-             "Fizgig reads each subject's trigger word, and what it is (a woman, a man, a dog), from its captions - "
-             "shown under its folder. Tick to type them yourself when that is wrong."),
-        _row("FAMILY_DOP_TRIGGER", "Subject 1: trigger word", hint="Empty = read from the captions. Two people in one "
-             "folder: both, comma-separated (zwxem, qrtpl)."),
-        _row("FAMILY_DOP_CLASS", "Subject 1: what it is", hint="e.g. woman. Empty = read from the captions (two "
-             "triggers: woman, man)."),
-        _row("FAMILY_DOP_TRIGGER2", "Subject 2: trigger word", hint="Empty = read from the captions."),
-        _row("FAMILY_DOP_CLASS2", "Subject 2: what it is", hint="Empty = read from the captions."),
-        _row("FAMILY_DOP_TRIGGER3", "Subject 3: trigger word", hint="Empty = read from the captions."),
-        _row("FAMILY_DOP_CLASS3", "Subject 3: what it is", hint="Empty = read from the captions."),
-        _row("FAMILY_DOP_TRIGGER4", "Subject 4: trigger word", hint="Empty = read from the captions."),
-        _row("FAMILY_DOP_CLASS4", "Subject 4: what it is", hint="Empty = read from the captions."),
+             "Fizgig reads each subject's trigger word, and what they are, from their captions. Tick this only if "
+             "the line under a subject shows the wrong word."),
+        *[r for n in (1, 2, 3, 4) for r in (
+            _row("FAMILY_DOP_TRIGGER" + ("" if n == 1 else str(n)), f"Subject {n} - trigger word",
+                 hint="The word your captions use for this subject, e.g. zwxem.\n"
+                      "The box shows the word Fizgig found. Type over it only if that is wrong."),
+            _row("FAMILY_DOP_CLASS" + ("" if n == 1 else str(n)), f"Subject {n} - what they are",
+                 hint="One word: woman, man, girl, boy, dog, cat ...\n"
+                      "The box shows what Fizgig found. Type over it only if that is wrong."))],
         # how often and how strongly the trigger-free pass runs is the tested recipe (every second step, x2): no control
     ]
     if desc.training_adapter:
@@ -756,6 +753,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("FAMILY_MP_MANUAL")
     if not (dop and values.get("FAMILY_SUBJECT_FIX")):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
+    if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):   # "what they are" is the joined word's
+        hidden |= {"FAMILY_DOP_CLASS"} | {c for _d, _t, c in CONCEPT_ROWS}
     for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:
             hidden |= {d, t, c, f"_subject{i}_as"}

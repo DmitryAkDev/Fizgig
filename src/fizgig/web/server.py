@@ -712,11 +712,18 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
     notes, classes = {}, []
     dop = bool(vals.get("FAMILY_DOP"))
     fused_rules = []
+    found = {}                     # the correction boxes' greyed text: the trigger word and class Fizgig read
     for n, (folder, tkey, ckey) in enumerate(rows, start=1):
         if not folder:
             continue
         trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
         cls = str(vals.get(ckey) or "").strip()
+        auto_trig = folder_trigger(folder).rstrip(",").strip()
+        if auto_trig:
+            found[tkey] = auto_trig
+            got, _w = mp.subject(folder, auto_trig, "", ext)
+            if got:
+                found[ckey] = got["phrase"].split()[-1]
         cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
         lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
                  f"One of its captions: {cap}" if cap else "One of its captions: none found - caption the folder first"]
@@ -756,6 +763,7 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
                       f"Plus {mp.PER_SUBJECT} side-by-side pictures of {s['fused']} next to a stranger, e.g.: {who} on "
                       f"the left, and {s['fused']} on the right, {mp.TAIL}"]
         notes[f"_subject{n}_as"] = "\n".join(lines)
+    notes["__placeholders"] = found
     if multi_person and fused_rules:          # the previews' prompts, as they will be read
         prompts = [ln.strip() for ln in str(vals.get("SAMPLE_PROMPT") or "").splitlines() if ln.strip()]
         read = [mp.fuse(p, fused_rules) for p in prompts]
@@ -2817,9 +2825,11 @@ class Handler(BaseHTTPRequestHandler):
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)))
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
-                    st["notes"].update(_multi_person_notes(
-                        vals, b.get("image_folder") or "",
-                        multi_person=st["kind"] == "standard" and bool(vals.get("FAMILY_MULTI_PERSON"))))
+                    mpn = _multi_person_notes(vals, b.get("image_folder") or "",
+                                              multi_person=st["kind"] == "standard" and
+                                              bool(vals.get("FAMILY_MULTI_PERSON")))
+                    st["placeholders"] = mpn.pop("__placeholders", {})
+                    st["notes"].update(mpn)
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(

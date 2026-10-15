@@ -363,6 +363,10 @@ async function refreshState() {
   const force = Object.keys(S.state.force || {});      // what a setting turns off (automagic3: Adaptive LR...)
   if (force.length) { Object.assign(S.values, S.state.force); syncInputs(force); saveStateSoon(); }
   const hidden = new Set(S.state.hidden), disabled = new Set(S.state.disabled);
+  for (const [k, ph] of Object.entries(S.state.placeholders || {})) {   // what Fizgig found, greyed in the box
+    const box = $("f_" + k);
+    if (box) box.placeholder = ph;
+  }
   document.querySelectorAll(".form-row[data-key]").forEach((row) => {
     const k = row.dataset.key;
     row.style.display = hidden.has(k) ? "none" : "";
