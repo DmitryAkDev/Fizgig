@@ -99,7 +99,7 @@ KLEIN = FamilyDescription(
         ("Style+Composition", tuple((f"double_{i}", 1.0) for i in range(8))
          + (("single_0", 1.0), ("single_1", 1.0), ("single_2", 0.5))),
         ("Details", tuple((f"single_{i}", 1.0) for i in range(12, 24)))),
-    workbench=("repair", "explorer", "profiler", "extract", "royale"),
+    workbench=("repair", "profiler", "extract", "royale"),
 
     # Model Area to Train, the old Training tab's areas and their block patterns (lora_trainer_gui.py, Klein's
     # include_patterns): Style trains the style+composition blocks at the late (clean) timesteps 0-400

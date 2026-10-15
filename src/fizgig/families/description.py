@@ -463,13 +463,13 @@ class FamilyDescription:
     # the Samples tab's default negative prompt for the family (each family keeps the user's own edit); None = its
     # previews take no negative, so the box greys out
     preview_negative: Optional[str] = None
-    # Repair Studio / Explorer / Royale renders take comfy-kitchen's INT8 attention (fizgig/modules/int8_attention.py:
+    # Repair Studio / Royale renders take comfy-kitchen's INT8 attention (fizgig/modules/int8_attention.py:
     # the family's attention calls attend() first). Inference only; the Profiler keeps exact attention
     int8_attention: bool = False
     # Repair Studio's Turbo Preview tick (families/act_cache.py): a slider change replays the unchanged blocks on
     # step 1 - the same picture as a full render
     activation_cache: bool = False
-    workbench_follows_samples: bool = False   # Repair Studio / Explorer / Royale previews take the Samples tab's steps,
+    workbench_follows_samples: bool = False   # Repair Studio / Royale previews take the Samples tab's steps,
     #                                   CFG, negative prompt and turbo strength (else the family's fixed preview recipe)
     preview_cfg: float = 1.0
     preview_width: int = 1024
@@ -489,7 +489,7 @@ class FamilyDescription:
     # downloader fetches them with the helper models so first use works offline
     helper_files: tuple = ()
 
-    # workbench tools that support this family ("repair", "explorer", "profiler", "extract", "royale", and "refmod":
+    # workbench tools that support this family ("repair", "profiler", "extract", "royale", and "refmod":
     # RefMod Toolkit, the engine's render_refmod / reference_items); the generic WorkbenchEngine drives them all
     workbench: tuple = ()
     # the workbench engine class ("module:Class") when the generic engines do not fit (a family with clips gets the
