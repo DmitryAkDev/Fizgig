@@ -10,7 +10,7 @@ Fizgig ships as a ready-made cloud image: the whole app in a browser tab, not a 
 
 ## Requirements
 
-- **GPU** — NVIDIA RTX 30 / 40 / 50-series, or **AMD Radeon** with ROCm (RDNA1 through RDNA4, Strix Point / Halo, Instinct MI300+). **Klein 9B** trains on 10 GB (the 4-bit base below 16 GB), **Krea 2** trains on 8 GB, **MiniMax H3** on 16 GB, **Qwen Image 2.1** on 10 GB — see [VRAM guidance](#vram-guidance). The fp8 Base's VRAM savings apply on NVIDIA Ada+; on AMD, NF4 and INT8 are the primary quant paths.
+- **GPU** — NVIDIA RTX 30 / 40 / 50-series, or **AMD Radeon** with ROCm (RDNA1 through RDNA4, Strix Point / Halo, Instinct MI300+). **Klein 9B** trains on 10 GB (the 4-bit base below 16 GB), **Flux 3 Image Klein** and **Krea 2** train on 8 GB, **MiniMax H3** on 16 GB, **Qwen Image 2.1** on 10 GB — see [VRAM guidance](#vram-guidance). The fp8 Base's VRAM savings apply on NVIDIA Ada+; on AMD, NF4 and INT8 are the primary quant paths.
 - **NVIDIA driver** — 555+ on Windows, 550+ on Linux (CUDA 12.8 wheels).
 - **AMD ROCm** — **Windows:** `install_fizgig_rocm.bat` (supported path; launcher and installer improvements by [@scryptio](https://github.com/scryptio)). **Linux:** `./install_fizgig_rocm.sh`, **highly experimental**: newer gfx such as RDNA4, a desktop compositor sharing the training GPU, and driver resets are common. Use Windows ROCm or NVIDIA Linux for production training. Optional system `amdrocm-amdsmi` gives accurate status-bar VRAM via `amd-smi`.
 - **OS** — Windows 10 / 11 or Linux. macOS handles captioning and image prep; training needs CUDA or ROCm.
@@ -144,6 +144,7 @@ Fizgig doesn't bundle weights; download only the family you use. **Preferences h
 ```bash
 python -m fizgig.scripts.fetch_models --family krea2   # ~32 GB, no account needed
 python -m fizgig.scripts.fetch_models --family klein   # ~34 GB, needs a token
+python -m fizgig.scripts.fetch_models --family flux3 --include-optional   # ~31 GB, needs a token
 python -m fizgig.scripts.fetch_models --family minimax # ~47 GB, no account needed
 python -m fizgig.scripts.fetch_models --family qwen_image21 --include-optional   # ~38 GB, no account needed
 python -m fizgig.scripts.fetch_models --family tools   # Florence-2, face model, translator
