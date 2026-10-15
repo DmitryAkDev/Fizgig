@@ -126,12 +126,12 @@ FLUX3 = FamilyDescription(
     preview_width=1024,
     preview_height=1024,
     presets=(
-        # Krea 2's presets at Krea 2's values (families/krea2.py), Ultra Fast and Edit at rank 16 (Peter, 15 Oct 2026)
-        ("✨ Flux 3 Ultra Fast (rank 16, adaptive LR)", _preset(16, adaptive=("2e-4", "4e-4"))),
+        # Krea 2's presets at Krea 2's values (families/krea2.py), Ultra Fast and Edit at rank 16, Adaptive LR 1e-4 to 2e-4 (Peter, 15 Oct 2026)
+        ("✨ Flux 3 Ultra Fast (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
         ("✨ Flux 3 Standard (rank 32, full model)", _preset(32, epochs=64)),
         ("✨ Flux 3 Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
         # Krea 2 has no edit mode: Ultra Fast's and Standard's settings, at 12 epochs (edit pairs learn fast)
-        ("✨ Flux 3 Edit (rank 16, adaptive LR)", _preset(16, adaptive=("2e-4", "4e-4"), epochs=12, edit=True)),
+        ("✨ Flux 3 Edit (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"), epochs=12, edit=True)),
         ("✨ Flux 3 Edit Strong (rank 32) - trickier edits", _preset(32, epochs=12, edit=True)),
         ("✨ Flux 3 Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True, mp="0.5")),
         # full fine-tune at 5e-5, not Krea 2's 1e-5 (Peter, 15 Oct 2026): Flux 3's block weights are Z-Image's size

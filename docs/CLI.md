@@ -295,7 +295,7 @@ Flux 3 trains through the shared cache script and trainer with `--family flux3`.
 
 ### Full example
 
-The GUI's **Ultra Fast** preset, as it builds it — rank 16, 0.25 MP (`resolution = [512, 512]` in the TOML), Adaptive LR 2e-4 to 4e-4, 30 epochs:
+The GUI's **Ultra Fast** preset, as it builds it — rank 16, 0.25 MP (`resolution = [512, 512]` in the TOML), Adaptive LR 1e-4 to 2e-4, 30 epochs:
 
 ```bash
 python src/fizgig/families/cache.py --family flux3 --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae.safetensors
@@ -309,7 +309,7 @@ python src/fizgig/families/train.py \
   --output_name my_subject \
   --network_dim 16 --network_alpha 16 \
   --learning_rate 1e-4 \
-  --adaptive_lr --adaptive_lr_min 2e-4 --adaptive_lr_max 4e-4 \
+  --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 \
   --max_train_epochs 30 \
   --save_every_n_epochs 1 \
   --seed 42 \

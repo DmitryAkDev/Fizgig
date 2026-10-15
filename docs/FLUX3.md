@@ -33,10 +33,10 @@ Every LoRA preset trains at 0.25 MP with adamw8bit, EMA 0.98 and the per-image l
 
 | Preset | Rank | Learning rate | Epochs |
 |---|---|---|---|
-| **Flux 3 Ultra Fast** | 16 | Adaptive LR 2e-4 to 4e-4 | 30 |
+| **Flux 3 Ultra Fast** | 16 | Adaptive LR 1e-4 to 2e-4 | 30 |
 | **Flux 3 Standard** | 32 | Flat 1e-4 | 64 |
 | **Flux 3 Style** | 16 | Adaptive LR 5e-5 to 2e-4 | 64 |
-| **Flux 3 Edit** | 16 | Adaptive LR 2e-4 to 4e-4 | 12 |
+| **Flux 3 Edit** | 16 | Adaptive LR 1e-4 to 2e-4 | 12 |
 | **Flux 3 Edit Strong** (trickier edits) | 32 | Flat 1e-4 | 12 |
 | **Flux 3 Slider** | 8 | Flat 2e-4, at 0.5 MP | 20 |
 | **Flux 3 Fine-tune** | — | 5e-5 | 30 |
