@@ -62,7 +62,12 @@ FLUX3 = FamilyDescription(
     modelspec_arch="Flux.3-image-klein",
     implementation=_REF,
     precisions=("bf16", "int8", "nf4"),
-    train_memory={},                  # to measure: Auto takes bf16, no swap, until then
+    # training peaks, LoRA rank 16, adamw (15 Oct 2026, RTX 5090). 1.0 MP measured for each precision; 0.25 MP from
+    # the measured swap run (9.7 GB = 11.08 weights - 10 x 0.245 swapped + 1.07 overhead) minus the 0.4 GB bf16 grew
+    # from 0.25 to 1.0 MP. Per swapped block: a single block's weights (0.245 GB bf16, 0.123 INT8). The preview round
+    # sizes itself to the VRAM left (load_preview_checkpoint), so it is not the planning figure.
+    train_memory={"bf16": (((0.25, 12.3), (1.0, 12.7)), 0.245), "int8": (((0.25, 8.7), (1.0, 9.1)), 0.12),
+                  "nf4": (((0.25, 5.8), (1.0, 6.2)), 0.0)},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora",),
     ema_default="0.98",
