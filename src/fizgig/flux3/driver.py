@@ -83,10 +83,18 @@ class Flux3Driver(FamilyDriver):
 
     # ---- training previews on the distilled checkpoint (Klein's Distilled handoff; adapted from Qwen 2.1's) ----------
     def park_for_preview(self, dit, device):
-        """Stream all but two of the training model's single blocks so the distilled fits beside it; an NF4 base
-        cannot stream and is small - left as it is (token None)."""
+        """Stream all but two of the training model's single blocks so the distilled fits beside it. An NF4 base
+        cannot stream: left as it is (token None), or on a card that can't hold the INT8 distilled's resident part
+        and a render beside it, parked on the CPU for the round (token 0; unpark moves it back). Measured on a
+        simulated 10 GB card: left resident, the second preview ran out of memory."""
         if getattr(dit, "_nf4_quantized", False):
-            return None
+            from fizgig.families import quant
+            torch.cuda.empty_cache()
+            if quant.free_vram_gb() >= 8.0:   # INT8 distilled ~5.5 GB + a 1024 px render and decode
+                return None
+            quant.move(dit, "cpu")
+            torch.cuda.empty_cache()
+            return 0
         orig = int(dit.blocks_to_swap or 0)
         dit.enable_block_swap(len(dit.single_blocks) - 2, torch.device(device), True)
         dit.prepare_block_swap_before_forward()
