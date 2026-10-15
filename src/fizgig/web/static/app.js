@@ -271,6 +271,8 @@ function renderRow(r) {
     if (upStatus) wrap.append(upStatus);
   }
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  const link = r.link ? el("a", {class: "inline-link", target: "_blank", rel: "noopener", href: r.link.href,
+    text: r.link.text + " →"}) : null;      // a row's guide on GitHub, under its hint
   if (r.hint && r.hint_labels) {                  // one spaced line per choice, "Name: what it does" with the name bold
     const h = el("div", {class: "field-hint hint-lines"});
     for (const line of r.hint.split("\n")) {
@@ -284,6 +286,7 @@ function renderRow(r) {
     if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
     wrap.append(h);
   }
+  if (link) wrap.append(el("div", {class: "field-hint"}, link));
   return wrap;
 }
 

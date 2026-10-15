@@ -947,7 +947,8 @@ def dataset_toml(desc, inputs):
     def _fuse(f):
         if f in mp:          # TOML arrays of strings read as JSON writes them
             import json as _json
-            lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
+            if mp[f][0]["rules"]:            # none when the captions are used as written
+                lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:
         lines.append(f"num_repeats = {reps[folder]}")
@@ -1062,7 +1063,10 @@ def multi_person_subjects(desc, st):
             out.append((folder, None, f"Other people keep their faces: {name.lower()} needs exactly one trigger "
                                       f"word ({len(t)} given) - one person per folder", where))
             continue
-        sub, why = mp.subject(folder, t[0], c[0] if c else "", ext)
+        if st.get("FAMILY_MP_MANUAL"):   # the captions as written: the trigger is already the joined word
+            sub, why = mp.subject_as_written(t[0], c[0] if c else "")
+        else:
+            sub, why = mp.subject(folder, t[0], c[0] if c else "", ext)
         out.append((folder, sub, f"Other people keep their faces: {name.lower()} - {why}" if why else "", where))
     return out
 

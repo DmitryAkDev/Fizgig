@@ -147,6 +147,26 @@ def subject(folder, trigger, cls="", ext=".txt"):
             "rules": [[f"{trigger}, {phrase}", fused], [f"{trigger} {phrase}", fused], [trigger, fused]]}, ""
 
 
+def subject_as_written(trigger, cls=""):
+    """A subject whose captions already hold its joined word (zwxemwoman), used as written - nothing in the captions
+    is rewritten. What it is (for the trigger-free caption) comes from `cls`, else from a class word the trigger ends
+    with ("zwxemwoman" -> "a woman")."""
+    trigger = str(trigger or "").strip()
+    if not trigger:
+        return None, "no trigger word"
+    phrase = str(cls or "").strip()
+    if not phrase:
+        end = next((w for w in sorted(CLASS_WORDS, key=len, reverse=True)
+                    if trigger.lower().endswith(w) and len(trigger) > len(w)), "")
+        if not end:
+            return None, (f"say what {trigger} is - tick Correct a trigger word on the Subjects card and type it in "
+                          "that subject's \"what it is\" box, e.g. woman")
+        phrase = end
+    if not re.match(r"^an?\s", phrase, re.I):
+        phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase
+    return {"trigger": trigger, "phrase": phrase, "fused": trigger, "rules": []}, ""
+
+
 def _square(im, size=PANEL):
     from PIL import Image
     w, h = im.size

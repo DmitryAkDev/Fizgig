@@ -50,7 +50,7 @@ DEFAULTS = {
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "", "FAMILY_DOP_WEIGHT": "1.0",
     "FAMILY_DOP_EVERY": "Every step", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "FAMILY_SUBJECTS": "1 subject", "FAMILY_PEOPLE_MODE": "Off - a normal LoRA", "FAMILY_SUBJECT_FIX": False,
-    "FAMILY_PEOPLE_MORE": False,
+    "FAMILY_PEOPLE_MORE": False, "FAMILY_MP_MANUAL": False,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -180,6 +180,7 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "someone the model already knows, like a celebrity, and every face stays right. Best for people. "
                "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown under "
                "each subject, e.g. zwxemwoman.")
+GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.")
 MULTI_PERSON_HINT = ("For people who appear together with others: in a group photo the other people keep their own "
@@ -325,6 +326,10 @@ def form(desc):
                    PEOPLE_MODES[1]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": False},
                    PEOPLE_MODES[2]: {"FAMILY_DOP": True, "FAMILY_MULTI_PERSON": True,
                                      "FAMILY_DOP_EVERY": DOP_EVERY[1]}}),          # the measured recipe
+        _row("FAMILY_MP_MANUAL", "Use my captions exactly as written", "check",
+             "No joining or guessing: Fizgig trains on your captions as they are. Write each subject's joined word "
+             "(zwxemwoman) into the captions yourself. The side-by-side pictures and the training recipe stay on.",
+             link={"href": GUIDE + "#captioning-it-yourself", "text": "How to caption for this"}),
         _row("FAMILY_SUBJECT_FIX", "Correct a trigger word, or what a subject is", "check",
              "Fizgig reads each subject's trigger word, and what it is (a woman, a man, a dog), from its captions - "
              "shown under its folder. Tick to type them yourself when that is wrong."),
@@ -769,6 +774,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     dop = bool(values.get("FAMILY_DOP")) and kind in ("standard", "finetune")
     if not dop:
         hidden |= {"FAMILY_SUBJECT_FIX", "FAMILY_PEOPLE_MORE"}
+    if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):
+        hidden.add("FAMILY_MP_MANUAL")
     if not (dop and values.get("FAMILY_SUBJECT_FIX")):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
     if not (dop and values.get("FAMILY_PEOPLE_MORE")):

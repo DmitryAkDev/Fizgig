@@ -731,15 +731,21 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
                 lines.append(f"Trains on: {cap} (as written)")
             notes[f"_subject{n}_as"] = "\n".join(lines)
             continue
-        s, why = mp.subject(folder, trig, cls, ext)
+        manual = bool(vals.get("FAMILY_MP_MANUAL"))
+        s, why = mp.subject_as_written(trig, cls) if manual else mp.subject(folder, trig, cls, ext)
         if not s:
             notes[f"_subject{n}_as"] = "\n".join(lines + [f"Can't keep other people's faces with this folder: {why}"])
             continue
         classes.append(s["phrase"])
         fused_rules += s["rules"]
-        lines[0] = (f"Trains as: {s['fused']} - Fizgig joins the trigger word to what the subject is "
+        lines[0] = (f"Trains as: {s['fused']} - used as your captions write it ({s['phrase']}). Use "
+                    f"{s['fused']} in your prompts." if manual else
+                    f"Trains as: {s['fused']} - Fizgig joins the trigger word to what the subject is "
                     f"(\"{s['trigger']}, {s['phrase']}\" becomes \"{s['fused']}\"), which keeps the subjects apart. "
                     f"Your caption files aren't changed. Use {s['fused']} in your prompts.")
+        if manual and cap and not re.search(r"(?<!\w)" + re.escape(s["fused"]) + r"(?!\w)", cap, re.I):
+            lines.append(f"Check your captions: this one never uses {s['fused']} - with Use my captions exactly as "
+                         f"written on, write {s['fused']} into them (see How to caption for this).")
         if cap:
             fused = mp.fuse(cap, s["rules"])
             kept = mp.dop_caption(fused, [(s["fused"], s["phrase"])])
