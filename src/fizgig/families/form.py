@@ -185,6 +185,10 @@ def form(desc):
     ])
     ks = kinds(desc)
     params = [
+        _row("_when_read", "These settings are read when a run starts. A paused run resumes with its own settings"
+             + (" (only a new picture size is offered)" if pictures else "") + "; a dataset or caption change needs a "
+             "fresh run." + (" The previews' prompts can change while it trains, on the Samples tab." if pictures else ""),
+             "note"),
         _row("FAMILY_KIND", "Kind of training", "radio", choices=[label for _, label in ks], default=ks[0][1],
              sets={label: kind_sets(desc, k) for k, label in ks if kind_sets(desc, k)}) if len(ks) > 1 else None,
         _row("LEARNING_RATE", "Learning Rate", default=DEFAULTS["LEARNING_RATE"]),
@@ -240,11 +244,17 @@ def form(desc):
                  "Each image's verdict, with its thumbnail and its caption to fix, is under the run's Per-image "
                  "loss in Runs & outputs."),
             _row("KREA2_PER_IMAGE_LR", "Per-image adaptive LR (throttle stuck images, boost healthy learned ones)",
-                 "check"),
+                 "check", "Images that stay hard without improving train more gently (x0.7, then x0.5 down to x0.1); "
+                 "mined-out ones ease off (x0.6) and healthy learned ones get a gentle boost (x1.1). Batch size 1."),
             _row("KREA2_WARMUP_LOOK", "Warm up look outliers (unusual angles ease in at low LR - needs a Look "
-                 "Filter scan)", "check"),
+                 "Filter scan)", "check", "Images the Image Prep Look Filter scored as look outliers (tight angles, "
+                 "profiles - real but unusual) start at x0.4 and ramp to x1.0 over the first ~4 epochs, so they refine "
+                 "the identity instead of fighting it while it forms. Run the Look Filter (with 3 baselines) on this "
+                 "folder first: it saves the scores with the dataset. Without them this does nothing."),
             _row("KREA2_AUTO_RECAPTION", "Auto-recaption stuck images (Qwen3-VL rewrites the caption between "
-                 "epochs)", "check", "Needs the Krea 2 text encoder set in Preferences."),
+                 "epochs)", "check", "A stuck image gets a new caption written from what is in it, and a fresh start; "
+                 "a second try goes into more detail. Still stuck after that, it is left out of training - edit its "
+                 "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
             _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption. The "
                  "training folder's word, the same as the Captions tab's."),
         ]
@@ -603,6 +613,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         notes[lr_note[0]] = lr_note[1]
         actions[lr_note[0]] = ({"label": "Use 1e-4 / 2e-4", "values": {"ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "2e-4"}}
                                if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
+    if kind == "edit":
+        notes["SAMPLE_PROMPT"] = ("An Edit LoRA run doesn't use these prompts or the reference: its previews apply "
+                                  "the edit instruction to the test photo on the Training tab's Edit pairs card.")
+    elif kind == "slider":
+        notes["SAMPLE_PROMPT"] = ("A slider run doesn't use these prompts: its previews are the slider's own -1 / 0 / "
+                                  "+1 strip.")
     srcs = slider_sources(desc)
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"

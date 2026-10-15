@@ -733,6 +733,10 @@ function podCard() {
       el("div", {class: "field-hint", text: "Make one at RunPod > Settings > API Keys. The key RunPod gives a pod by itself " +
         "can't stop pods. Saved in prefs.json on your volume, so it carries over to your next pod and stays out of any shared template."}),
       P.storage ? el("div", {class: "field-hint" + (P.storage[1] ? " warn" : ""), text: P.storage[0]}) : null,
+      el("div", {class: "field-hint prefs-note", text: "Your files: datasets in /workspace/datasets, models in " +
+        "/workspace/models, finished LoRAs in /workspace/output_loras. Everything under /workspace survives stopping " +
+        "and restarting the pod. On the default Volume Disk it goes when you TERMINATE the pod, so stop rather than " +
+        "terminate between sessions; a Network Volume survives that too."}),
       el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the pod, not in your browser."})));
 }
 
