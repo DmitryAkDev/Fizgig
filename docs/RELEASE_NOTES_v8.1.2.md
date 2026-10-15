@@ -10,5 +10,3 @@
 **If you used 8.1.1's naming:** extra pictures no longer go in the Originals folder. Move them to their own folder and pick **The photo + extra pictures**.
 
 Suggested by @V1sionVerse, with a +1 from @Galvo87 (#187).
-
-**Also:** the Reset to 1e-5 / 4e-4 button under Adaptive LR is gone.
