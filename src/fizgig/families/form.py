@@ -308,12 +308,15 @@ def form(desc):
             _row("FAMILY_EDIT_CAPTION", "3. Edit instruction", hint="What the edit is, e.g. \"Apply my concert grade.\" "
                  "Write captions saves it as the caption of every photo in the Edited folder.",
                  action="write_captions"),
-            _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path", "An original photo that is in neither folder: "
-                 "the previews show the edit applied to it. Any size - it is fitted to the preview size. Leave empty "
-                 "to use the first original." + (
-                     "\nWith extra pictures: its own go in the Extra pictures folder the same way (test_1.jpg, "
-                     "test_2.jpg ... for test.jpg); with no test photo, the previews use the first original and its "
-                     "extras." if desc.edit_references > 1 else ""), upload=True, start="data"),
+            _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path",
+                 "Optional - you can leave this empty. A photo for the previews to edit, so you can watch the LoRA "
+                 "learn: an original, unedited photo that is in neither folder. One it never trains on shows whether "
+                 "it learned the edit itself. Any size.\n"
+                 "Left empty, the previews use your first original - that works, but it is a photo the LoRA trains on, "
+                 "so the previews can look better than the LoRA really is." + (
+                     "\nWith extra pictures: put the test photo's own in the Extra pictures folder the same way "
+                     "(test_1.jpg, test_2.jpg ... for test.jpg)." if desc.edit_references > 1 else ""),
+                 upload=True, start="data"),
         ])
     if desc.slider_training:
         srcs = slider_sources(desc)
