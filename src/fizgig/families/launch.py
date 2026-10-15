@@ -517,11 +517,10 @@ def train_command(desc, inputs, plan):
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
     if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st)):
-        cmd += ["--dop", "--dop_class", _s(st.get("FAMILY_DOP_CLASS")),
-                "--dop_weight", _s(st.get("FAMILY_DOP_WEIGHT")) or "1.0"]
-        dop_trig = dop_triggers(st)
-        if dop_trig:
-            cmd += ["--dop_trigger", dop_trig]
+        trig, cls = dop_rules(st)
+        cmd += ["--dop", "--dop_weight", _s(st.get("FAMILY_DOP_WEIGHT")) or "1.0"]
+        if trig:
+            cmd += ["--dop_trigger", ", ".join(trig), "--dop_class", ", ".join(cls)]
     if st.get("ADAPTIVE_LR") and desc.adaptive_lr:
         cmd += ["--adaptive_lr",
                 "--adaptive_lr_min", str(st.get("ADAPTIVE_LR_MIN", "1e-4")).split(" ")[0],
@@ -866,25 +865,45 @@ def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
 
 
-def dop_triggers(st):
-    """DOP's triggers: the box, else every subject folder's own (the training folder's, then Multi Concept's
-    subject 2), comma-separated."""
-    return (_s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGERS"))
-            or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")))
+def _dop_folders(st):
+    """DOP's per-folder (name, words to remove, replacements): the training folder's, then subject 2's (Multi
+    Concept). A folder's box left empty takes that folder's own trigger word (the Captions tab's, which the web
+    server puts in DOP_FOLDER_TRIGGER / DOP_FOLDER_TRIGGER2)."""
+    out = [("Training folder", _s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGER"))
+            or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")), _s(st.get("FAMILY_DOP_CLASS")))]
+    if st.get("multiconcept") and st.get("extra_folders"):
+        out.append(("Subject 2 folder", _s(st.get("FAMILY_DOP_TRIGGER2")) or _s(st.get("DOP_FOLDER_TRIGGER2")),
+                    _s(st.get("FAMILY_DOP_CLASS2"))))
+    rows = []
+    for name, trig, cls in out:
+        t = [x for x in (y.strip() for y in trig.split(",")) if x]
+        c = [x.strip() for x in cls.split(",")]
+        rows.append((name, t, c * len(t) if len(c) == 1 else c))     # one replacement (or none) for them all
+    return rows
+
+
+def dop_rules(st):
+    """DOP's (words to remove, replacements) over every folder, in order."""
+    trig, cls = [], []
+    for _name, t, c in _dop_folders(st):
+        if len(c) == len(t):
+            trig += t
+            cls += c
+    return trig, cls
 
 
 def dop_problems(desc, v):
     if not v.get("FAMILY_DOP") or slider_on(desc, v) or edit_on(desc, v) or ft_on(desc, v):
         return []
-    trig = [t for t in (x.strip() for x in dop_triggers(v).split(",")) if t]
-    if not trig:
-        return ["Keep the subject to its trigger (DOP) needs the trigger word: type it in DOP trigger words, or set "
-                "the folder's trigger word on the Captions tab."]
-    cls = [c.strip() for c in _s(v.get("FAMILY_DOP_CLASS")).split(",")]
-    if len(cls) > 1 and len(cls) != len(trig):
-        return [f"DOP has {len(trig)} trigger word(s) ({', '.join(trig)}) but {len(cls)} words in Replace with: give "
-                "one for each trigger, in the same order, or one word for them all."]
-    return []
+    out = []
+    for name, t, c in _dop_folders(v):
+        if not t:
+            out.append(f"DOP: the {name.lower()} has no word to remove - type its trigger word, or set the folder's "
+                       "trigger word on the Captions tab.")
+        elif len(c) != len(t):
+            out.append(f"DOP: the {name.lower()} has {len(t)} words to remove ({', '.join(t)}) but {len(c)} "
+                       "replacements - give one for each, in the same order, one for them all, or none.")
+    return out
 
 
 def start_problems(desc, inputs):

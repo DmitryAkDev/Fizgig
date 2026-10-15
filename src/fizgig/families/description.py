@@ -311,11 +311,12 @@ class FamilyDescription:
 
     # what one training item may be: "photo", "clip" (frames + optional sound), "voice" (sound only)
     media: tuple = ("photo",)
-    # Multi Concept: extra subject folders, each its own dataset block (H3: reference distillation pairs each image
+    # Multi Concept: extra subject folders, each its own dataset block, on every family (Standard LoRA and fine-tune;
+    # an edit's or a pair slider's first folder has a partner folder). H3: reference distillation pairs each image
     # only with others of its own subject - the reference rotation runs per block). multi_concept_defaults: the family
     # options a click on the box sets ((option key, value) pairs, still editable after); multi_concept_hint: a line
     # added to the box's hint
-    multi_concept: bool = False
+    multi_concept: bool = True
     multi_concept_defaults: tuple = ()
     multi_concept_hint: str = ""
     clip_spec: Optional[ClipSpec] = None

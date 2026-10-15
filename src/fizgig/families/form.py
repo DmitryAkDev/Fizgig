@@ -46,7 +46,7 @@ DEFAULTS = {
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
     "CONTEXT_LORA_PATH": "", "CONTEXT_LORA_STRENGTH": "1.0", "FAMILY_DOP": False, "FAMILY_DOP_TRIGGER": "",
-    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_WEIGHT": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
+    "FAMILY_DOP_CLASS": "", "FAMILY_DOP_TRIGGER2": "", "FAMILY_DOP_CLASS2": "", "FAMILY_DOP_WEIGHT": "1.0", "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -160,6 +160,11 @@ def slider_sources(desc):
             if s in SLIDER_SOURCES]
 
 
+DOP_HINT = ("Stops the subject showing up in prompts without its trigger. Every step trains the photo twice: once "
+            "with its caption as written, and once with the trigger word removed (“zwxem, a woman smiling” becomes "
+            "“a woman smiling”). On that second pass the LoRA is held to exactly what the base model does on its own, "
+            "so without the trigger the LoRA changes nothing. A caption with both subjects' triggers has both removed. "
+            "About 1.5-2x the time per step. (Differential Output Preservation, from AI-Toolkit.)")
 MULTICONCEPT_HINT = ("Each folder needs its own trigger word, in every caption: that is the only thing telling the "
                      "subjects apart. Caption and prep every folder yourself first; this box is training-only.")
 
@@ -226,18 +231,6 @@ def form(desc):
              "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
              upload=True, start="lora"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
-        _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check",
-             "Stops the subject leaking into prompts without the trigger: each step also shows the model the photo's "
-             "caption with the trigger swapped for the class word, and holds the LoRA to what the base model does "
-             "there. About 1.5-2x the time per step (Differential Output Preservation, from AI-Toolkit)."),
-        _row("FAMILY_DOP_TRIGGER", "DOP trigger words", hint="The word in your captions that means each subject; "
-             "two people: both, comma-separated (zwxem, qrtpl). Empty = the Captions tab's trigger word for the "
-             "training folder, plus Multi Concept's subject 2 folder."),
-        _row("FAMILY_DOP_CLASS", "Replace with", hint="What each subject is without its trigger, in the same order "
-             "(woman, man), or one word for them all. Empty = the trigger is just left out (right when the caption "
-             "already says \"a woman\"). A photo of both swaps both."),
-        _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
-             "plain prompts closer to the base model but can soften the likeness."),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
              "Images are resized to this area, any aspect ratio: 0.25 = about 512 x 512, 1.0 = 1024 x 1024, 2.4 = 1536 x "
              "1536, 4.2 = 2048 x 2048. 4.2 MP wants 24-32 GB.", MEGAPIXELS),
@@ -286,6 +279,20 @@ def form(desc):
                  sets={"true": dict(desc.multi_concept_defaults)} if desc.multi_concept_defaults else None),
             _row("FAMILY_CONCEPT_DIR", "Subject 2 folder", "folder", upload=True, start="data"),
         ]
+    params += [
+        _row("FAMILY_DOP", "Keep the subject to its trigger (DOP)", "check", DOP_HINT),
+        _row("FAMILY_DOP_TRIGGER", "Training folder: word to remove", hint="The trigger word in this folder's captions. "
+             "Empty = the folder's trigger word from the Captions tab. Two people in one folder: both, comma-separated "
+             "(zwxem, qrtpl)."),
+        _row("FAMILY_DOP_CLASS", "Training folder: replace it with", hint="Optional. Leave it empty when the captions "
+             "already say what the subject is (“zwxem, a woman smiling” becomes “a woman smiling”). Otherwise the "
+             "word to put in its place, e.g. woman (two triggers: woman, man)."),
+        _row("FAMILY_DOP_TRIGGER2", "Subject 2 folder: word to remove", hint="The trigger word in the subject 2 "
+             "folder's captions. Empty = that folder's trigger word from the Captions tab."),
+        _row("FAMILY_DOP_CLASS2", "Subject 2 folder: replace it with", hint="Optional, as for the training folder."),
+        _row("FAMILY_DOP_WEIGHT", "Preservation strength", hint="1.0 = as strong as the training loss. Higher keeps "
+             "plain prompts closer to the base model but can soften the likeness."),
+    ]
     if desc.training_adapter:
         params.append(_row("FAMILY_TRAINING_ADAPTER", "Training adapter (recommended)", "check",
                            desc.training_adapter_note))
@@ -630,7 +637,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if kind != "standard":
         hidden |= {"FAMILY_FAST_ID", "FAMILY_DOP"}          # DOP keeps a subject apart: a plain LoRA's job
     if kind != "standard" or not values.get("FAMILY_DOP"):
-        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_WEIGHT"}
+        hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2",
+                   "FAMILY_DOP_WEIGHT"}
+    if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
+        hidden |= {"FAMILY_MULTICONCEPT", "FAMILY_CONCEPT_DIR"}
+    if kind in ("edit", "slider") or not values.get("FAMILY_MULTICONCEPT"):
+        hidden |= {"FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2"}
     if not values.get("FAMILY_MULTICONCEPT"):
         hidden.add("FAMILY_CONCEPT_DIR")
     kn = _kind_notes(desc)
@@ -829,8 +841,9 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                  **({"checkpoint": b("SAMPLE_CHECKPOINT"), "checkpoint_cache": s("CACHE_SAMPLE_MODEL") or "auto",
                      "int8": bool(inference_int8)} if desc.train_preview_checkpoint else {})},
         samples_dir=samples_dir, edit_caption=s("FAMILY_EDIT_CAPTION"),
-        multiconcept=b("FAMILY_MULTICONCEPT") and desc.multi_concept,
-        extra_folders=[s("FAMILY_CONCEPT_DIR")] if b("FAMILY_MULTICONCEPT") and s("FAMILY_CONCEPT_DIR") else [],
+        multiconcept=b("FAMILY_MULTICONCEPT") and desc.multi_concept and kind not in ("edit", "slider"),
+        extra_folders=[s("FAMILY_CONCEPT_DIR")] if (b("FAMILY_MULTICONCEPT") and s("FAMILY_CONCEPT_DIR") and
+                                                     desc.multi_concept and kind not in ("edit", "slider")) else [],
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     return d
