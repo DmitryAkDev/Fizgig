@@ -6055,6 +6055,11 @@ async function podLocalSend(d) {
   podLocalDraw();
 }
 window.addEventListener("pywebviewready", podLocalInit);    // the window's bridge arrives after the page loads
+// tell the app window the page runs in it (app_window.py gives a white window up for the browser otherwise)
+window.addEventListener("pywebviewready", () => {
+  const a = window.pywebview && window.pywebview.api;
+  if (a && a.ready) a.ready();
+});
 
 // the app window and a pod must run the same build (app_window.py blocks the page when they don't). A window from
 // before that check has no build() to ask: it is older than this pod, so the page says to update this computer
