@@ -226,6 +226,8 @@ class Flux3Driver(FamilyDriver):
                  noise=None, on_step=None, refs=None):
         if sigmas is not None and len(sigmas) not in (steps, steps + 1):
             sigmas = None                   # an explicit schedule only applies at its own step count
+        if "mask" in cond:      # a prompt-travel blend (pad_conditioning): only the tokens either side has
+            cond = {"tokens": (cond["tokens"][0] if cond["tokens"].dim() == 3 else cond["tokens"])[cond["mask"] > 0]}
         neg = neg_cond["tokens"] if neg_cond is not None else None
         if cfg != 1.0 and neg is None and not dit.flow_map:
             raise ValueError("Flux 3 Base samples with CFG against an encoded empty prompt; none was given")
@@ -235,6 +237,21 @@ class Flux3Driver(FamilyDriver):
         #                                                       references carry a batch dim; the sampler's are (C, h, w)
         # (1, C, h, w) as every driver's: the workbench keeps lat[0] as a travel frame's reference
         return S.to_latents(tokens, height // S.DOWNSAMPLING_RATIO, width // S.DOWNSAMPLING_RATIO)[None]
+
+    def pad_conditioning(self, conds):
+        """Prompt travel (LoRA Royale): prompts zero-padded to one length with a mask of each one's own tokens (its
+        real tokens and its pad to the multiple of 80). The DiT attends every token it is given, so generate keeps
+        only the masked-in ones: each waypoint renders exactly as its own prompt, and between two lengths the extra
+        tokens fade toward zero."""
+        L = max(c["tokens"].shape[-2] for c in conds)
+        out = []
+        for c in conds:
+            h = c["tokens"][0] if c["tokens"].dim() == 3 else c["tokens"]
+            pad = L - h.shape[0]
+            out.append({"tokens": torch.cat([h, h.new_zeros(pad, h.shape[1])]) if pad else h,
+                        "mask": torch.cat([torch.ones(h.shape[0], dtype=torch.bool),
+                                           torch.zeros(pad, dtype=torch.bool)])})
+        return out
 
     @torch.no_grad()
     def decode(self, vae, latents, width, height):
