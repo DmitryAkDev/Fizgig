@@ -516,7 +516,7 @@ def train_command(desc, inputs, plan):
     if ctx and not ft_on(desc, st):         # a fine-tune trains the base itself: there is no LoRA to stack on
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
-    if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st)):
+    if st.get("FAMILY_DOP") and not (slider_on(desc, st) or edit_on(desc, st)):
         trig, cls = dop_rules(st)
         every = 2 if _s(st.get("FAMILY_DOP_EVERY")).lower().startswith("every second") else 1
         try:
@@ -900,7 +900,7 @@ def dop_rules(st):
 
 
 def dop_problems(desc, v):
-    if not v.get("FAMILY_DOP") or slider_on(desc, v) or edit_on(desc, v) or ft_on(desc, v):
+    if not v.get("FAMILY_DOP") or slider_on(desc, v) or edit_on(desc, v):
         return []
     out = []
     for name, t, c in _dop_folders(v):

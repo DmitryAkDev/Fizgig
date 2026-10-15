@@ -639,8 +639,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         disabled |= {"MAX_TRAIN_EPOCHS", "SAVE_EVERY_N_EPOCHS"}
         hidden |= {"CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH"}
     if kind != "standard":
-        hidden |= {"FAMILY_FAST_ID", "FAMILY_DOP"}          # DOP keeps a subject apart: a plain LoRA's job
-    if kind != "standard" or not values.get("FAMILY_DOP"):
+        hidden.add("FAMILY_FAST_ID")
+    if kind not in ("standard", "finetune"):          # DOP keeps a subject apart: a LoRA's or a fine-tune's job
+        hidden.add("FAMILY_DOP")
+    if kind not in ("standard", "finetune") or not values.get("FAMILY_DOP"):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS", "FAMILY_DOP_TRIGGER2", "FAMILY_DOP_CLASS2",
                    "FAMILY_DOP_WEIGHT", "FAMILY_DOP_EVERY"}
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject

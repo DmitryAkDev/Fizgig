@@ -475,6 +475,37 @@ def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, acc
     return loss.item()
 
 
+def _dop_ft_targets(driver, dit, loader, dop_cond, cond_for, device, *, samples, seed, min_t, max_t):
+    """A fine-tune's DOP targets, made before its first step while the model is still the original: for each image,
+    `samples` noised inputs (the family's own timestep rule) and the original model's prediction there for the
+    trigger-free caption. A fine-tune has no adapter to switch off, so these stand in for the base model. Kept on
+    the CPU in bf16: item key -> [(state, prediction), ...]."""
+    gen = torch.Generator().manual_seed(int(seed) + 7919)
+    out = {}
+    with torch.no_grad():
+        for batch in tqdm(loader, desc="[dop] the original model's predictions"):
+            keys = [str(k) for k in batch.get("item_keys") or []]
+            dc = cond_for(batch, driver.batch_cond(batch, device))
+            if dc is None or keys[0] in out:
+                continue
+            latents = batch["latents"].to(device)
+            rows = []
+            for _ in range(int(samples)):
+                state = driver.noise_latents(latents, gen, min_t=min_t, max_t=max_t)
+                pred = driver.predict(dit, state, dc)
+                rows.append(({k: (v.detach().cpu() if torch.is_tensor(v) else v) for k, v in state.items()},
+                             pred.detach().to("cpu", torch.bfloat16)))
+            out[keys[0]] = rows
+    return out
+
+
+def _dop_ft_loss(driver, dit, rows, cond, device):
+    """One saved input of this image: the model's prediction now against the original's there."""
+    state, target = rows[random.randrange(len(rows))]
+    state = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in state.items()}
+    return F.mse_loss(driver.predict(dit, state, cond).float(), target.to(device).float())
+
+
 def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_name, steps, cfg, neg, width,
                      height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False,
                      strengths=()):
@@ -809,7 +840,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_start_window=0,
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
-                 dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1):
+                 dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1018,7 +1049,6 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         trig = str(dop_trigger or trigger_word or metadata_trigger_phrase or "").strip()
         pairs = _dop_pairs(trig, dop_class) if trig else []
         why = ("a slider trains a dial, not a subject" if slider else
-               "a fine-tune has no LoRA to switch off" if finetune else
                "it needs the trigger word (--dop_trigger)" if not trig else
                "it needs the text encoder (--text_encoder)" if not te_path else "")
         if why:
@@ -1061,6 +1091,24 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         _dyn.config.automatic_dynamic_shapes = False
     dop_sum = [0.0, 0]
     sample_dir = os.path.join(output_dir, "sample")
+
+    def dop_cond_for(batch, cond):
+        """This item's conditioning with its trigger-free text, or None when the item has no DOP pass (no trigger,
+        an edit pair, sound only)."""
+        keys = [str(k) for k in batch.get("item_keys") or []]
+        if (not dop_cond or len(keys) != 1 or keys[0] not in dop_cond or any(k.startswith("latents_control_")
+                                                                             for k in batch)
+                or bool(torch.as_tensor(batch.get("audio_only", False)).any())):
+            return None
+        dc = dict(cond)
+        for n, v in dop_cond[keys[0]].items():
+            if n not in dc:      # the cache keeps the text under other names: DOP can't swap it
+                raise RuntimeError(f"[dop] {desc.display_name}'s encoded text has '{n}', which its cached "
+                                   f"conditioning doesn't ({', '.join(sorted(cond))})")
+            dc[n] = v.to(device) if torch.is_tensor(v) else v
+        return dc
+    dop_ft = None                  # a fine-tune's saved targets (made at the first window)
+    dop_ft_file = os.path.join(output_dir, f"{output_name}_dop_targets.pt")
     if sample_reference and not driver.supports_references:
         logger.warning(f"[sample] {desc.display_name} has no edit previews - ignoring --sample_reference")
         sample_reference = None
@@ -1563,6 +1611,26 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if ftr is not None and ftr.needs_window(epoch):
             optimizer = params = None       # let go of the outgoing window before the swap, or both sit in VRAM
             params, optimizer = ftr.enter(epoch)                 # the epoch's window, and a fresh optimizer for it
+        if ftr is not None and dop_cond and dop_ft is None:
+            if ftr.epochs_done > 0 or start_epoch > 0:      # continued: the model is no longer the original
+                if os.path.isfile(dop_ft_file):
+                    dop_ft = torch.load(dop_ft_file, weights_only=False)
+                    logger.info(f"[dop] the original model's predictions from {os.path.basename(dop_ft_file)}")
+                else:
+                    logger.warning(f"[dop] off: this fine-tune continues from a checkpoint and "
+                                   f"{os.path.basename(dop_ft_file)} isn't in the output folder - DOP's targets "
+                                   "are made from the original model at a fine-tune's start")
+                    dop_ft, dop_cond = {}, {}
+            else:
+                _tp = time.time()
+                dop_ft = _dop_ft_targets(driver, dit, loader, dop_cond, dop_cond_for, device,
+                                         samples=dop_ft_samples, seed=seed, min_t=min_timestep, max_t=max_timestep)
+                torch.save(dop_ft, dop_ft_file)
+                mb = sum(t.numel() * t.element_size() for rows in dop_ft.values() for s, p in rows
+                         for t in [p, *(v for v in s.values() if torch.is_tensor(v))]) / 1e6
+                logger.info(f"[dop] fine-tune: {dop_ft_samples} of the original model's predictions for each of "
+                            f"{len(dop_ft)} images ({mb:.0f} MB, {time.time() - _tp:.0f} s) - each DOP pass holds "
+                            f"the model to one of them. Saved for a continued run: {os.path.basename(dop_ft_file)}")
         torch.cuda.reset_peak_memory_stats()
         t0 = time.time()
         for i, batch in enumerate(loader):
@@ -1633,16 +1701,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 else:
                     mult = watch.multiplier(batch)  # per-image LR (batch size 1): the raw loss is still what's recorded
                 _scaled = loss * mult if mult != 1.0 else loss
+                _dc = dop_cond_for(batch, cond) if dop_cond and global_step % dop_every == 0 else None
+                _dk = str((batch.get("item_keys") or [None])[0])
+                if _dc is not None and ftr is not None and dop_ft and _dk in dop_ft:
+                    # one backward for both: the free-each-gradient fine-tune steps each weight as its gradient
+                    # lands, so a second backward would be a second optimizer step
+                    _dl = _dop_ft_loss(driver, dit, dop_ft[_dk], _dc, device)
+                    _scaled = _scaled + dop_weight * _dl
+                    dop_sum[0] += _dl.item()
+                    dop_sum[1] += 1
+                    _dc = None
                 (_scaled / accum if accum > 1 else _scaled).backward()
-                _dk = [str(k) for k in batch.get("item_keys") or []]
-                if (dop_cond and not refs and not bool(torch.as_tensor(batch.get("audio_only", False)).any()) and len(_dk) == 1
-                        and _dk[0] in dop_cond and global_step % dop_every == 0):
-                    _dc = dict(cond)
-                    for _n, _v in dop_cond[_dk[0]].items():
-                        if _n not in _dc:      # the cache keeps the text under other names: DOP can't swap it
-                            raise RuntimeError(f"[dop] {desc.display_name}'s encoded text has '{_n}', which its "
-                                               f"cached conditioning doesn't ({', '.join(sorted(cond))})")
-                        _dc[_n] = _v.to(device) if torch.is_tensor(_v) else _v
+                if _dc is not None and ftr is None:
                     dop_sum[0] += _dop_step(driver, dit, net, latents, _dc, gen, weight=dop_weight,
                                             min_t=min_timestep, max_t=max_timestep, accum=accum)
                     dop_sum[1] += 1
@@ -1885,6 +1955,8 @@ def setup_parser():
                    "trigger in order); empty = the triggers are dropped")
     p.add_argument("--dop_weight", type=float, default=1.0, help="DOP: the preservation loss's weight")
     p.add_argument("--dop_every", type=int, default=1, help="DOP: a preservation pass every N steps")
+    p.add_argument("--dop_ft_samples", type=int, default=8,
+                   help="DOP on a fine-tune: the original model's predictions made per image before the first step")
     return p
 
 
@@ -1939,7 +2011,8 @@ def main():
         preview_checkpoint=a.preview_checkpoint, preview_checkpoint_cache=a.preview_checkpoint_cache,
         preview_int8=a.preview_int8,
         family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),
-        dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every)
+        dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every,
+        dop_ft_samples=a.dop_ft_samples)
 
 
 if __name__ == "__main__":
