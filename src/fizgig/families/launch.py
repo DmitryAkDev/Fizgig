@@ -299,7 +299,7 @@ def problems(desc, inputs):
         before = _s(inputs.get("FAMILY_EDIT_DIR"))
         ref = _s(inputs.get("FAMILY_EDIT_REF"))
         if not before or not os.path.isdir(before):
-            errors.append("Edit LoRA is on: set the Originals folder (Training tab, Training Parameters)")
+            errors.append("Edit LoRA is on: set the Originals folder (Training tab, Edit pairs)")
         elif os.path.isdir(folder):
             missing, multiple, _ = pairs(folder, before)
             if missing:
@@ -322,7 +322,7 @@ def problems(desc, inputs):
         other = _s(inputs.get("FAMILY_SLIDER_DIR"))
         _ex = PAIR_EXTS | ({".mp4"} if "clip" in desc.media else set())    # H3: clip pairs too
         if not other or not os.path.isdir(other):
-            errors.append("Slider: set the -1 end folder (Training tab, Training Parameters)")
+            errors.append("Slider: set the -1 end folder (Training tab, Slider)")
         elif os.path.isdir(folder):
             missing, multiple, _ = pairs(folder, other, _ex)
             if missing:

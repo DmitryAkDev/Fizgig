@@ -271,14 +271,17 @@ def form(desc):
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
-            _row("FAMILY_EDIT_DIR", "Originals folder (before editing)", "folder",
-                 "Your original, unedited photos, each with the same file name as its edited version. No captions "
-                 "needed here. The edited photos are the training folder on the Start tab.", upload=True,
-                 start="data"),
-            _row("FAMILY_EDIT_CAPTION", "Edit instruction", hint="What the edit does, e.g. \"Apply my concert grade.\" "
-                 "Write captions saves it as the caption of every photo in the training (edited) folder.",
+            _row("FAMILY_EDIT_DIR", "1. Originals folder (before editing)", "folder",
+                 "Your original, unedited photos. No captions needed.", upload=True, start="data"),
+            _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "
+                 "with the same file names as the originals. It is the training folder on the Start tab - change it "
+                 "there."),
+            _row("FAMILY_EDIT_CAPTION", "3. Edit instruction", hint="What the edit is, e.g. \"Apply my concert grade.\" "
+                 "Write captions saves it as the caption of every photo in the Edited folder.",
                  action="write_captions"),
-            _row("FAMILY_EDIT_REF", "Test photo", "path", "A photo the previews edit.", upload=True, start="data"),
+            _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path", "An original photo that is in neither folder: "
+                 "the previews show the edit applied to it. Any size - it is fitted to the preview size. Leave empty "
+                 "to use the first original.", upload=True, start="data"),
         ])
     if desc.slider_training:
         srcs = slider_sources(desc)
@@ -608,6 +611,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                                        "_slider_help_pairs"})
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
+    notes["_edit_edited_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"
     media = launch.dataset_media(image_folder) if image_folder else set()
     if "clip" not in media:                          # clips' own size only when the folder holds clips
         hidden.add("CLIP_MEGAPIXELS")
