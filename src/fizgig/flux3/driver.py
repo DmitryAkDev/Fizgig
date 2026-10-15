@@ -7,7 +7,7 @@
 * sampling: the reference's shifted schedule (alpha 6.93); Base with CFG against the empty prompt, the distilled
   checkpoint as a flow map without CFG (sampling.py)
 
-Not built yet: edit training (references), sliders' pair weighting, fine-tune, compile.
+Not built yet: sliders' pair weighting, fine-tune, compile.
 """
 import logging
 
@@ -129,6 +129,16 @@ class Flux3Driver(FamilyDriver):
     def encode_text(self, te, captions):
         return [{"tokens": t} for t in te.encode(captions)]
 
+    # ---- edit training: references reach the DiT as latents (the image_cond stream), never the text encoder -------
+    supports_references = True
+
+    def load_reference_text_encoder(self, path, device):
+        return self.load_text_encoder(path, device)
+
+    def encode_text_with_references(self, te, captions, references):
+        """The text encoder never sees the references (pipeline.py: they're VAE-encoded into the image_cond stream)."""
+        return self.encode_text(te, captions)
+
     # ---- training -------------------------------------------------------------------------------
     @staticmethod
     def _sample_t(generator, min_t, max_t):
@@ -137,9 +147,14 @@ class Flux3Driver(FamilyDriver):
         t = torch.sigmoid(torch.randn(1, generator=generator)).item()
         return min_t + (max_t - min_t) * S.shift(t)
 
-    def _forward(self, dit, xt, t, cond, h, w):
+    def _forward(self, dit, xt, t, cond, h, w, refs=None):
         device = xt.device
-        packed = S.pack([[S.text_item(cond["tokens"], device), None, (xt, S.image_ids(h, w, device))]])
+        ref = None
+        if refs:              # as sampling.sample: each reference's tokens, its l axis -(1 + i), at time 0
+            toks = [S.to_tokens(r.float()).to(device, torch.bfloat16) for r in refs]
+            rids = [S.image_ids(r.shape[-2], r.shape[-1], device, ref_index=i) for i, r in enumerate(refs)]
+            ref = (torch.cat(toks), torch.cat(rids))
+        packed = S.pack([[S.text_item(cond["tokens"], device), ref, (xt, S.image_ids(h, w, device))]])
         packed.timesteps["image"].fill_(t)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=xt.is_cuda):
             if dit.flow_map:   # a distilled DiT predicts the jump to a target time; training uses the Base
@@ -148,14 +163,12 @@ class Flux3Driver(FamilyDriver):
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
                       diff_weight=0.0):
-        if refs:
-            raise NotImplementedError("Flux 3 edit training isn't built yet")
         h, w = latents.shape[-2:]
         x0 = S.to_tokens(latents.float())
         noise = torch.randn(x0.shape, generator=generator).to(latents.device)
         t = self._sample_t(generator, min_t, max_t)
         xt = (1 - t) * x0 + t * noise
-        pred = self._forward(dit, xt, t, cond, h, w)
+        pred = self._forward(dit, xt, t, cond, h, w, refs=refs)
         return F.mse_loss(pred.float(), noise - x0), {"t": t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):

@@ -77,6 +77,10 @@ FLUX3 = FamilyDescription(
     # 28 single blocks compiled: 0.31 -> 0.26 s/step (1.19x) at 0.25 MP bf16, ~10 s warm-up per shape (15 Oct 2026)
     compile_payback_steps={"bf16": 600, "int8": 600},
     int8_attention=True,              # workbench renders: 4.55 -> 4.25 s at 1024 (1.07x), 30.4 dB to the bf16 render
+    edit_training=True,               # up to 10 references (pipeline.py MAX_REFERENCES), each its own l index
+    reference_strength=True,          # the workbench's reference strength + previous-frame latent chain, as Klein's
+    edit_note=("Pairs of an original and its edited version, the same crop and shape - about 40 pairs is a good "
+               "start (20 at least). Each photo 1 MP or larger; Fizgig resizes them."),
     train_preview_checkpoint=True,    # training previews on the distilled (16 steps, no CFG), as Klein's Distilled
     workbench_follows_samples=True,   # Base CFG needs the Samples tab's negative (empty = the reference's uncond)
 
