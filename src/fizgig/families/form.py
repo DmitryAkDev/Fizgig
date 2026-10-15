@@ -212,7 +212,8 @@ def form(desc):
         if groups:                           # the desktop's Custom block picker: All / None, an area's blocks, ticks
             params.append(_row("TRAINING_BLOCKS", "Blocks to train", "blocks", "", default={}, groups=groups,
                                areas={a[0]: list(a[1]) for a in desc.train_areas if a[1]}))
-        params += [_row("MIN_TIMESTEP", "Min timestep", hint="0-1000; empty = the whole range"),
+        params += [_row("MIN_TIMESTEP", "Min timestep", hint="0-1000: 0 is the clean end, 1000 pure noise. Empty = "
+                        "the whole range."),
                    _row("MAX_TIMESTEP", "Max timestep")]
     params += [
         _row("NETWORK_DIM", "Network Dim (Rank)"),
@@ -630,6 +631,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                                if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
     if kind in ("edit", "slider"):
         hidden.add("_overtrain_tip")
+    ts = _timestep_note(values)
+    if ts:
+        notes["MAX_TIMESTEP"] = ts
     if kind == "edit":
         notes["SAMPLE_PROMPT"] = ("An Edit LoRA run doesn't use these prompts or the reference: its previews apply "
                                   "the edit instruction to the test photo on the Training tab's Edit pairs card.")
@@ -670,6 +674,27 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}     # the Distilled renders its own way
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions}
+
+
+def _timestep_note(values):
+    """What a Min / Max timestep range trains (the desktop's readout, the right way round: in Fizgig's flow matching 0
+    is the clean picture and 1000 pure noise)."""
+    lo, hi = str(values.get("MIN_TIMESTEP") or "").strip(), str(values.get("MAX_TIMESTEP") or "").strip()
+    if not lo and not hi:
+        return ""
+    try:
+        a, b = int(float(lo)) if lo else 0, int(float(hi)) if hi else 1000
+    except ValueError:
+        return "Timesteps are whole numbers from 0 to 1000."
+    if not 0 <= a < b <= 1000:
+        return "Min must be below Max, both from 0 to 1000."
+    if a == 0 and b >= 1000:
+        return f"{a}-{b}: the whole range, every noise level."
+    if b <= 400:
+        return f"{a}-{b}: the clean end - style, texture and fine detail."
+    if a >= 600:
+        return f"{a}-{b}: the noisy end - composition, layout and pose."
+    return f"{a}-{b}: part of the range."
 
 
 _lr_counts = {}                     # folder -> (modified time, pictures)

@@ -4710,7 +4710,7 @@ async function loadCaptionOptions() {
   for (const id of ["capModel", "capTask", "capTokens"]) $(id).closest(".field-row").style.display = pictures ? "" : "none";
   $("capModelHint").style.display = pictures ? "" : "none";
   if (!pictures) $("capInstrBox").style.display = "none";
-  if (o.song_words) $("capSongWords").value = saved.songWords || o.song_words;
+  if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
 }
 
 function fillTasks(want) {

@@ -178,7 +178,9 @@ def _render(c):
         else:
             msg = str(e)
             emit(ev="error", where="render", gen=gen,
-                 msg=("Out of VRAM for this preview: a smaller Res, or more inference block swap in Preferences."
+                 msg=(("Out of VRAM for this clip: fewer frames, a smaller canvas, or Base: Stream blocks (the exact "
+                       "base with room for the biggest clips)." if getattr(S["desc"], "video_workbench", False) else
+                       "Out of VRAM for this preview: a smaller Res, or more inference block swap in Preferences.")
                       if "out of memory" in msg.lower() else msg), trace=traceback.format_exc()[-2000:])
 
 
