@@ -1544,6 +1544,19 @@ function renderDatasets() {
     onclick: () => { S.datasetsAll = true; renderDatasets(); }}));
   if (!list.length) host.append(el("div", {class: "field-hint datasets-empty", text: r.total ?
     "No folder matches that." : "No training data yet. Upload a folder below, or pick one with Choose… above."}));
+  // nothing in Fizgig's own training_data folder: your datasets may be in a folder of your own - one press points
+  // Fizgig at it (Preferences' Training data folder), and its folders are listed here from then on
+  if (!r.total && !S.onPod && !(S.uploadRoot && S.uploadRoot.set)) {
+    const use = async (p) => {
+      try { await api("/api/prefs", {changes: {input_dataset_dir: p}}); showUploadRoot(); loadDatasets(); }
+      catch (e) { host.append(el("div", {class: "field-hint warn", text: e.message})); }
+    };
+    host.append(el("div", {class: "datasets-elsewhere-hint"},
+      el("span", {text: "Your datasets are in another folder? Point Fizgig at it and its folders show here: "}),
+      el("button", {class: "btn btn-sm btn-primary", text: "Use that folder…",
+        title: "Pick the folder that holds your training folders (it becomes Preferences > Training data folder)",
+        onclick: () => pick("", true, use)})));
+  }
 }
 
 // ---- Runs & outputs: the run history (fizgig/web/history.py) -----------------------------------------------

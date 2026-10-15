@@ -58,6 +58,8 @@ A slider is a LoRA whose strength is a dial between two kinds of music: +1 one w
 
 No songs are needed: Fizgig teaches the dial from the model's own songs. Each checkpoint's preview plays -1, 0 and +1 one after another. Change one thing per slider: words that also change the genre or the instruments turn the dial into a genre switch.
 
+While it trains, the Training tab's **Slider prompts** panel lets you change the three lines and the push strength: they take over at the next epoch, from where it has got to.
+
 ## Full fine-tuning
 
 The **✨ ACE-Step Fine-tune** preset trains the whole model (both attentions and the MLP of all 32 layers) a part at a time on a 4-bit base, at 1e-5, for 800 rotations with a checkpoint and a preview every 50. On a 32 GB card a rotation is one epoch; smaller cards split the model into more parts, so a rotation takes several. Each checkpoint is a complete model file of about 10 GB that ComfyUI loads like the original, so the full run needs about 160 GB of disk.

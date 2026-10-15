@@ -1168,6 +1168,11 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
                 f.write(text)
     except OSError as e:
         return {"error": _folder_problem(e, out_dir)}
+    for f in (SLIDER_LIVE, SLIDER_LIVE_APPLIED):     # an earlier run's live slider prompts are not this one's (a resume
+        try:                                         # has the latest in its own values); cleared before it launches, so
+            os.remove(os.path.join(out_dir, f))      # an Apply while it loads waits for its first epoch, not deleted
+        except OSError:
+            pass
     with _lock:
         _run.update(state="starting", stage="", lora=inputs["LORA_NAME"], output_dir=out_dir, family=family_key,
                     values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
@@ -2887,7 +2892,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not all(new.values()):
                     return self.json({"error": "Fill in all three: what the picture is, and what each end adds."}, 400)
                 if g <= 0:
-                    return self.json({"error": "Guidance must be a number above 0."}, 400)
+                    return self.json({"error": "Push strength must be a number above 0."}, 400)
                 _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g})
                 changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}"}.items()}
                 with _lock:                              # a Pause and Resume, or Start again, keeps them

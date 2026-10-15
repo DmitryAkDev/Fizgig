@@ -1950,7 +1950,11 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .slider-live-row { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 10px; }
 .slider-live-row span { color: var(--text-secondary); }
 .slider-live-row input { width: 100%; box-sizing: border-box; }
+.slider-live-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.slider-live-actions input.w-port { width: 72px; }
 @media (max-width: 760px) { .slider-live-row { grid-template-columns: 1fr; gap: 4px; } }
+.datasets-elsewhere-hint { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  color: var(--text-secondary); margin-top: 4px; }
 .pick-row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-bottom: 12px; }
 .pick-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .pick-row label[hidden] { display: none; }
