@@ -709,14 +709,20 @@ def _multi_person_notes(vals, image_folder):
     if vals.get("FAMILY_MULTICONCEPT"):
         rows += [(str(vals.get(d) or "").strip(), t, c)
                  for d, t, c in form.CONCEPT_ROWS[:form.concept_count(vals) - 1]]
-    notes = {}
+    notes, classes = {}, []
     for folder, tkey, ckey in rows:
         if not folder:
             continue
         trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
         s, why = mp.subject(folder, trig, str(vals.get(ckey) or "").strip(), ext)
+        if s:
+            classes.append(s["phrase"])
         notes[tkey] = (f"Trains as {s['fused']} ({s['phrase']}) - prompt with {s['fused']}. Not right? Type what the "
                        f"subject is in \"replace it with\" below." if s else f"Multi-person mode: {why}")
+    same = sorted({c for c in classes if classes.count(c) > 1})
+    if same:                 # two women measured: right at epoch 16 where a woman and a man were at 10
+        notes["MAX_TRAIN_EPOCHS"] = (f"Multi-person mode: {len([c for c in classes if c in same])} subjects are "
+                                     f"{' / '.join(same)} - subjects of the same class can need more epochs.")
     return notes
 
 
