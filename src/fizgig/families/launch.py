@@ -200,10 +200,22 @@ def caches(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- pairs
-def pairs(after_dir, before_dir, exts=PAIR_EXTS):
-    """(photos without a partner, photos with more than one, first partner's path) for an edit's or a slider's
+def _pair_order(stem):
+    """The dataset loader's order for a photo's partners: photo.<ext> first, then photo_1, photo_2 ..."""
+    def key(name):
+        bn = os.path.splitext(name)[0].casefold()
+        if bn == stem.casefold():
+            return 0
+        suffix = bn.rsplit("_", 1)[-1]
+        return int(suffix) + 1 if suffix.isdigit() else 999999
+    return key
+
+
+def pairs(after_dir, before_dir, exts=PAIR_EXTS, limit=1):
+    """(photos without a partner, photos with more than `limit`, first partner's path) for an edit's or a slider's
     two folders, matched the way the dataset loader matches them: a partner of photo.png is photo.<ext> or
-    photo_<anything>.<ext>, ignoring case. exts: what counts as an item (a clip family's sliders add .mp4)."""
+    photo_<anything>.<ext>, ignoring case. exts: what counts as an item (a clip family's sliders add .mp4). limit:
+    partners a photo may have (a multi-reference edit: the family's edit_references)."""
     befores = sorted(f for f in os.listdir(before_dir) if os.path.splitext(f)[1].lower() in exts)
     missing, multiple, first = [], [], None
     for f in sorted(os.listdir(after_dir)):
@@ -214,9 +226,9 @@ def pairs(after_dir, before_dir, exts=PAIR_EXTS):
              or x.casefold().startswith(b.casefold() + "_")]
         if not m:
             missing.append(f)
-        elif len(m) > 1:
+        elif len(m) > limit:
             multiple.append(f)
-        first = first or (os.path.join(before_dir, m[0]) if m else None)
+        first = first or (os.path.join(before_dir, sorted(m, key=_pair_order(b))[0]) if m else None)
     return missing, multiple, first
 
 
@@ -232,9 +244,9 @@ def pair_problems(after_dir, before_dir, caption_ext=".txt", exts=PAIR_EXTS):
             continue
         if not os.path.exists(os.path.join(after_dir, b + caption_ext)):
             uncaptioned.append(f)
-        m = [x for x in befores if x.casefold().startswith(b.casefold() + ".")
-             or x.casefold().startswith(b.casefold() + "_")]
-        if len(m) == 1 and e.lower() in PAIR_EXTS:
+        m = sorted((x for x in befores if x.casefold().startswith(b.casefold() + ".")
+                    or x.casefold().startswith(b.casefold() + "_")), key=_pair_order(b))
+        if m and e.lower() in PAIR_EXTS:     # the original (the first): extra references may be any shape
             try:
                 with Image.open(os.path.join(after_dir, f)) as ia, Image.open(os.path.join(before_dir, m[0])) as ib:
                     ra, rb = ia.width / ia.height, ib.width / ib.height
@@ -301,14 +313,16 @@ def problems(desc, inputs):
         if not before or not os.path.isdir(before):
             errors.append("Edit LoRA is on: set the Originals folder (Training tab, Edit pairs)")
         elif os.path.isdir(folder):
-            missing, multiple, _ = pairs(folder, before)
+            limit = max(1, getattr(desc, "edit_references", 1))
+            missing, multiple, _ = pairs(folder, before, limit=limit)
             if missing:
                 errors.append(f"Edit LoRA: {len(missing)} edited photo(s) have no original with the same file "
                               f"name in {before} (e.g. {', '.join(missing[:3])})")
             if multiple:
-                errors.append(f"Edit LoRA: {len(multiple)} edited photo(s) match more than one original (e.g. "
-                              f"{', '.join(multiple[:3])}) - keep one original per edited photo, with the "
-                              f"same file name")
+                errors.append(f"Edit LoRA: {len(multiple)} edited photo(s) match more than {limit} original(s) (e.g. "
+                              f"{', '.join(multiple[:3])}) - " + ("keep one original per edited photo, with the "
+                              "same file name" if limit == 1 else f"{desc.display_name} takes up to {limit}: the "
+                              "original, then photo_1, photo_2 ... as extra references"))
             uncaptioned, shapes = pair_problems(folder, before, ext)
             if uncaptioned:
                 errors.append(f"Edit LoRA: {len(uncaptioned)} edited photo(s) have no caption (e.g. "

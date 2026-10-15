@@ -204,6 +204,15 @@ def divisible_by(num: int, divisor: int) -> int:
     return num - num % divisor
 
 
+def _own_shape(image, bucket_reso: Tuple[int, int], step: int) -> Tuple[int, int]:
+    """(width, height) at *bucket_reso*'s pixel count in *image*'s own aspect, snapped to *step*."""
+    w, h = image.size if isinstance(image, Image.Image) else (image.shape[1], image.shape[0])
+    area, ar = bucket_reso[0] * bucket_reso[1], w / h
+    nw = max(step, int(round((area * ar) ** 0.5 / step)) * step)
+    nh = max(step, int(round((area / ar) ** 0.5 / step)) * step)
+    return nw, nh
+
+
 def resize_image_to_bucket(image: Union[Image.Image, np.ndarray], bucket_reso: Tuple[int, int]) -> np.ndarray:
     """Resize *image* to *bucket_reso* ``(width, height)``, cropping the centre."""
     is_pil = isinstance(image, Image.Image)
@@ -1041,7 +1050,12 @@ class ImageDataset(torch.utils.data.Dataset):
 
                 resized_controls = None
                 if controls is not None:
-                    resized_controls = [resize_image_to_bucket(c, bucket_reso) for c in controls]
+                    # the first before-image is the original at the target's crop; extra references (photo_1,
+                    # photo_2 ... of a multi-reference edit) keep their own shape at the target's pixel count, as
+                    # BFL's reference sizes them
+                    resized_controls = [resize_image_to_bucket(c, bucket_reso if i == 0 else
+                                                               _own_shape(c, bucket_reso, bucket_selector.reso_steps))
+                                        for i, c in enumerate(controls)]
                 return image_size, image_key, resized, caption, resized_controls
 
             future = executor.submit(fetch_and_resize)

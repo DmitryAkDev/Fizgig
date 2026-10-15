@@ -70,7 +70,7 @@ Flux 3 is one model for text-to-image and editing, so a LoRA can learn an edit: 
 **What you need:** about 40 pairs (20 at least). Each photo 1 MP or larger; Fizgig resizes them. An original and its edited version must have the same crop and shape.
 
 1. Pick **Flux 3 Edit** (or **Edit Strong** for trickier edits); it ticks **Edit LoRA** under Training Parameters.
-2. **Originals folder:** the unedited photos, no captions needed.
+2. **Originals folder:** the unedited photos, no captions needed. An edit can also bring in up to 9 more pictures, such as another person, an object or a place: put them beside the original, named `photo_1.png`, `photo_2.png` … for `photo.png`. They can be any shape; only the original must match the edited photo's crop.
 3. **Edited folder:** the same photos after your edit, with the same file names. This is the Start tab's folder.
 4. **Captions:** type what the edit is, e.g. "Apply my concert grade.", and press **Write captions**.
 5. **Test photo for previews (optional):** an original in neither folder; the previews show the edit applied to it.

@@ -283,8 +283,13 @@ def form(desc):
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
+            # a multi-reference edit (description edit_references): extra pictures beside an original
             _row("FAMILY_EDIT_DIR", "1. Originals folder (before editing)", "folder",
-                 "Your original, unedited photos. No captions needed.", upload=True, start="data"),
+                 "Your original, unedited photos. No captions needed." + (
+                     f" To bring another person, an object or a place into an edit, add up to "
+                     f"{desc.edit_references - 1} more pictures beside its original, named photo_1.png, photo_2.png "
+                     "... for photo.png - any shape." if desc.edit_references > 1 else ""),
+                 upload=True, start="data"),
             _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "
                  "with the same file names as the originals. It is the training folder on the Start tab - change it "
                  "there."),

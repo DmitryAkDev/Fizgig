@@ -102,6 +102,7 @@ FLUX3 = FamilyDescription(
     ft_learning_rate=5e-5,            # the rate ticking Fine-tune sets, as the Fine-tune preset
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     edit_training=True,               # up to 10 references (pipeline.py MAX_REFERENCES), each its own l index
+    edit_references=10,               # the DiT takes them all; the text encoder never sees them
     reference_strength=True,          # the workbench's reference strength + previous-frame latent chain, as Klein's
     edit_note=("Pairs of an original and its edited version, the same crop and shape - about 40 pairs is a good "
                "start (20 at least). Each photo 1 MP or larger; Fizgig resizes them."),
