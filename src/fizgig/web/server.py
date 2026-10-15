@@ -700,6 +700,26 @@ def _refmod_plan(values, image_folder):
     return None, st, p
 
 
+def _multi_person_notes(vals, image_folder):
+    """Multi-person mode's preview, under each folder's DOP trigger row: the word it trains as and the class it was
+    read as (the folder's "replace it with" box overrides), or why it can't be made."""
+    from fizgig.families import multi_person as mp
+    ext = str(vals.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt"
+    rows = [(str(image_folder or "").strip(), "FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS")]
+    if vals.get("FAMILY_MULTICONCEPT"):
+        rows += [(str(vals.get(d) or "").strip(), t, c)
+                 for d, t, c in form.CONCEPT_ROWS[:form.concept_count(vals) - 1]]
+    notes = {}
+    for folder, tkey, ckey in rows:
+        if not folder:
+            continue
+        trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
+        s, why = mp.subject(folder, trig, str(vals.get(ckey) or "").strip(), ext)
+        notes[tkey] = (f"Trains as {s['fused']} ({s['phrase']}) - prompt with {s['fused']}. Not right? Type what the "
+                       f"subject is in \"replace it with\" below." if s else f"Multi-person mode: {why}")
+    return notes
+
+
 def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if family_key == refmod.KEY:
         return _refmod_plan(values, image_folder)
@@ -2748,6 +2768,8 @@ class Handler(BaseHTTPRequestHandler):
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)))
+                if st["kind"] == "standard" and vals.get("FAMILY_MULTI_PERSON"):   # what each folder trains as
+                    st["notes"].update(_multi_person_notes(vals, b.get("image_folder") or ""))
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(
