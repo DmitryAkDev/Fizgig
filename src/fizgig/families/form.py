@@ -355,12 +355,20 @@ def form(desc):
             _row("FAMILY_FT_ROTATIONS", "Rotations", hint="Each rotation trains every part of the model once."),
             _row("FAMILY_FT_SAVE_EVERY", "Checkpoint + preview every N rotations"),
             _row("FAMILY_FT_ROTATE_EVERY", "Epochs per part before the next"),
-            _row("FAMILY_FT_MAX_PARTS", "Window size", "choice", choices=[lab for lab, _ in launch.FT_WINDOW_SIZES],
-                 default=launch.FT_WINDOW_SIZES[0][0]),
+            _row("FAMILY_FT_MAX_PARTS", "Window size", "choice", "How many parts train together. Auto packs as many as "
+                 "your card holds - the whole model at once when it fits, so nothing rotates. A smaller cap means more "
+                 "windows and more memory to spare, if Auto runs too close to your card's limit.",
+                 [lab for lab, _ in launch.FT_WINDOW_SIZES], default=launch.FT_WINDOW_SIZES[0][0]),
             _row("FAMILY_FT_FUSED", "Free each gradient as soon as it's used (less memory - recommended)", "check"),
             *by_section("training", mode="finetune"),
-            *([_row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", upload=True, start="data"),
-               _row("FAMILY_FT_REG_MULT", "Regularisation LR ×", "combo", choices=FT_REG_MULT)]
+            *([_row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", "A folder of ordinary photos "
+                    "of the broader class (men, women, people) with normal detailed captions. They hold the model's "
+                    "sense of that class in place while your images train - a full fine-tune moves every weight, so "
+                    "nothing else bounds that drift. Use real photos, not model output: generated images anchor the "
+                    "model to its own artifacts. Leave empty to train without one.", upload=True, start="data"),
+               _row("FAMILY_FT_REG_MULT", "Regularisation LR ×", "combo", "The regularisation photos train at this "
+                    "fraction of the LR: 0.1-0.3 keeps them a light anchor; at 1.0 they are a second subject set.",
+                    choices=FT_REG_MULT)]
               if getattr(desc, "ft_regularisation", True) else []),
         ])
     precisions = ["auto"] + [p for p in ("bf16", "int8", "nf4", "hqq") if p in desc.precisions]
@@ -436,6 +444,10 @@ def form(desc):
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
+        _row("_overtrain_tip", "Tip - catch overtraining early: give one prompt something your dataset doesn't have, "
+             "a pose, angle or setting none of your photos show. Early epochs follow it. When the LoRA starts to "
+             "overtrain, that's the first thing to fail, as the previews drift back to your photos. The last epoch that "
+             "still follows it is a good one to keep.", "note") if pictures else None,
         _row("__SAMPLE_LIVE", "Change the previews of the run going now", "check",
              "While this is ticked, the run training now makes its next previews from these prompts, seed and size - "
              "change them whenever you like; new prompts are encoded again at its next preview. Untick to go back to "
@@ -613,6 +625,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         notes[lr_note[0]] = lr_note[1]
         actions[lr_note[0]] = ({"label": "Use 1e-4 / 2e-4", "values": {"ADAPTIVE_LR_MIN": "1e-4", "ADAPTIVE_LR_MAX": "2e-4"}}
                                if values.get("ADAPTIVE_LR") else {"label": "Use 1e-4", "values": {"LEARNING_RATE": "1e-4"}})
+    if kind in ("edit", "slider"):
+        hidden.add("_overtrain_tip")
     if kind == "edit":
         notes["SAMPLE_PROMPT"] = ("An Edit LoRA run doesn't use these prompts or the reference: its previews apply "
                                   "the edit instruction to the test photo on the Training tab's Edit pairs card.")

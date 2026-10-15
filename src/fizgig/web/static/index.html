@@ -639,8 +639,8 @@
                     <span class="field-hint">H</span><select id="stH3H" class="w-combo st-small-select"></select>
                     <span class="field-hint">Render size</span><select id="stH3Scale" class="w-combo st-small-select"></select></span></div>
                 <div class="field-row"><span class="field-label"></span>
-                  <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4">
-                    <span class="field-hint">Turbo</span><input type="text" id="stH3Turbo" value="1">
+                  <span class="st-inline"><span class="field-hint">Steps</span><input type="text" id="stH3Steps" value="4" title="Sampling steps for the clip. With Turbo at 1.0, 4 steps is the fast loop; Turbo 0 needs about 20.">
+                    <span class="field-hint">Turbo</span><input type="text" id="stH3Turbo" value="1" title="Strength of the built-in Turbo LoRA: 1.0 for the fast loop, 0.75 matches the in-training previews. 0 switches it off - the render is the base plus your LoRAs at the steps set. That is how you edit a Turbo LoRA: load it as the primary and set this to 0.">
                     <label class="checkbox-label"><input type="checkbox" id="stH3Sound" checked> Sound</label>
                     <label class="checkbox-label" title="Also render the same seed, prompt and photos with no LoRA at all, shown on the left. Rendered once per setup: a slider move doesn't re-render it."><input type="checkbox" id="stH3NoLora"> No-LoRA clip</label>
                     <label class="checkbox-label" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
@@ -734,6 +734,7 @@
             <div class="card-title"><span>Blocks</span>
               <span><button class="btn btn-sm" id="stUndo" title="Undo (Ctrl+Z)">↶ Undo</button>
                 <button class="btn btn-sm" id="stRedo" title="Redo (Ctrl+Y)">↷ Redo</button></span></div>
+            <div class="card-desc">One slider per block of the model. A greyed row is a block the loaded LoRA doesn't train, so moving it changes nothing.</div>
             <div class="card-content">
               <div class="field-row st-bulk">
                 <select id="stPreset" class="w-combo preset-select"></select>
@@ -936,7 +937,7 @@
                 <button class="btn" id="rySRefPick">Choose…</button><button class="btn" id="rySRefClear">Clear</button></div>
               <div class="field-row ry-ref"><span class="field-label"></span>
                 <label class="checkbox-label ry-folder-only"><input type="checkbox" id="rySUseEpoch"> Use the rendered epoch as the reference</label>
-                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="rySRefStr" class="w-num" value="0.25"></span>
+                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="rySRefStr" class="w-num" value="0.25" title="How strongly the reference holds each frame. Seed travel wants a light anchor, about 0.1-0.4: higher locks every frame to the reference and the travel stops moving."></span>
                 <label class="checkbox-label ry-refstr" title="Feedback chain: frame 1 uses your reference, each later frame edits the previous one. Keep Strength low (about 0.4) with this on - high strength compounds every frame."><input type="checkbox" id="rySSeq"> Sequential reference</label>
                 <span class="st-inline" title="Reference encode resolution cap (megapixels), 0.05-1.0. Higher carries more detail at a little more VRAM."><span class="field-hint">Max MP</span><input type="text" id="rySMp" class="w-num" value="0.2"></span></div>
               <div class="field-row"><span class="field-label">Size:</span><span class="field-hint">W</span><select id="rySW" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select><span class="field-hint">H</span><select id="rySH" class="w-combo st-small-select"><option>384</option><option>512</option><option>768</option><option>1024</option><option>1280</option><option>1536</option><option>2048</option></select></div>
@@ -983,7 +984,7 @@
                 <button class="btn" id="ryPRefPick">Choose…</button><button class="btn" id="ryPRefClear">Clear</button></div>
               <div class="field-row ry-ref"><span class="field-label"></span>
                 <label class="checkbox-label ry-folder-only"><input type="checkbox" id="ryPUseEpoch"> Use the rendered epoch as the reference</label>
-                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="ryPRefStr" class="w-num" value="1.0"></span>
+                <span class="st-inline ry-refstr"><span class="field-hint">Strength</span><input type="text" id="ryPRefStr" class="w-num" value="1.0" title="How strongly the reference holds each frame. Prompt travel wants the full 1.0: the model edits the reference as the prompts ask. Lower lets the frames drift away from it."></span>
                 <label class="checkbox-label ry-refstr" title="Feedback chain: frame 1 uses your reference, each later frame edits the previous one. Keep Strength low (about 0.4) with this on - high strength compounds every frame."><input type="checkbox" id="ryPSeq"> Sequential reference</label>
                 <span class="st-inline" title="Reference encode resolution cap (megapixels), 0.05-1.0. Higher carries more detail at a little more VRAM."><span class="field-hint">Max MP</span><input type="text" id="ryPMp" class="w-num" value="0.2"></span>
                 <label class="checkbox-label" title="Every frame also references the ORIGINAL image at the Anchor strength alongside the previous frame, so the feedback chain can't drift."><input type="checkbox" id="ryPAnchor" checked> Anchor to original</label>
@@ -1263,7 +1264,8 @@
               <div class="field-row"><span class="field-label">Ranks:</span><span id="exFtRanks" class="st-inline"></span></div>
               <div class="field-hint ex-ft-hint">One LoRA per ticked rank, all from a single SVD pass - four ranks cost about what one
                 does. Higher ranks stay closer to the fine-tune and make bigger files; on a three-subject Krea 2 run, 64 was
-                indistinguishable from the fine-tune.</div>
+                indistinguishable from the fine-tune. It runs on the GPU: free it first if a training run or a Studio preview is
+                using the card.</div>
               <div class="field-row"><span class="field-label">Name:</span>
                 <input type="text" id="exFtName" class="w-path" value="extracted">
                 <span class="field-hint">saved as &lt;name&gt;_&lt;time&gt;_r&lt;rank&gt;.safetensors</span></div>
