@@ -86,9 +86,26 @@ def edit_extras_on(desc, inputs):
             and _s(inputs.get("FAMILY_EDIT_PICTURES")) == EDIT_WITH_EXTRAS)
 
 
-def edit_extras(after_dir, extras_dir, exts=PAIR_EXTS):
+def preview_extras(desc, inputs, photo, exts=PAIR_EXTS):
+    """The Extra pictures folder's pictures for `photo` (photo_1, photo_2 ... by their number), up to the model's
+    count; [] outside a multi-picture edit."""
+    xdir = _s(inputs.get("FAMILY_EDIT_EXTRAS_DIR"))
+    if not edit_extras_on(desc, inputs) or not xdir or not os.path.isdir(xdir):
+        return []
+    stem = os.path.splitext(os.path.basename(photo))[0].casefold()
+    found = []
+    for f in os.listdir(xdir):
+        b, e = os.path.splitext(f)
+        head, _, n = b.rpartition("_")
+        if e.lower() in exts and n.isdigit() and head.casefold() == stem:
+            found.append((int(n), os.path.join(xdir, f)))
+    return [p for _, p in sorted(found)][:max(0, desc.edit_references - 1)]
+
+
+def edit_extras(after_dir, extras_dir, exts=PAIR_EXTS, test_photo=""):
     """({edited photo: its extra pictures}, extras with no edited photo, extras named exactly as a photo) for the
-    Extra pictures folder: photo_1.png, photo_2.png ... belong to photo.png."""
+    Extra pictures folder: photo_1.png, photo_2.png ... belong to photo.png. The test photo's own extras (test_1 ...
+    for the previews) are neither."""
     photos = {os.path.splitext(f)[0].casefold(): f for f in os.listdir(after_dir)
               if os.path.splitext(f)[1].lower() in exts}
     found, orphans, misnamed = {}, [], []
@@ -101,6 +118,9 @@ def edit_extras(after_dir, extras_dir, exts=PAIR_EXTS):
             continue
         stem, _, n = b.rpartition("_")
         owner = photos.get(stem.casefold()) if n.isdigit() else None
+        test_stem = os.path.splitext(os.path.basename(test_photo))[0].casefold() if test_photo else ""
+        if owner is None and n.isdigit() and test_stem and stem.casefold() == test_stem:
+            continue                      # the test photo's extras: its previews use them
         if owner is None:
             orphans.append(f)
         else:
@@ -370,7 +390,7 @@ def problems(desc, inputs):
             if not xdir or not os.path.isdir(xdir):
                 errors.append("Edit LoRA with extra pictures: set the Extra pictures folder (Training tab, Edit pairs)")
             elif os.path.isdir(folder):
-                found, orphans, misnamed = edit_extras(folder, xdir)
+                found, orphans, misnamed = edit_extras(folder, xdir, test_photo=ref)
                 over = [p for p, xs in found.items() if len(xs) > most]
                 if not found:
                     errors.append(f"Edit LoRA: no extra pictures in {xdir} belong to an edited photo - name them "
@@ -820,7 +840,9 @@ def _preview_flags(desc, st, plan, cmd):
                 except OSError:
                     ref = ""
             if ref:
-                out += ["--sample_reference", ref]
+                # a multi-picture edit previews with the photo's own extras (test.jpg -> test_1, test_2 ... in the
+                # Extra pictures folder; the first original's when no test photo is set)
+                out += ["--sample_reference", ref, *preview_extras(desc, st, ref)]
         ck = desc.preview_checkpoint()
         if (desc.train_preview_checkpoint and ck and sm.get("checkpoint") and not slider_on(desc, st)
                 and not ft_on(desc, st)):      # a fine-tune previews the model it trains, not the Distilled

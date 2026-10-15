@@ -310,7 +310,10 @@ def form(desc):
                  action="write_captions"),
             _row("FAMILY_EDIT_REF", "4. Test photo (optional)", "path", "An original photo that is in neither folder: "
                  "the previews show the edit applied to it. Any size - it is fitted to the preview size. Leave empty "
-                 "to use the first original.", upload=True, start="data"),
+                 "to use the first original." + (
+                     "\nWith extra pictures: its own go in the Extra pictures folder the same way (test_1.jpg, "
+                     "test_2.jpg ... for test.jpg); with no test photo, the previews use the first original and its "
+                     "extras." if desc.edit_references > 1 else ""), upload=True, start="data"),
         ])
     if desc.slider_training:
         srcs = slider_sources(desc)
@@ -725,7 +728,8 @@ def _extras_found(desc, values, image_folder):
     if not xdir or not os.path.isdir(xdir) or not image_folder or not os.path.isdir(image_folder):
         return ""
     try:
-        found, orphans, misnamed = launch.edit_extras(image_folder, xdir)
+        found, orphans, misnamed = launch.edit_extras(image_folder, xdir,
+                                                      test_photo=str(values.get("FAMILY_EDIT_REF") or ""))
         total = sum(1 for f in os.listdir(image_folder) if os.path.splitext(f)[1].lower() in launch.PAIR_EXTS)
     except OSError:
         return ""

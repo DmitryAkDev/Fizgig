@@ -312,13 +312,15 @@ def _reference_size(w, h, area):
 
 
 def _load_references(paths, width, height):
-    """uint8 (H, W, 3) arrays of the preview's reference images at the first one's aspect and the preview's area,
-    and that (width, height)."""
+    """uint8 (H, W, 3) arrays of the preview's reference images and the preview's (width, height): the first (the
+    photo the edit is made to) sets the preview's shape at its area; extra pictures (a multi-picture edit's photo_1,
+    photo_2 ...) keep their own shape at that area, as they are sized in training."""
     import numpy as np
     from PIL import Image, ImageOps
     imgs = [Image.open(p).convert("RGB") for p in paths]
     size = _reference_size(*imgs[0].size, width * height)
-    return [np.array(ImageOps.fit(im, size, Image.LANCZOS)) for im in imgs], size
+    return [np.array(ImageOps.fit(im, size if i == 0 else _reference_size(*im.size, width * height), Image.LANCZOS))
+            for i, im in enumerate(imgs)], size
 
 
 class _SliderBank(torch.utils.data.Dataset):
@@ -978,7 +980,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         torch.cuda.empty_cache()
         vae = driver.load_vae(vae_path, device)
         if ref_imgs:
-            ref_latents = [z[None].cpu() for z in driver.encode_images(vae, ref_imgs)]
+            # one at a time: extra pictures have their own shapes, and a driver may stack its batch (Klein)
+            ref_latents = [driver.encode_images(vae, [im])[0][None].cpu() for im in ref_imgs]
     elif sample_prompts and sample_every_n_epochs:
         logger.warning("[sample] previews need the text encoder and VAE paths - previews are off for this run")
 
@@ -1695,7 +1698,8 @@ def setup_parser():
     p.add_argument("--preview_checkpoint_cache", default="auto", choices=("auto", "on", "off"),
                    help="Keep the preview checkpoint in system RAM between epochs")
     p.add_argument("--preview_int8", action="store_true", help="INT8 matmuls on the preview checkpoint")
-    p.add_argument("--sample_reference", default=None, help="Edit previews: the photo every preview prompt edits")
+    p.add_argument("--sample_reference", nargs="+", default=None,
+                   help="Edit previews: the photo every preview prompt edits, then any extra pictures it brings in")
     p.add_argument("--sample_image", default=None,
                    help="A picture previews see through the text encoder's vision path (families with preview_image)")
     p.add_argument("--slider_pairs", action="store_true",
@@ -1782,7 +1786,7 @@ def main():
         sample_height=a.sample_height, sample_steps=a.sample_steps, sample_cfg_scale=a.sample_cfg_scale,
         sample_negative=a.sample_negative, sample_at_first=a.sample_at_first, sample_seed=a.sample_seed,
         sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),
-        sample_reference=[a.sample_reference] if a.sample_reference else None, sample_image=a.sample_image,
+        sample_reference=list(a.sample_reference) if a.sample_reference else None, sample_image=a.sample_image,
         slider_pairs=a.slider_pairs, slider_diff_weight=a.slider_diff_weight, slider_prompts=a.slider_prompts,
         slider_guidance=a.slider_guidance, slider_bank=a.slider_bank, slider_bank_res=a.slider_bank_res,
         train_blocks=[b.strip() for b in a.train_blocks.split(",") if b.strip()] or None,
