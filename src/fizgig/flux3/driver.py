@@ -169,7 +169,19 @@ class Flux3Driver(FamilyDriver):
         t = self._sample_t(generator, min_t, max_t)
         xt = (1 - t) * x0 + t * noise
         pred = self._forward(dit, xt, t, cond, h, w, refs=refs)
-        return F.mse_loss(pred.float(), noise - x0), {"t": t}
+        target = noise - x0
+        if diff_ref is not None and diff_weight > 0.0:
+            # image-pair sliders (Krea 2's weighting, on Flux 3's tokens): each token's error weighted by how much the
+            # two poles differ there, so the slider learns what changes between them, not what they share
+            d = (x0 - S.to_tokens(diff_ref.float().to(x0.device))).abs().mean(dim=-1)        # (h * w,)
+            dm = d.mean().clamp_min(1e-8)
+            r = (d / dm).clamp(max=8.0)
+            wgt = (1.0 - float(diff_weight)) + float(diff_weight) * r
+            wgt = wgt / wgt.mean().clamp_min(1e-8)
+            if float(dm) <= 1e-6:
+                wgt = torch.ones_like(wgt)                      # identical pair: uniform, never all-zero
+            return ((pred.float() - target).pow(2).mean(dim=-1) * wgt).mean(), {"t": t}
+        return F.mse_loss(pred.float(), target), {"t": t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         h, w = latents.shape[-2:]
