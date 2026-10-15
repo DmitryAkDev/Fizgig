@@ -31,8 +31,10 @@ if exist "%~dp0venv\Lib\site-packages\_rocm_sdk_devel\bin" set "PATH=%~dp0venv\L
 if exist "%~dp0venv\Scripts" set "PATH=%~dp0venv\Scripts;%PATH%"
 
 REM Detect gfx for legacy RDNA1/2 overrides and MIOpen/rocBLAS DB paths.
+REM Prefer install-time FIZGIG_AMD_GFX from rocm_env.bat (detect_gpu often fails in for /f).
 set "GPU_ARCH="
-if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0src\install\detect_gpu.py" (
+if defined FIZGIG_AMD_GFX set "GPU_ARCH=!FIZGIG_AMD_GFX!"
+if not defined GPU_ARCH if exist "%~dp0venv\Scripts\python.exe" if exist "%~dp0src\install\detect_gpu.py" (
     for /f "delims=" %%A in ('"%~dp0venv\Scripts\python.exe" "%~dp0src\install\detect_gpu.py" 2^>nul') do set "GPU_ARCH=%%A"
 )
 set "IS_LEGACY_GPU=0"

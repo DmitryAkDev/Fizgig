@@ -3,7 +3,9 @@
 The GUI keeps its existing NVIDIA pynvml / nvidia-smi path unchanged and only
 imports this module when those return None.
 
-Windows ROCm: typeperf ``\\GPU Local Adapter Memory(*)\\Local Usage``.
+Windows ROCm: typeperf ``\\GPU Local Adapter Memory(*)\\Local Usage`` for used;
+total from torch only if HIP is already up in this process (#145), else from
+``FIZGIG_AMD_VRAM_TOTAL`` written into ``rocm_env.bat`` at install (#188).
 Linux ROCm: ``amd-smi`` CLI (ROCm Core / amdrocm-amdsmi), legacy ``rocm-smi``,
 else torch mem_get_info (allocator-only on HIP).
 
@@ -75,6 +77,24 @@ def _total_vram_from_torch() -> Optional[int]:
     except Exception:
         pass
     return None
+
+
+def _total_vram_from_env() -> Optional[int]:
+    """Capacity baked into rocm_env at install (write_rocm_env.py) — no HIP in this process (#145, #188)."""
+    raw = (os.environ.get("FIZGIG_AMD_VRAM_TOTAL") or "").strip()
+    if not raw:
+        return None
+    try:
+        total = int(raw)
+    except ValueError:
+        return None
+    return total if total > 0 else None
+
+
+def amd_gpu_name() -> Optional[str]:
+    """Display name from ``FIZGIG_AMD_GPU_NAME`` (set in rocm_env at install)."""
+    name = (os.environ.get("FIZGIG_AMD_GPU_NAME") or "").strip()
+    return name or None
 
 
 def _to_bytes(num: float, unit: Optional[str]) -> int:
@@ -576,14 +596,22 @@ class _TypeperfVramReader:
         """The latest streamed sample, or None. Never blocks: there used to be a synchronous
         one-shot typeperf here (10 s timeout) on every tick until the stream produced a row —
         on a machine whose counter never yields one, that was a process spawned every second
-        for the life of the app (#145). Unavailable is a fine answer for a status bar."""
+        for the life of the app (#145). Unavailable is a fine answer for a status bar.
+
+        Total comes from torch only if this process already brought the GPU up (#145); otherwise
+        from ``FIZGIG_AMD_VRAM_TOTAL`` in the AMD launch env so the web UI can show capacity
+        without importing HIP (#188)."""
         if self._total is None:
-            self._total = _total_vram_from_torch()
+            self._total = _total_vram_from_torch() or _total_vram_from_env()
         self._ensure_started()
         with self._lock:
             used = self._latest_used
-        if used is None or self._total is None:
+        if self._total is None:
             return None
+        if used is None:
+            # Total is known; typeperf has not produced a row yet — report 0 used so the sidebar
+            # can show capacity immediately. Caption checks that need free VRAM wait for a real sample.
+            return 0, self._total
         return used, self._total
 
 
@@ -637,15 +665,13 @@ atexit.register(shutdown)
 
 
 def read_amd_gpu_vram() -> Optional[tuple[int, int]]:
-    """AMD-only VRAM read for the GUI fallback / ROCm installer probes.
+    """AMD-only VRAM read for the GUI / web UI fallback / ROCm installer probes.
 
-    Windows: typeperf (then torch). Linux: amd-smi, then rocm-smi, then torch.
+    Windows: typeperf used + install-time env (or torch-if-ready) total — never imports torch (#145, #188).
+    Linux: amd-smi, then rocm-smi, then torch-if-ready.
+    Callers must only use this on the ROCm launch path (``FIZGIG_GPU_BACKEND=rocm``).
     """
     if os.name == "nt":
-        # typeperf's stream, or nothing. The HIP fallback that used to sit here ran
-        # torch.cuda.mem_get_info every second whenever the counter gave nothing — on the
-        # Windows ROCm preview stack that is a second process querying the driver beside the
-        # training run, for a cosmetic bar (#145). Unavailable is the right answer.
         return _read_vram_windows_typeperf()
 
     hit = _read_vram_amd_smi_cli() or _read_vram_rocm_smi()

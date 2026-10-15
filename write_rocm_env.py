@@ -2,11 +2,11 @@
 """Probe the installed PyTorch ROCm version and write rocm_env.bat / rocm_env.sh.
 
 bitsandbytes needs BNB_ROCM_VERSION to match the ROCm SDK bundled with the PyTorch wheel
-(e.g. 714 for ROCm 7.14, 715 for 7.15). Launch Fizgig AMD.bat and launch_fizgig_amd.sh source these.
+(e.g. 714 for ROCm 7.14, 715 for 7.15). Launch Fizgig AMD*.bat and launch_fizgig_amd.sh
+source these (plus FIZGIG_AMD_* identity for the web UI).
 
-With --experimental (Windows floating install): omit BNB_ROCM_VERSION so bitsandbytes
-auto-selects its highest matching lib (falls back with a warning if exact ROCm minor is
-missing). Distinct from Linux ROCM_CHANNEL=nightly.
+With --experimental: omit BNB_ROCM_VERSION so bitsandbytes auto-selects its highest matching
+lib. Distinct from Linux ROCM_CHANNEL=nightly.
 """
 
 from __future__ import annotations
@@ -133,6 +133,21 @@ def detect_gfx_target() -> str | None:
     return None
 
 
+def detect_amd_gpu_identity() -> tuple[str | None, int | None]:
+    """(name, total_vram_bytes) from torch once at install — baked into rocm_env for the web UI (#188)."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return None, None
+        props = torch.cuda.get_device_properties(0)
+        name = (getattr(props, "name", None) or "").strip() or None
+        total = int(props.total_memory)
+        return name, total if total > 0 else None
+    except Exception:
+        return None, None
+
+
 def bnb_rocm_version_from_torch() -> str:
     import torch
 
@@ -230,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         src = f"{src}; BNB_ROCM_VERSION omitted (--experimental / bitsandbytes auto)"
 
     gfx = detect_gfx_target()
+    gpu_name, vram_total = detect_amd_gpu_identity()
 
     rocm_core_win = SCRIPT_DIR / "venv" / "Lib" / "site-packages" / "_rocm_sdk_core"
     try:
@@ -260,13 +276,23 @@ def main(argv: list[str] | None = None) -> int:
         if path_prefix:
             bat_lines.append(f'set "PATH={path_prefix};%PATH%"')
         if gfx:
-            bat_lines.append(f'REM GPU gfx target: {gfx}')
+            bat_lines.append(f'set "FIZGIG_AMD_GFX={gfx}"')
+        # Web UI VRAM panel (#188): capacity/name without importing torch in the server process.
+        if vram_total is not None:
+            bat_lines.append(f'set "FIZGIG_AMD_VRAM_TOTAL={vram_total}"')
+        if gpu_name:
+            # Escape quotes for cmd set "VAR=..."
+            safe = gpu_name.replace('"', "")
+            bat_lines.append(f'set "FIZGIG_AMD_GPU_NAME={safe}"')
         bat_lines.append("")
         OUT_BAT.parent.mkdir(exist_ok=True)
         OUT_BAT.write_text("\r\n".join(bat_lines), encoding="utf-8")
         bnb_msg = "BNB_ROCM_VERSION unset" if omit_bnb else f"BNB_ROCM_VERSION={bnb}"
         extra = f"  gfx={gfx}" if gfx else ""
+        if vram_total is not None:
+            extra += f"  vram={vram_total / 2**30:.0f}GB"
         print(f"Wrote {OUT_BAT.name}: {bnb_msg}  ({src}){extra}")
+
 
     if rocm_core_linux is not None:
         sh_lines = [
@@ -286,12 +312,19 @@ def main(argv: list[str] | None = None) -> int:
             ]
         )
         if gfx:
-            sh_lines.append(f"# GPU gfx target: {gfx}")
+            sh_lines.append(f'export FIZGIG_AMD_GFX="{gfx}"')
+        if vram_total is not None:
+            sh_lines.append(f'export FIZGIG_AMD_VRAM_TOTAL="{vram_total}"')
+        if gpu_name:
+            safe = gpu_name.replace('"', '\\"')
+            sh_lines.append(f'export FIZGIG_AMD_GPU_NAME="{safe}"')
         sh_lines.append("")
         OUT_SH.parent.mkdir(exist_ok=True)
         OUT_SH.write_text("\n".join(sh_lines), encoding="utf-8")
         bnb_msg = "BNB_ROCM_VERSION unset" if omit_bnb else f"BNB_ROCM_VERSION={bnb}"
         extra = f"  gfx={gfx}" if gfx else ""
+        if vram_total is not None:
+            extra += f"  vram={vram_total / 2**30:.0f}GB"
         print(f"Wrote {OUT_SH.name}: {bnb_msg}  ({src}){extra}")
 
     if not rocm_core_win.is_dir() and rocm_core_linux is None:
