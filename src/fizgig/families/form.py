@@ -698,7 +698,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         pass
     shown, labels = {}, {}
     if desc.edit_training and getattr(desc, "edit_references", 1) > 1:
-        if launch.edit_extras_on(desc, values):
+        if kind == "edit" and str(values.get("FAMILY_EDIT_PICTURES") or "") == launch.EDIT_WITH_EXTRAS:
             labels = {"_edit_edited_dir": "3. Edited folder (after editing)", "FAMILY_EDIT_CAPTION": "4. Edit instruction",
                       "FAMILY_EDIT_REF": "5. Test photo (optional)"}
             notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
