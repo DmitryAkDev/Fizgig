@@ -278,8 +278,8 @@ def form(desc):
                  "epochs)", "check", "A stuck image gets a new caption written from what is in it, and a fresh start; "
                  "a second try goes into more detail. Still stuck after that, it is left out of training - edit its "
                  "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
-            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Auto-recaption adds it at the end of a new caption. The "
-                 "training folder's word, the same as the Captions tab's."),
+            _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Used by Auto-recaption (below): it adds this word at the "
+                 "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]
     params += by_section("training", "", "lora")
     if desc.identity_blocks:
@@ -333,6 +333,10 @@ def form(desc):
     if desc.ema_default:
         params.append(_row("FAMILY_EMA", "Weight averaging (EMA)", "choice", desc.ema_hint or EMA_HINT,
                            EMA + ((EMA_SHORT,) if desc.ema_short_run else ())))
+    # the on/off tiles together at the bottom of the card, under every plain box (Adaptive LR stays beside its Min/Max)
+    TILES = ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "FAMILY_FAST_ID",
+             "FAMILY_TRAINING_ADAPTER")
+    params = [r for r in params if not (r and r["key"] in TILES)] + [r for r in params if r and r["key"] in TILES]
     add("params", "Training Parameters", "training", params)
     add("subjects", "Subjects", "training", subjects)
     if desc.edit_training:
