@@ -58,6 +58,18 @@ def fuse(text, rules):
     return text
 
 
+def caption_trigger(folder, ext=".txt"):
+    """The trigger word the folder's captions open with: the word before the first comma that at least half of them
+    start with ("zwxem, a woman smiling ..." -> "zwxem"), or "" when there is none."""
+    caps = _captions(folder, ext)
+    firsts = collections.Counter(m.group(1).lower() for c in caps
+                                 if (m := re.match(r"^\s*([A-Za-z0-9_-]+)\s*,", c)))
+    if not firsts:
+        return ""
+    word, n = firsts.most_common(1)[0]
+    return word if n * 2 >= len(caps) else ""
+
+
 def sample_caption(folder, trigger, ext=".txt"):
     """The folder's first caption (by file name) that holds the trigger, for the Subjects card's preview."""
     try:

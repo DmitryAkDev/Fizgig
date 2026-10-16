@@ -242,6 +242,13 @@ def folder_trigger(folder) -> str:
     return str((m if isinstance(m, dict) else {}).get(_trigger_key(folder), "") or "")
 
 
+def subject_trigger(folder, ext=".txt") -> str:
+    """A subject folder's trigger word: the one saved for it on the Captions tab, else the word its captions open
+    with (a folder never opened on the Captions tab)."""
+    from fizgig.families import multi_person as mp
+    return folder_trigger(folder).rstrip(",").strip() or (mp.caption_trigger(folder, ext) if folder else "")
+
+
 def set_folder_trigger(folder, word):
     k = _trigger_key(folder)
     if not k:
@@ -718,9 +725,9 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
             notes[f"_subject{n}_as"] = ("Pick the training folder on the Start tab to see it here." if n == 1 else
                                         f"Pick subject {n}'s folder above to see it here.")
             continue
-        trig = str(vals.get(tkey) or "").strip() or folder_trigger(folder).rstrip(",").strip()
+        trig = str(vals.get(tkey) or "").strip() or subject_trigger(folder, ext)
         cls = str(vals.get(ckey) or "").strip()
-        auto_trig = folder_trigger(folder).rstrip(",").strip()
+        auto_trig = subject_trigger(folder, ext)
         if auto_trig:
             found[tkey] = auto_trig
             got, _w = mp.subject(folder, auto_trig, "", ext)
@@ -773,8 +780,11 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
             notes["SAMPLE_PROMPT"] = "Previews will use: " + " | ".join(read)
     same = sorted({c for c in classes if classes.count(c) > 1})
     if same:                 # two women measured: right at epoch 16 where a woman and a man were at 10
-        notes["MAX_TRAIN_EPOCHS"] = (f"{len([c for c in classes if c in same])} subjects are {' / '.join(same)}: "
-                                     f"subjects of the same kind can need about 1.6x the epochs.")
+        plural = lambda w: {"woman": "women", "man": "men", "child": "children", "person": "people"}.get(w, w + "s")
+        words = {2: "Two", 3: "Three", 4: "Four"}
+        kinds_ = " and ".join(f"{words.get(classes.count(c), classes.count(c))} of your subjects are "
+                              f"{plural(c.split()[-1])}" for c in same)      # "Two of your subjects are women"
+        notes["MAX_TRAIN_EPOCHS"] = f"{kinds_}: subjects of the same kind can need about 1.6x the epochs."
     return notes
 
 
@@ -792,10 +802,11 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if trig:                                         # the folder's own trigger word (Captions tab)
         values["CAPTION_TRIGGER_WORD"] = trig.rstrip(",").strip()
     # DOP's word to remove when a folder's box is empty: that folder's own trigger word
-    values["DOP_FOLDER_TRIGGER"] = folder_trigger(image_folder).rstrip(",").strip() if image_folder else ""
+    ext = str(values.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt"
+    values["DOP_FOLDER_TRIGGER"] = subject_trigger(image_folder, ext) if image_folder else ""
     for i, (d, _t, _c) in enumerate(form.CONCEPT_ROWS, start=2):
         concept = str(values.get(d) or "").strip()
-        values[f"DOP_FOLDER_TRIGGER{i}"] = folder_trigger(concept).rstrip(",").strip() if concept else ""
+        values[f"DOP_FOLDER_TRIGGER{i}"] = subject_trigger(concept, ext) if concept else ""
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
