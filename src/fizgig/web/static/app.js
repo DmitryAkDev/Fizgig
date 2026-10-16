@@ -2359,7 +2359,9 @@ async function profilerToStudio() {
   for (let i = 0; i < 100 && !(S.st.familiesLoaded && S.st.layout); i++) await new Promise((r) => setTimeout(r, 100));
   if ($("stFamily").value !== h.family) { $("stFamily").value = h.family; await studioFamily(); }
   $("stPrimary").value = h.lora; $("stPrompt").value = h.prompt; $("stSeed").value = String(h.seed);
-  if ([...$("stRes").options].some((o) => o.value === String(h.size))) $("stRes").value = String(h.size);
+  const [hw, hh] = Array.isArray(h.size) ? h.size : [h.size, h.size];
+  if ([...$("stW").options].some((o) => o.value === String(hw))) $("stW").value = String(hw);
+  if ([...$("stH").options].some((o) => o.value === String(hh))) $("stH").value = String(hh);
   for (const [id, b] of Object.entries(S.st.blocks)) {
     const [on, strength] = h.blocks[id] || [true, 1.0];
     b.pe = !!on; b.ps = Number(strength);
@@ -3212,7 +3214,8 @@ const ST_KEY = "fizgig_studio";
 const stSaved = () => { try { return JSON.parse(localStorage.getItem(ST_KEY) || "{}"); } catch (e) { return {}; } };
 const stRemember = debounce(() => {
   const d = {family: $("stFamily").value, primary: $("stPrimary").value, donor: $("stDonor").value,
-    prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value, turbo: $("stTurbo").checked,
+    prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value,
+    w: $("stW").value, h: $("stH").value, turbo: $("stTurbo").checked,
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
     luckyHi: $("stLuckyHi").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
     scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]},
@@ -3239,12 +3242,12 @@ async function studioOpen() {
       if (sv[k] != null && sv[k] !== "") $(id).value = sv[k];
     if (sv.turbo != null) $("stTurbo").checked = sv.turbo;
     S.st.familiesLoaded = true;
-    await studioFamily(sv.res);
+    await studioFamily(sv.res, sv.w, sv.h);
   }
   studioPoll();
 }
 
-async function studioFamily(res) {
+async function studioFamily(res, w, h) {
   const key = $("stFamily").value;
   const L = S.st.layout = await api("/api/studio/layout?family=" + encodeURIComponent(key));
   const sv = stSaved();
@@ -3252,6 +3255,12 @@ async function studioFamily(res) {
   $("stRes").innerHTML = "";
   for (const s of L.sizes) $("stRes").append(el("option", {value: s, text: s}));
   $("stRes").value = L.sizes.includes(String(res)) ? String(res) : L.size;
+  for (const [id, v] of [["stW", w], ["stH", h]]) {             // pictures: any width and height from the list
+    const keep = String(v ?? $(id).value);
+    $(id).innerHTML = "";
+    for (const s of L.sizes) $(id).append(el("option", {value: s, text: s}));
+    $(id).value = L.sizes.includes(keep) ? keep : L.size;
+  }
   const sc = (sv.scales || {})[key];
   $("stPScale").value = sc ? sc[0] : L.default_strength;
   $("stDScale").value = sc ? sc[1] : 1;
@@ -3280,8 +3289,8 @@ function studioKind(L, sv) {
   const video = L.kind === "video", audio = L.kind === "audio";
   $("stVideoRows").style.display = video ? "" : "none";
   $("stFrames").style.display = video ? "" : "none";
-  $("stResLabel").textContent = audio ? "Length (s):" : "Res:";
-  $("stRes").style.display = $("stResLabel").style.display = video ? "none" : "";
+  $("stRes").style.display = $("stResLabel").style.display = audio ? "" : "none";      // a song's length
+  $("stSizeRow").style.display = video || audio ? "none" : "";                          // a picture's width and height
   document.querySelectorAll(".st-pane").forEach((p) => p.classList.toggle("audio", audio));
   $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
     audio ? "Play any song; the picture is its waveform." : "Click either picture to see both full size (← → switches between them).";
@@ -4100,7 +4109,7 @@ const ST_SRC_MODES = [["song", "Whole song"], ["repaint", "Repaint the loop sect
 const ST_SETUP_MAP = [
   ["stPrimary", "repair_primary_var"], ["stDonor", "repair_donor_var"], ["stPScale", "repair_primary_scale_var"],
   ["stDScale", "repair_donor_scale_var"], ["stPrompt", "repair_prompt_var"], ["stSeed", "repair_seed_var"],
-  ["stRes", "repair_res_var"], ["stNeg", "repair_negative_var"], ["stTurbo", "repair_turbo_var", "check"],
+  ["stRes", "repair_res_var"], ["stW", "repair_width_var"], ["stH", "repair_height_var"], ["stNeg", "repair_negative_var"], ["stTurbo", "repair_turbo_var", "check"],
   ["stRef", "repair_ref_path_var"], ["stRefMp", "repair_ref_mp_var"], ["stRefStr", "repair_ref_strength_var"],
   ["stLuckyLo", "repair_lucky_min_var"], ["stLuckyHi", "repair_lucky_max_var"],
   ["stH3Model", "repair_h3_model_var"], ["stH3Base", "repair_h3_base_var"], ["stH3Len", "repair_h3_frames_var"],
@@ -4498,10 +4507,9 @@ function studioPresetSaveOpen() {
 function studioState() {
   const blocks = {};
   for (const [id, b] of Object.entries(S.st.blocks)) blocks[id] = {primary_enabled: b.pe, primary_strength: b.ps, donor_enabled: b.de, donor_strength: b.ds};
-  const res = Number($("stRes").value) || 768;
   const num = (id, d) => { const v = Number($(id).value); return isFinite(v) ? v : d; };
-  return {blocks, seed: seedOf("stSeed"), prompt: $("stPrompt").value.trim(), preview_width: res,
-    preview_height: res, ref_image_path: $("stRefRow").style.display === "none" ? "" : $("stRef").value.trim(),
+  return {blocks, seed: seedOf("stSeed"), prompt: $("stPrompt").value.trim(), preview_width: Number($("stW").value) || 768,
+    preview_height: Number($("stH").value) || 768, ref_image_path: $("stRefRow").style.display === "none" ? "" : $("stRef").value.trim(),
     ref_megapixels: num("stRefMp", 1), ref_strength: num("stRefStr", 1), primary_scale: num("stPScale", 1),
     donor_scale: num("stDScale", 1)};
 }
@@ -4712,7 +4720,7 @@ function wireStudio() {
   $("stRefPick").addEventListener("click", () => pick($("stRef").value || refStart(), false, (p) => { $("stRef").value = p; stRemember(); studioSchedule(); }));
   $("stRefClear").addEventListener("click", () => { $("stRef").value = ""; stRemember(); studioSchedule(); });
   $("stSeedNew").addEventListener("click", () => { $("stSeed").value = 1 + Math.floor(Math.random() * 99999); stRemember(); studioSchedule(); });
-  for (const id of ["stSeed", "stRes", "stRefMp", "stRefStr", "stPScale", "stDScale"])
+  for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])
     $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
   $("stNeg").addEventListener("change", () => { stRemember();
