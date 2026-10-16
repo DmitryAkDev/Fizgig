@@ -4311,6 +4311,13 @@ function studioLuckyCounts() {                     // Roll: 1, 2, 4 ... below th
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "all";
 }
 
+function studioLuckyPool() {                      // the blocks a roll can change: on for the LoRA it rolls, not locked
+  const who = S.st.donor ? $("stLuckyWho").value : "Primary";
+  const pOk = (id) => who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && S.st.blocks[id].pe;
+  const dOk = (id) => who !== "Primary" && S.st.donorBlocks.has(id) && S.st.blocks[id].de;
+  return {pOk, dOk, pool: Object.keys(S.st.blocks).filter((id) => !S.st.locks.has(id) && (pOk(id) || dOk(id)))};
+}
+
 function studioTweaked(id) {                       // moved from its default: strength, on / off, or the donor's
   const b = S.st.blocks[id];
   if (!b || (S.st.ready && !S.st.primaryBlocks.has(id) && !(S.st.donor && S.st.donorBlocks.has(id)))) return false;
@@ -4324,6 +4331,9 @@ function studioFreezeState() {
   $("stFreeze").disabled = !fresh;
   $("stUnfreeze").style.display = S.st.frozen.size ? "" : "none";
   $("stUnfreeze").textContent = `🔓 Unfreeze (${S.st.frozen.size})`;
+  // what is left to roll: not frozen, not locked by hand, on for the LoRA being rolled
+  const n = Object.keys(S.st.blocks).length;
+  $("stLuckyFree").textContent = n ? `${studioLuckyPool().pool.length} of ${n} sliders free to roll` : "";
 }
 
 function studioFreeze(on) {
@@ -4358,6 +4368,7 @@ function studioActivity() {
   document.querySelectorAll(".st-detail-only").forEach((x) => {
     x.style.display = S.st.layout && (S.st.layout.detail_blocks || []).length ? "" : "none"; });
   $("stTargetDonor").disabled = !S.st.donor;
+  studioFreezeState();                             // a donor in or out changes what is free to roll
 }
 
 function studioSet(id, k, v, live) {
@@ -4497,10 +4508,7 @@ function studioBulk(kind) {
   }
   if (kind === "lucky") {
     // which LoRA rolls: the primary, or with a donor loaded the dropdown's choice (Both rolls each on its own)
-    const who = S.st.donor ? $("stLuckyWho").value : "Primary";
-    const pOk = (id) => who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && S.st.blocks[id].pe;
-    const dOk = (id) => who !== "Primary" && S.st.donorBlocks.has(id) && S.st.blocks[id].de;
-    const pool = Object.keys(S.st.blocks).filter((id) => !S.st.locks.has(id) && (pOk(id) || dOk(id)));
+    const {pOk, dOk, pool} = studioLuckyPool();
     for (let j = pool.length - 1; j > 0; j--) { const k = Math.floor(Math.random() * (j + 1)); [pool[j], pool[k]] = [pool[k], pool[j]]; }
     const want = $("stLuckyCount").value === "all" ? pool.length : Number($("stLuckyCount").value);
     for (const id of pool.slice(0, want)) {
@@ -4881,7 +4889,7 @@ function wireStudio() {
   for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])
     $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
-  $("stLuckyWho").addEventListener("change", stRemember);
+  $("stLuckyWho").addEventListener("change", () => { stRemember(); studioFreezeState(); });
   $("stLuckyCount").addEventListener("change", stRemember);
   $("stFreeze").addEventListener("click", () => studioFreeze(true));
   $("stUnfreeze").addEventListener("click", () => studioFreeze(false));
