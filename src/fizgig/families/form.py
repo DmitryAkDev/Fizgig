@@ -290,6 +290,9 @@ def form(desc):
     # who the LoRA is of and how it treats other people: the Subjects card (after Training Parameters)
     mc = dict(desc.multi_concept_defaults or {})
     subjects = [
+        _row("_subjects_intro", "1 subject with Off is ordinary LoRA training. Every other setting here is new: DOP "
+             "(Differential Output Preservation, from @ostris's AI-Toolkit) combined with Fizgig's own techniques, "
+             "for a new level of separation between your subjects and everyone else.", "note"),
         _row("FAMILY_SUBJECTS", "Who is this LoRA of?", "radio",
              " ".join(t for t in (SUBJECTS_HINT, desc.multi_concept_hint) if t), SUBJECT_COUNTS,
              default=SUBJECT_COUNTS[0],
