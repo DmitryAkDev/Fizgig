@@ -3301,7 +3301,6 @@ function studioKind(L, sv) {
   fill("stH3Len", V.lengths, h3.len || V.length);
   fill("stH3W", V.dims, h3.w || V.size[0]);
   fill("stH3H", V.dims, h3.h || V.size[1]);
-  fill("stH3Scale", V.scales, h3.scale || "Full");
   if (h3.steps) $("stH3Steps").value = h3.steps;
   if (h3.turbo != null) $("stH3Turbo").value = h3.turbo;
   $("stH3Sound").checked = V.sound && h3.sound !== false;
@@ -3444,7 +3443,7 @@ function studioH3Remember() {
   try {
     const d = stSaved();
     d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
-      h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
+      h: $("stH3H").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
       sound: $("stH3Sound").checked, early: $("stH3Early").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
@@ -3456,9 +3455,8 @@ function studioExtra() {
   const L = S.st.layout;
   if (L.kind === "audio") return {audio: studioAceExtra()};
   if (L.kind !== "video") return {};
-  const V = L.video, f = V.scale_of[$("stH3Scale").value] || 1;
-  const snap = (x) => f >= 0.999 ? x : Math.max(256, Math.floor(x * f / 32) * 32);
-  const w = snap(Number($("stH3W").value) || 640), h = snap(Number($("stH3H").value) || 768);
+  const V = L.video;
+  const w = Number($("stH3W").value) || 640, h = Number($("stH3H").value) || 768;     // the clip at its Width x Height
   const ref = !!V.references[$("stH3Model").value];
   const slots = ref ? ["ref1", "ref2"] : ["first", "last"];
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
@@ -4101,7 +4099,7 @@ const ST_SETUP_MAP = [
   ["stRef", "repair_ref_path_var"], ["stRefMp", "repair_ref_mp_var"], ["stRefStr", "repair_ref_strength_var"],
   ["stLuckyLo", "repair_lucky_min_var"], ["stLuckyHi", "repair_lucky_max_var"],
   ["stH3Model", "repair_h3_model_var"], ["stH3Base", "repair_h3_base_var"], ["stH3Len", "repair_h3_frames_var"],
-  ["stH3W", "repair_h3_width_var"], ["stH3H", "repair_h3_height_var"], ["stH3Scale", "repair_h3_dial_scale_var"],
+  ["stH3W", "repair_h3_width_var"], ["stH3H", "repair_h3_height_var"],
   ["stH3Steps", "repair_h3_steps_var"], ["stH3Turbo", "repair_h3_turbo_var"], ["stH3Sound", "repair_h3_sound_var", "check"],
   ["stH3Early", "repair_h3_early_var", "check"],
   ["stPbOn", "repair_pb_on_var", "check"], ["stPromptB", "repair_prompt_b_var"], ["stPbBlend", "repair_pb_blend_var", "num"],
@@ -4877,7 +4875,7 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
-  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound"])
+  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Steps", "stH3Turbo", "stH3Sound"])
     $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
