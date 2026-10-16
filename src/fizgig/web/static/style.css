@@ -1782,6 +1782,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   width: 100%; object-fit: contain; }
 .st-dock .st-pane.audio img { flex: 1; aspect-ratio: auto; }
 .st-dock .st-pane figcaption { flex: none; }
+.st-dock.st-resizing video { visibility: hidden; }     /* clips step aside while the panel is being resized */
 .st-dock-home { padding: 14px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary);
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) { .st-dock.pinned { margin: 0 0 12px; } }

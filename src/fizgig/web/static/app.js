@@ -4851,6 +4851,15 @@ function studioDock(open, remember = true) {
       $("stDockGrip").addEventListener("pointermove", move);
       $("stDockGrip").addEventListener("pointerup", up, {once: true});
     });
+    // while the panel is being resized its clips step aside (scaling playing video every frame is the slow part),
+    // back a moment after the size stops changing - the pinned edge drag and the floating corner alike
+    let sizing = null;
+    new ResizeObserver(() => {
+      if (!dock.isConnected) return;
+      dock.classList.add("st-resizing");
+      clearTimeout(sizing);
+      sizing = setTimeout(() => dock.classList.remove("st-resizing"), 200);
+    }).observe(dock);
     // floating: the corner resize is the browser's own; its size is remembered
     new ResizeObserver(debounce(() => {
       if (dock.isConnected && dock.classList.contains("floating") && !dock.classList.contains("collapsed")) {
