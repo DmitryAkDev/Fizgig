@@ -519,6 +519,12 @@ def main():
     try:
         import webview
         _log_pywebview()
+        if os.name == "nt":            # the taskbar shows Fizgig's own button and icon, not pythonw's (as the old app)
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("fizgig.lora.studio")
+            except Exception:
+                pass
         why = _windows_engine_problem()
         if why:
             raise RuntimeError(why)
