@@ -3252,7 +3252,8 @@ async function studioFamily(res, w, h) {
   studioNegRow();
   S.st.blocks = {};
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
-  S.st.locks = new Set(); S.st.frozen = new Set(); S.st.hist = []; S.st.redo = [];
+  S.st.locks = new Set(); S.st.dlocks = new Set(); S.st.frozen = new Set(); S.st.dfrozen = new Set();
+  S.st.hist = []; S.st.redo = [];
   studioLuckyCounts();
   studioMasters();
   studioPresets();
@@ -4267,11 +4268,13 @@ function studioRow(b) {
     const btn = (t, title, f) => el("button", {class: "btn btn-sm", text: t, title, onclick: () => { f(); studioCommit(); }});
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
-    const lock = side === "p" ? el("button", {class: "st-lock", title: "Lock this block (presets, Lucky and bulk leave it alone)",
+    const locks = () => side === "p" ? S.st.locks : S.st.dlocks, frozen = () => side === "p" ? S.st.frozen : S.st.dfrozen;
+    const lock = el("button", {class: "st-lock", title: side === "p" ?
+      "Lock this slider (presets, Lucky and bulk leave it alone; the donor's slider has its own lock)" :
+      "Lock the donor's slider for this block (presets, Lucky and bulk leave it alone)",
       text: "🔓", onclick: () => {
-        if (S.st.locks.has(b.id)) { S.st.locks.delete(b.id); S.st.frozen.delete(b.id); } else S.st.locks.add(b.id);
-        studioSync([b.id]); }}) :
-      el("span", {});
+        if (locks().has(b.id)) { locks().delete(b.id); frozen().delete(b.id); } else locks().add(b.id);
+        studioSync([b.id]); }});
     const row = el("div", {class: "st-row" + (side === "d" ? " donor" : "")}, lock, tick, label, range, val,
       el("span", {class: "st-btns"},
         btn("0", "Set to 0", () => studioSet(b.id, sv, 0)), btn("1", "Set to 1", () => studioSet(b.id, sv, 1)),
@@ -4283,7 +4286,7 @@ function studioRow(b) {
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
     row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]);
-      if (side === "p") { const on = S.st.locks.has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); } };
+      const on = locks().has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); };
     row._sync();
     return row;
   };
@@ -4312,36 +4315,46 @@ function studioLuckyCounts() {                     // Roll: 1, 2, 4 ... below th
 
 function studioLuckyPool() {                      // the blocks a roll can change: on for the LoRA it rolls, not locked
   const who = S.st.donor ? $("stLuckyWho").value : "Primary";
-  const pOk = (id) => who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && S.st.blocks[id].pe;
-  const dOk = (id) => who !== "Primary" && S.st.donorBlocks.has(id) && S.st.blocks[id].de;
-  return {pOk, dOk, pool: Object.keys(S.st.blocks).filter((id) => !S.st.locks.has(id) && (pOk(id) || dOk(id)))};
+  const pOk = (id) => who !== "Donor" && !S.st.locks.has(id) && !(S.st.ready && !S.st.primaryBlocks.has(id)) && S.st.blocks[id].pe;
+  const dOk = (id) => who !== "Primary" && !S.st.dlocks.has(id) && S.st.donorBlocks.has(id) && S.st.blocks[id].de;
+  const ids = Object.keys(S.st.blocks);
+  return {pOk, dOk, who, pool: ids.filter((id) => pOk(id) || dOk(id)),
+          free: ids.filter(pOk).length + ids.filter(dOk).length,       // sliders a roll can change
+          total: (who !== "Donor" ? ids.length : 0) + (who !== "Primary" ? ids.length : 0)};
 }
 
-function studioTweaked(id) {                       // moved from its default: strength, on / off, or the donor's
+function studioTweaked(id, side) {                 // a slider moved from its default (its strength or on / off)
   const b = S.st.blocks[id];
-  if (!b || (S.st.ready && !S.st.primaryBlocks.has(id) && !(S.st.donor && S.st.donorBlocks.has(id)))) return false;
-  return b.ps !== 1 || !b.pe || (S.st.donor && S.st.donorBlocks.has(id) && (b.ds !== 1 || !b.de));
+  if (!b) return false;
+  if (side === "d") return !!(S.st.donor && S.st.donorBlocks.has(id) && (b.ds !== 1 || !b.de));
+  return !(S.st.ready && !S.st.primaryBlocks.has(id)) && (b.ps !== 1 || !b.pe);
 }
 
 function studioFreezeState() {
   if (!$("stFreeze") || !S.st.frozen) return;
-  const fresh = Object.keys(S.st.blocks).filter((id) => studioTweaked(id) && !S.st.locks.has(id)).length;
+  const ids = Object.keys(S.st.blocks);
+  const fresh = ids.filter((id) => studioTweaked(id, "p") && !S.st.locks.has(id)).length +
+    ids.filter((id) => studioTweaked(id, "d") && !S.st.dlocks.has(id)).length;
+  const held = S.st.frozen.size + S.st.dfrozen.size;
   $("stFreeze").textContent = `🔒 Freeze tweaked${fresh ? ` (${fresh})` : ""}`;
   $("stFreeze").disabled = !fresh;
-  $("stUnfreeze").style.display = S.st.frozen.size ? "" : "none";
-  $("stUnfreeze").textContent = `🔓 Unfreeze (${S.st.frozen.size})`;
-  // what is left to roll: not frozen, not locked by hand, on for the LoRA being rolled
-  const n = Object.keys(S.st.blocks).length;
-  $("stLuckyFree").textContent = n ? `${studioLuckyPool().pool.length} of ${n} sliders free to roll` : "";
+  $("stUnfreeze").style.display = held ? "" : "none";
+  $("stUnfreeze").textContent = `🔓 Unfreeze (${held})`;
+  // what is left to roll: not frozen, not locked by hand, on for the LoRA being rolled (the dropdown's sliders)
+  const pl = studioLuckyPool();
+  $("stLuckyFree").textContent = pl.total ? `${pl.free} of ${pl.total} sliders free to roll` : "";
 }
 
 function studioFreeze(on) {
   if (on) {
-    for (const id of Object.keys(S.st.blocks))
-      if (studioTweaked(id) && !S.st.locks.has(id)) { S.st.locks.add(id); S.st.frozen.add(id); }
+    for (const id of Object.keys(S.st.blocks)) {
+      if (studioTweaked(id, "p") && !S.st.locks.has(id)) { S.st.locks.add(id); S.st.frozen.add(id); }
+      if (studioTweaked(id, "d") && !S.st.dlocks.has(id)) { S.st.dlocks.add(id); S.st.dfrozen.add(id); }
+    }
   } else {
     for (const id of S.st.frozen) S.st.locks.delete(id);
-    S.st.frozen.clear();
+    for (const id of S.st.dfrozen) S.st.dlocks.delete(id);
+    S.st.frozen.clear(); S.st.dfrozen.clear();
   }
   studioSync();
 }
@@ -4371,7 +4384,7 @@ function studioActivity() {
 }
 
 function studioSet(id, k, v, live) {
-  if (S.st.locks.has(id)) { studioSync([id]); return; }
+  if ((k === "ds" || k === "de" ? S.st.dlocks : S.st.locks).has(id)) { studioSync([id]); return; }
   S.st.blocks[id][k] = v;
   studioSync([id]);
   studioSchedule(live);
@@ -4406,7 +4419,7 @@ function studioMasters() {
       const donor = (document.querySelector('input[name="stTarget"]:checked') || {}).value === "donor";
       const has = donor ? S.st.donorBlocks : S.st.primaryBlocks;
       for (const [id, c] of Object.entries(L.category_of))
-        if (c === m.cat && (!S.st.ready || has.has(id)) && !S.st.locks.has(id)) S.st.blocks[id][donor ? "ds" : "ps"] = v;
+        if (c === m.cat && (!S.st.ready || has.has(id)) && !(donor ? S.st.dlocks : S.st.locks).has(id)) S.st.blocks[id][donor ? "ds" : "ps"] = v;
       range.value = v; val.textContent = stFmt(v);
       studioSync(); studioSchedule(true);
     };
@@ -4417,7 +4430,7 @@ function studioMasters() {
       const v = Number(range.value), donor = (document.querySelector('input[name="stTarget"]:checked') || {}).value === "donor";
       if (!(S.st.donorBlocks && S.st.donorBlocks.size) || v < 0 || v > 1) return;
       for (const [id, c] of Object.entries(L.category_of)) {
-        if (c !== m.cat || S.st.locks.has(id)) continue;
+        if (c !== m.cat || (donor ? S.st.locks : S.st.dlocks).has(id)) continue;     // the other side's lock
         if (donor) S.st.blocks[id].ps = Math.round((1 - v) * 100) / 100;
         else Object.assign(S.st.blocks[id], {ds: Math.round((1 - v) * 100) / 100, de: true});
       }
@@ -4457,15 +4470,20 @@ async function studioPresetApply(v) {
   if (v.startsWith("b:")) {
     const p = L.presets.find((x) => x.name === v.slice(2));
     for (const [id, b] of Object.entries(S.st.blocks)) {
+      if (!S.st.dlocks.has(id)) Object.assign(b, {de: true, ds: 1});
       if (S.st.locks.has(id)) continue;
-      Object.assign(b, {pe: true, ps: 1, de: true, ds: 1});
+      Object.assign(b, {pe: true, ps: 1});
       if (p.keep) b.pe = p.keep.includes(L.category_of[id]);
       if (p.blocks && id in p.blocks) { b.pe = true; b.ps = Number(p.blocks[id]); }
     }
   } else {
     const r = await api("/api/studio/preset_load", {family: L.key, name: v.slice(2)});
-    for (const [id, bs] of Object.entries(r.blocks || {})) if (S.st.blocks[id] && !S.st.locks.has(id))
-      S.st.blocks[id] = {pe: !!bs.primary_enabled, ps: Number(bs.primary_strength), de: !!bs.donor_enabled, ds: Number(bs.donor_strength)};
+    for (const [id, bs] of Object.entries(r.blocks || {})) {
+      const b = S.st.blocks[id];
+      if (!b) continue;
+      if (!S.st.locks.has(id)) Object.assign(b, {pe: !!bs.primary_enabled, ps: Number(bs.primary_strength)});
+      if (!S.st.dlocks.has(id)) Object.assign(b, {de: !!bs.donor_enabled, ds: Number(bs.donor_strength)});
+    }
   }
   studioSync(); studioCommit(); studioSchedule();
   $("stPreset").value = "";
@@ -4497,20 +4515,22 @@ function studioBulk(kind) {
   }
   let rolled = 0;
   for (const [id, b] of Object.entries(S.st.blocks)) {
-    if (S.st.locks.has(id)) continue;
-    if (kind === "reset") Object.assign(b, {pe: true, ps: 1, de: true, ds: 1});
-    else if (kind === "off") b.pe = false;
-    else if (kind === "on") b.pe = true;
-    else if (kind === "invert") b.pe = !b.pe;
-    else if (kind === "donor_on") Object.assign(b, {de: true, ds: 1});
-    else if (kind === "donor_off") b.ds = 0;
+    const p = !S.st.locks.has(id), d = !S.st.dlocks.has(id);
+    if (kind === "reset") { if (p) Object.assign(b, {pe: true, ps: 1}); if (d) Object.assign(b, {de: true, ds: 1}); }
+    else if (kind === "off") { if (p) b.pe = false; }
+    else if (kind === "on") { if (p) b.pe = true; }
+    else if (kind === "invert") { if (p) b.pe = !b.pe; }
+    else if (kind === "donor_on") { if (d) Object.assign(b, {de: true, ds: 1}); }
+    else if (kind === "donor_off") { if (d) b.ds = 0; }
   }
   if (kind === "lucky") {
     // which LoRA rolls: the primary, or with a donor loaded the dropdown's choice (Both rolls each on its own)
-    const {pOk, dOk, pool} = studioLuckyPool();
+    // the sliders it can change (a block's primary and donor are two), shuffled, the Roll count of them
+    const {pOk, dOk} = studioLuckyPool();
+    const pool = Object.keys(S.st.blocks).flatMap((id) => [...(pOk(id) ? [[id, "ps"]] : []), ...(dOk(id) ? [[id, "ds"]] : [])]);
     for (let j = pool.length - 1; j > 0; j--) { const k = Math.floor(Math.random() * (j + 1)); [pool[j], pool[k]] = [pool[k], pool[j]]; }
     const want = $("stLuckyCount").value === "all" ? pool.length : Number($("stLuckyCount").value);
-    for (const id of pool.slice(0, want)) {
+    for (const [id, key] of pool.slice(0, want)) {
       // a held band (lucky_zones: [first, last, low, high] by the block's place in the model's order), bounded by
       // Min / Max as the desktop does
       const i = order.indexOf(id), b = S.st.blocks[id];
@@ -4518,14 +4538,13 @@ function studioBulk(kind) {
       let a = zone ? Math.max(zone[2], lo) : lo, z = zone ? Math.min(zone[3], hi) : hi;
       if (a > z) a = z = Math.min(Math.max(1, lo), hi);
       const roll = () => Math.round((a + Math.random() * (z - a)) * 20) / 20;
-      if (pOk(id)) b.ps = roll();
-      if (dOk(id)) b.ds = roll();
+      b[key] = roll();
       rolled++;
     }
   }
   studioSync(); studioCommit(); studioSchedule();
-  if (kind === "lucky") $("stStatus").textContent = `Lucky mix: ${rolled} block(s) rolled, ${lo} to ${hi}` +
-    `${S.st.locks.size ? `, ${S.st.locks.size} locked or frozen left alone` : ""} (Undo for the mix before; Freeze tweaked to keep ` +
+  if (kind === "lucky") $("stStatus").textContent = `Lucky mix: ${rolled} slider(s) rolled, ${lo} to ${hi}` +
+    `${S.st.locks.size + S.st.dlocks.size ? `, ${S.st.locks.size + S.st.dlocks.size} locked or frozen slider(s) left alone` : ""} (Undo for the mix before; Freeze tweaked to keep ` +
     "what you like and roll the rest; Save preset… to keep it).";
   stRemember();
 }
