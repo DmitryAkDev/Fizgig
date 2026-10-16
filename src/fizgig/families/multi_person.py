@@ -121,37 +121,55 @@ def stranger_example():
         return ""
 
 
-def strangers():
-    """[(path, description), ...] - the 32 strangers, downloaded on first use (about 21 MB)."""
+REVISION_FILE = "fizgig_revision.txt"                     # beside the strangers: the REVISION they were fetched at
+
+
+def _strangers_dir():
     from fizgig.user_data import user_file
-    d = user_file("multi_person_strangers")
-    try:              # the pinned set already here, every picture with it: no network (a rate limit or no internet
-        with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:     # never stops a run)
+    return user_file("multi_person_strangers")
+
+
+def _local_strangers(d):
+    """[(path, description), ...] when the copy in d is complete AND the pinned REVISION (its marker file), else
+    None - a set changed on Hugging Face (REVISION bumped) is fetched again, never used stale."""
+    try:
+        with open(os.path.join(d, REVISION_FILE), encoding="utf-8") as f:
+            if f.read().strip() != REVISION:
+                return None
+        with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
             rows = json.load(f)
         if rows and all(os.path.isfile(os.path.join(d, r["file"])) for r in rows):
             return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
     except (OSError, ValueError, KeyError, TypeError):
         pass
+    return None
+
+
+def strangers():
+    """[(path, description), ...] - the 32 strangers: the copy on disk when it is this REVISION's (no network, so a
+    rate limit or no internet never stops a run), else downloaded (about 21 MB) and its revision recorded."""
+    d = _strangers_dir()
+    got = _local_strangers(d)
+    if got:
+        return got
     from huggingface_hub import snapshot_download
     d = snapshot_download(REPO, repo_type="dataset", revision=REVISION, local_dir=d)
-    with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
-        rows = json.load(f)
-    return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
+    with open(os.path.join(d, REVISION_FILE), "w", encoding="utf-8") as f:
+        f.write(REVISION + "\n")
+    got = _local_strangers(d)
+    if not got:
+        raise RuntimeError(f"the strangers download from {REPO} is incomplete")
+    return got
 
 
 def download_strangers(log=print):
     """The model downloaders' step (scripts/fetch_models, every family's list): the pinned strangers into
     user_data, so no run has to fetch them at its start. True when they're there afterwards."""
-    from fizgig.user_data import user_file
-    d = user_file("multi_person_strangers")
-    try:
-        with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
-            rows = json.load(f)
-        if rows and all(os.path.isfile(os.path.join(d, r["file"])) for r in rows):
-            log(f"  [ok]   multi-person strangers ({len(rows)}) - already here: {d}")
-            return True
-    except (OSError, ValueError, KeyError, TypeError):
-        pass
+    d = _strangers_dir()
+    got = _local_strangers(d)
+    if got:
+        log(f"  [ok]   multi-person strangers ({len(got)}) - already here: {d}")
+        return True
     try:
         n = len(strangers())
         log(f"  [done] multi-person strangers ({n}) -> {d}")
