@@ -1405,7 +1405,8 @@ class H3RepairEngine(ClipContract):
                int(frames), int(steps), self._turbo_strength,
                round(float(getattr(state, "primary_scale", 1.0)), 4),
                round(float(getattr(state, "donor_scale", 1.0)), 4),
-               getattr(self, "dit_path", None), bool(getattr(self, "int8_attention", False)))
+               getattr(self, "dit_path", None), bool(getattr(self, "int8_attention", False)),
+               bool(getattr(self, "speed_boost", False)))
         resume_ok = (self.resume_enabled and not keyframes and not references and not no_lora
                      and not bare_refs and not getattr(self, "_blocks_swapped", 0)
                      and hasattr(self.dit, "forward_cached"))
@@ -1460,7 +1461,9 @@ class H3RepairEngine(ClipContract):
                     return_audio=True, keyframes=keyframes, block_cache=block_cache,
                     on_denoised=on_denoised, exact_frames=True,
                     ref_latents=ref_latents, text_token_tags=text_tags,
-                    ref_schedule=ref_schedule)
+                    ref_schedule=ref_schedule,
+                    # the Studio's Speed Boost tick (off for every other caller: it sets the attribute per render)
+                    speed_boost=bool(getattr(self, "speed_boost", False)))
 
         try:
             resume_failed = False
