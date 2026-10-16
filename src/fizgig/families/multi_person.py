@@ -93,7 +93,7 @@ def caption_trigger(folder, ext=".txt"):
 def sample_caption(folder, trigger, ext=".txt"):
     """The folder's first caption (by file name) that holds the trigger, for the Subjects card's preview."""
     try:
-        names = sorted(n for n in os.listdir(folder) if n.lower().endswith(ext.lower()))
+        names = sorted(n for n in os.listdir(folder) if n.lower().endswith(ext.lower()) and not n.startswith(PREFIX))
     except OSError:
         return ""
     pat = re.compile(r"(?<!\w)" + re.escape(trigger) + r"(?!\w)", re.I) if trigger else None
@@ -141,7 +141,8 @@ def strangers():
 
 def _captions(folder, ext):
     try:
-        names = [n for n in os.listdir(folder) if n.lower().endswith(ext.lower())]
+        names = [n for n in os.listdir(folder) if n.lower().endswith(ext.lower())
+                 and not n.startswith(PREFIX)]   # Fizgig's side-by-sides in the folder aren't the subject's captions
     except OSError:
         return []
     out = []
