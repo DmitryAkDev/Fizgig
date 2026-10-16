@@ -183,7 +183,15 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 from fizgig.families.multi_person import KINDS as SUBJECT_KINDS  # noqa: E402
-KIND_HINT = ("What the subject is decides what Fizgig adds to its training.\nFrom its captions: a person when its captions say woman, man, girl, boy ...; an animal or thing otherwise.\nA person: side-by-side pictures next to strangers, so other people keep their faces.\nAn animal or thing (a dog, a car): its word joined like a person's, no side-by-side pictures.\nA style or look: its trigger word kept as written, and the look stays off unless you use it.")
+KIND_HINT = ("What each subject is decides what Fizgig adds to its training.\n"
+             "From its captions: Fizgig decides - a person if the captions say woman, man, girl or boy, otherwise an "
+             "animal or thing.\n"
+             "A person: also trains on side-by-side pictures next to strangers, so other people keep their own "
+             "faces.\n"
+             "An animal or thing: a dog, a cat, a car. Its word is joined like a person's (rexodog), with no "
+             "side-by-side pictures.\n"
+             "A style or look: paper cut, a lighting style. Its trigger word stays as written, and the look only "
+             "appears when you use it.")
 KIND_ROWS = ("FAMILY_SUBJECT_KIND", "FAMILY_SUBJECT_KIND2", "FAMILY_SUBJECT_KIND3", "FAMILY_SUBJECT_KIND4")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.\n"
@@ -306,13 +314,14 @@ def form(desc):
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
         _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
-        _row("FAMILY_SUBJECT_KIND", "Subject 1 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
+        _row("FAMILY_SUBJECT_KIND", "Subject 1 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0],
+             hint_labels=True),                 # one spaced line per choice, its name in bold (said once, here)
         *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"),
-           _row("FAMILY_SUBJECT_KIND2", "Subject 2 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
+           _row("FAMILY_SUBJECT_KIND2", "Subject 2 is", "choice", choices=SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"),
-           _row("FAMILY_SUBJECT_KIND3", "Subject 3 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
+           _row("FAMILY_SUBJECT_KIND3", "Subject 3 is", "choice", choices=SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"),
-           _row("FAMILY_SUBJECT_KIND4", "Subject 4 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
+           _row("FAMILY_SUBJECT_KIND4", "Subject 4 is", "choice", choices=SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
           if desc.multi_concept else []),
