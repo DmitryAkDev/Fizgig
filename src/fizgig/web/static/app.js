@@ -4583,7 +4583,7 @@ async function studioPoll() {
     studioDownloads(st, q);
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
-      (st.donor && kind !== "video" ? " - the donor is not in the baseline" : "");
+      (st.donor ? " - the donor is not in the baseline" : "");
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
