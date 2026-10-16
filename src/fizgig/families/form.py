@@ -702,10 +702,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if lokr:
         notes["NETWORK_TYPE"] = "LoKR selected: set your learning rate to 5e-5 - or with Adaptive LR, set Max 1e-4 " \
                                 "and Min 5e-5."
-    if not values.get("ADAPTIVE_LR") or kind == "slider":    # a slider trains at the Learning Rate box
+    if not values.get("ADAPTIVE_LR") or kind in ("slider", "finetune"):   # these train at the Learning Rate box
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
         disabled.add("LEARNING_RATE")
+    if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
+        hidden.add("ADAPTIVE_LR")
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
