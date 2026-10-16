@@ -102,8 +102,18 @@ def _ensure_windows_rocm_on_path() -> None:
     os.environ.setdefault("HIP_PATH", str(core.resolve()))
 
 
+def _choose_training_gpu():
+    """Same rule as Launch Fizgig AMD.bat / pick_gpu.py (#186)."""
+    install_dir = str(SCRIPT_DIR / "src" / "install")
+    if install_dir not in sys.path:
+        sys.path.insert(0, install_dir)
+    from pick_gpu import choose_training_gpu
+
+    return choose_training_gpu()
+
+
 def detect_gfx_target() -> str | None:
-    """Return gfx code (e.g. gfx1201) or None. Prefer detect_gpu*.py, then torch."""
+    """Return gfx code (e.g. gfx1201) or None. Prefer detect_gpu*.py, then torch on the pick_gpu card."""
     script = SCRIPT_DIR / "src" / "install" / ("detect_gpu_linux.py" if sys.platform.startswith("linux") else "detect_gpu.py")
     if script.is_file():
         try:
@@ -122,27 +132,38 @@ def detect_gfx_target() -> str | None:
     try:
         import torch
 
-        if torch.cuda.is_available():
-            props = torch.cuda.get_device_properties(0)
-            for attr in ("gcnArchName", "name"):
-                gfx = _normalize_gfx(getattr(props, attr, None))
-                if gfx:
-                    return gfx
+        if not torch.cuda.is_available():
+            return None
+        # Same device as pick_gpu / detect_amd_gpu_identity - not built-in device 0 (#186, #192).
+        idx = 0
+        try:
+            hit = _choose_training_gpu()
+            if hit is not None:
+                idx = hit[0]
+        except Exception:
+            pass
+        props = torch.cuda.get_device_properties(idx)
+        for attr in ("gcnArchName", "name"):
+            gfx = _normalize_gfx(getattr(props, attr, None))
+            if gfx:
+                return gfx
     except Exception:
         pass
     return None
 
 
 def detect_amd_gpu_identity() -> tuple[str | None, int | None]:
-    """(name, total_vram_bytes) from torch once at install - baked into rocm_env for the web UI (#188)."""
-    try:
-        import torch
+    """(name, total_vram_bytes) for the same card pick_gpu.py selects (#186, #188, #192).
 
-        if not torch.cuda.is_available():
+    Skips built-in graphics (is_integrated / generic "AMD Radeon(TM) Graphics"), then takes
+    the most VRAM of those. Baked into rocm_env for the web UI so readout matches training.
+    """
+    try:
+        hit = _choose_training_gpu()
+        if hit is None:
             return None, None
-        props = torch.cuda.get_device_properties(0)
-        name = (getattr(props, "name", None) or "").strip() or None
-        total = int(props.total_memory)
+        _idx, name, total = hit
+        name = (name or "").strip() or None
         return name, total if total > 0 else None
     except Exception:
         return None, None
