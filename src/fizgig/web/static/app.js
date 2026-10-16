@@ -3261,6 +3261,16 @@ async function studioFamily(res, w, h) {
 // H3 (clips) and ACE-Step (songs): their own controls, the desktop's
 function studioKind(L, sv) {
   const video = L.kind === "video", audio = L.kind === "audio";
+  if (S.st.kindShown && S.st.kindShown !== L.kind) {     // pictures / clips / songs: the last kind's previews go
+    for (const id of ["stBase", "stTweak", "stNol"]) $(id).removeAttribute("src");
+    for (const id of ["stBaseVid", "stTweakVid", "stNolVid", "stBaseAud", "stTweakAud", "stNolAud"]) {
+      const m = $(id);
+      m.pause(); m.removeAttribute("src"); m.removeAttribute("poster"); m.load(); m.style.display = "none";
+    }
+    $("stDownloads").style.display = "none";
+    if (S.song) { S.song.src = {}; S.song.peaks = {}; S.song.act = {}; }     // a song comes back fresh, not "already loaded"
+  }
+  S.st.kindShown = L.kind;
   $("stVideoRows").style.display = video ? "" : "none";
   $("stFrames").style.display = video ? "" : "none";
   $("stRes").style.display = $("stResLabel").style.display = audio ? "" : "none";      // a song's length
