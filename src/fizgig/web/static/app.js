@@ -3191,7 +3191,7 @@ const stRemember = debounce(() => {
     prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value,
     w: $("stW").value, h: $("stH").value, turbo: $("stTurbo").checked,
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
-    luckyHi: $("stLuckyHi").value, luckyWho: $("stLuckyWho").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
+    luckyHi: $("stLuckyHi").value, luckyWho: $("stLuckyWho").value, luckyCount: $("stLuckyCount").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
     scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]},
     h3: stSaved().h3, ace: stSaved().ace, metricsRef: stSaved().metricsRef};                           // H3's clip settings and photos (studioH3Remember's)
   try { localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
@@ -3252,7 +3252,8 @@ async function studioFamily(res, w, h) {
   studioNegRow();
   S.st.blocks = {};
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};
-  S.st.locks = new Set(); S.st.hist = []; S.st.redo = [];
+  S.st.locks = new Set(); S.st.frozen = new Set(); S.st.hist = []; S.st.redo = [];
+  studioLuckyCounts();
   studioMasters();
   studioPresets();
   studioRows();
@@ -4268,8 +4269,9 @@ function studioRow(b) {
     const label = side === "p" ? el("span", {class: "st-label", style: b.color ? `color:${b.color}` : ""},
       b.label, b.cat ? el("small", {text: `[${b.cat}]`}) : null) : el("span", {class: "st-label", text: "donor"});
     const lock = side === "p" ? el("button", {class: "st-lock", title: "Lock this block (presets, Lucky and bulk leave it alone)",
-      text: "🔓", onclick: (e) => { S.st.locks.has(b.id) ? S.st.locks.delete(b.id) : S.st.locks.add(b.id);
-        e.currentTarget.textContent = S.st.locks.has(b.id) ? "🔒" : "🔓"; e.currentTarget.classList.toggle("on"); }}) :
+      text: "🔓", onclick: () => {
+        if (S.st.locks.has(b.id)) { S.st.locks.delete(b.id); S.st.frozen.delete(b.id); } else S.st.locks.add(b.id);
+        studioSync([b.id]); }}) :
       el("span", {});
     const row = el("div", {class: "st-row" + (side === "d" ? " donor" : "")}, lock, tick, label, range, val,
       el("span", {class: "st-btns"},
@@ -4281,7 +4283,8 @@ function studioRow(b) {
           const o = side === "p" ? "ds" : "ps", v = st()[sv];
           if (S.st.donor && v >= 0 && v <= 1) { studioSet(b.id, o, Math.round((1 - v) * 100) / 100); studioSet(b.id, "de", true); }
         })));
-    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]); };
+    row._sync = () => { tick.checked = st()[en]; range.value = st()[sv]; val.textContent = stFmt(st()[sv]);
+      if (side === "p") { const on = S.st.locks.has(b.id); lock.textContent = on ? "🔒" : "🔓"; lock.classList.toggle("on", on); } };
     row._sync();
     return row;
   };
@@ -4296,6 +4299,42 @@ function studioSync(ids) {
   document.querySelectorAll("#stBlocks .st-block").forEach((box) => {
     if (!ids || ids.includes(box.dataset.id)) box._rows.forEach((r) => r._sync());
   });
+  studioFreezeState();
+}
+
+// ---- I'm feeling lucky's pill: how many blocks a roll changes, and Freeze / Unfreeze the ones you've moved ----------
+function studioLuckyCounts() {                     // Roll: 1, 2, 4 ... below the model's block count, then All
+  const n = Object.keys(S.st.blocks).length, sel = $("stLuckyCount"), keep = stSaved().luckyCount || sel.value;
+  sel.innerHTML = "";
+  for (let k = 1; k < n; k *= 2) sel.append(el("option", {value: String(k), text: String(k)}));
+  sel.append(el("option", {value: "all", text: "All"}));
+  sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "all";
+}
+
+function studioTweaked(id) {                       // moved from its default: strength, on / off, or the donor's
+  const b = S.st.blocks[id];
+  if (!b || (S.st.ready && !S.st.primaryBlocks.has(id) && !(S.st.donor && S.st.donorBlocks.has(id)))) return false;
+  return b.ps !== 1 || !b.pe || (S.st.donor && S.st.donorBlocks.has(id) && (b.ds !== 1 || !b.de));
+}
+
+function studioFreezeState() {
+  if (!$("stFreeze") || !S.st.frozen) return;
+  const fresh = Object.keys(S.st.blocks).filter((id) => studioTweaked(id) && !S.st.locks.has(id)).length;
+  $("stFreeze").textContent = `🔒 Freeze tweaked${fresh ? ` (${fresh})` : ""}`;
+  $("stFreeze").disabled = !fresh;
+  $("stUnfreeze").style.display = S.st.frozen.size ? "" : "none";
+  $("stUnfreeze").textContent = `🔓 Unfreeze (${S.st.frozen.size})`;
+}
+
+function studioFreeze(on) {
+  if (on) {
+    for (const id of Object.keys(S.st.blocks))
+      if (studioTweaked(id) && !S.st.locks.has(id)) { S.st.locks.add(id); S.st.frozen.add(id); }
+  } else {
+    for (const id of S.st.frozen) S.st.locks.delete(id);
+    S.st.frozen.clear();
+  }
+  studioSync();
 }
 
 function studioActivity() {
@@ -4455,22 +4494,32 @@ function studioBulk(kind) {
     else if (kind === "invert") b.pe = !b.pe;
     else if (kind === "donor_on") Object.assign(b, {de: true, ds: 1});
     else if (kind === "donor_off") b.ds = 0;
-    else if (kind === "lucky") {
+  }
+  if (kind === "lucky") {
+    // which LoRA rolls: the primary, or with a donor loaded the dropdown's choice (Both rolls each on its own)
+    const who = S.st.donor ? $("stLuckyWho").value : "Primary";
+    const pOk = (id) => who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && S.st.blocks[id].pe;
+    const dOk = (id) => who !== "Primary" && S.st.donorBlocks.has(id) && S.st.blocks[id].de;
+    const pool = Object.keys(S.st.blocks).filter((id) => !S.st.locks.has(id) && (pOk(id) || dOk(id)));
+    for (let j = pool.length - 1; j > 0; j--) { const k = Math.floor(Math.random() * (j + 1)); [pool[j], pool[k]] = [pool[k], pool[j]]; }
+    const want = $("stLuckyCount").value === "all" ? pool.length : Number($("stLuckyCount").value);
+    for (const id of pool.slice(0, want)) {
       // a held band (lucky_zones: [first, last, low, high] by the block's place in the model's order), bounded by
       // Min / Max as the desktop does
-      const i = order.indexOf(id);
+      const i = order.indexOf(id), b = S.st.blocks[id];
       const zone = $("stLuckyHold").checked ? (L.lucky_zones || []).find((zn) => zn[0] <= i && i <= zn[1]) : null;
       let a = zone ? Math.max(zone[2], lo) : lo, z = zone ? Math.min(zone[3], hi) : hi;
       if (a > z) a = z = Math.min(Math.max(1, lo), hi);
       const roll = () => Math.round((a + Math.random() * (z - a)) * 20) / 20;
-      // which LoRA rolls: the primary, or with a donor loaded the dropdown's choice (Both rolls each on its own)
-      const who = S.st.donor ? $("stLuckyWho").value : "Primary";
-      if (who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && b.pe) { b.ps = roll(); rolled++; }
-      if (who !== "Primary" && S.st.donorBlocks.has(id) && b.de) { b.ds = roll(); rolled++; }
+      if (pOk(id)) b.ps = roll();
+      if (dOk(id)) b.ds = roll();
+      rolled++;
     }
   }
   studioSync(); studioCommit(); studioSchedule();
-  if (kind === "lucky") $("stStatus").textContent = `Lucky mix: ${rolled} block(s) rolled, ${lo} to ${hi} (Undo for the mix before; Save preset… to keep it).`;
+  if (kind === "lucky") $("stStatus").textContent = `Lucky mix: ${rolled} block(s) rolled, ${lo} to ${hi}` +
+    `${S.st.locks.size ? `, ${S.st.locks.size} locked or frozen left alone` : ""} (Undo for the mix before; Freeze tweaked to keep ` +
+    "what you like and roll the rest; Save preset… to keep it).";
   stRemember();
 }
 
@@ -4833,6 +4882,9 @@ function wireStudio() {
     $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
   $("stLuckyWho").addEventListener("change", stRemember);
+  $("stLuckyCount").addEventListener("change", stRemember);
+  $("stFreeze").addEventListener("click", () => studioFreeze(true));
+  $("stUnfreeze").addEventListener("click", () => studioFreeze(false));
   $("stNeg").addEventListener("change", () => { stRemember();
     if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(() => studioSchedule()); });
   $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
