@@ -4755,6 +4755,7 @@ function studioDock(open, remember = true) {
         btn("stDockClose", "✕", "Close - the preview goes back to its card")),
       el("div", {class: "st-dock-body", id: "stDockBody"}),
       el("div", {class: "st-dock-grip", id: "stDockGrip", title: "Drag to set how much room the panel takes"}));
+    $("tab-studio").append(dock);                  // in the page first: its buttons are found by id below
     $("stDockClose").addEventListener("click", () => studioDock(false));
     $("stDockPin").addEventListener("click", () => studioDockMode(!dock.classList.contains("pinned")));
     $("stDockPlay").addEventListener("click", () => $("stPlayBothBtn").click());
@@ -6438,7 +6439,8 @@ function wireLightbox() {
     const img = e.target.closest && e.target.closest(LIGHTBOX_PICS);
     if (!img) return;
     const host = img.closest(".gallery, .captions-grid, .st-preview") || document;   // step through the pictures beside it
-    const imgs = [...host.querySelectorAll(LIGHTBOX_PICS)];
+    const imgs = [...host.querySelectorAll(LIGHTBOX_PICS)]       // only the pictures on show (a hidden pane is not one)
+      .filter((i) => i === img || (i.getClientRects().length && (i.currentSrc || i.getAttribute("src"))));
     S.lb.list = imgs.map((i) => {
       const fig = i.closest(".gallery-item, .caption-card");
       const cap = fig && fig.querySelector("figcaption, .caption-card-title");
