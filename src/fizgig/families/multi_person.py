@@ -123,9 +123,17 @@ def stranger_example():
 
 def strangers():
     """[(path, description), ...] - the 32 strangers, downloaded on first use (about 21 MB)."""
-    from huggingface_hub import snapshot_download
     from fizgig.user_data import user_file
-    d = snapshot_download(REPO, repo_type="dataset", revision=REVISION, local_dir=user_file("multi_person_strangers"))
+    d = user_file("multi_person_strangers")
+    try:              # the pinned set already here, every picture with it: no network (a rate limit or no internet
+        with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:     # never stops a run)
+            rows = json.load(f)
+        if rows and all(os.path.isfile(os.path.join(d, r["file"])) for r in rows):
+            return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    from huggingface_hub import snapshot_download
+    d = snapshot_download(REPO, repo_type="dataset", revision=REVISION, local_dir=d)
     with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
         rows = json.load(f)
     return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
