@@ -755,7 +755,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             disabled.add("KREA2_AUTO_RECAPTION")
             force["KREA2_AUTO_RECAPTION"] = False
             notes["KREA2_AUTO_RECAPTION"] = "Off while other people keep their faces (Subjects card)."
-            for k in ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR"):    # the side-by-sides are hard on purpose
+            for k in ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"):   # side-by-sides: hard on purpose
                 disabled.add(k)
                 force[k] = False
                 notes[k] = "Off while other people keep their faces (Subjects card)."
