@@ -4671,7 +4671,124 @@ async function studioSave(overwrite) {
   } catch (e) { $("stSaveMsg").replaceChildren(el("div", {class: "problems", text: e.message})); }
 }
 
+// ---- the preview kept in view: the Preview card's panes moved into a panel that floats (move it, resize it from the
+// corner) or is pinned to the top of the tab (its bottom edge sets the height); renders, clips, songs and Play
+// together keep working because it is the same panes, moved - and put back when it closes
+const ST_DOCK_KEY = "fizgig_studio_dock";
+const stDockSaved = () => { try { return JSON.parse(localStorage.getItem(ST_DOCK_KEY) || "{}"); } catch (e) { return {}; } };
+const stDockSave = (d) => { try { localStorage.setItem(ST_DOCK_KEY, JSON.stringify({...stDockSaved(), ...d})); } catch (e) { /* private window */ } };
+
+function studioDockClamp(dock) {                   // a floating panel stays on screen (a smaller window, a phone)
+  const r = dock.getBoundingClientRect(), vw = window.innerWidth, vh = window.innerHeight;
+  const w = Math.min(r.width, vw - 16), h = Math.min(r.height, vh - 16);
+  dock.style.width = w + "px"; dock.style.height = dock.classList.contains("collapsed") ? "" : h + "px";
+  dock.style.left = Math.max(8, Math.min(r.left, vw - w - 8)) + "px";
+  dock.style.top = Math.max(8, Math.min(r.top, vh - 40)) + "px";
+}
+
+function studioDockMode(pinned) {
+  const dock = $("stDock"), sv = stDockSaved();
+  dock.classList.toggle("pinned", pinned); dock.classList.toggle("floating", !pinned);
+  $("stDockPin").textContent = pinned ? "⧉ Float" : "📌 Pin to top";
+  $("stDockPin").title = pinned ? "Float the panel: move it anywhere and resize it from its corner" :
+    "Lock the panel to the top of the tab, full width; drag its bottom edge to set how much room it takes";
+  if (pinned) {                                    // in the tab's flow, stuck to the top as the page scrolls under it
+    $("tab-studio").prepend(dock);
+    Object.assign(dock.style, {left: "", top: "", width: "", height: (sv.pinH || 320) + "px"});
+  } else {
+    document.body.append(dock);
+    const w = sv.w || Math.min(560, window.innerWidth - 32), h = sv.h || 340;
+    Object.assign(dock.style, {width: w + "px", height: h + "px",
+      left: (sv.x ?? window.innerWidth - w - 24) + "px", top: (sv.y ?? 90) + "px"});
+    studioDockClamp(dock);
+  }
+  if (sv.collapsed) dock.style.height = "";
+  stDockSave({pinned});
+}
+
+function studioDockShow() {                        // a floating panel shows on the Studio tab only
+  const dock = $("stDock");
+  if (dock && dock.classList.contains("floating")) dock.style.display = $("tab-studio").classList.contains("active") ? "" : "none";
+}
+
+function studioDock(open) {
+  let dock = $("stDock");
+  if (!open) {
+    if (!dock) return;
+    $("stDockHome").after($("stPreview"));
+    $("stDockHome").style.display = "none"; $("stDockOpen").style.display = "";
+    dock.remove();
+    stDockSave({open: false});
+    return;
+  }
+  if (!dock) {
+    const btn = (id, text, title) => el("button", {class: "btn btn-sm", id, text, title});
+    dock = el("div", {class: "st-dock", id: "stDock"},
+      el("div", {class: "st-dock-bar", id: "stDockBar"}, el("span", {class: "st-dock-title", text: "Preview"}),
+        btn("stDockPlay", "▶ Play together", "Play the clips or songs together"),
+        btn("stDockPin", "", ""), btn("stDockFold", "▁", "Collapse to the title bar / open it again"),
+        btn("stDockClose", "✕", "Close - the preview goes back to its card")),
+      el("div", {class: "st-dock-body", id: "stDockBody"}),
+      el("div", {class: "st-dock-grip", id: "stDockGrip", title: "Drag to set how much room the panel takes"}));
+    $("stDockClose").addEventListener("click", () => studioDock(false));
+    $("stDockPin").addEventListener("click", () => studioDockMode(!dock.classList.contains("pinned")));
+    $("stDockPlay").addEventListener("click", () => $("stPlayBothBtn").click());
+    $("stDockFold").addEventListener("click", () => {
+      const c = !dock.classList.contains("collapsed");
+      dock.classList.toggle("collapsed", c); stDockSave({collapsed: c});
+      const sv = stDockSaved();
+      dock.style.height = c ? "" : (dock.classList.contains("pinned") ? (sv.pinH || 320) : (sv.h || 340)) + "px";
+    });
+    // floating: drag by the title bar
+    $("stDockBar").addEventListener("pointerdown", (e) => {
+      if (!dock.classList.contains("floating") || e.target.closest("button")) return;
+      const r = dock.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      $("stDockBar").setPointerCapture(e.pointerId);
+      const move = (m) => { dock.style.left = (m.clientX - dx) + "px"; dock.style.top = (m.clientY - dy) + "px"; };
+      const up = () => { $("stDockBar").removeEventListener("pointermove", move); studioDockClamp(dock);
+        const q = dock.getBoundingClientRect(); stDockSave({x: Math.round(q.left), y: Math.round(q.top)}); };
+      $("stDockBar").addEventListener("pointermove", move);
+      $("stDockBar").addEventListener("pointerup", up, {once: true});
+    });
+    // pinned: drag the bottom edge for the height
+    $("stDockGrip").addEventListener("pointerdown", (e) => {
+      if (!dock.classList.contains("pinned")) return;
+      const y0 = e.clientY, h0 = dock.getBoundingClientRect().height;
+      $("stDockGrip").setPointerCapture(e.pointerId);
+      const move = (m) => { dock.style.height = Math.max(140, Math.min(window.innerHeight * 0.85, h0 + m.clientY - y0)) + "px"; };
+      const up = () => { $("stDockGrip").removeEventListener("pointermove", move);
+        stDockSave({pinH: Math.round(dock.getBoundingClientRect().height)}); };
+      $("stDockGrip").addEventListener("pointermove", move);
+      $("stDockGrip").addEventListener("pointerup", up, {once: true});
+    });
+    // floating: the corner resize is the browser's own; its size is remembered
+    new ResizeObserver(debounce(() => {
+      if (dock.isConnected && dock.classList.contains("floating") && !dock.classList.contains("collapsed")) {
+        const q = dock.getBoundingClientRect(); stDockSave({w: Math.round(q.width), h: Math.round(q.height)});
+      }
+    }, 300)).observe(dock);
+  }
+  $("stDockBody").append($("stPreview"));
+  $("stDockHome").style.display = ""; $("stDockOpen").style.display = "none";
+  const sv = stDockSaved();
+  dock.classList.toggle("collapsed", !!sv.collapsed);
+  studioDockMode(!!sv.pinned);
+  studioDockPlay();
+  studioDockShow();
+  stDockSave({open: true});
+}
+
+function studioDockPlay() {                        // the panel's Play together: when the card has one (clips, songs)
+  if ($("stDockPlay")) $("stDockPlay").style.display = $("stPlayBoth").style.display === "none" ? "none" : "";
+}
+
 function wireStudio() {
+  $("stDockOpen").addEventListener("click", () => studioDock(true));
+  $("stDockBack").addEventListener("click", () => studioDock(false));
+  new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
+  new MutationObserver(studioDockShow).observe($("tab-studio"), {attributes: true, attributeFilter: ["class"]});
+  window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
+  if (stDockSaved().open) studioDock(true);
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
   for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3NoLora"])

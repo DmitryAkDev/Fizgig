@@ -698,8 +698,11 @@
               <a class="btn btn-sm" id="stReport" target="_blank" rel="noopener">📊 Open full report</a></div>
           </div>
           <div class="section-card">
-            <div class="card-title">Preview</div>
+            <div class="card-title">Preview <button class="btn btn-sm" id="stDockOpen"
+              title="Keeps Baseline and Tweaked in view while you scroll to the sliders: a panel you can move and resize, or pin to the top">⧉ Keep in view</button></div>
             <div class="card-content">
+              <div class="st-dock-home" id="stDockHome" style="display:none">The preview is in the panel kept in view.
+                <button class="btn btn-sm" id="stDockBack">Put it back here</button></div>
               <div class="st-preview" id="stPreview">
                 <figure class="gallery-item st-pane" id="stNolPane" style="display:none"><img id="stNol" alt=""><video id="stNolVid" controls loop muted playsinline preload="auto"
                   style="display:none"></video><audio id="stNolAud" controls style="display:none"></audio>
