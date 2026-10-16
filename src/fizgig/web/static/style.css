@@ -2064,3 +2064,6 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card.model-strip { padding-top: 0; padding-bottom: 0; }
 .model-strip > .card-content { padding: 14px 20px; }
 .model-strip .field-row { margin: 0; }
+
+/* Studio (H3): the Clip row's ticks after Steps / Turbo - a gap before each, so every box reads with its own word */
+#stVideoRows .st-inline .checkbox-label { margin-left: 14px; }
