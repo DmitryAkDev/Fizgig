@@ -301,7 +301,7 @@ class WorkbenchEngine:
         if self.donor_network is not None:
             raise RuntimeError("Donor already loaded — unload_donor() or reset() first.")
         self._attach(path, DONOR)
-        # The donor comes in through its block sliders only (strength 0 by default); anything it adapts outside
+        # The donor comes in through its block sliders only (fully on by default); anything it adapts outside
         # the block map stays off, as on the other engines.
         self.net.set_outside(DONOR, False)
         self._clear_blend_state(DONOR)
