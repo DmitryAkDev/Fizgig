@@ -1716,6 +1716,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-lucky-pill .st-lucky-label { color: var(--text-secondary); font-size: 9.5pt; }
 .st-lucky-pill input[type="text"] { width: 56px; flex: 0 0 56px; }
 #stLuckyWho { margin-right: 6px; }
+.st-lucky-pill select.st-small-select { width: auto !important; min-width: 72px; flex: none; }   /* sized to its choices */
 /* the bulk row and the pill: every button, dropdown and box one height (the small buttons'), thumb-sized on a phone */
 .st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"],
 .st-lucky-pill .btn-sm, .st-lucky-pill select, .st-lucky-pill input[type="text"] { height: 28px; box-sizing: border-box; }
