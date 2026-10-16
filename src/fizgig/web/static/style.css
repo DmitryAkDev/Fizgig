@@ -1705,7 +1705,15 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-btns { gap: 3px; }
 .st-btns .btn-sm { padding: 0 7px; height: 26px; min-width: 28px; font-size: 10.5pt; font-weight: 700; justify-content: center; }
 /* Lucky with its Min and Max, kept together on one line */
-.st-lucky { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.st-lucky { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 10px; }
+#stLuckyWho { margin-right: 10px; }             /* the roll's who-dropdown reads as the button's: space either side */
+/* the presets / bulk row: every button, dropdown and box one height (the small buttons'), thumb-sized on a phone */
+.st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"] { height: 28px; box-sizing: border-box; }
+.st-bulk select, .st-bulk input[type="text"] { font-size: 12.5px; }
+@media (max-width: 760px) {
+  .st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"] { height: 36px; }
+  .st-bulk select, .st-bulk input[type="text"] { font-size: 16px; }
+}
 .st-lucky .st-lucky-label { color: var(--text-secondary); font-size: 9.5pt; }
 .st-lucky input { width: 56px; flex: 0 0 56px; }
 #tab-studio .field-row select.st-small-select { flex: 0 0 auto; width: auto; min-width: 96px; }
