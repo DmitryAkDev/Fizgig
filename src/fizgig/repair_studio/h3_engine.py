@@ -1652,7 +1652,9 @@ class H3RepairEngine(ClipContract):
         base.preview_height = state.preview_height
         # The baseline is the LoRA at its LOAD strength with every slider at 1.0.
         base.primary_scale = float(getattr(state, "primary_scale", 1.0))
-        base.donor_scale = float(getattr(state, "donor_scale", 1.0))
+        base.donor_scale = 0.0              # the primary alone: a loaded donor stays out of the baseline
+        for bs in base.blocks.values():
+            bs.donor_enabled = False
         img = self.generate_preview(base)
         self._baseline_cache_key = key
         self._baseline_cache_image = img

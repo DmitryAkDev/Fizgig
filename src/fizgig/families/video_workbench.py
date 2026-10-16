@@ -224,7 +224,9 @@ class ClipContract:
         base.references = getattr(state, "references", None)
         if with_scales:
             base.primary_scale = float(getattr(state, "primary_scale", 1.0))
-            base.donor_scale = float(getattr(state, "donor_scale", 1.0))
+        base.donor_scale = 0.0              # the primary alone: a loaded donor stays out of the baseline clip
+        for bs in base.blocks.values():
+            bs.donor_enabled = False
         return base
 
     def baseline_clip(self, state, *, frames: Optional[int] = None, regime: str = "confirm",
