@@ -684,6 +684,8 @@ def train_command(desc, inputs, plan):
     except ValueError:
         bs1 = True
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}
+    if multi_person_on(desc, st):    # the side-by-sides are hard on purpose: no problem-image verdicts or per-image LR
+        lw = {**lw, "detect": False, "per_image_lr": False}
     watch = [("detect", "--log_per_image_loss"), ("per_image_lr", "--per_image_lr"), ("warmup", "--warmup_look_outliers")]
     can_recaption = bool(st.get("captioner"))   # every family captions with the shared captioner
     # multi-person mode reads triggers fused as captions load; a new AI caption is encoded as written, unfused
