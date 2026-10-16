@@ -1734,6 +1734,35 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 #cropCanvas { display: block; margin: 8px 0; touch-action: none; cursor: move; max-width: 100%; }
 .st-slot canvas { display: block; background: var(--bg-deep); }
 
+/* Studio: the preview kept in view - floating (moved by its bar, resized from its corner) or pinned to the top of the
+   tab (its bottom edge sets the height); the panes keep their side-by-side row and scale to the panel */
+.st-dock { display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45); overflow: hidden; z-index: 60; }
+.st-dock.floating { position: fixed; resize: both; min-width: 260px; min-height: 160px; }
+.st-dock.pinned { position: sticky; top: 0; margin: 0 36px 16px; min-height: 140px; border-radius: 0 0 8px 8px; }
+.st-dock.collapsed { resize: none; min-height: 0; height: auto !important; }
+.st-dock.collapsed .st-dock-body, .st-dock.collapsed .st-dock-grip { display: none; }
+.st-dock-bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; background: var(--bg-deep);
+  border-bottom: 1px solid var(--border); user-select: none; flex: none; }
+.st-dock.floating .st-dock-bar { cursor: move; touch-action: none; }
+.st-dock-title { flex: 1; font-weight: 700; font-size: 13px; color: var(--text-primary); }
+.st-dock-body { flex: 1; min-height: 0; padding: 8px; overflow: hidden; }
+.st-dock-grip { flex: none; height: 10px; cursor: ns-resize; touch-action: none; background: var(--bg-deep);
+  border-top: 1px solid var(--border); }
+.st-dock.floating .st-dock-grip { display: none; }
+.st-dock-grip::after { content: ""; display: block; width: 44px; height: 3px; margin: 3px auto 0; border-radius: 2px;
+  background: var(--text-secondary); opacity: 0.6; }
+.st-dock .st-preview, .st-dock .st-preview.three { height: 100%; grid-template-columns: none; grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.st-dock .st-pane { display: flex; flex-direction: column; min-height: 0; margin: 0; }
+.st-dock .st-pane img, .st-dock .st-pane video { flex: 1; min-height: 0; height: auto; aspect-ratio: auto;
+  width: 100%; object-fit: contain; }
+.st-dock .st-pane.audio img { flex: 1; aspect-ratio: auto; }
+.st-dock .st-pane figcaption { flex: none; }
+.st-dock-home { padding: 14px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 760px) { .st-dock.pinned { margin: 0 0 12px; } }
+
 /* Studio (ACE-Step): the section dragged across the Tweaked waveform */
 .st-pane { position: relative; }
 .st-region { position: absolute; display: none; pointer-events: none; z-index: 1;
