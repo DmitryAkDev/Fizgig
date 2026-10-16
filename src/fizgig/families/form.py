@@ -179,7 +179,7 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "them.\n"
                "Works with other people in the picture: your subjects can stand together in one picture, or next to "
                "a person the model already knows well, and every face stays right. Best for people. "
-               "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown at the bottom of this card for "
+               "Training takes about 1.5x as long. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 from fizgig.families.multi_person import KINDS as SUBJECT_KINDS  # noqa: E402

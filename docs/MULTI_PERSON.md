@@ -51,7 +51,7 @@ Clothes, setting, pose, light, expression: caption them the way you normally wou
 ## What Fizgig adds for you
 
 - It keeps each person out of prompts that don't use their word.
-- It adds 16 side-by-side training pictures per person: one of their photos next to one of 32 fixed strangers, which Fizgig downloads once (about 21 MB).
+- It adds 16 side-by-side training pictures per person: one of their photos next to one of 32 fixed strangers (about 21 MB), which come with any model's download in Preferences.
 
 ## How long to train
 

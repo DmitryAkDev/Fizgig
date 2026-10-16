@@ -139,6 +139,28 @@ def strangers():
     return [(os.path.join(d, r["file"]), r["description"]) for r in rows]
 
 
+def download_strangers(log=print):
+    """The model downloaders' step (scripts/fetch_models, every family's list): the pinned strangers into
+    user_data, so no run has to fetch them at its start. True when they're there afterwards."""
+    from fizgig.user_data import user_file
+    d = user_file("multi_person_strangers")
+    try:
+        with open(os.path.join(d, "strangers.json"), encoding="utf-8") as f:
+            rows = json.load(f)
+        if rows and all(os.path.isfile(os.path.join(d, r["file"])) for r in rows):
+            log(f"  [ok]   multi-person strangers ({len(rows)}) - already here: {d}")
+            return True
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        n = len(strangers())
+        log(f"  [done] multi-person strangers ({n}) -> {d}")
+        return True
+    except Exception as e:
+        log(f"  [fail] multi-person strangers: {e}")
+        return False
+
+
 def _captions(folder, ext):
     try:
         names = [n for n in os.listdir(folder) if n.lower().endswith(ext.lower())
