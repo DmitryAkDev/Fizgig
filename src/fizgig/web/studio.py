@@ -148,7 +148,7 @@ def _event(ev):
                           donor=ev.get("donor", ""), status="Loaded.", error="")
                 _S["profile"] = _profile(ev.get("hash", ""))
             else:
-                _S.update(donor=ev.get("donor", ""), status="Donor loaded. Enable it per block to mix it in."
+                _S.update(donor=ev.get("donor", ""), status="Donor loaded, fully on in its blocks: turn a block down or off to use less of it."
                           if ev.get("donor") else "Donor unloaded.")
         elif kind == "early" and _S.get("rendering"):     # H3's Show early: the tweaked pane's unfinished look
             _S.update(early=ev.get("png", ""), early_gen=ev.get("gen", 0),
