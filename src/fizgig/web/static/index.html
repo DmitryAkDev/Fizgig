@@ -780,9 +780,11 @@
                   <span class="st-lucky-label">Roll</span><select id="stLuckyCount" class="w-combo st-small-select"
                     title="How many blocks a roll changes, picked at random from those not locked or frozen. All: every one."><option value="all">All</option></select></div>
                 <div class="st-lucky-line">
-                  <span class="st-lucky-label">Min</span><input type="text" id="stLuckyLo" value="0">
-                  <span class="st-lucky-label">Max</span><input type="text" id="stLuckyHi" value="1.5">
-                  <label class="checkbox-label" id="stLuckyHoldBox" style="display:none" title="A lucky roll gives every block a strength anywhere between Min and Max, evenly (a negative Min allows inverted blocks). Hold keeps this model's structure and tidy-up bands near 1; untick it to roll every block across Min-Max."><input type="checkbox" id="stLuckyHold" checked> Hold structure + tidy-up</label></div>
+                  <span class="st-lucky-label" title="Each rolled block's slider is set to a strength between these two">Slider strengths from</span><input type="text" id="stLuckyLo" value="0"
+                    title="The lowest slider strength a roll can give (a negative one inverts the block)">
+                  <span class="st-lucky-label">to</span><input type="text" id="stLuckyHi" value="1.5"
+                    title="The highest slider strength a roll can give">
+                  <label class="checkbox-label" id="stLuckyHoldBox" style="display:none" title="A lucky roll gives each block it picks a slider strength anywhere in the range set beside it, evenly. Hold keeps this model's structure and tidy-up bands near 1; untick it to roll every block across the whole range."><input type="checkbox" id="stLuckyHold" checked> Hold structure + tidy-up</label></div>
                 <div class="st-lucky-line">
                   <button class="btn btn-sm" id="stFreeze" title="Lock every block you've moved from its default, so the next rolls leave them alone (and so do presets and the bulk buttons). Press again after a roll to freeze the newly rolled ones too.">🔒 Freeze tweaked</button>
                   <button class="btn btn-sm" id="stUnfreeze" style="display:none" title="Unlock the blocks Freeze locked (blocks you locked yourself stay locked)">🔓 Unfreeze</button></div>
