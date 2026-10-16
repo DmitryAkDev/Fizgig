@@ -936,12 +936,21 @@ class WorkbenchEngine:
                self._settings_key())
         if self._baseline_key == key and self._baseline_img is not None:
             return self._baseline_img
+        if self.same_as_baseline(state):
+            # nothing moved: the tweaked render IS the baseline - one render for both panes, and it fills Turbo
+            # Preview's cache for the first slider move
+            img = self.generate_preview(state)
+            self._baseline_key, self._baseline_img = key, img
+            return img
         base = self.default_state(state.preview_width, state.preview_height)
         base.seed, base.prompt = state.seed, state.prompt
         base.ref_image_path = getattr(state, "ref_image_path", "")
         base.ref_megapixels = getattr(state, "ref_megapixels", 1.0)
         base.ref_strength = getattr(state, "ref_strength", 1.0)
         base.primary_scale = float(getattr(state, "primary_scale", 1.0))
+        base.donor_scale = 0.0              # the primary alone: a loaded donor stays out of the left pane
+        for bs in base.blocks.values():
+            bs.donor_enabled = False
         self._act_bypass = True             # the baseline would overwrite the tweaked render's cache
         try:
             img = self.generate_preview(base)
@@ -949,6 +958,16 @@ class WorkbenchEngine:
             self._act_bypass = False
         self._baseline_key, self._baseline_img = key, img
         return img
+
+    def same_as_baseline(self, state):
+        """True when the tweaked render would be the baseline: every primary block on at 1.0 and no donor block
+        contributing (no donor, its load strength 0, or each of its blocks off or at 0)."""
+        if any(not bs.primary_enabled or float(bs.primary_strength) != 1.0 for bs in state.blocks.values()):
+            return False
+        if self.donor_network is None or float(getattr(state, "donor_scale", 1.0)) == 0.0:
+            return True
+        return not any(bs.donor_enabled and float(bs.donor_strength) != 0.0
+                       for b, bs in state.blocks.items() if b in self.donor_block_ids)
 
     def _invalidate_baseline_cache(self):
         self._baseline_key = self._baseline_img = None
