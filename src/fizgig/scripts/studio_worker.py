@@ -159,7 +159,7 @@ def _render(c):
                 paths, nolora = _render_songs(eng, st, c, out, gen)
             else:
                 base = eng.generate_baseline(st)
-                tweak = eng.generate_preview(st)
+                tweak = base if eng.same_as_baseline(st) else eng.generate_preview(st)   # nothing moved: one render
                 paths = {}
                 for name, img in (("baseline", base), ("tweaked", tweak)):
                     p = os.path.join(out, f"{name}_{gen}.png")
@@ -180,7 +180,7 @@ def _render(c):
             emit(ev="error", where="render", gen=gen,
                  msg=(("Out of VRAM for this clip: fewer frames, a smaller canvas, or Base: Stream blocks (the exact "
                        "base with room for the biggest clips)." if getattr(S["desc"], "video_workbench", False) else
-                       "Out of VRAM for this preview: a smaller Res, or more inference block swap in Preferences.")
+                       "Out of VRAM for this preview: a smaller Width / Height, or more inference block swap in Preferences.")
                       if "out of memory" in msg.lower() else msg), trace=traceback.format_exc()[-2000:])
 
 
@@ -435,7 +435,7 @@ def _render_songs(eng, st, c, out, gen):
         pass
     S["notes"].update(_audio_inputs(eng, a, seconds))
     base = eng.generate_baseline(st)
-    tweak = eng.generate_preview(st)
+    tweak = base if eng.same_as_baseline(st) else eng.generate_preview(st)     # nothing moved: one render
     from fizgig.minimax.common import write_wav
     paths = {}
     for name, song in (("baseline", base), ("tweaked", tweak)):
