@@ -3264,6 +3264,9 @@ function studioKind(L, sv) {
   $("stVideoRows").style.display = video ? "" : "none";
   $("stFrames").style.display = video ? "" : "none";
   $("stRes").style.display = $("stResLabel").style.display = audio ? "" : "none";      // a song's length
+  if (audio) studioDock(false, false);                  // Keep in view: never for a music model (kept as remembered)
+  else if (stDockSaved().open && !$("stDock")) studioDock(true);
+  else studioDock(!!$("stDock"));
   $("stSizeRow").style.display = video || audio ? "none" : "";                          // a picture's width and height
   document.querySelectorAll(".st-pane").forEach((p) => p.classList.toggle("audio", audio));
   $("stPreviewHint").textContent = video ? "Each clip plays with its sound; the picture is its middle frame." :
@@ -4695,8 +4698,8 @@ function studioDockMode(pinned) {
   if (pinned) {                                    // in the tab's flow, stuck to the top as the page scrolls under it
     $("tab-studio").prepend(dock);
     Object.assign(dock.style, {left: "", top: "", width: "", height: (sv.pinH || 320) + "px"});
-  } else {
-    document.body.append(dock);
+  } else {                                         // inside the tab too: it goes whenever the tab does
+    $("tab-studio").append(dock);
     const w = sv.w || Math.min(560, window.innerWidth - 32), h = sv.h || 340;
     Object.assign(dock.style, {width: w + "px", height: h + "px",
       left: (sv.x ?? window.innerWidth - w - 24) + "px", top: (sv.y ?? 90) + "px"});
@@ -4706,21 +4709,20 @@ function studioDockMode(pinned) {
   stDockSave({pinned});
 }
 
-function studioDockShow() {                        // a floating panel shows on the Studio tab only
-  const dock = $("stDock");
-  if (dock && dock.classList.contains("floating")) dock.style.display = $("tab-studio").classList.contains("active") ? "" : "none";
-}
+const studioDockAllowed = () => !(S.st.layout && S.st.layout.kind === "audio");     // never for a music model
 
-function studioDock(open) {
+function studioDock(open, remember = true) {
   let dock = $("stDock");
   if (!open) {
-    if (!dock) return;
-    $("stDockHome").after($("stPreview"));
-    $("stDockHome").style.display = "none"; $("stDockOpen").style.display = "";
-    dock.remove();
-    stDockSave({open: false});
+    if (dock) {
+      $("stDockHome").after($("stPreview"));
+      dock.remove();
+    }
+    $("stDockHome").style.display = "none"; $("stDockOpen").style.display = studioDockAllowed() ? "" : "none";
+    if (remember) stDockSave({open: false});
     return;
   }
+  if (!studioDockAllowed()) return;
   if (!dock) {
     const btn = (id, text, title) => el("button", {class: "btn btn-sm", id, text, title});
     dock = el("div", {class: "st-dock", id: "stDock"},
@@ -4774,7 +4776,6 @@ function studioDock(open) {
   dock.classList.toggle("collapsed", !!sv.collapsed);
   studioDockMode(!!sv.pinned);
   studioDockPlay();
-  studioDockShow();
   stDockSave({open: true});
 }
 
@@ -4786,9 +4787,7 @@ function wireStudio() {
   $("stDockOpen").addEventListener("click", () => studioDock(true));
   $("stDockBack").addEventListener("click", () => studioDock(false));
   new MutationObserver(studioDockPlay).observe($("stPlayBoth"), {attributes: true, attributeFilter: ["style"]});
-  new MutationObserver(studioDockShow).observe($("tab-studio"), {attributes: true, attributeFilter: ["class"]});
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
-  if (stDockSaved().open) studioDock(true);
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
   for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3NoLora"])
