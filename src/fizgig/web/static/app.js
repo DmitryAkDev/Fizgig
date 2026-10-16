@@ -4656,6 +4656,7 @@ async function studioPoll() {
     const ps = Number($("stPScale").value) || 1;
     $("stBaseCap").textContent = (ps === 1 ? "Baseline (LoRA at default 1.0)" : `Baseline (LoRA at ${ps})`) +
       (st.donor ? " - the donor is not in the baseline" : "");
+    $("stTweakCap").textContent = "Tweaked (current sliders)" + (st.donor ? " - includes the donor" : "");
   }
   studioNoLoraPane(st);
   studioAceNotes(st.notes);
