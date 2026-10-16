@@ -748,13 +748,17 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
             notes[f"_subject{n}_as"] = "\n".join(lines)
             continue
         manual = bool(vals.get("FAMILY_MP_MANUAL"))
-        s, why = mp.subject_as_written(trig, cls) if manual else mp.subject(folder, trig, cls, ext)
+        kind = mp.kind_key(vals.get("FAMILY_SUBJECT_KIND" + ("" if n == 1 else str(n))))
+        s, why = mp.subject_as_written(trig, cls, kind) if manual else mp.subject(folder, trig, cls, ext, kind)
         if not s:
             notes[f"_subject{n}_as"] = "\n".join(lines + [f"Can't keep other people's faces with this folder: {why}"])
             continue
-        classes.append(s["phrase"])
+        if s["phrase"]:
+            classes.append(s["phrase"])
         fused_rules += s["rules"]
-        lines[0] = (f"Trains as: {s['fused']} - used as your captions write it ({s['phrase']}). Use "
+        lines[0] = (f"Trains as: {s['fused']} - a style or look, its trigger word kept as written. Use {s['fused']} "
+                    "in your prompts; without it, pictures stay as the model made them." if s["kind"] == "style" else
+                    f"Trains as: {s['fused']} - used as your captions write it ({s['phrase']}). Use "
                     f"{s['fused']} in your prompts." if manual else
                     f"Trains as: {s['fused']} - Fizgig joins the trigger word to what the subject is "
                     f"(\"{s['trigger']}, {s['phrase']}\" becomes \"{s['fused']}\"), which keeps the subjects apart. "
@@ -768,9 +772,12 @@ def _multi_person_notes(vals, image_folder, multi_person=True):
             who = mp.stranger_example() or "one of 32 example people, described"
             lines += [f"Trains on: {fused}",
                       f"And keeps as the model made it: {kept}" if kept else
-                      "And keeps as the model made it: nothing - this caption has no trigger word",
-                      f"Plus {mp.PER_SUBJECT} side-by-side pictures of {s['fused']} next to a stranger, e.g.: {who} on "
-                      f"the left, and {s['fused']} on the right, {mp.TAIL}"]
+                      "And keeps as the model made it: nothing - this caption has no trigger word"]
+            lines.append(f"Plus {mp.PER_SUBJECT} side-by-side pictures of {s['fused']} next to a stranger, e.g.: {who} "
+                         f"on the left, and {s['fused']} on the right, {mp.TAIL}" if s["kind"] == "person" else
+                         f"No side-by-side pictures: {s['fused']} isn't a person"
+                         + (" (Subject {} is: From its captions found {})".format(n, s["phrase"])
+                            if kind == "auto" and s["phrase"] else "") + ".")
         notes[f"_subject{n}_as"] = "\n".join(lines)
     notes["__placeholders"] = found
     if multi_person and fused_rules:          # the previews' prompts, as they will be read

@@ -735,7 +735,8 @@ def train_command(desc, inputs, plan):
     if mp_subs:
         from fizgig.families import multi_person as _mp
         trig = ", ".join(s["fused"] for s in mp_subs)        # the LoRA answers to the fused words
-        cmd += ["--lr_boost", f"{_mp.PREFIX}={_mp.LR_BOOST:g}"]
+        if any(s["kind"] == "person" for s in mp_subs):      # the side-by-side pictures' steps (people only)
+            cmd += ["--lr_boost", f"{_mp.PREFIX}={_mp.LR_BOOST:g}"]
     if trig and trig.lower() != "trigger_word":
         cmd += ["--metadata_trigger_phrase", trig]
     cmd += _preview_flags(desc, st, plan, cmd)
@@ -966,7 +967,9 @@ def dataset_toml(desc, inputs):
         _fuse(f)
         if root:
             lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
-    for f, (_s_, w) in mp.items():        # multi-person mode: each subject's composites, already captioned fused
+    for f, (_s_, w) in mp.items():        # multi-person mode: each person's composites, already captioned fused
+        if _s_["kind"] != "person":
+            continue
         lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
         if root:
             lines.append(f'cache_directory = "{cache_dir_for(root, w).replace(chr(92), "/")}"')
@@ -1054,16 +1057,17 @@ def multi_person_subjects(desc, st):
     ext = _s(st.get("caption_ext")) or ".txt"
     root = _s(st.get("cache_root"))
     out = []
-    for folder, (name, t, c) in zip(folders, _dop_folders(st)):
+    for n, (folder, (name, t, c)) in enumerate(zip(folders, _dop_folders(st)), start=1):
         where = (cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson"
+        kind = mp.kind_key(st.get("FAMILY_SUBJECT_KIND" + ("" if n == 1 else str(n))))
         if len(t) != 1:
             out.append((folder, None, f"Other people keep their faces: {name.lower()} needs exactly one trigger "
                                       f"word ({len(t)} given) - one person per folder", where))
             continue
         if st.get("FAMILY_MP_MANUAL"):   # the captions as written: the trigger is already the joined word
-            sub, why = mp.subject_as_written(t[0], c[0] if c else "")
+            sub, why = mp.subject_as_written(t[0], c[0] if c else "", kind)
         else:
-            sub, why = mp.subject(folder, t[0], c[0] if c else "", ext)
+            sub, why = mp.subject(folder, t[0], c[0] if c else "", ext, kind)
         out.append((folder, sub, f"Other people keep their faces: {name.lower()} - {why}" if why else "", where))
     return out
 
@@ -1210,10 +1214,12 @@ def plan(desc, inputs):
         return p                        # nothing to write or run
     p.files.append((inputs["DATASET_CONFIG"], p.dataset_toml))
     train = train_command(desc, inputs, p)
-    if multi_person_on(desc, inputs):
+    people = [(f, s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s and s["kind"] == "person"] \
+        if multi_person_on(desc, inputs) else []
+    if people:                          # the side-by-side pictures: people only (an animal or a style has none)
         cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "multi_person.py"),
                "--ext", _s(inputs.get("caption_ext")) or ".txt"]
-        for f, s, _why, w in multi_person_subjects(desc, inputs):
+        for f, s, w in people:
             cmd += ["--subject", f, s["fused"], w]
         p.stages.append(Stage("Multi-person composites", cmd))
     if caches(desc, inputs):

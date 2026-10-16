@@ -30,6 +30,26 @@ _IMG = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 # what a subject can be, read from the captions when the folder's "replace it with" box is empty
 CLASS_WORDS = ("woman", "man", "girl", "boy", "lady", "guy", "person", "child", "kid", "baby", "teenager", "dog", "cat",
                "puppy", "kitten", "horse")
+# the class words that are people: only they get the side-by-side pictures with strangers (people portraits)
+PEOPLE_WORDS = ("woman", "man", "girl", "boy", "lady", "guy", "person", "child", "kid", "baby", "teenager")
+# the Subjects card's "Subject N is": what a subject is decides what the recipe gives it
+KINDS = ("From its captions", "A person", "An animal or thing", "A style or look")
+_KIND_KEYS = {"A person": "person", "An animal or thing": "thing", "A style or look": "style"}
+
+
+def kind_key(label):
+    """The card's choice as "person" / "thing" / "style", or "auto" (from its captions)."""
+    return _KIND_KEYS.get(str(label or "").strip(), "auto")
+
+
+def _style(trigger):
+    """A style or look: its trigger kept as written (nothing joined) and dropped from the trigger-free caption, so
+    the look stays off unless its word is used; no side-by-side pictures."""
+    return {"trigger": trigger, "phrase": "", "fused": trigger, "rules": [], "kind": "style"}
+
+
+def _kind(kind, noun):
+    return kind if kind in ("person", "thing") else ("person" if noun.lower() in PEOPLE_WORDS else "thing")
 
 
 def dop_caption(caption, pairs):
@@ -126,13 +146,16 @@ def _captions(folder, ext):
     return out
 
 
-def subject(folder, trigger, cls="", ext=".txt"):
+def subject(folder, trigger, cls="", ext=".txt", kind="auto"):
     """One subject's fused trigger: {"trigger", "phrase" ("a woman"), "fused" ("zwxemwoman"), "rules" (the dataset's
-    caption_replace)}, or a reason it can't be made. The class comes from `cls` (the folder's DOP "replace it with")
-    when given, else from the captions' most common "<trigger>, a <word>"."""
+    caption_replace), "kind" ("person" / "thing" / "style")}, or a reason it can't be made. The class comes from `cls`
+    (the folder's DOP "replace it with") when given, else from the captions' most common "<trigger>, a <word>". kind
+    (kind_key): "style" keeps the trigger as written; "auto" is a person when the class is one (PEOPLE_WORDS)."""
     trigger = str(trigger or "").strip()
     if not trigger:
         return None, "no trigger word"
+    if kind == "style":
+        return _style(trigger), ""
     phrase = str(cls or "").strip()
     if not phrase:
         # the trigger, then "a" / "an", up to three describing words, then a known class word: "zwxem, a young woman"
@@ -149,34 +172,38 @@ def subject(folder, trigger, cls="", ext=".txt"):
         if not found:
             return None, (f"its captions never say what {trigger} is (woman, man, girl, dog...) - tick Correct a "
                           "trigger word on the Subjects card and type it in that subject's \"what it is\" box, e.g. "
-                          "woman")
+                          "woman. For a style, choose A style or look in that subject's \"Subject ... is\" box.")
         phrase = found.most_common(1)[0][0]
     if not re.match(r"^an?\s", phrase, re.I):
         phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase
     noun = phrase.split()[-1]
     fused = re.sub(r"\s+", "", trigger) + noun.lower()
-    return {"trigger": trigger, "phrase": phrase, "fused": fused,
+    return {"trigger": trigger, "phrase": phrase, "fused": fused, "kind": _kind(kind, noun),
             "rules": [[f"{trigger}, {phrase}", fused], [f"{trigger} {phrase}", fused], [trigger, fused]]}, ""
 
 
-def subject_as_written(trigger, cls=""):
+def subject_as_written(trigger, cls="", kind="auto"):
     """A subject whose captions already hold its joined word (zwxemwoman), used as written - nothing in the captions
     is rewritten. What it is (for the trigger-free caption) comes from `cls`, else from a class word the trigger ends
     with ("zwxemwoman" -> "a woman")."""
     trigger = str(trigger or "").strip()
     if not trigger:
         return None, "no trigger word"
+    if kind == "style":
+        return _style(trigger), ""
     phrase = str(cls or "").strip()
     if not phrase:
         end = next((w for w in sorted(CLASS_WORDS, key=len, reverse=True)
                     if trigger.lower().endswith(w) and len(trigger) > len(w)), "")
         if not end:
             return None, (f"say what {trigger} is - tick Correct a trigger word on the Subjects card and type it in "
-                          "that subject's \"what it is\" box, e.g. woman")
+                          "that subject's \"what it is\" box, e.g. woman. For a style, choose A style or "
+                          "look in that subject's \"Subject ... is\" box.")
         phrase = end
     if not re.match(r"^an?\s", phrase, re.I):
         phrase = ("an " if phrase[:1].lower() in "aeiou" else "a ") + phrase
-    return {"trigger": trigger, "phrase": phrase, "fused": trigger, "rules": []}, ""
+    return {"trigger": trigger, "phrase": phrase, "fused": trigger, "rules": [],
+            "kind": _kind(kind, phrase.split()[-1])}, ""
 
 
 def _square(im, size=PANEL):

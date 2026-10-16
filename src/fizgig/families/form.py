@@ -50,7 +50,8 @@ DEFAULTS = {
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "",
     "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "FAMILY_SUBJECTS": "1 subject", "FAMILY_PEOPLE_MODE": "Off - a normal LoRA", "FAMILY_SUBJECT_FIX": False,
-    "FAMILY_MP_MANUAL": False,
+    "FAMILY_MP_MANUAL": False, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
+    "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
@@ -181,6 +182,9 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
+from fizgig.families.multi_person import KINDS as SUBJECT_KINDS  # noqa: E402
+KIND_HINT = ("What the subject is decides what Fizgig adds to its training.\nFrom its captions: a person when its captions say woman, man, girl, boy ...; an animal or thing otherwise.\nA person: side-by-side pictures next to strangers, so other people keep their faces.\nAn animal or thing (a dog, a car): its word joined like a person's, no side-by-side pictures.\nA style or look: its trigger word kept as written, and the look stays off unless you use it.")
+KIND_ROWS = ("FAMILY_SUBJECT_KIND", "FAMILY_SUBJECT_KIND2", "FAMILY_SUBJECT_KIND3", "FAMILY_SUBJECT_KIND4")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.\n"
                  "Up to 4 people work well, with 2 or 3 of them in one picture. With a person the model already knows "
@@ -302,9 +306,13 @@ def form(desc):
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
         _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
+        _row("FAMILY_SUBJECT_KIND", "Subject 1 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
         *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"),
+           _row("FAMILY_SUBJECT_KIND2", "Subject 2 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_DIR3", "Subject 3", "folder", upload=True, start="data"),
+           _row("FAMILY_SUBJECT_KIND3", "Subject 3 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"),
+           _row("FAMILY_SUBJECT_KIND4", "Subject 4 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
                 "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
           if desc.multi_concept else []),
@@ -764,13 +772,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden.add("FAMILY_SUBJECT_FIX")
     if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):
         hidden.add("FAMILY_MP_MANUAL")
+        hidden |= set(KIND_ROWS)            # what a subject is only changes the group-picture recipe
     if not (dop and values.get("FAMILY_SUBJECT_FIX")):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS
     if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):   # "what they are" is the joined word's
         hidden |= {"FAMILY_DOP_CLASS"} | {c for _d, _t, c in CONCEPT_ROWS}
     for i, (d, t, c) in enumerate(CONCEPT_ROWS, start=2):     # subject i's folder, line and words, up to the count
         if i > n_sub:
-            hidden |= {d, t, c, f"_subject{i}_as"}
+            hidden |= {d, t, c, f"_subject{i}_as", KIND_ROWS[i - 1]}
     
     kn = _kind_notes(desc)
     if len(kinds(desc)) > 1:
