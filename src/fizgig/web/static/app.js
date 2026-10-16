@@ -3305,7 +3305,6 @@ function studioKind(L, sv) {
   if (h3.turbo != null) $("stH3Turbo").value = h3.turbo;
   $("stH3Sound").checked = V.sound && h3.sound !== false;
   $("stH3Sound").disabled = !V.sound;
-  $("stH3NoLora").checked = !!h3.nolora;
   $("stH3Early").checked = h3.early !== false;
   S.st.kf = h3.kf || {};
   S.st.kfRect = h3.kfRect || {};
@@ -3445,7 +3444,7 @@ function studioH3Remember() {
     const d = stSaved();
     d.h3 = {model: $("stH3Model").value, base: $("stH3Base").value, len: $("stH3Len").value, w: $("stH3W").value,
       h: $("stH3H").value, scale: $("stH3Scale").value, steps: $("stH3Steps").value, turbo: $("stH3Turbo").value,
-      sound: $("stH3Sound").checked, nolora: $("stH3NoLora").checked, early: $("stH3Early").checked, kf: S.st.kf,
+      sound: $("stH3Sound").checked, early: $("stH3Early").checked, kf: S.st.kf,
       kfRect: S.st.kfRect};
     localStorage.setItem(ST_KEY, JSON.stringify(d));
   } catch (e) { /* private window */ }
@@ -3464,7 +3463,7 @@ function studioExtra() {
   return {video: {frames: V.length_frames[$("stH3Len").value] || 22, width: w, height: h,
     steps: Math.max(1, Math.min(40, parseInt($("stH3Steps").value, 10) || 4)),
     turbo: Math.max(0, Math.min(1.5, Number($("stH3Turbo").value) || 0)), sound: $("stH3Sound").checked,
-    nolora: $("stH3NoLora").checked, early: $("stH3Early").checked},
+    early: $("stH3Early").checked},
     keyframes: slots.filter((s) => S.st.kf[s]).map((s) => ({slot: s, path: S.st.kf[s], rect: S.st.kfRect[s] || null})),
     ref_mode: ref};
 }
@@ -4103,7 +4102,7 @@ const ST_SETUP_MAP = [
   ["stH3Model", "repair_h3_model_var"], ["stH3Base", "repair_h3_base_var"], ["stH3Len", "repair_h3_frames_var"],
   ["stH3W", "repair_h3_width_var"], ["stH3H", "repair_h3_height_var"], ["stH3Scale", "repair_h3_dial_scale_var"],
   ["stH3Steps", "repair_h3_steps_var"], ["stH3Turbo", "repair_h3_turbo_var"], ["stH3Sound", "repair_h3_sound_var", "check"],
-  ["stH3NoLora", "repair_h3_nolora_var", "check"], ["stH3Early", "repair_h3_early_var", "check"],
+  ["stH3Early", "repair_h3_early_var", "check"],
   ["stPbOn", "repair_pb_on_var", "check"], ["stPromptB", "repair_prompt_b_var"], ["stPbBlend", "repair_pb_blend_var", "num"],
   ["stPbKeep", "repair_pb_keep_lyrics_var", "check"], ["stSrcOn", "repair_src_on_var", "check"],
   ["stSrcPath", "repair_src_path_var"], ["stSrcMode", "repair_src_mode_var", "srcmode"],
@@ -4697,7 +4696,7 @@ function studioDownloads(st, q) {
 function studioNoLoraPane(st) {
   // the base model's own clip / song, left of the pair (the desktop's player has it there): H3 with the tick, ACE always
   const kind = S.st.layout && S.st.layout.kind;
-  const on = kind === "audio" || (kind === "video" && $("stH3NoLora").checked);
+  const on = kind === "audio";                        // No LoRA: ACE-Step's song only (H3's clip was too slow)
   $("stNolPane").style.display = on && kind === "video" ? "" : "none";     // a song's No LoRA is heard in the player
   $("stPreview").classList.toggle("three", on && kind === "video");
   if (kind === "audio") $("stSongNolora").textContent = st.nolora_busy ? "▶ No LoRA (rendering…)" : "▶ No LoRA";
@@ -4858,7 +4857,7 @@ function wireStudio() {
   window.addEventListener("resize", debounce(() => { const d = $("stDock"); if (d && d.classList.contains("floating")) studioDockClamp(d); }, 150));
   $("stFamily").addEventListener("change", () => { studioFamily(); stRemember(); });
   // H3: a length / size / steps / sound change renders; Model and Base take effect at the next Start
-  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound", "stH3NoLora"])
+  for (const id of ["stH3Len", "stH3W", "stH3H", "stH3Scale", "stH3Steps", "stH3Turbo", "stH3Sound"])
     $(id).addEventListener("change", () => { studioH3Remember(); studioSchedule(); });
   $("stH3Early").addEventListener("change", studioH3Remember);
   $("stH3Model").addEventListener("change", () => { studioH3Remember(); studioSlots(); $("stStart").textContent = "Update"; });
