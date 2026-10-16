@@ -191,7 +191,7 @@ def _poll_stats_loop():
             if r:
                 name, vu, vt = r["name"], int(r["used_gb"] * 2 ** 30), int(r["total_gb"] * 2 ** 30)
                 extra = {k: r.get(k) for k in ("util", "temp", "power", "power_limit") if r.get(k) is not None}
-        # ROCm launch only — never typeperf/amd-smi on the NVIDIA path even if nvidia-smi is missing (#188).
+        # ROCm launch only - never typeperf/amd-smi on the NVIDIA path even if nvidia-smi is missing (#188).
         if not vt and _rocm_launch():
             try:
                 from fizgig.utils.vram_monitor import amd_gpu_name, read_amd_gpu_vram
@@ -1977,7 +1977,7 @@ def _caption_gpu_check(need_gb):
                 pass
     else:
         free = g["total_gb"] - g["used_gb"]
-        # ROCm synthetic row (uuid ""): typeperf may still report used=0 before its first sample — refuse
+        # ROCm synthetic row (uuid ""): typeperf may still report used=0 before its first sample - refuse
         # captioning beside a run until a real used reading exists.
         if _rocm_launch() and g.get("uuid") == "" and g["used_gb"] <= 0 and free >= need_gb + 3.0:
             try:

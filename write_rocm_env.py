@@ -85,7 +85,7 @@ def _ensure_windows_rocm_on_path() -> None:
     """Put hipinfo / ROCm bin dirs on PATH before bitsandbytes or torch probes them.
 
     Without this, bitsandbytes prints WinError 2 ("could not detect ROCm GPU
-    architecture") on a fresh update because hipinfo.exe is not findable yet —
+    architecture") on a fresh update because hipinfo.exe is not findable yet  - 
     rocm_env.bat is what normally prepends those dirs at launch time.
     """
     if sys.platform != "win32":
@@ -134,7 +134,7 @@ def detect_gfx_target() -> str | None:
 
 
 def detect_amd_gpu_identity() -> tuple[str | None, int | None]:
-    """(name, total_vram_bytes) from torch once at install — baked into rocm_env for the web UI (#188)."""
+    """(name, total_vram_bytes) from torch once at install - baked into rocm_env for the web UI (#188)."""
     try:
         import torch
 
@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     omit_bnb = bool(args.experimental)
 
-    # hipinfo lives under the pip ROCm SDK — put it on PATH before bitsandbytes probes.
+    # hipinfo lives under the pip ROCm SDK - put it on PATH before bitsandbytes probes.
     _ensure_windows_rocm_on_path()
 
     is_linux = sys.platform.startswith("linux")
