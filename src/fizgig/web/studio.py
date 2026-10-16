@@ -774,7 +774,7 @@ def layout(desc, prefs, pref_path, samples=None):
                       "scales": [n for n, _ in vc.scales], "scale_of": dict(vc.scales),
                       "models": [c.label for c in vc.checkpoints],
                       "references": {c.label: c.references for c in vc.checkpoints},
-                      "bases": [n for n, _ in vc.bases],
+                      "bases": [n for n, _ in vc.bases], "speed_boost": bool(vc.speed_boost),
                       "sound": bool(audio_vae and os.path.exists(audio_vae))} if kind == "video" and vc else None,
             "song_lengths": SONG_LENGTHS if kind == "audio" else None,
             "prompt_blend": bool(getattr(desc.load_driver(), "supports_prompt_blend", False)),

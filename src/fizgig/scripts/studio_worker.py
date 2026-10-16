@@ -257,6 +257,7 @@ def _render_clips(eng, desc, st, c, out, gen):
     width, height = int(v.get("width") or 768), int(v.get("height") or 640)
     st.preview_width, st.preview_height, st.preview_frames = width, height, frames
     st.keyframes, st.references = _cond(eng, c, width, height, frames)
+    eng.speed_boost = bool(v.get("speed_boost"))      # the Studio's H3 tick: the first half of the steps at half size
     opts = dict(frames=frames, regime="custom", steps=int(v.get("steps") or 4),
                 turbo_strength=float(v.get("turbo") if v.get("turbo") not in (None, "") else 1.0),
                 with_audio=bool(v.get("sound", True)))
@@ -284,18 +285,7 @@ def _render_clips(eng, desc, st, c, out, gen):
         mp4 = _write_clip(clip, png, os.path.join(out, f"{name}_{gen}.mp4"), fps, rate)
         paths[name], paths[name + "_media"] = png, mp4
 
-    def nolora():
-        """The same seed / prompt / canvas / length / photos on the base model with no LoRA (the engine keeps it, so
-        a slider move doesn't re-render it - nor re-write it here)."""
-        clip = eng.nolora_clip(st, cache=None, **opts)
-        hit = S.get("nolora_out")
-        if hit and hit[0] is clip and os.path.isfile(hit[1]["nolora"]):
-            return hit[1]
-        png = os.path.join(out, f"nolora_{gen}.png")
-        got = {"nolora": png, "nolora_media": _write_clip(clip, png, os.path.join(out, f"nolora_{gen}.mp4"), fps, rate)}
-        S["nolora_out"] = (clip, got)
-        return got
-    return paths, (nolora if v.get("nolora") and hasattr(eng, "nolora_clip") else None)
+    return paths, None                  # no No-LoRA clip: a third H3 render was too slow (ACE-Step's song keeps one)
 
 
 def _apply_mix(eng, mix):

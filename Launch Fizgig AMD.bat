@@ -72,4 +72,11 @@ if defined BNB_ROCM_VERSION (
     echo [AMD-ROCm] BNB_ROCM_VERSION unset ^(bitsandbytes selects DLL^)  ROCM_PATH=%ROCM_PATH%
 )
 
+REM A PC with built-in graphics as well as a graphics card can list the built-in one first: train on the card
+REM (the one with the most VRAM) unless HIP_VISIBLE_DEVICES is already set.
+if not defined HIP_VISIBLE_DEVICES if exist "%~dp0venv\Scripts\python.exe" (
+    for /f "delims=" %%G in ('"%~dp0venv\Scripts\python.exe" "%~dp0src\install\pick_gpu.py"') do set "HIP_VISIBLE_DEVICES=%%G"
+)
+if defined HIP_VISIBLE_DEVICES echo [AMD-ROCm] HIP_VISIBLE_DEVICES=!HIP_VISIBLE_DEVICES!
+
 start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0fizgig.py"

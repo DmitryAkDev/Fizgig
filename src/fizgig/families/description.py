@@ -167,6 +167,9 @@ class VideoWorkbench:
     refmod_lengths: tuple = ()        # (label, frames)
     refmod_size: tuple = (640, 768)
     sweep_frames: int = 22            # a RefMod sweep's clips: a still doesn't show what a RefMod does
+    # Studio's Speed Boost tick (on by default): the first half of a clip's steps at half size, then full size. The
+    # family's sampler honours speed_boost=True (H3: minimax/sampling.py with minimax/speed_boost.py)
+    speed_boost: bool = False
 
     def checkpoint(self, label, refmod=False) -> VideoCheckpoint:
         """The checkpoint a picker label names (the first when it names none)."""

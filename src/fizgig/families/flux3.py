@@ -128,7 +128,7 @@ FLUX3 = FamilyDescription(
     preview_height=1024,
     presets=(
         # Krea 2's presets at Krea 2's values (families/krea2.py), Ultra Fast and Edit at rank 16, Adaptive LR 1e-4 to 2e-4 (Peter, 15 Oct 2026)
-        ("✨ Flux 3 Ultra Fast (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"))),
+        ("✨ Flux 3 Ultra Fast (rank 16, adaptive LR)", _preset(16, adaptive=("1e-4", "2e-4"), epochs=50)),
         ("✨ Flux 3 Standard (rank 32, full model)", _preset(32, epochs=64)),
         ("✨ Flux 3 Style (rank 16, gentle LR)", _preset(16, adaptive=("5e-5", "2e-4"), epochs=64)),
         # Krea 2 has no edit mode: Ultra Fast's and Standard's settings, at 12 epochs (edit pairs learn fast)

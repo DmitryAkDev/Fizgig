@@ -1705,17 +1705,32 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .st-btns { gap: 3px; }
 .st-btns .btn-sm { padding: 0 7px; height: 26px; min-width: 28px; font-size: 10.5pt; font-weight: 700; justify-content: center; }
 /* Lucky with its Min and Max, kept together on one line */
-.st-lucky { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; margin-left: 10px; }
-#stLuckyWho { margin-right: 10px; }             /* the roll's who-dropdown reads as the button's: space either side */
-/* the presets / bulk row: every button, dropdown and box one height (the small buttons'), thumb-sized on a phone */
-.st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"] { height: 28px; box-sizing: border-box; }
-.st-bulk select, .st-bulk input[type="text"] { font-size: 12.5px; }
-@media (max-width: 760px) {
-  .st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"] { height: 36px; }
-  .st-bulk select, .st-bulk input[type="text"] { font-size: 16px; }
+/* the Blocks card's top: the title, description and bulk row on the left, I'm feeling lucky's pill on the right with
+   its top level with the title; the sliders start under both. Narrower, the pill drops under the bulk row */
+#tab-studio .section-card > .st-blocks-head { margin: 0; display: flex; align-items: flex-start; gap: 16px; padding-right: 20px; }
+.st-blocks-main { flex: 1; min-width: 0; }
+.st-blocks-main > .st-bulk { padding: 0 20px; margin-bottom: 12px; }
+.st-lucky-pill { flex: none; margin-top: 12px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-deep); display: flex; flex-direction: column; gap: 6px; }
+.st-lucky-line { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.st-lucky-pill .st-lucky-label { color: var(--text-secondary); font-size: 9.5pt; }
+.st-lucky-pill input[type="text"] { width: 56px; flex: 0 0 56px; }
+#stLuckyWho { margin-right: 6px; }
+.st-lucky-pill select.st-small-select { width: auto !important; min-width: 72px; flex: none; }   /* sized to its choices */
+/* the bulk row and the pill: every button, dropdown and box one height (the small buttons'), thumb-sized on a phone */
+.st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"],
+.st-lucky-pill .btn-sm, .st-lucky-pill select, .st-lucky-pill input[type="text"] { height: 28px; box-sizing: border-box; }
+.st-bulk select, .st-bulk input[type="text"], .st-lucky-pill select, .st-lucky-pill input[type="text"] { font-size: 12.5px; }
+@media (max-width: 1180px) {
+  #tab-studio .section-card > .st-blocks-head { flex-direction: column; align-items: stretch; gap: 0; padding-right: 0; }
+  .st-lucky-pill { margin: 0 20px 12px; }
+  .st-lucky-line { flex-wrap: wrap; white-space: normal; }
 }
-.st-lucky .st-lucky-label { color: var(--text-secondary); font-size: 9.5pt; }
-.st-lucky input { width: 56px; flex: 0 0 56px; }
+@media (max-width: 760px) {
+  .st-bulk .btn-sm, .st-bulk select, .st-bulk input[type="text"],
+  .st-lucky-pill .btn-sm, .st-lucky-pill select, .st-lucky-pill input[type="text"] { height: 36px; }
+  .st-bulk select, .st-bulk input[type="text"], .st-lucky-pill select, .st-lucky-pill input[type="text"] { font-size: 16px; }
+}
 #tab-studio .field-row select.st-small-select { flex: 0 0 auto; width: auto; min-width: 96px; }
 #tab-studio .st-inline { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 #tab-studio .st-inline input { width: 64px; flex: 0 0 64px; }
@@ -1767,6 +1782,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   width: 100%; object-fit: contain; }
 .st-dock .st-pane.audio img { flex: 1; aspect-ratio: auto; }
 .st-dock .st-pane figcaption { flex: none; }
+.st-dock.st-resizing video { visibility: hidden; }     /* clips step aside while the panel is being resized */
 .st-dock-home { padding: 14px; border: 1px dashed var(--border); border-radius: 8px; color: var(--text-secondary);
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 760px) { .st-dock.pinned { margin: 0 0 12px; } }
@@ -2054,3 +2070,5 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .hint-lines > div { margin: 0 0 6px; }
 .hint-lines b { font-style: normal; font-weight: 700; color: var(--text-primary); }
 .note-lines { color: var(--text-explain); }   /* the Subjects card's caption preview: an explanation, not a warning */
+/* Studio (H3): the Clip row's ticks after Steps / Turbo - a gap before each, so every box reads with its own word */
+#stVideoRows .st-inline .checkbox-label { margin-left: 14px; }

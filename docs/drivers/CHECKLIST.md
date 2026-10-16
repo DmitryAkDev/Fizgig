@@ -44,7 +44,7 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 - [ ] Fine-tune (optional; a family can ship without it): a run at learning rate 1e-30 saves a file equal to the source, tensor for tensor (only weights that were exactly zero may move). Then one real run, loaded in ComfyUI in place of the base, and a small-card run under `FIZGIG_SIM_VRAM_GB`. See [FINETUNE.md](FINETUNE.md).
 - [ ] Edit training: an edit LoRA trained on a few pairs applies the edit to a new photo.
 - [ ] Sliders: at strength −1, 0 and +1 the previews move between the two looks, and 0 matches the base model.
-- [ ] Video: an off-spec clip (wrong frame rate or frame count) is refused at Start with the reason; a clip preview plays with sound (if the model has sound); Repair Studio plays the tweaked, baseline and no-LoRA clips.
+- [ ] Video: an off-spec clip (wrong frame rate or frame count) is refused at Start with the reason; a clip preview plays with sound (if the model has sound); Repair Studio plays the tweaked and baseline clips.
 
 ## What a finished family includes
 
