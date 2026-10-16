@@ -602,7 +602,7 @@ def train_command(desc, inputs, plan):
     if ctx and not ft_on(desc, st):         # a fine-tune trains the base itself: there is no LoRA to stack on
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
-    if st.get("ADAPTIVE_LR") and desc.adaptive_lr:
+    if st.get("ADAPTIVE_LR") and desc.adaptive_lr and not ft_on(desc, st):   # a fine-tune trains at its own rate
         cmd += ["--adaptive_lr",
                 "--adaptive_lr_min", str(st.get("ADAPTIVE_LR_MIN", "1e-4")).split(" ")[0],
                 "--adaptive_lr_max", str(st.get("ADAPTIVE_LR_MAX", "2e-4")).split(" ")[0]]
