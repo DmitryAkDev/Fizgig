@@ -3191,7 +3191,7 @@ const stRemember = debounce(() => {
     prompt: $("stPrompt").value, seed: $("stSeed").value, res: $("stRes").value,
     w: $("stW").value, h: $("stH").value, turbo: $("stTurbo").checked,
     ref: $("stRef").value, refMp: $("stRefMp").value, refStr: $("stRefStr").value, luckyLo: $("stLuckyLo").value,
-    luckyHi: $("stLuckyHi").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
+    luckyHi: $("stLuckyHi").value, luckyWho: $("stLuckyWho").value, neg: {...(stSaved().neg || {}), [$("stFamily").value]: $("stNeg").value},
     scales: {...(stSaved().scales || {}), [$("stFamily").value]: [$("stPScale").value, $("stDScale").value]},
     h3: stSaved().h3, ace: stSaved().ace, metricsRef: stSaved().metricsRef};                           // H3's clip settings and photos (studioH3Remember's)
   try { localStorage.setItem(ST_KEY, JSON.stringify(d)); } catch (e) { /* private window */ }
@@ -3212,7 +3212,7 @@ async function studioOpen() {
     const sv = stSaved();
     if (sv.family && r.families.some((f) => f.key === sv.family)) sel.value = sv.family;
     for (const [id, k] of [["stPrimary", "primary"], ["stDonor", "donor"], ["stPrompt", "prompt"], ["stSeed", "seed"],
-      ["stRef", "ref"], ["stRefMp", "refMp"], ["stRefStr", "refStr"], ["stLuckyLo", "luckyLo"], ["stLuckyHi", "luckyHi"]])
+      ["stRef", "ref"], ["stRefMp", "refMp"], ["stRefStr", "refStr"], ["stLuckyLo", "luckyLo"], ["stLuckyHi", "luckyHi"], ["stLuckyWho", "luckyWho"]])
       if (sv[k] != null && sv[k] !== "") $(id).value = sv[k];
     if (sv.turbo != null) $("stTurbo").checked = sv.turbo;
     S.st.familiesLoaded = true;
@@ -4443,14 +4443,17 @@ function studioBulk(kind) {
     else if (kind === "donor_on") Object.assign(b, {de: true, ds: 1});
     else if (kind === "donor_off") b.ds = 0;
     else if (kind === "lucky") {
-      if ((S.st.ready && !S.st.primaryBlocks.has(id)) || !b.pe) continue;
       // a held band (lucky_zones: [first, last, low, high] by the block's place in the model's order), bounded by
       // Min / Max as the desktop does
       const i = order.indexOf(id);
       const zone = $("stLuckyHold").checked ? (L.lucky_zones || []).find((zn) => zn[0] <= i && i <= zn[1]) : null;
       let a = zone ? Math.max(zone[2], lo) : lo, z = zone ? Math.min(zone[3], hi) : hi;
       if (a > z) a = z = Math.min(Math.max(1, lo), hi);
-      b.ps = Math.round((a + Math.random() * (z - a)) * 20) / 20; rolled++;
+      const roll = () => Math.round((a + Math.random() * (z - a)) * 20) / 20;
+      // which LoRA rolls: the primary, or with a donor loaded the dropdown's choice (Both rolls each on its own)
+      const who = S.st.donor ? $("stLuckyWho").value : "Primary";
+      if (who !== "Donor" && !(S.st.ready && !S.st.primaryBlocks.has(id)) && b.pe) { b.ps = roll(); rolled++; }
+      if (who !== "Primary" && S.st.donorBlocks.has(id) && b.de) { b.ds = roll(); rolled++; }
     }
   }
   studioSync(); studioCommit(); studioSchedule();
@@ -4702,6 +4705,7 @@ function wireStudio() {
   for (const id of ["stSeed", "stRes", "stW", "stH", "stRefMp", "stRefStr", "stPScale", "stDScale"])
     $(id).addEventListener("change", () => { stRemember(); studioSchedule(); });
   for (const id of ["stPrompt", "stPrimary", "stDonor", "stLuckyLo", "stLuckyHi"]) $(id).addEventListener("input", stRemember);
+  $("stLuckyWho").addEventListener("change", stRemember);
   $("stNeg").addEventListener("change", () => { stRemember();
     if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, negative: $("stNeg").value.trim()}).then(() => studioSchedule()); });
   $("stTurbo").addEventListener("change", () => { stRemember(); if (S.st.ready) api("/api/studio/settings", {family: S.st.layout.key, turbo: $("stTurbo").checked}); });
