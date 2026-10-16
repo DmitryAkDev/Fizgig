@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-On the Training tab's **Subjects** card, **Works with other people in the picture** trains a LoRA of one or more people that behaves with everyone else: your subjects can stand together in one picture, or next to someone the model already knows, and every face stays right. Without the trigger word you get the model's own people, just as before you trained.
+On the Training tab's **Subjects** card, **Works with other people in the picture** trains a LoRA of one or more people that behaves with everyone else: your subjects can stand together in one picture, or next to someone the model already knows, and every face stays right. Without the trigger word you get the model's own people, just as before you trained. It's Fizgig's own techniques combined with DOP (Differential Output Preservation, from @ostris's AI-Toolkit).
 
 It depends on how each person's photos are captioned. Follow the rules below and Fizgig does the rest.
 
@@ -20,7 +20,7 @@ qrxt, a man standing on a beach, wearing a grey jacket
 rexo, a dog lying on a sofa
 ```
 
-- Fizgig reads `zwxem, a woman` as **`zwxemwoman`** when it trains. Your caption files aren't changed. The Subjects card shows each subject's word, one of its captions, and what training makes of it.
+- Fizgig reads `zwxem, a woman` as **`zwxemwoman`** when it trains. Your caption files aren't changed. At the bottom of the Subjects card, each subject shows its word, one of its captions, and what training makes of it.
 - The joined word keeps the person apart: it never shares the ordinary word "woman" that every other woman in a picture uses.
 - Use a plain one-word class the model already knows: woman, man, girl, boy, dog, cat.
 - Describing words are fine: `zwxem, a young blonde woman` still reads as `zwxemwoman`.
