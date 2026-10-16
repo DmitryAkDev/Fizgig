@@ -28,6 +28,7 @@ The Training tab's **Subjects** card says who the LoRA is of and how it behaves 
   - **Works with other people in the picture:** your subjects can stand together in one picture, or next to someone the model already knows, and every face stays right. Best for people; about 1.5x the training time and a one-off 21 MB download. It joins each trigger to what the subject is (`zwxem, a woman` trains as `zwxemwoman`, your caption files untouched) and adds 16 side-by-side pictures per subject next to fixed strangers. **Use my captions exactly as written** turns the joining off for anyone who writes the joined word themselves.
 - At the bottom of the card, each subject shows one of its own captions and exactly what training makes of it, and it updates as you change the settings above.
 - Two subjects of the same kind (two women) need about 1.6x the epochs; the Training tab says so.
+- Up to 4 people work well, 2 or 3 of them in one picture. With a person the model already knows well in the picture too, 2 subjects is reliable and 3 is hit and miss: see [How many subjects](MULTI_PERSON.md#how-many-subjects).
 
 How to caption for it, choose trigger words and prompt the finished LoRA: [People in group pictures](MULTI_PERSON.md).
 

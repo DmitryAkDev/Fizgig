@@ -61,7 +61,7 @@ Two or more subjects of the same kind (two women, two men) need about 1.6x the e
 
 - **Use the joined word:** `zwxemwoman`, `qrxtman`. Not "zwxem, a woman". Training previews read your prompts the way training reads your captions, so `zwxem, a woman at a cafe` previews as `zwxemwoman at a cafe`.
 - **Name the other people before your subjects:** `three friends at a garden party with zwxemwoman and qrxtman`. That's the order it was trained in, and it holds best that way.
-- **Be specific about the others:** `a Japanese man in his 60s with round glasses` keeps its own look better than "a man".
+- **Be specific about the others:** `a Japanese man in his 60s with round glasses` keeps its own look better than "a man". Describing your own subjects helps too: see [How many subjects](#how-many-subjects).
 - **Without a trigger it's the model's own people:** `a woman and a man at a cafe` draws ordinary people, not your subjects.
 
 Example, two people:
@@ -72,6 +72,12 @@ Example, two people:
 | subject 2 | `zwxem` | `zwxem, a woman, …` | `zwxemwoman` |
 
 Prompt: `an East Asian man in his 50s in the middle, zwxemwoman on the left and qrxtman on the right, a tight close-up photo, cheek to cheek, all looking at the camera`
+
+## How many subjects
+
+- **3 or 4 people** train well together, and 2 or 3 of them can share one picture and stay themselves.
+- **With a person the model already knows well in the picture as well,** 2 of your subjects plus that person works almost every time. 3 subjects plus that person is hit and miss.
+- **Describe your subjects in the prompt,** for example their hair colour: `zwxemwoman with black hair`. It helps with any number of subjects, matters little with 2 plus a person the model knows, and is essential with 3 plus one. With 3, giving each subject's ethnicity helps too.
 
 ## Captioning it yourself
 

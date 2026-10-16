@@ -177,12 +177,14 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "a stranger, just as the model made before you trained. Your subject only appears when you call for "
                "them.\n"
                "Works with other people in the picture: your subjects can stand together in one picture, or next to "
-               "someone the model already knows, like a celebrity, and every face stays right. Best for people. "
+               "a person the model already knows well, and every face stays right. Best for people. "
                "Training takes about 1.5x as long, plus a one-off 21 MB download. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
-                 "how the LoRA tells them apart. Caption each folder first.")
+                 "how the LoRA tells them apart. Caption each folder first.\n"
+                 "Up to 4 people work well, with 2 or 3 of them in one picture. With a person the model already knows "
+                 "well in the picture too: 2 subjects is reliable, 3 is hit and miss.")
 
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
