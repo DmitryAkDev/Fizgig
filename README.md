@@ -141,7 +141,14 @@ Model files download from the **Preferences** tab: one **Download models for me*
 
 ### No GPU? Rent one
 
-The whole app runs in a browser tab on RunPod, with a drag-and-drop file manager for big datasets and fine-tunes (the **File manager** button in the sidebar), one-click model downloads and an optional auto-stop when training finishes. **[⚡ Deploy on RunPod →](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)** · [Guide](docker/README.md)
+**Nothing to install on your computer:** the whole app runs on the pod, in your browser.
+
+1. **[⚡ Deploy on RunPod](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)** (keep the 300 GB disk).
+2. Wait for **Ready** in the pod's **Logs** tab; the password is printed under it.
+3. **Connect → HTTP port 8081**, and log in with that password.
+4. **Preferences → Download models for me**, upload your training folder on the **Start** tab, and press **Start** on the **Training** tab.
+
+Step by step: [Quick start](docker/README.md#quick-start-nothing-installed-on-your-computer). The pod also has a drag-and-drop file manager for big datasets and fine-tunes (the **File manager** button in the sidebar), one-click model downloads and an optional auto-stop when training finishes. [The full pod guide](docker/README.md).
 
 Mid-job on the old pod with the remote desktop? It stays available as **[Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)**, and pods you already have keep running as they are.
 
