@@ -20,7 +20,7 @@ import random
 import re
 
 REPO = "ShootTheSound/fizgig-multi-person-strangers"
-REVISION = "bcca46fd140fd6fac2d3a79fffe9e701d2b061ad"      # pinned: a run's composites never change underneath it
+REVISION = "8aeb77502234781cb5dca524994c80efcaa51024"      # pinned: a run's composites never change underneath it
 PREFIX = "fizgig_mp_"                                       # the composites' file names (the trainer's --lr_boost)
 PER_SUBJECT = 16
 LR_BOOST = 2.0
