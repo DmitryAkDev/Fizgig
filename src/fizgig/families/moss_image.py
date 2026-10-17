@@ -114,6 +114,11 @@ MOSS_IMAGE_BASE = FamilyDescription(
                   "first steps pause to compile, then a few seconds for each new image size. Requires Triton and, "
                   "on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used with Blocks "
                   "Swap, since swapping moves weights and compiled graphs assume they stay put."),
+    # full fine-tune (families/ft.py, the driver's ft_spec): the 42 blocks' six Linears rotating on an NF4 trunk;
+    # checkpoints keep ComfyUI's fused-qkv file layout. 1e-5 = the shared starting rate (not yet tuned on MOSS);
+    # memory from the shared estimates until measured on a GPU
+    finetune=True,
+    ft_learning_rate=1e-5,
     precisions=("int8", "nf4", "bf16"),
     auto_precisions=("int8", "nf4"),  # bf16 is 10.2 GB of weights: past 12-16 GB cards with activations
     optimizers=("adamw", "adamw8bit"),

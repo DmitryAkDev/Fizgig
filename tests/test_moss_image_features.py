@@ -603,6 +603,106 @@ def test_batch_guard_in_the_trainer():
         assert FAMILIES[k].load_driver().supports_batch is False, k
 
 
+# ---- 7. full fine-tune (families/ft.py) --------------------------------------------------------------------------
+def _comfy_bf16_file(path, dit):
+    """`dit` as ComfyUI's moss_image_base_bf16: no prefix, q / k / v fused into proj.qkv, bf16."""
+    from safetensors.torch import save_file
+    sd, out = dit.state_dict(), {}
+    for k, v in sd.items():
+        if k.endswith(".proj.k.weight") or k.endswith(".proj.v.weight"):
+            continue
+        if k.endswith(".proj.q.weight"):
+            stem = k[: -len("q.weight")]
+            k, v = stem + "qkv.weight", torch.cat([sd[stem + x + ".weight"] for x in "qkv"])
+        out[k] = v.to(torch.bfloat16).contiguous()
+    save_file(out, str(path))
+    return str(path)
+
+
+def test_finetune_declared():
+    from fizgig.families import form
+    from fizgig.families.lorafile import fused_parts
+    d = _desc()
+    assert d.finetune and d.ft_learning_rate == 1e-5 and d.validate() == [] and form.form(d)
+    drv = _drv()
+    spec = drv.ft_spec(None)
+    assert spec.blocks == "layers" and len(spec.components) == 6 and spec.file_prefix == ""
+    assert fused_parts(drv, "lora_unet_layers_3_proj_qkv") == [
+        ("lora_unet_layers_3_proj_q", 0, 3), ("lora_unet_layers_3_proj_k", 1, 3), ("lora_unet_layers_3_proj_v", 2, 3)]
+
+
+def test_finetune_source_rules(tmp_path):
+    from fizgig.moss_image.model import MossImageDiT
+    from moss_tiny import randomise
+    drv = _drv()
+    dit = randomise(MossImageDiT(**TINY), seed=61)
+    ok = _comfy_bf16_file(tmp_path / "base.safetensors", dit)
+    assert drv.ft_source_unfit(ok) is None
+    assert "single .safetensors" in drv.ft_source_unfit(str(tmp_path))                       # the diffusers shards
+    rot = _convrot_file(tmp_path / "int8_convrot.safetensors", dit)
+    assert "pre-quantized" in drv.ft_source_unfit(rot)
+    windows = drv.ft_card_plan(ok, 24.0)
+    assert windows is not None
+
+
+def test_finetune_round_trip_in_comfy_layout(tmp_path):
+    """The shared fine-tune backend on the tiny model: NF4 trunk, master read from ComfyUI's fused-qkv file (q / k /
+    v as thirds of proj.qkv, exactly), a window of q / k / v / o trained a few steps, parked (master merged), saved:
+    the checkpoint has the source file's keys, shapes and dtypes, untouched tensors byte-identical, the trained q / k
+    / v written back as the rows of proj.qkv, and it loads back as the model the master holds."""
+    from safetensors.torch import load_file
+
+    from fizgig.families import ft, quant
+    from fizgig.moss_image.model import MossImageDiT, load_moss_dit
+    from moss_tiny import randomise
+    try:
+        import bitsandbytes.functional as bnbf
+        bnbf.quantize_nf4(torch.randn(16, 16, dtype=torch.bfloat16))
+    except Exception as e:                                   # NF4 on CPU needs bitsandbytes >= 0.45
+        pytest.skip(f"bitsandbytes NF4 unavailable on CPU: {e}")
+    drv = _drv()
+    src = _comfy_bf16_file(tmp_path / "base.safetensors", randomise(MossImageDiT(**TINY), seed=62))
+    dit = load_moss_dit(src, device="cpu", dtype=torch.bfloat16)
+    n = quant.quantize(dit, drv, "nf4", "cpu")
+    assert n >= 6 * TINY["num_layers"]
+    be = ft.SharedBackend(drv, dit, "cpu", src)
+    assert len(be.rot.targets) == 6 * TINY["num_layers"]
+    gb, where = be.build_master("ram", str(tmp_path / "scratch"))
+    base = load_file(src)
+    for li in range(TINY["num_layers"]):
+        for j, x in enumerate("qkv"):
+            assert torch.equal(be.master[f"layers.{li}.proj.{x}.weight"], base[f"layers.{li}.proj.qkv.weight"].chunk(3)[j])
+    win = ["proj.q", "proj.k", "proj.v", "proj.o"]
+    assert be.rotate(win) == 4 * TINY["num_layers"]
+    params = be.trainable_params()
+    opt = torch.optim.SGD(params, lr=1e-2)
+    gen = torch.Generator().manual_seed(0)
+    c = {"hidden_states": torch.randn(1, 5, TINY["text_dim"])}
+    for _ in range(3):
+        loss, _ = drv.training_loss(dit, torch.randn(1, TINY["latent_channels"], 2, 3), c, gen)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    assert all(p.grad is not None for p in params)
+    be.park()
+    out = tmp_path / "ft.safetensors"
+    be.save(str(out), {"ss_base_model_version": "moss-image"})
+    got = load_file(str(out))
+    assert set(got) == set(base) and all(got[k].shape == base[k].shape and got[k].dtype == base[k].dtype
+                                         for k in base)
+    changed = [k for k in base if not torch.equal(got[k], base[k])]
+    assert changed and all(".proj.qkv." in k or ".proj.o." in k for k in changed)
+    assert any(".proj.qkv." in k for k in changed)
+    for li in range(TINY["num_layers"]):
+        for j, x in enumerate("qkv"):
+            assert torch.equal(got[f"layers.{li}.proj.qkv.weight"].chunk(3)[j],
+                               be.master[f"layers.{li}.proj.{x}.weight"].to(torch.bfloat16))
+    back = load_moss_dit(str(out), device="cpu", dtype=torch.bfloat16).state_dict()
+    for k, v in be.master.items():
+        assert torch.equal(back[k], v.to(torch.bfloat16)), k
+    RESULTS["fine-tune: tensors changed / total"] = len(changed) / len(base)
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")

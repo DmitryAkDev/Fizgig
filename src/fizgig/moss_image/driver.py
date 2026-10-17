@@ -122,6 +122,28 @@ class MossImageDriver(FamilyDriver):
             quant.move(dit, device)
         dit.switch_block_swap_for_training()
 
+    # ---- full fine-tune (families/ft.py) ---------------------------------------------------------------------------
+    def ft_spec(self, dit):
+        """The 42 blocks' six Linears on the NF4 trunk, one component each (per block: q / k / v / o 9.4M parameters
+        each, ffn_up_gate 50M, ffn_down 25M - the planner trains as many together as the card holds). The text
+        refiner, embedders, shared modulation, norms and final layer stay frozen, as for the LoRA. ComfyUI's file
+        fuses q / k / v into proj.qkv ([q; k; v] rows); the checkpoint is written back in that layout, so ComfyUI
+        loads it as it loads the base. Memory: the shared estimates (NF4 trunk + 3.5 GB) until measured on a GPU."""
+        from fizgig.families.ft import FTSpec
+        return FTSpec(blocks="layers",
+                      components=("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down"),
+                      file_layout=(("proj.q.weight", "proj.qkv.weight", 0, 3),
+                                   ("proj.k.weight", "proj.qkv.weight", 1, 3),
+                                   ("proj.v.weight", "proj.qkv.weight", 2, 3)))
+
+    def ft_source_unfit(self, path):
+        """A fine-tune reads its master from, and writes its checkpoint as, one bf16 file - ComfyUI's
+        moss_image_base_bf16.safetensors (not the diffusers shards, nor an int8 ConvRot file)."""
+        if not (isinstance(path, str) and os.path.isfile(path) and path.endswith(".safetensors")):
+            return ("is not a single .safetensors file - the fine-tune trains ComfyUI's "
+                    "moss_image_base_bf16.safetensors and writes its checkpoint in that layout")
+        return super().ft_source_unfit(path)
+
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.layers) if dit is not None else N_BLOCKS) - 2
 
@@ -416,8 +438,9 @@ class MossImageDriver(FamilyDriver):
         return [BlockGroup("Blocks", blocks)]
 
     def alias_flat(self, flat):
-        """diffusers / PEFT names from other trainers: transformer.layers.N... is already ours once the prefix goes;
-        the fused qkv of ComfyUI's file has no single Linear here (fused_parts would be the place, with an ft_spec)."""
+        """diffusers / PEFT names from other trainers: transformer.layers.N... is already ours once the prefix goes.
+        A LoRA on the fused proj.qkv of ComfyUI's file (one extracted from a fine-tuned checkpoint) is split by
+        lorafile.fused_parts through ft_spec's file_layout."""
         for p in ("transformer_", "diffusion_model_"):
             if flat.startswith(p):
                 return flat[len(p):]
