@@ -463,17 +463,21 @@ def _load_dop_cond(path):
     return {k[len("cond__"):]: v[None] for k, v in load_file(path).items() if k.startswith("cond__")}
 
 
-def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, accum):
+def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, accum, swapped=False):
     """Differential Output Preservation (AI-Toolkit's DOP, by Ostris): the same picture, freshly noised, with the
     trigger swapped for the class word. The target is the model's own prediction there with the adapter at 0, so
     without the trigger the LoRA learns to change nothing. Backpropagated here; returns the detached loss."""
     state = driver.noise_latents(latents, gen, min_t=min_t, max_t=max_t)
     try:
         net.set_trainable_multiplier(0.0)
+        if swapped:     # a forward with no backward: block swap must stream it as inference, as previews do, or a
+            driver.block_swap_mode(dit, inference=True)     # block is left on the CPU for the next pass
         with torch.no_grad():
             target = driver.predict(dit, state, cond).float()
     finally:
         net.set_trainable_multiplier(1.0)
+        if swapped:
+            driver.block_swap_mode(dit, inference=False)
     loss = F.mse_loss(driver.predict(dit, state, cond).float(), target)
     (loss * weight / accum).backward()
     return loss.item()
@@ -1732,7 +1736,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 (_scaled / accum if accum > 1 else _scaled).backward()
                 if _dc is not None and ftr is None:
                     dop_sum[0] += _dop_step(driver, dit, net, latents, _dc, gen, weight=dop_weight,
-                                            min_t=min_timestep, max_t=max_timestep, accum=accum)
+                                            min_t=min_timestep, max_t=max_timestep, accum=accum,
+                                            swapped=bool(swapped))
                     dop_sum[1] += 1
                 for _p in _frozen_now:
                     _p.requires_grad_(True)
