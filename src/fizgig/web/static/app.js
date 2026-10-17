@@ -5309,6 +5309,7 @@ function wireCaptions() {
       text: (clean ? "✓ Joins cleanly: " : r.ok ? "Joins cleanly, but see below: " : "✗ ") +
             (clean || r.ok ? `${r.joined} reads as ${r.pieces.join(" | ")}` : r.notes[0])}));
     for (const n of (r.ok ? r.notes : r.notes.slice(1))) box.append(el("div", {class: "field-hint", text: "• " + n}));
+    if (r.encoder) box.append(el("div", {class: "field-hint", text: `Checked with ${r.encoder} - the model you're training, not the captioner.`}));
     if (r.suggestions && r.suggestions.length) {
       const row = el("div", {class: "field-row"}, el("span", {class: "field-hint", text: "Words that join cleanly:"}));
       for (const s of r.suggestions)

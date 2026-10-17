@@ -142,4 +142,8 @@ def check(family, trigger, cls="woman", others=()):
     v["suggestions"] = [] if v["ok"] and not v["notes"] else _suggest(tok, cls, [*others, trigger], trigger,
                                                                    seed=sum(map(ord, trigger)))
     v["trigger"], v["cls"] = trigger, cls
+    from fizgig.families.registry import get as get_family
+    d = get_family(family)
+    v["encoder"] = (f"{d.display_name}'s text encoder" + (f" ({d.text_encoder_label})" if getattr(d, "text_encoder_label", "")
+                                                         else "")) if d else family
     return v
