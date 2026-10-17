@@ -14,6 +14,7 @@ _SPECS = {
     "krea2": ("auto", None, None),
     "flux3": ("auto", None, None),
     "minimax": ("auto", None, None),
+    "minimax_refmod": ("auto", None, None),          # H3's own text encoder
     "qwen_image21": ("auto", "Qwen/Qwen-Image-2.1", "processor"),
     "klein": ("qwen2", "Qwen/Qwen3-8B", None),
     "zimage": ("auto", "Tongyi-MAI/Z-Image-Turbo", "tokenizer"),
@@ -143,7 +144,7 @@ def check(family, trigger, cls="woman", others=()):
                                                                    seed=sum(map(ord, trigger)))
     v["trigger"], v["cls"] = trigger, cls
     from fizgig.families.registry import get as get_family
-    d = get_family(family)
+    d = get_family("minimax" if family == "minimax_refmod" else family)
     v["encoder"] = (f"{d.display_name}'s text encoder" + (f" ({d.text_encoder_label})" if getattr(d, "text_encoder_label", "")
                                                          else "")) if d else family
     return v
