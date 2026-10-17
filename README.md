@@ -30,6 +30,7 @@
 </p>
 
 > ### 📰 Latest news
+> - **Fizgig 8.4 — Fizgig LoRA Isolation.** Train two people into one LoRA and every stranger keeps their own face: with a normal LoRA 48 of 50 strangers came out looking like the trained person, with LoRA Isolation 0 of 50, at the same likeness. DOP from @ostris's AI-Toolkit at its base, with Fizgig's own techniques on top, set up on the Training tab's new Subjects card, on every model except ACE-Step. 8.4.2 adds a trigger word checker on the same card. [Demo](https://youtu.be/CNh4sN5vN_8) · [How to set it up](https://youtu.be/8uW5NdL5b20) · [Release notes](docs/RELEASE_NOTES_v8.4.0.md)
 > - **Fizgig 8.1 — Flux 3 Image Klein, from day one.** Black Forest Labs' new 5.6B text-to-image and edit model trains in Fizgig the day it came out: LoRAs, LoKRs, edit LoRAs from before/after pairs, slider LoRAs and full fine-tuning, from an 8 GB card, with every workbench tool, prompt travel and edit chains in LoRA Royale included. [Release notes](docs/RELEASE_NOTES_v8.1.0.md) · [Flux 3 guide](docs/FLUX3.md)
 > - **Fizgig 8 — the new app (yes, the web UI).** Fizgig opens in its own window or your browser, and your phone can watch a run. One **Pods** tab opens your other computers' GPUs, found on your network by themselves, and RunPod pods, logged in for you. What's training and what's up next sit in the sidebar on every tab, and **Runs & outputs** keeps every run. Updating keeps your settings, presets, folders and queued runs; a welcome tour on the first start shows where everything went. [Release notes](docs/RELEASE_NOTES_v8.0.0.md) · [The app](docs/WEB_UI.md)
 > - **Fizgig 7.3 — music with ACE-Step 1.5 XL.** Train LoRAs on your own songs, music sliders and full fine-tuning, previews you play in the gallery, and Repair Studio as a DAW for AI music: covers, repaint and extend, a model EQ. Gizmo gets a Music tab for cutting songs into sections. [Release notes](docs/RELEASE_NOTES_v7.3.0.md) · [ACE-Step guide](docs/ACESTEP.md)
@@ -93,7 +94,7 @@ Each tool works on your own runs **or any LoRA you've downloaded**, and they han
 - **Presets per model**: pick a ✨ preset on the Training tab and go.
 - **Slider LoRAs** (Klein 9B, Flux 3 Image Klein, Krea 2, MiniMax H3, Qwen Image 2.1, Z-Image Turbo, SDXL, Anima): a LoRA whose strength is a dial between two looks, from photo pairs or three prompts, and a slider from prompts can be steered while it trains (change its ends, it trains on toward them). Krea 2's **Ultra mode** trains the composition blocks only, so the dial holds up at much higher strengths. It works best for sliders trained from prompts, and with photo pairs when the change is compositional.
 - **Edit LoRAs** (Klein 9B, Flux 3 Image Klein, Qwen Image 2.1): teach an edit from pairs of original and edited photos, then apply it to any photo.
-- **Fizgig LoRA Isolation, on the Subjects card** (every model except ACE-Step): up to four people in one LoRA, each from their own folder. Fizgig's own techniques combined with DOP keep your subjects to their trigger words: leave the trigger out and you get the model's own people, and in a group picture your subjects, strangers and people the model already knows each keep their own face. [See it in action](https://youtu.be/CNh4sN5vN_8) · [How to set it up (video)](https://youtu.be/8uW5NdL5b20) · [How to caption for it](docs/MULTI_PERSON.md).
+- **Fizgig LoRA Isolation, on the Subjects card** (every model except ACE-Step): up to four people in one LoRA, each from their own folder. Fizgig's own techniques combined with DOP keep your subjects to their trigger words: leave the trigger out and you get the model's own people, and in a group picture your subjects, strangers and people the model already knows each keep their own face. [See it in action](https://youtu.be/CNh4sN5vN_8) · [How it works](docs/LORA_ISOLATION.md) · [How to set it up (video)](https://youtu.be/8uW5NdL5b20) · [How to caption for it](docs/MULTI_PERSON.md).
 - **Adaptive LR**: a plateau tracker that raises or lowers the rate within your Min/Max, with rollback on instability.
 - **Weight averaging (EMA)**, on by default where it's measured to help.
 - **Context LoRA**: train on top of a frozen, active LoRA so the two coexist (a face on a style, an outfit on a character). No other trainer does this.
@@ -198,6 +199,7 @@ Renting through the [RunPod link](https://console.runpod.io/deploy?type=GPU&gpu=
 | [Full fine-tuning](docs/FINETUNE.md) · [How do I…?](docs/FINETUNE_HOWDOI.md) | Training the base model itself |
 | [RefMods](docs/REFMOD_HOWDOI.md) | RefMods for MiniMax H3 |
 | [Command line](docs/CLI.md) | Every trainer, headless |
+| [Fizgig LoRA Isolation](docs/LORA_ISOLATION.md) | How it works, the recipe and the results |
 | [The app](docs/WEB_UI.md) | Starting Fizgig, its window and browser, your phone, your other computers, the port and password, pods |
 | [RunPod](docker/README.md) | The cloud image |
 

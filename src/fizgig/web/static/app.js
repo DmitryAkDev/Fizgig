@@ -152,6 +152,70 @@ function renderAll() {
 }
 
 // ---- the generated forms -----------------------------------------------------------------------------------
+// ---- Check a trigger word: under the Subjects card, collapsed. The training model's own text encoder reads the word
+// the way Fizgig LoRA Isolation joins it ("zwxem, a woman" -> zwxemwoman); values kept across the card's re-draws
+S.tc = {open: false, word: "", cls: "woman", others: ""};
+
+function triggerCheckBlock() {
+  const name = (S.fam && (S.fam.gui_label || S.fam.display_name)) || "this model";
+  const word = el("input", {type: "text", class: "w-combo", placeholder: "e.g. zwxem", value: S.tc.word});
+  const cls = el("select", {class: "w-combo"});
+  for (const [v, t] of [["woman", "a woman"], ["man", "a man"], ["girl", "a girl"], ["boy", "a boy"],
+                        ["person", "a person"], ["dog", "a dog"], ["cat", "a cat"], ["horse", "a horse"],
+                        ["", "a style or look"]])
+    cls.append(el("option", {value: v, text: t}));
+  cls.value = S.tc.cls;
+  const others = el("input", {type: "text", class: "w-combo-lg", placeholder: "e.g. dlor, gwelt", value: S.tc.others});
+  const result = el("div");
+  const run = async () => {
+    S.tc.word = word.value.trim(); S.tc.cls = cls.value; S.tc.others = others.value;
+    result.innerHTML = "";
+    if (!S.tc.word) { result.append(el("div", {class: "field-hint", text: "Type a trigger word first."})); return; }
+    result.append(el("div", {class: "field-hint", text: "Checking…"}));
+    let r;
+    try {
+      r = await api("/api/captions/trigger_check", {family: S.family, trigger: S.tc.word, cls: cls.value,
+        others: others.value.split(",").map((s) => s.trim()).filter(Boolean)});
+    } catch (e) { result.innerHTML = ""; result.append(el("div", {class: "field-hint", text: String(e.message || e)})); return; }
+    result.innerHTML = "";
+    const clean = r.ok && !r.notes.length;
+    result.append(el("div", {class: "tc-verdict " + (clean ? "tc-good" : r.ok ? "tc-warn" : "tc-bad"),
+      text: (clean ? "✓ Good word. " : r.ok ? "Joins cleanly, with a note below. " : "✗ ") +
+            (clean || r.ok ? `${r.joined} reads as ${r.pieces.join(" | ")}` : r.notes[0])}));
+    for (const n of (r.ok ? r.notes : r.notes.slice(1))) result.append(el("div", {class: "field-hint", text: "• " + n}));
+    if (r.encoder) result.append(el("div", {class: "field-hint", text: `Checked with ${r.encoder}.`}));
+    if (r.suggestions && r.suggestions.length) {
+      const row = el("div", {class: "field-row"},
+        el("span", {class: "field-hint", text: "Made-up words that work here (click one to check it):"}));
+      for (const s of r.suggestions)
+        row.append(el("button", {class: "btn btn-sm", text: s, onclick: () => { word.value = s; run(); }}));
+      result.append(row);
+    }
+  };
+  word.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+  const d = el("details", {class: "tc-box"},
+    el("summary", {text: "Check a trigger word (optional)"}),
+    el("div", {class: "field-hint", text:
+      `Fizgig LoRA Isolation joins each subject's trigger word to what the subject is: "zwxem, a woman" trains as one ` +
+      `word, zwxemwoman. Some words join badly: the text encoder splits them so the subject word is no longer whole ` +
+      `(fyxo + woman reads as f | yx | ow | oman), and the LoRA learns that subject less cleanly. This checks a word ` +
+      `with ${name}'s text encoder, the one this LoRA trains with, before you caption.`}),
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Trigger word to check:"}), word),
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "The subject is:"}), cls),
+    el("div", {class: "field-hint", text: "The word Fizgig joins on: the same trigger can join cleanly with one " +
+      "(dlor + woman) and break with another (dlor + man). A style or look is never joined, so only the word itself " +
+      "is checked."}),
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Other triggers:"}), others),
+    el("div", {class: "field-hint", text: "Optional: the trigger words of your other subjects in this same LoRA, separated by commas. Two " +
+      "subjects whose words start with the same letter, or share a piece, can blend into each other, so the check " +
+      "looks for that too. Leave it empty for a one-subject LoRA."}),
+    el("div", {class: "field-row"}, el("button", {class: "btn btn-primary", text: "Check", onclick: run})),
+    result);
+  d.open = S.tc.open;
+  d.addEventListener("toggle", () => { S.tc.open = d.open; });
+  return d;
+}
+
 function renderSections(tab, host) {
   host.innerHTML = "";
   for (const sec of S.fam.form.sections.filter((s) => s.tab === tab)) {
@@ -165,6 +229,7 @@ function renderSections(tab, host) {
           el("span", {class: "sec-video-sub", text: sec.help.sub || "Watch on YouTube"}))));
     }
     for (const r of sec.rows) body.append(renderRow(r));
+    if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
     host.append(el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body));
   }
 }
