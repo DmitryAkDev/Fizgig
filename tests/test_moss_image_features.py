@@ -240,7 +240,11 @@ def test_royale_engine_paths(files):
     _prime(eng2, ["a fox", "bad"])                     # no LoRA at all
     st3 = eng2.default_state(32, 32)
     st3.prompt, st3.seed = "a fox", 7
-    assert np.array_equal(np.array(bare), np.array(eng2.generate_preview(st3)))
+    # pixel-close, not exact: the two engines' bf16 CPU matmuls were seen to differ by a level or two now and then
+    # under load (2 of ~10 full runs), with every exact check above passing
+    d = np.abs(np.array(bare).astype(int) - np.array(eng2.generate_preview(st3)).astype(int))
+    RESULTS["Royale no-LoRA column vs bare engine (max px diff)"] = float(d.max())
+    assert d.max() <= 3 and d.mean() <= 0.5
     eng2.reset()
 
 
