@@ -16,9 +16,10 @@ _NEGATIVE = "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"      # 
 _REF_OPTS = (("shift", 5.0), ("uncond_skip_layers", (22,)))
 
 
-def _preset(rank, lr, epochs=30, mp="1.0"):
+def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
     # not yet measured on MOSS (M4): rank 8-16, fused AdamW, the shared 1e-4 / 2e-4 starting points
     return {
+        "FAMILY_SLIDER": slider, "FAMILY_SLIDER_GUIDANCE": "2",
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
         "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "ADAPTIVE_LR": False,
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
@@ -90,6 +91,10 @@ MOSS_IMAGE_BASE = FamilyDescription(
     auto_precisions=("int8", "nf4"),  # bf16 is 10.2 GB of weights: past 12-16 GB cards with activations
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
+    # sliders (the shared trainer's two kinds): image pairs through training_loss(diff_ref=, diff_weight=), prompt
+    # pairs through noise_latents / predict. The push strength is Qwen's 2 until a MOSS slider is measured
+    slider_training=True,
+    slider_guidance=2.0,
     helper_files=((_REPO, ("tokenizer/*", "text_encoder/config.json")),),
     workbench_follows_samples=True,
 
@@ -125,6 +130,8 @@ MOSS_IMAGE_BASE = FamilyDescription(
     presets=(
         ("✨ MOSS-Image Character (rank 16, 1e-4)", _preset(16, 1e-4)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, 5e-5)),
+        # sliders run hot and short (Qwen's / Krea 2's recipe: rank 8, 2e-4, 0.5 MP); not yet measured on MOSS
+        ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, 2e-4, epochs=20, mp="0.5", slider=True)),
     ),
 
     notes=(
