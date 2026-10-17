@@ -1,10 +1,20 @@
 # Fizgig v8.4.0: Fizgig LoRA Isolation
 
-**Fizgig LoRA Isolation: train your people into one LoRA and keep everyone else looking like themselves.** A normal LoRA of a person spreads their face onto other people in the picture: strangers in the background, a friend beside them, a crowd. Fizgig LoRA Isolation trains your subjects so they can stand together in one picture, or next to someone the model already knows well, and every face stays its own.
+**Fizgig LoRA Isolation: train 2 identities into one LoRA and keep everyone else looking like themselves.** A normal LoRA of a person spreads their face onto other people in the picture: strangers in the background, a friend beside them, a crowd. Fizgig LoRA Isolation trains your subjects so they can stand together in one picture, or next to someone the model already knows well, and every face stays its own.
 
 On Krea 2, against a normal LoRA trained on the same pictures with the same settings: 48 of 50 strangers read as the trained person with the normal LoRA, 0 of 50 with Fizgig LoRA Isolation, and likeness of the trained person was the same (ArcFace 0.78 against 0.77).
 
-It builds on DOP (Differential Output Preservation) from @ostris's AI-Toolkit, and adds Fizgig's own techniques on top: each subject's trigger joined to what they are, side-by-side pictures of each person next to a stranger, and a tested training recipe. It's set up on the new **Subjects** card on the Training tab, and works on every model except ACE-Step. It has been tested on Krea 2, with more model testing to follow.
+A second person in a LoRA is usually the problem, the two faces blending into each other. Here the second person is part of the fix: learning two identities together is what teaches the LoRA that each face belongs to its own trigger. They don't need to be the same gender: in the test above the second person was a woman, and every stranger was a man.
+
+**How it works:** DOP at the base, with Fizgig's own layers on top.
+- **DOP (Differential Output Preservation),** from @ostris's AI-Toolkit: each picture also trains with its trigger removed, held to what the base model would draw.
+- **Multi-subject identity anchoring:** two or more identities trained together, so each binds to its own trigger instead of drifting onto every face.
+- **Fused-token class decoupling:** the trigger and the class word merge into a single token (`gwelt, a man` trains as `gweltman`), so identity never binds to the class word everyone else shares.
+- **In-frame negative-pair compositing:** each person composited next to strangers, with causal-order captions (the stranger first).
+- **Per-sample LR scaling, strided DOP and balanced sampling:** the composites train at 2x the learning rate, DOP runs every second step at 2x weight, and subjects are balanced across each epoch.
+- **Class-aware training paths:** people, animals and things, and styles each get their own recipe.
+
+It's set up on the new **Subjects** card on the Training tab, and works on every model except ACE-Step. It has been tested on Krea 2, with more model testing to follow.
 
 **The Subjects card:**
 - **Who is this LoRA of?** 1 to 4 subjects, each a folder of its own pictures with its own trigger word in the captions.
