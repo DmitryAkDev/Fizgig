@@ -31,7 +31,7 @@ It's set up on the new **Subjects** card on the Training tab, and works on every
 - Prompt with the joined word the card shows, for example `gweltman man at a cafe`, and describe the other people in your prompt.
 - The side-by-side pictures use a set of 32 generated strangers with natural skin texture, so they never pull your LoRA towards poor skin and no real person's photo is used. The set downloads with your models (21 MB).
 
-<a href="https://youtu.be/8uW5NdL5b20"><img src="https://img.youtube.com/vi/8uW5NdL5b20/maxresdefault.jpg" alt="How to set up Fizgig LoRA Isolation: watch on YouTube" width="420"></a>
+<a href="https://youtu.be/8uW5NdL5b20"><img src="https://img.youtube.com/vi/8uW5NdL5b20/maxresdefault.jpg?v=2" alt="How to set up Fizgig LoRA Isolation: watch on YouTube" width="420"></a>
 
 How to set it up: [video](https://youtu.be/8uW5NdL5b20) (also linked at the top of the Subjects card) · [captioning guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
 
