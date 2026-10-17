@@ -353,6 +353,22 @@
                 Overwrite existing captions (untick to caption only the files without one)</label>
             </div>
           </div>
+          <div class="section-card" id="trigCheckCard">
+            <div class="card-title">Check a trigger word</div>
+            <div class="card-desc">Before you caption, check how this model's text encoder reads your trigger word.
+              Fizgig LoRA Isolation joins it to what the subject is (zwxem + woman trains as zwxemwoman), and a good
+              word keeps "woman" whole. Checked with the model chosen on the Training tab.</div>
+            <div class="card-content">
+              <div class="field-row"><span class="field-label">Trigger word:</span>
+                <input type="text" id="tcWord" class="w-combo" placeholder="e.g. zwxem">
+                <span class="field-label">It is:</span>
+                <select id="tcClass" class="w-combo"></select></div>
+              <div class="field-row"><span class="field-label">Other subjects' words:</span>
+                <input type="text" id="tcOthers" class="w-combo-lg" placeholder="optional, e.g. dlor, gwelt">
+                <button class="btn btn-primary" id="tcCheck">Check</button></div>
+              <div id="tcResult"></div>
+            </div>
+          </div>
           <div class="section-card accent-card">
             <div class="card-title">Generate captions</div>
             <div class="card-desc">Caption All writes a caption for each picture (and clip) with the model above.

@@ -103,6 +103,7 @@ async function chooseFamily(key) {
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
   for (const sel of document.querySelectorAll(".family-pick")) sel.value = key;
+  if ($("trigCheckCard")) $("trigCheckCard").style.display = key.startsWith("acestep") ? "none" : "";   // no subjects in a song
   if (S.all[key]) {
     S.values = {...defaults(), ...S.all[key]};
   } else {                              // a first visit takes the family's first preset, as the desktop does
@@ -5285,6 +5286,39 @@ function wireCaptions() {
     const r = await capRun("/api/captions/static", capJobBody());
     if (r && !r.error) { $("capStatus").textContent = `${r.written} written, ${r.skipped} kept.`; loadCaptions(); }
   });
+  // Check a trigger word: the model's own tokenizer, the word as LoRA Isolation joins it (zwxem + woman)
+  for (const [v, t] of [["woman", "a woman"], ["man", "a man"], ["girl", "a girl"], ["boy", "a boy"],
+                        ["person", "a person"], ["dog", "a dog"], ["cat", "a cat"], ["horse", "a horse"],
+                        ["", "a style or look (not joined)"]])
+    $("tcClass").append(el("option", {value: v, text: t}));
+  const tcRun = async () => {
+    const word = ($("tcWord").value || $("capTrigger").value || "").trim();
+    $("tcWord").value = word;
+    const box = $("tcResult");
+    box.innerHTML = "";
+    if (!word) { box.append(el("div", {class: "field-hint", text: "Type a trigger word first."})); return; }
+    box.append(el("div", {class: "field-hint", text: "Checking…"}));
+    let r;
+    try {
+      r = await api("/api/captions/trigger_check", {family: S.family, trigger: word, cls: $("tcClass").value,
+        others: $("tcOthers").value.split(",").map((s) => s.trim()).filter(Boolean)});
+    } catch (e) { box.innerHTML = ""; box.append(el("div", {class: "field-hint", text: String(e.message || e)})); return; }
+    box.innerHTML = "";
+    const clean = r.ok && !r.notes.length;
+    box.append(el("div", {class: "tc-verdict " + (clean ? "tc-good" : r.ok ? "tc-warn" : "tc-bad"),
+      text: (clean ? "✓ Joins cleanly: " : r.ok ? "Joins cleanly, but see below: " : "✗ ") +
+            (clean || r.ok ? `${r.joined} reads as ${r.pieces.join(" | ")}` : r.notes[0])}));
+    for (const n of (r.ok ? r.notes : r.notes.slice(1))) box.append(el("div", {class: "field-hint", text: "• " + n}));
+    if (r.suggestions && r.suggestions.length) {
+      const row = el("div", {class: "field-row"}, el("span", {class: "field-hint", text: "Words that join cleanly:"}));
+      for (const s of r.suggestions)
+        row.append(el("button", {class: "btn btn-sm", text: s, title: "Check this word",
+          onclick: () => { $("tcWord").value = s; tcRun(); }}));
+      box.append(row);
+    }
+  };
+  $("tcCheck").addEventListener("click", tcRun);
+  $("tcWord").addEventListener("keydown", (e) => { if (e.key === "Enter") tcRun(); });
   $("capSongs").addEventListener("click", async () => {
     const r = await capRun("/api/captions/songs", capJobBody({words: $("capSongWords").value}));
     if (r && !r.error) { $("capStatus").textContent = `${r.written} songs captioned "${r.caption}", ${r.skipped} kept.`; loadCaptions(); }

@@ -197,6 +197,8 @@ KIND_HINT = ("What each subject is decides what Fizgig adds to its training.\n"
 KIND_ROWS = ("FAMILY_SUBJECT_KIND", "FAMILY_SUBJECT_KIND2", "FAMILY_SUBJECT_KIND3", "FAMILY_SUBJECT_KIND4")
 SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
                  "how the LoRA tells them apart. Caption each folder first.\n"
+                 "Choosing trigger words? Check them on the Captions tab first (Check a trigger word): it shows how "
+                 "this model reads each one joined to what the subject is, and suggests words that join cleanly.\n"
                  "Up to 4 people work well, with 2 or 3 of them in one picture. With a person the model already knows "
                  "well in the picture too: 2 subjects is reliable, 3 is hit and miss.")
 

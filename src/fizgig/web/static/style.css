@@ -304,6 +304,10 @@ body {
 .collapsible-header:hover {
   background: var(--bg-hover);
 }
+.tc-verdict { margin: 10px 0 6px; font-weight: 600; }      /* Check a trigger word's answer */
+.tc-good { color: var(--success); }
+.tc-warn { color: var(--warning); }
+.tc-bad { color: var(--danger); }
 .sec-video {        /* a card's help video: a link across the top of the card */
   display: flex; align-items: center; gap: 14px; margin: 12px 0 14px 0; padding: 10px 16px 10px 12px;
   background: var(--bg-inset); border: 1px solid var(--border); border-left: 4px solid #CC0000;

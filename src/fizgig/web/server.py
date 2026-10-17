@@ -3299,6 +3299,14 @@ class Handler(BaseHTTPRequestHandler):
                 except subprocess.TimeoutExpired:
                     r = {"error": "Whisper took too long on this clip."}
                 return self.json(r, 400 if r.get("error") else 200)
+            if path == "/api/captions/trigger_check":     # a trigger word against the model's own tokenizer
+                from fizgig.families import trigger_check
+                try:
+                    r = trigger_check.check(str(b.get("family") or ""), str(b.get("trigger") or ""),
+                                            str(b.get("cls") or ""), [str(o) for o in b.get("others") or []])
+                except Exception as e:                     # the tokenizer couldn't be fetched (offline, first use)
+                    r = {"error": f"Couldn't load this model's tokenizer: {e}"}
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/captions/static":
                 _, folder, clips, photos, voice = _caption_args(b)
                 return self.json(captions.static_captions(folder, str(b.get("trigger") or ""),
