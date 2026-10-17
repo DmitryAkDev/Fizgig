@@ -259,33 +259,82 @@ class MossImageDriver(FamilyDriver):
 
     def _forward(self, dit, xt, sigma, text, mask):
         dt = _dtype(dit)
-        t = torch.full((xt.shape[0],), float(sigma) * S.NUM_TRAIN_TIMESTEPS, device=xt.device, dtype=torch.float32)
+        if torch.is_tensor(sigma):                  # per sample (a batch): sigma (B,)
+            t = sigma.reshape(-1).to(xt.device, torch.float32) * S.NUM_TRAIN_TIMESTEPS
+        else:
+            t = torch.full((xt.shape[0],), float(sigma) * S.NUM_TRAIN_TIMESTEPS, device=xt.device,
+                           dtype=torch.float32)
         return dit(xt.to(dt), t, text.to(dt), mask)
+
+    # ---- batch size > 1: the masked path (model._forward_masked, per-row RoPE) ------------------------------------
+    supports_batch = True
+
+    def batch_cond(self, batch, device):
+        """The cached captions, batched: a ragged batch arrives right-padded with `cond__hidden_states_mask`."""
+        c = super().batch_cond(batch, device)
+        if "hidden_states_mask" in c:
+            c["mask"] = c.pop("hidden_states_mask")
+        return c
+
+    @staticmethod
+    def _batch_rows(cond, n):
+        """Each sample's own caption tokens (the valid rows of a right-padded batch)."""
+        h = cond["hidden_states"]
+        h = h if h.dim() == 3 else h[None]
+        if h.shape[0] != n:
+            raise RuntimeError(f"MOSS-Image: {h.shape[0]} captions for a batch of {n} latents")
+        mask = cond.get("mask")
+        mask = None if mask is None else (mask if mask.dim() == 2 else mask[None]).bool()
+        return [h[b][mask[b].to(h.device)] if mask is not None else h[b] for b in range(n)]
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
                       diff_weight=0.0):
+        """Flow matching: xt = (1 - s) x0 + s noise, target noise - x0, per-image token-mean MSE. A batch draws
+        noise, sigma and caption dropout per sample in the order batch 1 draws them (sample by sample), so a batch
+        is the mean of its samples' batch-1 losses; captions of different lengths take the masked path."""
         if refs:
             raise RuntimeError("MOSS-Image has no edit training")
         device = latents.device
         x0 = latents.float()
         x0 = x0 if x0.dim() == 4 else x0[None]
-        noise = torch.randn(x0.shape, generator=generator).to(device)
-        sigma = self._sample_sigma(generator, min_t, max_t)
-        xt = (1 - sigma) * x0 + sigma * noise
-        text, mask = self._text(cond, device, generator)
+        n = x0.shape[0]
+        if n == 1:
+            noise = torch.randn(x0.shape, generator=generator).to(device)
+            sigma = self._sample_sigma(generator, min_t, max_t)
+            text, mask = self._text(cond, device, generator)
+            xt = (1 - sigma) * x0 + sigma * noise
+            info_t = sigma
+        else:
+            rows = self._batch_rows(cond, n)        # dropout swaps a row for the empty prompt; then padded + mask
+            p = float(self.options.get("caption_dropout") or 0)
+            noise, sig = [], []
+            for b in range(n):
+                noise.append(torch.randn((1,) + tuple(x0.shape[1:]), generator=generator))
+                sig.append(self._sample_sigma(generator, min_t, max_t))
+                if self._uncond is not None and p > 0 and torch.rand(1, generator=generator).item() < p:
+                    rows[b] = self._uncond[0].to(rows[b].device, rows[b].dtype)
+            noise = torch.cat(noise).to(device)
+            sigma = torch.tensor(sig, dtype=torch.float32, device=device)
+            xt = (1 - sigma.view(-1, 1, 1, 1)) * x0 + sigma.view(-1, 1, 1, 1) * noise
+            L = max(r.shape[0] for r in rows)
+            if all(r.shape[0] == L for r in rows):
+                text, mask = torch.stack(rows).to(device), None
+            else:
+                text = torch.stack([torch.cat([r, r.new_zeros(L - r.shape[0], r.shape[1])]) for r in rows]).to(device)
+                mask = torch.stack([torch.arange(L) < r.shape[0] for r in rows]).to(device)
+            info_t = float(sigma.mean())
         pred = self._forward(dit, xt, sigma, text, mask)
         target = noise - x0
         if diff_ref is not None and diff_weight > 0.0:
             # image-pair sliders (Krea 2's weighting): each token's error weighted by how much the two poles differ
-            d = (x0 - diff_ref.to(device).float().reshape(x0.shape)).abs().mean(dim=1)       # (1, h, w)
-            dm = d.mean().clamp_min(1e-8)
+            d = (x0 - diff_ref.to(device).float().reshape(x0.shape)).abs().mean(dim=1)       # (B, h, w)
+            dm = d.mean(dim=(1, 2), keepdim=True).clamp_min(1e-8)
             r = (d / dm).clamp(max=8.0)
             wgt = (1.0 - float(diff_weight)) + float(diff_weight) * r
-            wgt = wgt / wgt.mean().clamp_min(1e-8)
-            if float(dm) <= 1e-6:
-                wgt = torch.ones_like(wgt)
-            return ((pred.float() - target).pow(2).mean(dim=1) * wgt).mean(), {"t": sigma}
-        return F.mse_loss(pred.float(), target), {"t": sigma}
+            wgt = wgt / wgt.mean(dim=(1, 2), keepdim=True).clamp_min(1e-8)
+            wgt = torch.where(dm <= 1e-6, torch.ones_like(wgt), wgt)
+            return ((pred.float() - target).pow(2).mean(dim=1) * wgt).mean(), {"t": info_t}
+        return F.mse_loss(pred.float(), target), {"t": info_t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

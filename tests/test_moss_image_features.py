@@ -508,6 +508,97 @@ def test_sft_previews_through_checkpoint_previews(tmp_path, files):
     assert train.blocks_to_swap == 0 and train.offloader is None
 
 
+# ---- 6. batch size > 1 ------------------------------------------------------------------------------------------
+def _collate(tmp_path, items):
+    """The shared dataset's batch assembly (BucketBatchManager.__getitem__) over cache files of these
+    (latent, hidden_states) items - the real right-padding + mask code."""
+    import types
+
+    from safetensors.torch import save_file
+
+    from fizgig.dataset.image_dataset import BucketBatchManager
+    infos = []
+    for j, (lat, h) in enumerate(items):
+        lp, tp = tmp_path / f"i{j}_lat.safetensors", tmp_path / f"i{j}_te.safetensors"
+        save_file({f"latent_{lat.shape[-2]}x{lat.shape[-1]}": lat.contiguous()}, str(lp))
+        save_file({"cond__hidden_states": h.contiguous()}, str(tp))
+        infos.append(types.SimpleNamespace(latent_cache_path=str(lp), text_encoder_output_cache_path=str(tp),
+                                           item_key=f"img{j}", still_only=False))
+    fake = types.SimpleNamespace(bucket_batch_indices=[("r", 0)], buckets={"r": infos}, batch_size=len(items),
+                                 timestep_pool=None)
+    return BucketBatchManager.__getitem__(fake, 0)
+
+
+def test_batch_collation_pads_ragged_captions(tmp_path):
+    C = TINY["latent_channels"]
+    lat = [torch.randn(C, 2, 3) for _ in range(3)]
+    hs = [torch.randn(n, TINY["text_dim"]) for n in (4, 7, 5)]
+    b = _collate(tmp_path, list(zip(lat, hs)))
+    assert b["latents"].shape == (3, C, 2, 3) and b["cond__hidden_states"].shape == (3, 7, TINY["text_dim"])
+    m = b["cond__hidden_states_mask"]
+    assert m.dtype == torch.bool and m.sum(1).tolist() == [4, 7, 5] and not m[0, 4:].any()
+    for j, h in enumerate(hs):
+        assert torch.equal(b["cond__hidden_states"][j, : h.shape[0]], h)
+        assert not b["cond__hidden_states"][j, h.shape[0]:].any()
+    c = _drv().batch_cond(b, "cpu")
+    assert set(c) == {"hidden_states", "mask"}
+    same = _collate(tmp_path / "..", [(lat[0], hs[0]), (lat[1], hs[0])])   # equal lengths: plain stack, no mask
+    assert "cond__hidden_states_mask" not in same
+    assert _drv().supports_batch and not __import__("fizgig.families.driver", fromlist=["x"]).FamilyDriver.supports_batch
+
+
+@pytest.mark.parametrize("dropout,seed", [(0.0, 1234), (0.5, 70), (0.5, 75)])   # 70 / 75: row 2 / row 1 dropped
+def test_batch_of_two_equals_two_batch_one_steps(tmp_path, dropout, seed):
+    """A batch of 2 with captions of different lengths (padded + mask through the real collation): its loss is the
+    mean of the two batch-1 losses and its LoRA grads the mean of theirs - per-sample noise, sigma and caption
+    dropout drawn in batch 1's order from the same generator."""
+    drv = _drv({"caption_dropout": dropout} if dropout else {})
+    fz, _ = pair(seed=51)
+    net = _lora(fz, drv, seed=5)
+    drv._uncond = torch.randn(1, 3, TINY["text_dim"]) if dropout else None
+    C = TINY["latent_channels"]
+    lat = [torch.randn(C, 2, 3, generator=torch.Generator().manual_seed(k)) for k in (1, 2)]
+    hs = [torch.randn(n, TINY["text_dim"], generator=torch.Generator().manual_seed(10 + n)) for n in (4, 7)]
+    batch = _collate(tmp_path, list(zip(lat, hs)))
+    params = list(net.parameters())
+
+    def grads():
+        g = [p.grad.clone() for p in params]
+        for p in params:
+            p.grad = None
+        return g
+
+    gen = torch.Generator().manual_seed(seed)
+    l1, i1 = drv.training_loss(fz, lat[0][None], {"hidden_states": hs[0][None]}, gen)
+    l2, i2 = drv.training_loss(fz, lat[1][None], {"hidden_states": hs[1][None]}, gen)
+    ((l1 + l2) / 2).backward()
+    g_seq = grads()
+    gen = torch.Generator().manual_seed(seed)
+    lb, ib = drv.training_loss(fz, batch["latents"], drv.batch_cond(batch, "cpu"), gen)
+    lb.backward()
+    g_b = grads()
+    RESULTS[f"batch-2 loss vs batch-1 mean p{dropout} s{seed}"] = rel(lb.detach(), (l1 + l2).detach() / 2)
+    gr = max(rel(a, b) for a, b in zip(g_b, g_seq) if float(b.abs().sum()) > 0)
+    RESULTS[f"batch-2 grads vs batch-1 mean p{dropout} s{seed}"] = gr
+    assert rel(lb.detach(), (l1 + l2).detach() / 2) <= 1e-5 and gr <= 1e-4
+    assert abs(ib["t"] - (i1["t"] + i2["t"]) / 2) <= 1e-6 and i1["t"] != i2["t"]
+
+
+def test_batch_guard_in_the_trainer():
+    """The trainer's batch rule: a family without supports_batch keeps the batch-1 error; MOSS passes, a slider or a
+    fine-tune at batch > 1 is refused (the source text of the guard, as the trainer runs on CUDA only)."""
+    import inspect
+
+    from fizgig.families import train
+    src = inspect.getsource(train.train_family)
+    assert "driver.supports_batch" in src and "slider or finetune" in src
+    assert "per-image loss watch, per-image LR, auto-recaption and look warm-up are off" in src
+    from fizgig.families.registry import FAMILIES
+    others = [k for k, d in FAMILIES.items() if k != "moss_image" and d.training_ready]
+    for k in others[:4]:
+        assert FAMILIES[k].load_driver().supports_batch is False, k
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")
