@@ -93,4 +93,4 @@ On the Training tab, the **Subjects** card: choose how many subjects, pick each 
 
 ## Credits
 
-DOP (Differential Output Preservation) is from [Ostris's AI-Toolkit](https://github.com/ostris/ai-toolkit). Likeness scoring uses [insightface](https://github.com/deepinsight/insightface) (`buffalo_l`). The strangers set is rendered with Qwen Image 2.1.
+Thanks to Ostris for DOP (Differential Output Preservation, from [AI-Toolkit](https://github.com/ostris/ai-toolkit)), one of the core components this method builds upon. Likeness scoring uses [insightface](https://github.com/deepinsight/insightface) (`buffalo_l`). The strangers set is rendered with Qwen Image 2.1.
