@@ -40,7 +40,7 @@ rexo, a dog lying on a sofa
 
 Trigger words that work well (checked against Krea 2's text encoder): `dlor`, `gwelt`, `jeskv`, `knurv`, `vorlk`, `thrisk`, `zwxem`. They share no piece or first letter with each other and join cleanly (`dlorwoman`, `gweltman`).
 
-**Check yours before you caption:** the Captions tab's **Check a trigger word** reads a word with the chosen model's own text encoder, joined to what the subject is, and says whether it joins cleanly or shares a piece or first letter with your other subjects' words. If it doesn't join cleanly, it suggests made-up words that do.
+**Check yours before you caption:** **Check a trigger word**, at the bottom of the Training tab's Subjects card, reads a word with the training model's own text encoder, joined to what the subject is, and says whether it joins cleanly or shares a piece or first letter with your other subjects' words. If it doesn't join cleanly, it suggests made-up words that do.
 
 ## 4. Describe everything else as usual
 
