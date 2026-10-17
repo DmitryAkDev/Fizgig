@@ -5290,20 +5290,19 @@ function wireCaptions() {
                         ["person", "a person"], ["dog", "a dog"], ["cat", "a cat"], ["horse", "a horse"],
                         ["", "a style or look (not joined)"]])
     $("tcClass").append(el("option", {value: v, text: t}));
+  for (const f of S.schema.families)                     // its own model choice: checking never changes the run's
+    if (!f.key.startsWith("acestep")) $("tcFamily").append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
+  if ([...$("tcFamily").options].some((o) => o.value === S.family)) $("tcFamily").value = S.family;
   const tcRun = async () => {
     const word = ($("tcWord").value || $("capTrigger").value || "").trim();
     $("tcWord").value = word;
     const box = $("tcResult");
     box.innerHTML = "";
-    if (S.family.startsWith("acestep")) {
-      box.append(el("div", {class: "field-hint", text: "ACE-Step trains songs: there's no subject word joined to check."}));
-      return;
-    }
     if (!word) { box.append(el("div", {class: "field-hint", text: "Type a trigger word first."})); return; }
     box.append(el("div", {class: "field-hint", text: "Checking…"}));
     let r;
     try {
-      r = await api("/api/captions/trigger_check", {family: S.family, trigger: word, cls: $("tcClass").value,
+      r = await api("/api/captions/trigger_check", {family: $("tcFamily").value, trigger: word, cls: $("tcClass").value,
         others: $("tcOthers").value.split(",").map((s) => s.trim()).filter(Boolean)});
     } catch (e) { box.innerHTML = ""; box.append(el("div", {class: "field-hint", text: String(e.message || e)})); return; }
     box.innerHTML = "";
@@ -5312,7 +5311,7 @@ function wireCaptions() {
       text: (clean ? "✓ Joins cleanly: " : r.ok ? "Joins cleanly, but see below: " : "✗ ") +
             (clean || r.ok ? `${r.joined} reads as ${r.pieces.join(" | ")}` : r.notes[0])}));
     for (const n of (r.ok ? r.notes : r.notes.slice(1))) box.append(el("div", {class: "field-hint", text: "• " + n}));
-    if (r.encoder) box.append(el("div", {class: "field-hint", text: `Checked with ${r.encoder} - the model you're training, not the captioner.`}));
+    if (r.encoder) box.append(el("div", {class: "field-hint", text: `Checked with ${r.encoder}.`}));
     if (r.suggestions && r.suggestions.length) {
       const row = el("div", {class: "field-row"}, el("span", {class: "field-hint", text: "Words that join cleanly:"}));
       for (const s of r.suggestions)
@@ -5322,7 +5321,7 @@ function wireCaptions() {
     }
   };
   $("tcCheck").addEventListener("click", tcRun);
-  $("tcFamily").addEventListener("change", () => setTimeout(() => { if ($("tcResult").textContent) tcRun(); }, 300));
+  $("tcFamily").addEventListener("change", () => { if ($("tcResult").textContent) tcRun(); });
   $("tcWord").addEventListener("keydown", (e) => { if (e.key === "Enter") tcRun(); });
   $("capSongs").addEventListener("click", async () => {
     const r = await capRun("/api/captions/songs", capJobBody({words: $("capSongWords").value}));
