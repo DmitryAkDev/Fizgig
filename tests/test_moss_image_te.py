@@ -119,3 +119,67 @@ def test_t9_offline(side, monkeypatch):
         assert te.encode(["x"])[0].shape[0] > 0
     finally:
         te.unload()
+
+
+# ---- layer-major stream mode (the text cache's fast path) ---------------------------------------------------------
+@pytest.mark.parametrize("weights,order,group_tokens", [("resident", "layer", None), ("resident", "caption", None),
+                                                        ("disk", "layer", None), ("disk", "caption", None),
+                                                        ("resident", "layer", 40), ("disk", "layer", 40)])
+def test_t9_stream_orders_equal_reference(side, weights, order, group_tokens):
+    """Every stream variant through the real worker, fp32: bit-for-bit the in-process model, whatever the caption
+    lengths (12 ... 300+ tokens) and however the captions are grouped (40 tokens: one caption per group)."""
+    from safetensors.torch import load_file
+
+    from fizgig.moss_image.te_proxy import MossTextEncoder
+    py, tok, out = side
+    ref = load_file(str(out / "reference.safetensors"))
+    te = MossTextEncoder(str(out / "text_encoder"), device="cpu", mode="stream", dtype="float32", out_dtype="float32",
+                         python=py, tokenizer=tok, weights=weights, order=order, group_tokens=group_tokens)
+    try:
+        assert te.info["weights"] == weights and te.info["order"] == order
+        got = te.encode(CAPTIONS)
+        again = te.encode(CAPTIONS[1:2])                 # weights go home after a pass and come back for the next
+    finally:
+        te.unload()
+    worst = max(float((g - ref[f"h{i}"]).abs().max()) for i, g in enumerate(got))
+    print(f"T9 stream {weights}/{order}/{group_tokens} vs in-process max abs {worst:.3e}")
+    assert [g.shape for g in got] == [ref[f"h{i}"].shape for i in range(len(CAPTIONS))]
+    assert worst == 0.0 and torch.equal(again[0], got[1])
+
+
+def test_t9_layer_major_bf16_equals_per_caption(side):
+    """bf16 (the real setting): the layer-major pass returns exactly what the old per-caption stream returned."""
+    from fizgig.moss_image.te_proxy import MossTextEncoder
+    py, tok, out = side
+    res = {}
+    for order in ("caption", "layer"):
+        te = MossTextEncoder(str(out / "text_encoder"), device="cpu", mode="stream", python=py, tokenizer=tok,
+                             weights="resident", order=order)
+        try:
+            res[order] = te.encode(CAPTIONS)
+        finally:
+            te.unload()
+    for a, b in zip(res["caption"], res["layer"]):
+        assert a.dtype == torch.bfloat16 and torch.equal(a, b)
+
+
+def test_pick_weights_by_free_ram(monkeypatch, tmp_path):
+    from fizgig.moss_image import te_proxy as P
+    (tmp_path / "model.safetensors").write_bytes(b"\0" * (1 << 20))
+    monkeypatch.delenv("FIZGIG_MOSS_TE_WEIGHTS", raising=False)
+    monkeypatch.setattr(P, "weights_gb", lambda p: 17.9)          # the 9B's text model + vision shards
+    monkeypatch.setattr(P, "available_ram_gb", lambda: 50.0)
+    assert P.pick_weights(str(tmp_path)) == "resident"          # 64 GB machine
+    monkeypatch.setattr(P, "available_ram_gb", lambda: 20.0)
+    assert P.pick_weights(str(tmp_path)) == "disk"              # 32 GB machine with a browser open
+    monkeypatch.setattr(P, "available_ram_gb", lambda: None)
+    assert P.pick_weights(str(tmp_path)) == "resident"          # no psutil: the old behaviour
+    monkeypatch.setenv("FIZGIG_MOSS_TE_WEIGHTS", "disk")
+    monkeypatch.setattr(P, "available_ram_gb", lambda: 50.0)
+    assert P.pick_weights(str(tmp_path)) == "disk"
+    monkeypatch.setenv("FIZGIG_MOSS_TE_ORDER", "caption")
+    assert P.pick_order() == "caption"
+    monkeypatch.delenv("FIZGIG_MOSS_TE_ORDER")
+    assert P.pick_order() == "layer"
+    monkeypatch.undo()
+    assert abs(P.weights_gb(str(tmp_path)) - 1 / 1024) < 1e-9

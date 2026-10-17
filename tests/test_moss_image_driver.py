@@ -304,6 +304,47 @@ def test_t12_skipped_blocks_keep_the_swap_schedule():
     assert _drv().max_blocks_to_swap(fz) == n - 2 and _drv().max_blocks_to_swap() == 40
 
 
+def test_text_cache_one_request_with_the_empty_prompt(tmp_path):
+    """The text stage hands the worker a dataset's captions in one request (its layer-major pass), the empty prompt
+    riding along when a cache folder still lacks it; outside a cache stage nothing is added."""
+    from argparse import Namespace
+
+    from safetensors.torch import load_file
+
+    from fizgig.moss_image.driver import TEXT_CACHE_BATCH, UNCOND_FILE
+
+    class TE:
+        def __init__(self):
+            self.calls = []
+
+        def encode(self, caps):
+            self.calls.append(list(caps))
+            return [torch.full((len(c) + 3, 8), float(len(c))) for c in caps]
+
+        def unload(self):
+            self.calls.append("unload")
+
+    ds = type("D", (), {"cache_directory": str(tmp_path / "c")})()
+    drv, te = _drv(), TE()
+    args = Namespace(batch_size=None)
+    assert drv.cache_stage("text", [ds], args, "cpu", {}) is False
+    assert args.batch_size == TEXT_CACHE_BATCH
+    out = drv.encode_text(te, ["ab", "abcd"])
+    assert [o["hidden_states"].shape[0] for o in out] == [5, 7]
+    out = drv.encode_text(te, ["x"])                             # already have it: not asked again
+    drv.unload_text_encoder(te)
+    assert te.calls == [["ab", "abcd", ""], ["x"], "unload"]
+    assert load_file(str(tmp_path / "c" / UNCOND_FILE))["hidden_states"].shape == (3, 8)
+    te2 = TE()
+    drv.cache_stage("text", [ds], Namespace(batch_size=4), "cpu", {})
+    drv.encode_text(te2, ["ab"])                                 # the file exists now
+    drv.unload_text_encoder(te2)
+    assert te2.calls == [["ab"], "unload"]
+    te3 = TE()
+    drv.encode_text(te3, ["ab", ""])                             # previews / workbench: as asked
+    assert te3.calls == [["ab", ""]]
+
+
 # ---- T10: the CLI end to end (cache text + latents, train 2 epochs with previews, reload) ---------------------------
 def test_t10_cli_cache_train_reload(tmp_path):
     import json
@@ -345,7 +386,7 @@ def test_t10_cli_cache_train_reload(tmp_path):
                     f'enable_bucket = true\nbucket_no_upscale = true\n\n[[datasets]]\n'
                     f'image_directory = "{img_dir.as_posix()}"\ncache_directory = "{cache.as_posix()}"\n')
     env = dict(os.environ, PYTHONPATH=os.path.abspath(src), FIZGIG_MOSS_TOKENIZER=tok)
-    env["FIZGIG_MOSS_TE_MODE"] = "cpu"
+    env["FIZGIG_MOSS_TE_MODE"] = "stream"           # the layer-major path, as on a 12 GB card
     te_dir = str(tmp_path / "te" / "text_encoder")
     # the worker finds the tokenizer beside the text_encoder folder, as in the official repo layout
     import shutil
@@ -358,6 +399,8 @@ def test_t10_cli_cache_train_reload(tmp_path):
             str(toml), "--model", te_dir, "--device", "cpu")
     assert r.returncode == 0, (r.stdout + r.stderr)[-4000:]
     assert (cache / "mossimage_empty_prompt.safetensors").is_file()
+    log = r.stdout + r.stderr
+    assert "layer-major" in log and "4 captions" in log, log[-3000:]   # 3 captions + the empty prompt, one pass
     lat = [f for f in os.listdir(cache) if f.endswith("_mossimage.safetensors")]
     assert len(lat) >= 3, os.listdir(cache)
     if torch.cuda.is_available():
@@ -410,6 +453,9 @@ def test_t10_cli_cache_train_reload(tmp_path):
     te = drv.load_text_encoder(te_dir, "cpu")
     pos, neg = drv.encode_text(te, ["a photo of sks", ""])
     drv.unload_text_encoder(te)
+    # the empty prompt cached alongside the captions (same layer-major pass) is the one encoded on its own
+    assert torch.equal(load_file(str(cache / "mossimage_empty_prompt.safetensors"))["hidden_states"],
+                       neg["hidden_states"])
     vae = drv.load_vae(str(tmp_path / "vae.safetensors"), "cpu")
     with torch.no_grad():
         lat = drv.generate(dit, pos, 64, 64, steps=2, seed=1, cfg=3.0, neg_cond=neg)     # as train.py hands them

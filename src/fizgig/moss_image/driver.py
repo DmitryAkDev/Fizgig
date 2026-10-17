@@ -36,9 +36,13 @@ def _dtype(dit):
     return dit.layers[0].norm1.weight.dtype
 
 
+TEXT_CACHE_BATCH = 1 << 20    # a dataset's captions in one request: the worker's layer-major pass (te_worker.py)
+
+
 class MossImageDriver(FamilyDriver):
     _uncond = None
     _text_datasets = None
+    _empty_h = None
 
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path, device):
@@ -80,7 +84,8 @@ class MossImageDriver(FamilyDriver):
             todo = [d for d in dirs if d and not os.path.isfile(os.path.join(d, UNCOND_FILE))]
             if todo:
                 from safetensors.torch import save_file
-                h = te.encode([""])[0].to(torch.bfloat16).contiguous()
+                h = self._empty_h if self._empty_h is not None else te.encode([""])[0]
+                h = h.to(torch.bfloat16).contiguous()
                 for d in todo:
                     os.makedirs(d, exist_ok=True)
                     save_file({"hidden_states": h}, os.path.join(d, UNCOND_FILE),
@@ -88,11 +93,20 @@ class MossImageDriver(FamilyDriver):
                 logger.info(f"[caption_dropout] empty-prompt embed cached ({h.shape[0]} tokens)")
         finally:
             self._text_datasets = None
+            self._empty_h = None
             te.unload()
+
+    def _needs_empty(self):
+        return self._empty_h is None and any(
+            d and not os.path.isfile(os.path.join(d, UNCOND_FILE))
+            for d in (getattr(ds, "cache_directory", None) for ds in (self._text_datasets or ())))
 
     def cache_stage(self, stage, datasets, args, device, aux):
         if stage == "text":
             self._text_datasets = list(datasets)
+            self._empty_h = None
+            if getattr(args, "batch_size", None) is None:
+                args.batch_size = TEXT_CACHE_BATCH     # not the shared 8: every layer would cross 85 times for 676
         return False                       # the shared encode path runs
 
     # ---- encoding -------------------------------------------------------------------------------
@@ -110,7 +124,12 @@ class MossImageDriver(FamilyDriver):
 
     @torch.no_grad()
     def encode_text(self, te, captions):
-        return [{"hidden_states": h.to(torch.bfloat16).cpu()} for h in te.encode(captions)]
+        captions = list(captions)
+        extra = self._text_datasets is not None and self._needs_empty()
+        hs = te.encode(captions + [""] if extra else captions)   # the empty prompt rides along in the same pass
+        if extra:
+            self._empty_h = hs.pop()
+        return [{"hidden_states": h.to(torch.bfloat16).cpu()} for h in hs]
 
     # ---- options --------------------------------------------------------------------------------
     #   caption_dropout   e.g. 0.05: that share of steps trains on the empty prompt (default 0 = off)
