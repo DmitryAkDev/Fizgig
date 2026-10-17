@@ -69,7 +69,9 @@ MOSS_IMAGE_BASE = FamilyDescription(
     block_prefix="layers",
     block_note="42 identical single-stream blocks (image and text tokens together; one modulation shared by all). "
                "The 2-block text refiner in front of them stays frozen, as does the text encoder.",
-    workbench=("repair", "profiler", "extract"),
+    # LoRA Royale renders through the generic engine with the Samples tab's steps / CFG / negative and the family's
+    # sampling options (shift 5, the negative branch skipping block 22); prompt travel pads with masks
+    workbench=("repair", "profiler", "extract", "royale"),
 
     lora=LoRAFormat(
         key_template="lora_unet_layers_{block}_{module}.{ab}.weight",

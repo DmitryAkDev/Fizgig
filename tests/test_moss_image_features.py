@@ -129,6 +129,121 @@ def test_slider_practice_latent_round_trip():
     assert z.shape == (1, 128, 2, 2) and torch.isfinite(z).all()
 
 
+# ---- 2. LoRA Royale -------------------------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def files(tmp_path_factory):
+    """Tiny model files on disk, as the workbench loads them: a DiT (128 latent channels, ComfyUI's fused-qkv layout),
+    a random FLUX.2 VAE and two LoRA "epochs" of one run."""
+    from safetensors.torch import save_file
+
+    from fizgig.flux3.autoencoder import AutoEncoder
+    from fizgig.moss_image.model import MossImageDiT
+    from moss_tiny import randomise
+    d = tmp_path_factory.mktemp("moss_files")
+    torch.manual_seed(0)
+    dit = randomise(MossImageDiT(**dict(TINY, latent_channels=128)), seed=3)
+    sd = {}
+    for k, v in dit.state_dict().items():                   # ComfyUI's file: q/k/v fused into proj.qkv
+        if k.endswith(".proj.q.weight"):
+            stem = k[: -len("q.weight")]
+            sd[stem + "qkv.weight"] = torch.cat([dit.state_dict()[stem + x + ".weight"] for x in "qkv"])
+        elif not (k.endswith(".proj.k.weight") or k.endswith(".proj.v.weight")):
+            sd[k] = v
+    save_file({"model.diffusion_model." + k: v.contiguous() for k, v in sd.items()}, str(d / "dit.safetensors"))
+    save_file({k: v.contiguous() for k, v in AutoEncoder().state_dict().items()}, str(d / "vae.safetensors"))
+    drv = _drv()
+    for e in (1, 2):
+        net = _lora(MossImageDiT(**dict(TINY, latent_channels=128)), drv, seed=100 + e)
+        net.save(str(d / f"run-{e:06d}.safetensors"), metadata={"ss_base_model_version": "moss-image"})
+    return d
+
+
+def _engine(files, settings=None):
+    eng = _desc().make_workbench_engine()
+    eng.ensure_pipeline(str(files / "dit.safetensors"), str(files / "vae.safetensors"), "unused-te", device="cpu",
+                        lowmem=False, precision="bf16")
+    eng.preview_settings = settings
+    calls = []
+    real = eng.driver.generate
+
+    def spy(*a, **kw):
+        calls.append(kw)
+        return real(*a, **kw)
+    eng.driver.generate = spy
+    return eng, calls
+
+
+def _prime(eng, prompts):
+    """Conditioning straight into the engine's prompt cache (the real text encoder lives in the side venv)."""
+    for i, p in enumerate(prompts):
+        g = torch.Generator().manual_seed(1000 + i)
+        eng._prompt_cache[(p,) + tuple(eng.driver.text_cache_key())] = {
+            "hidden_states": torch.randn(3 + 2 * i, TINY["text_dim"], generator=g).to(torch.bfloat16)}
+
+
+def test_royale_offered():
+    from fizgig.web import royale
+    d = _desc()
+    assert "royale" in d.workbench and d in royale.families()
+    assert royale.family_of([], {d.key: d}) is None
+
+
+def test_royale_engine_paths(files):
+    """What the studio worker's Royale commands do, on the tiny model: point at an epoch, render, swap to the next
+    epoch in place, a seed-travel frame, a prompt-travel frame, a sheet's no-LoRA column. Renders carry MOSS's own
+    sampling (shift 5, the negative branch skipping block 22) and equal the driver's own generate."""
+    from fizgig.families import registry
+    from fizgig.networks.lora import assert_lora_family_matches
+    eng, calls = _engine(files, {"steps": "2", "cfg": "3", "negative": "bad", "turbo": "0"})
+    _prime(eng, ["a fox", "bad", "a cat", "a fox, red"])
+    e1, e2 = str(files / "run-000001.safetensors"), str(files / "run-000002.safetensors")
+    assert registry.family_of_lora(e1).key == "moss_image"
+    assert_lora_family_matches(e1, "moss_image", "Royale")
+    eng.load_primary(e1)
+    st = eng.default_state(32, 32)
+    st.prompt, st.seed = "a fox", 7
+    img1 = eng.generate_preview(st)
+    assert img1.size == (32, 32)
+    kw = calls[-1]
+    assert kw["cfg"] == 3.0 and kw["steps"] == 2 and "neg_cond" in kw
+    assert dict(kw["options"])["uncond_skip_layers"] == (22,) and dict(kw["options"])["shift"] == 5.0
+    # the render is exactly the driver's own, given the same conditioning
+    with torch.no_grad():
+        want = eng.driver.generate(eng.dit, eng._cond_to_device(eng._prompt_cache[("a fox",)]), 32, 32, steps=2,
+                                   seed=7, cfg=3.0, neg_cond=eng._cond_to_device(eng._prompt_cache[("bad",)]),
+                                   options=kw["options"])
+    import numpy as np
+    assert np.array_equal(np.array(eng.driver.decode(eng.vae, want, 32, 32)), np.array(img1))
+    assert eng.swap_primary_weights(e2)
+    img2 = eng.generate_preview(st)
+    assert not np.array_equal(np.array(img1), np.array(img2))            # another epoch, another picture
+    # seed travel: t = 0 is seed a's own picture
+    a0 = eng.generate_preview(st, seed_b=9, travel_t=0.0)
+    assert np.array_equal(np.array(a0), np.array(img2))
+    assert eng.generate_preview(st, seed_b=9, travel_t=0.5).size == (32, 32)
+    # prompt travel: waypoints padded with masks; the endpoints are their own prompts
+    assert eng.supports_prompt_travel
+    ctx, _ = eng.encode_travel_prompts(["a fox", "a fox, red"])
+    first = eng.generate_preview(st, override_ctx=eng.interp_waypoints(ctx, 0.0))
+    assert np.array_equal(np.array(first), np.array(img2))
+    last = eng.generate_preview(st, override_ctx=eng.interp_waypoints(ctx, 1.0))
+    st2 = eng.default_state(32, 32)
+    st2.prompt, st2.seed = "a fox, red", 7
+    assert np.array_equal(np.array(last), np.array(eng.generate_preview(st2)))
+    assert eng.generate_preview(st, override_ctx=eng.interp_waypoints(ctx, 0.4)).size == (32, 32)
+    # the comparison sheet's no-LoRA column: every block at 0 is the bare model
+    for bs in st.blocks.values():
+        bs.primary_strength = 0.0
+    bare = eng.generate_preview(st)
+    eng.reset()
+    eng2, _ = _engine(files, {"steps": "2", "cfg": "3", "negative": "bad", "turbo": "0"})
+    _prime(eng2, ["a fox", "bad"])                     # no LoRA at all
+    st3 = eng2.default_state(32, 32)
+    st3.prompt, st3.seed = "a fox", 7
+    assert np.array_equal(np.array(bare), np.array(eng2.generate_preview(st3)))
+    eng2.reset()
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")
