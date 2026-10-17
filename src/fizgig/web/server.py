@@ -1693,6 +1693,26 @@ def _thumb(path, size=320):
     return data
 
 
+_RELEASE = []
+
+
+def _newest_release(git):
+    """(tag, commit) of the newest vX.Y.Z tag on origin, asked once per run; None when it can't be reached. A pod
+    clones one commit with no tags, so its About box would otherwise show only a branch and a commit."""
+    if not _RELEASE:
+        best = None
+        for line in git("ls-remote", "--tags", "origin").splitlines():
+            sha, _, ref = line.partition("\t")
+            m = re.fullmatch(r"refs/tags/v(\d+)\.(\d+)\.(\d+)(\^\{\})?", ref.strip())
+            if not m:
+                continue
+            key = tuple(int(x) for x in m.group(1, 2, 3))
+            if best is None or key > best[0] or (key == best[0] and m.group(4)):   # ^{} = the tag's own commit
+                best = (key, f"v{key[0]}.{key[1]}.{key[2]}", sha)
+        _RELEASE.append(best[1:] if best else None)
+    return _RELEASE[0]
+
+
 def about_info() -> dict:
     """The About box's facts, as the desktop's: the running version and how this install updates."""
     def git(*a):
@@ -1706,6 +1726,9 @@ def about_info() -> dict:
         branch = git("rev-parse", "--abbrev-ref", "HEAD")
         if branch and branch != "HEAD":
             v = f"{branch} @ {v}"
+        rel = _newest_release(git)                    # the release number, from GitHub's tags (the clone has none)
+        if rel:
+            v = rel[0] if rel[1] == git("rev-parse", "HEAD") else f"{rel[0]} + later changes ({v})"
     rocm = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
     if on_pod():
         how = "On RunPod, Fizgig updates itself every time you restart the pod - just stop and start it to get the latest."
