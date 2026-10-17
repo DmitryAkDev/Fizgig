@@ -1,5 +1,7 @@
 # Fizgig v8.4.0: Fizgig LoRA Isolation
 
+<a href="https://youtu.be/CNh4sN5vN_8"><img src="https://img.youtube.com/vi/CNh4sN5vN_8/maxresdefault.jpg" alt="Fizgig LoRA Isolation: watch the demo on YouTube" width="720"></a>
+
 **Fizgig LoRA Isolation: train 2 identities into one LoRA and keep everyone else looking like themselves.** A normal LoRA of a person spreads their face onto other people in the picture: strangers in the background, a friend beside them, a crowd. Fizgig LoRA Isolation trains your subjects so they can stand together in one picture, or next to someone the model already knows well, and every face stays its own.
 
 On Krea 2, against a normal LoRA trained on the same pictures with the same settings: 48 of 50 strangers read as the trained person with the normal LoRA, 0 of 50 with Fizgig LoRA Isolation, and likeness of the trained person was the same (ArcFace 0.78 against 0.77). [See it in action](https://youtu.be/CNh4sN5vN_8).
@@ -28,6 +30,8 @@ It's set up on the new **Subjects** card on the Training tab, and works on every
 - Two trained people in one picture, plus a person the model already knows, work well. Three or more trained people in one picture come out right less often.
 - Prompt with the joined word the card shows, for example `gweltman man at a cafe`, and describe the other people in your prompt.
 - The side-by-side pictures use a set of 32 generated strangers with natural skin texture, so they never pull your LoRA towards poor skin and no real person's photo is used. The set downloads with your models (21 MB).
+
+<a href="https://youtu.be/8uW5NdL5b20"><img src="https://img.youtube.com/vi/8uW5NdL5b20/maxresdefault.jpg" alt="How to set up Fizgig LoRA Isolation: watch on YouTube" width="420"></a>
 
 How to set it up: [video](https://youtu.be/8uW5NdL5b20) (also linked at the top of the Subjects card) · [captioning guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
 
