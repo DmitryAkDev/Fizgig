@@ -343,7 +343,7 @@ def test_t10_cli_cache_train_reload(tmp_path):
     toml = tmp_path / "ds.toml"
     toml.write_text(f'[general]\nresolution = [64, 64]\ncaption_extension = ".txt"\nbatch_size = 1\n'
                     f'enable_bucket = true\nbucket_no_upscale = true\n\n[[datasets]]\n'
-                    f'image_directory = "{img_dir}"\ncache_directory = "{cache}"\n')
+                    f'image_directory = "{img_dir.as_posix()}"\ncache_directory = "{cache.as_posix()}"\n')
     env = dict(os.environ, PYTHONPATH=os.path.abspath(src), FIZGIG_MOSS_TOKENIZER=tok)
     env["FIZGIG_MOSS_TE_MODE"] = "cpu"
     te_dir = str(tmp_path / "te" / "text_encoder")
