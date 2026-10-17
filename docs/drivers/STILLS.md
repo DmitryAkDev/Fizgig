@@ -203,6 +203,8 @@ Most of `train_memory` follows from the model file, so you need very few runs.
 - **GB per swapped block = one block's weights at that precision.** Sum the block's tensor sizes from the safetensors header (no model load needed): bf16 is 2 bytes per parameter, INT8 about half that. Checked against two measured families: Qwen 2.1's 0.44 GB per block against 14.23 GB / 32 blocks = 0.445, and Z-Image's 0.36 against 12.31 / 30 = 0.41.
 - **The training peak ≈ the DiT's weights at that precision + a small overhead + activations.** One short run gives the overhead. For example, a run with some blocks swapped is an exact check: peak = weights − blocks swapped × GB per block + overhead.
 - **Measure what the file can't tell you:** how much activations grow with resolution (one run at 1.0 MP per precision), and whether something other than training sets the peak. Z-Image's figures are flat across resolutions because its preview step sets them.
+- **Never borrow another family's activation growth.** It depends on the model's block count, width and token count, not on the file size. MOSS-Image's first estimate borrowed Flux 3's +0.4 GB from 0.25 to 1 MP; the measured growth was 2.1 GB.
+- **Put the preview's peak in `train_memory` when it's higher than training's.** Take it from a preview after at least one epoch, when the optimizer state is resident. On MOSS-Image (1024², 50 steps, CFG 3) the preview round peaks 1.7 GB above training in bf16 and further above in INT8 and NF4, so figures from training alone would let Auto plan a card that runs out of memory at the first preview.
 
 Flux 3 as a worked example:
 1. **From the file:** an 11.08 GB DiT; a single block is 0.245 GB in bf16.
