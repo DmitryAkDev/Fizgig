@@ -27,6 +27,7 @@ def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "MOSS_CAPTION_DROPOUT": "0",
+        "DATASET_BATCH_SIZE": "1",
     }
 
 
@@ -119,6 +120,9 @@ MOSS_IMAGE_BASE = FamilyDescription(
     # memory from the shared estimates until measured on a GPU
     finetune=True,
     ft_learning_rate=1e-5,
+    # batch size > 1 (the driver's supports_batch: captions padded with a mask, noise / timesteps per sample): the
+    # Training tab's Batch Size box, 1 by default. Memory per extra image not yet measured on a GPU
+    max_batch_size=8,
     precisions=("int8", "nf4", "bf16"),
     auto_precisions=("int8", "nf4"),  # bf16 is 10.2 GB of weights: past 12-16 GB cards with activations
     optimizers=("adamw", "adamw8bit"),

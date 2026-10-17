@@ -703,6 +703,87 @@ def test_finetune_round_trip_in_comfy_layout(tmp_path):
     RESULTS["fine-tune: tensors changed / total"] = len(changed) / len(base)
 
 
+# ---- 8. the Training tab's Batch Size box -----------------------------------------------------------------------
+def _plan(tmp_path, desc, values):
+    from fizgig.families import form, launch
+    img = tmp_path / "img"
+    img.mkdir(exist_ok=True)
+    (img / "a.png").write_bytes(b"")
+    (img / "a.txt").write_text("a cat")
+    m = tmp_path / "m.safetensors"
+    m.write_bytes(b"")
+    v = {"DATASET_MEGAPIXELS": "1.0", "LORA_OUTPUT_DIR": str(tmp_path / "out"), "LORA_NAME": "x", **values}
+    i = form.inputs(desc, v, models={f.pref_key: str(m) for f in desc.model_files}, python="py",
+                    repo_dir=str(tmp_path), image_folder=str(img), cache_root=str(tmp_path / "c"),
+                    samples_dir=str(tmp_path / "s"))
+    i["DATASET_CONFIG"] = str(tmp_path / "ds.toml")
+    return i, launch.plan(desc, i)
+
+
+def _toml_batch(text):
+    return [line for line in text.splitlines() if line.startswith("batch_size")]
+
+
+def test_batch_box_only_for_batch_families():
+    """The box sits in Training Parameters for MOSS-Image (1..8, default 1, the VRAM / 12 GB / loss-watch hint) and
+    nowhere for a family whose driver keeps batch 1; max_batch_size > 1 only where the driver supports_batch."""
+    from fizgig.families import form, registry
+    d = _desc()
+    rows = {r["key"]: (s["id"], r) for s in form.form(d)["sections"] for r in s["rows"]}
+    sid, row = rows["DATASET_BATCH_SIZE"]
+    assert sid == "params" and row["kind"] == "choice" and row["default"] == "1"
+    assert row["choices"] == [str(n) for n in range(1, 9)]
+    for words in ("VRAM", "12 GB", "Detect problem images", "Per-image LR", "Auto-recaption"):
+        assert words in row["hint"], words
+    assert all(p.get("DATASET_BATCH_SIZE") == "1" for _n, p in d.presets)      # a preset puts it back to 1
+    for k, other in registry.FAMILIES.items():
+        if not other.training_ready:
+            continue
+        keys = {r["key"] for s in form.form(other)["sections"] for r in s["rows"]}
+        supports = bool(getattr(other.load_driver(), "supports_batch", False))
+        assert (other.max_batch_size > 1) == supports, k
+        assert ("DATASET_BATCH_SIZE" in keys) == (other.max_batch_size > 1), k
+
+
+@pytest.mark.parametrize("asked,want", [("4", 4), ("8", 8), ("1", 1), ("", 1), ("12", 8), ("x", 1)])
+def test_batch_box_reaches_the_dataset_toml(tmp_path, asked, want):
+    """MOSS-Image: the box's value is the TOML's batch_size (clamped to 1..8); above 1 the per-image loss watch
+    flags are not sent."""
+    i, p = _plan(tmp_path, _desc(), {"DATASET_BATCH_SIZE": asked, "KREA2_LOSS_WATCH": True,
+                                     "KREA2_PER_IMAGE_LR": True})
+    assert not p.problems and i["batch_size"] == want
+    assert _toml_batch(p.dataset_toml) == [f"batch_size = {want}"]
+    cmd = p.stages[-1].cmd
+    assert ("--log_per_image_loss" in cmd) == (want == 1) and ("--per_image_lr" in cmd) == (want == 1)
+
+
+@pytest.mark.parametrize("kind", ["slider", "finetune"])
+def test_batch_box_slider_and_finetune_train_at_one(tmp_path, kind):
+    from fizgig.families import form, launch
+    d = _desc()
+    label = dict(form.kinds(d))[kind]
+    i = form.inputs(d, {"DATASET_BATCH_SIZE": "4", "DATASET_MEGAPIXELS": "1.0", "FAMILY_KIND": label}, models={},
+                    python="py", repo_dir=str(tmp_path), image_folder=str(tmp_path), cache_root=str(tmp_path / "c"),
+                    samples_dir=str(tmp_path / "s"))
+    assert i["batch_size"] == 1 and _toml_batch(launch.dataset_toml(d, i)) == ["batch_size = 1"]
+    # the TOML writer holds the line too, whatever batch_size it is handed
+    forced = {**i, "batch_size": 4}
+    assert _toml_batch(launch.dataset_toml(d, forced)) == ["batch_size = 1"]
+
+
+def test_batch_box_other_families_write_one(tmp_path):
+    from fizgig.families import form, launch, registry
+    for k in ("krea2", "zimage", "anima", "qwen_image"):
+        d = registry.FAMILIES.get(k)
+        if d is None:
+            continue
+        i = form.inputs(d, {"DATASET_BATCH_SIZE": "4", "DATASET_MEGAPIXELS": "1.0"}, models={}, python="py",
+                        repo_dir=str(tmp_path), image_folder=str(tmp_path), cache_root=str(tmp_path / "c"),
+                        samples_dir=str(tmp_path / "s"))
+        assert i["batch_size"] == 1, k
+        assert _toml_batch(launch.dataset_toml(d, {**i, "batch_size": 4})) == ["batch_size = 1"], k
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")
