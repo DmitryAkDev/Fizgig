@@ -50,6 +50,78 @@ class MossImageDriver(FamilyDriver):
         from fizgig.moss_image.model import load_moss_dit
         return load_moss_dit(path, device=device).eval().requires_grad_(False)
 
+    def load_planned(self, path, device, precision, blocks_to_swap):
+        """A ComfyUI int8 ConvRot file (Comfy-Org's moss_image_sft_int8_convrot, and repackages of it): its own int8
+        weights, as stored - the precision is the file's. Streaming needs weights the shared offloader can move, so a
+        swapped load decodes it and takes Fizgig's INT8. Such a model renders previews and workbench pictures only:
+        prepare_training refuses it as a training base. Any other file: the shared load."""
+        from fizgig.moss_image.model import is_convrot, load_moss_dit
+        if not is_convrot(path):
+            return None
+        swap = min(int(blocks_to_swap or 0), self.max_blocks_to_swap())
+        if swap <= 0:
+            logger.info(f"[precision] {os.path.basename(path)}: int8 ConvRot, as stored")
+            return load_moss_dit(path, device=device, convrot="keep").eval().requires_grad_(False), 0
+        from fizgig.families import quant
+        dit = load_moss_dit(path, device="cpu", convrot="decode").eval().requires_grad_(False)
+        quant.quantize(dit, self, "int8", device, store_device="cpu")
+        self.enable_block_swap(dit, swap, device, False)
+        logger.info(f"[precision] {os.path.basename(path)}: decoded to INT8 with {swap} blocks streamed")
+        return dit, swap
+
+    # ---- training previews on the SFT checkpoint (train_preview_checkpoint) ---------------------------------------
+    def park_for_preview(self, dit, device):
+        """Stream all but two of the training model's blocks so the SFT model fits beside it; an NF4 base cannot
+        stream and is small - left as it is (token None)."""
+        if getattr(dit, "_nf4_quantized", False):
+            return None
+        orig = int(dit.blocks_to_swap or 0)
+        dit.enable_block_swap(len(dit.layers) - 2, torch.device(device), True)
+        dit.prepare_block_swap_before_forward()
+        return orig
+
+    def load_preview_checkpoint(self, path, device, int8=False):
+        """The SFT DiT for this preview round, sized to the VRAM left beside the parked training model: an int8
+        ConvRot file as stored; a bf16 file in bf16 when it fits with room for the render, else INT8; blocks streamed
+        (forward-only) when even that does not fit."""
+        from fizgig.families import quant
+        from fizgig.moss_image.model import is_convrot
+        cuda = torch.cuda.is_available() and torch.device(device).type == "cuda"
+        if cuda:
+            torch.cuda.empty_cache()
+        free = quant.free_vram_gb() if cuda else float("inf")     # FIZGIG_SIM_VRAM_GB: the simulated card's
+        size = os.path.getsize(path) / 1024 ** 3
+        room = 4.0                          # a 1024 px render + the VAE decode
+        if is_convrot(path):
+            precision, need = "int8", size + room
+        else:
+            precision = "int8" if int8 or free < size + room else "bf16"
+            need = (size / 2 if precision == "int8" else size) + room
+        swap = 0
+        if free < need:
+            per_block = (size / 2 if precision == "int8" or is_convrot(path) else size) / N_BLOCKS
+            swap = min(self.max_blocks_to_swap(), max(1, int((need - free) / max(per_block, 1e-3)) + 2))
+        m, swapped = quant.load_base(self, path, device, precision, swap, supports_backward=False)
+        if swapped:
+            self.block_swap_mode(m, inference=True)
+        logger.info(f"[sample] SFT checkpoint: {precision}, {swapped} blocks streamed"
+                    + (f" ({free:.1f} GB free)" if cuda else ""))
+        return m.eval().requires_grad_(False), swapped
+
+    def unpark_after_preview(self, dit, device, token):
+        """The run's own swap back, or with none the preview-time offloader torn down and the model back on the GPU."""
+        if token is None:
+            return
+        device = torch.device(device)
+        if token > 0:
+            dit.enable_block_swap(token, device, True)
+            dit.move_to_device_except_swap_blocks(device)
+        else:
+            from fizgig.families import quant
+            dit.disable_block_swap()
+            quant.move(dit, device)
+        dit.switch_block_swap_for_training()
+
     def max_blocks_to_swap(self, dit=None):
         return (len(dit.layers) if dit is not None else N_BLOCKS) - 2
 
@@ -146,6 +218,10 @@ class MossImageDriver(FamilyDriver):
             raise ValueError(f"timesteps: paper, logit_normal or uniform - got {kind!r}")
 
     def prepare_training(self, dit, group, net=None):
+        if getattr(dit, "_convrot", False):
+            raise RuntimeError("the DiT is ComfyUI's int8 ConvRot MOSS-Image file - Fizgig trains from the bf16 file "
+                               "(moss_image_base_bf16.safetensors) and applies its own INT8 / NF4. The int8 SFT "
+                               "file belongs in the SFT preview row of Preferences")
         p = float(self.options.get("caption_dropout") or 0)
         if p <= 0:
             return

@@ -415,29 +415,103 @@ def load_state_dict(path: str) -> dict:
     return sd
 
 
-def prepare_state_dict(sd: dict) -> dict:
+def take_convrot(sd: dict) -> dict:
+    """Pop the int8 ConvRot Linears out of a ComfyUI state dict (prefix already stripped) -> {module name: (codes,
+    per-row scale, rotation)}. The fused proj.qkv splits by rows into q / k / v - the per-row scales split with them,
+    and the rotation runs along the input dim, so each third stays valid. ComfyUI's attention-kernel hint
+    (`<block>.comfy_attention.config`) carries no weights and is dropped."""
+    from fizgig.minimax.convrot import parse_comfy_quant
+    for k in [k for k in sd if k.endswith(".comfy_attention.config")]:
+        sd.pop(k)
+    out = {}
+    for k in [k for k in sd if k.endswith(".comfy_quant")]:
+        base = k[: -len(".comfy_quant")]
+        conf = parse_comfy_quant(sd.pop(k))
+        if conf.get("format") != "int8_tensorwise":
+            raise ValueError(f"{base}: unsupported ComfyUI quant format {conf.get('format')!r} (int8_tensorwise "
+                             "ConvRot files load)")
+        rot = int(conf.get("convrot_groupsize", 256)) if conf.get("convrot") else 1
+        q, sc = sd.pop(base + ".weight"), sd.pop(base + ".weight_scale").float().reshape(-1, 1)
+        if base.endswith(".proj.qkv"):
+            stem = base[: -len("qkv")]
+            for i, (qq, ss) in enumerate(zip(q.chunk(3, 0), sc.chunk(3, 0))):
+                out[stem + "qkv"[i]] = (qq.contiguous(), ss.contiguous(), rot)
+        else:
+            out[base] = (q, sc, rot)
+    return out
+
+
+def prepare_state_dict(sd: dict, convrot: str = "refuse"):
+    """Prefix stripped, q/k/v split, rope.bands dropped. A ComfyUI int8 ConvRot file (the SFT / Base int8 uploads):
+    convrot="refuse" (the training base) raises, "decode" returns its weights decoded to dense, "keep" pops them out
+    for ConvRotInt8Linear - returned as (sd, {module: (codes, scale, rotation)}) for "keep", else sd."""
     if any(k.endswith(".comfy_quant") for k in sd):
-        raise ValueError("this is ComfyUI's int8 ConvRot MOSS-Image file - Fizgig trains from the bf16 file "
-                         "(moss_image_base_bf16.safetensors) and applies its own INT8 / NF4")
-    sd = split_fused_qkv(strip_prefix(sd))
+        if convrot == "refuse":
+            raise ValueError("this is ComfyUI's int8 ConvRot MOSS-Image file - Fizgig trains from the bf16 file "
+                             "(moss_image_base_bf16.safetensors) and applies its own INT8 / NF4")
+        sd = strip_prefix(sd)
+        rot = take_convrot(sd)
+        if convrot == "decode":
+            from fizgig.minimax.convrot import dequantize_int8_convrot
+            for name, (q, sc, r) in rot.items():
+                sd[name + ".weight"] = dequantize_int8_convrot(
+                    q, sc, {"format": "int8_tensorwise", "convrot": r > 1, "convrot_groupsize": r},
+                    out_dtype=torch.float32)
+            rot = {}
+    else:
+        sd, rot = strip_prefix(sd), {}
+    sd = split_fused_qkv(sd)
     sd.pop("rope.bands", None)
-    if "shared_block_modulation.weight" not in sd or "layers.0.proj.ffn_up_gate.weight" not in sd:
+    if "shared_block_modulation.weight" not in sd or ("layers.0.proj.ffn_up_gate.weight" not in sd
+                                                      and "layers.0.proj.ffn_up_gate" not in rot):
         raise KeyError("not a MOSS-Image DiT (no shared_block_modulation / layers.0.proj.ffn_up_gate)")
-    return sd
+    return (sd, rot) if convrot == "keep" else sd
 
 
-def load_moss_dit(path, device="cuda", dtype=torch.bfloat16, sd: Optional[dict] = None) -> MossImageDiT:
-    """bf16 DiT from ComfyUI's single file (fused qkv), the official shards (index / folder) or a state dict."""
-    sd = prepare_state_dict(load_state_dict(path) if sd is None else dict(sd))
-    cfg = config_from_state_dict(sd)
+def load_moss_dit(path, device="cuda", dtype=torch.bfloat16, sd: Optional[dict] = None,
+                  convrot: str = "refuse") -> MossImageDiT:
+    """bf16 DiT from ComfyUI's single file (fused qkv), the official shards (index / folder) or a state dict.
+    convrot: what a ComfyUI int8 ConvRot file does - "refuse" (the default: the training base is the bf16 file),
+    "keep" (its int8 weights stay int8 as frozen ConvRotInt8Linear - a preview / workbench model, never trained) or
+    "decode" (decoded to `dtype`)."""
+    raw = load_state_dict(path) if sd is None else dict(sd)
+    rot = {}
+    if convrot == "keep":
+        sd, rot = prepare_state_dict(raw, convrot="keep")
+    else:
+        sd = prepare_state_dict(raw, convrot=convrot)
+    del raw
+    shapes = dict(sd)
+    for name, (q, _sc, _r) in rot.items():           # config_from_state_dict reads Linear shapes
+        shapes[name + ".weight"] = q
+    cfg = config_from_state_dict(shapes)
     if cfg["num_layers"] != CONFIG["num_layers"] or cfg["dim"] != CONFIG["dim"]:
         logger.warning(f"[moss_image] unusual DiT shape {cfg} (MOSS-Image-Base is {CONFIG}) - loading it anyway")
     with torch.device("meta"):
         model = MossImageDiT(**cfg)
     model._bands = rope_bands(cfg["dim"] // cfg["num_heads"], cfg["rope_base"])
     expected = set(model.state_dict())
-    missing, unexpected = sorted(expected - set(sd)), sorted(set(sd) - expected)
+    have = set(sd) | {n + ".weight" for n in rot}
+    missing, unexpected = sorted(expected - have), sorted(have - expected)
     if missing or unexpected:
         raise KeyError(f"MOSS-Image DiT: missing {missing[:6]}, unexpected {unexpected[:6]}")
-    model.load_state_dict({k: v.to(dtype) for k, v in sd.items()}, strict=True, assign=True)
+    model.load_state_dict({k: v.to(dtype) for k, v in sd.items()}, strict=False, assign=True)
+    if rot:
+        from fizgig.minimax.convrot import ConvRotInt8Linear
+        for name, (q, sc, r) in rot.items():
+            parent, attr = name.rsplit(".", 1)
+            old = model.get_submodule(name)
+            with torch.device("meta"):
+                lin = ConvRotInt8Linear(old.in_features, old.out_features, bias=old.bias is not None, rot=r,
+                                        compute_dtype=dtype)
+            lin.qdata, lin.wscale = q.contiguous(), sc.contiguous()
+            if old.bias is not None:
+                lin.bias = torch.nn.Parameter(old.bias.detach(), requires_grad=False)
+            container = model.get_submodule(parent)
+            if isinstance(container, nn.ModuleDict):
+                container[attr] = lin
+            else:
+                setattr(container, attr, lin)
+        model._convrot = True
+        logger.info(f"[moss_image] {len(rot)} int8 ConvRot Linears kept as stored")
     return model.to(device)

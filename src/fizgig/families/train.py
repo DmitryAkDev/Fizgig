@@ -1526,7 +1526,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ckpt_previews.render(dit, net, ema, lambda m, fl, swp: _render_previews(
                 driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name,
                 steps=asked_steps or ck.steps, cfg=ck.cfg if asked_cfg is None else asked_cfg,
-                neg=neg if asked_cfg is not None and asked_cfg > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
+                neg=neg if (ck.cfg if asked_cfg is None else asked_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
             last_prompt[0] = prompts[-1] if prompts else None
             return
         _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,

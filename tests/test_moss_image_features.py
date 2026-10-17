@@ -390,6 +390,124 @@ def test_compile_blocks_no_breaks_no_per_step_recompiles(boundary, monkeypatch):
     dyn.reset()
 
 
+# ---- 5. the SFT preview checkpoint -------------------------------------------------------------------------------
+def _convrot_file(path, dit, rot=16):
+    """`dit` saved as ComfyUI's int8 ConvRot file: fused proj.qkv, the 4 block Linears int8 with per-row scales and
+    a comfy_quant marker, the attention-kernel hint, the rest bf16 (Comfy-Org's moss_image_sft_int8_convrot layout;
+    rotation group 16 since the tiny dims are 64 / 96)."""
+    import json
+
+    from safetensors.torch import save_file
+
+    from fizgig.minimax.convrot import quantize_int8_convrot
+    sd = {k: v for k, v in dit.state_dict().items()}
+    out = {}
+    marker = torch.tensor(list(json.dumps({"format": "int8_tensorwise", "convrot": True,
+                                           "convrot_groupsize": rot}).encode()), dtype=torch.uint8)
+    for k, v in sd.items():
+        if k.endswith(".proj.k.weight") or k.endswith(".proj.v.weight"):
+            continue
+        if k.endswith(".proj.q.weight"):
+            stem = k[: -len("q.weight")]
+            k, v = stem + "qkv.weight", torch.cat([sd[stem + x + ".weight"] for x in "qkv"])
+        if ".proj." in k and k.startswith("layers."):
+            base = k[: -len(".weight")]
+            q, sc = quantize_int8_convrot(v.float(), rot)
+            out[base + ".weight"], out[base + ".weight_scale"], out[base + ".comfy_quant"] = q, sc, marker.clone()
+        else:
+            out[k] = v.to(torch.bfloat16)
+    for n in range(len(dit.layers)):
+        out[f"layers.{n}.comfy_attention.config"] = torch.tensor(list(b'{"kernel": "sage"}'), dtype=torch.uint8)
+    out["rope.bands"] = torch.zeros(4)
+    save_file({k: v.contiguous() for k, v in out.items()}, str(path))
+    return str(path)
+
+
+def test_sft_preview_checkpoint_declared():
+    from fizgig.families import form
+    d = _desc()
+    f, ck = d.preview_checkpoint()
+    assert f.role == "preview_dit" and not f.required and f.fetch_is_optional and d.fetch_optional_label
+    assert "int8_convrot" in f.path and "bf16" in f.alt_path
+    assert d.train_preview_checkpoint and d.preview_checkpoint_on is False      # a Base LoRA carries over partly
+    assert ck.cfg == 3.0 and ck.negative_prompt and dict(ck.options) == {"shift": 5.0, "uncond_skip_layers": (22,)}
+    assert d.validate() == [] and form.form(d)
+
+
+def test_sft_convrot_file_loads_as_stored(tmp_path):
+    """ComfyUI's int8 ConvRot file: kept int8 (ConvRotInt8Linear, the fused qkv's rows and scales split) and equal to
+    the same file decoded; both close to the model it was quantised from. The training base still refuses it."""
+    from fizgig.minimax.convrot import ConvRotInt8Linear
+    from fizgig.moss_image.model import is_convrot, load_moss_dit
+    from moss_tiny import randomise
+    from fizgig.moss_image.model import MossImageDiT
+    torch.manual_seed(0)
+    src = randomise(MossImageDiT(**TINY), seed=41).eval()
+    path = _convrot_file(tmp_path / "sft_int8_convrot.safetensors", src)
+    assert is_convrot(path)
+    drv = _drv()
+    kept, swapped = drv.load_planned(path, "cpu", "bf16", 0)
+    assert swapped == 0 and kept._convrot
+    n_rot = sum(isinstance(m, ConvRotInt8Linear) for m in kept.modules())
+    assert n_rot == 6 * TINY["num_layers"]
+    assert drv.load_planned(str(tmp_path / "missing.safetensors"), "cpu", "bf16", 0) is None
+    dec = load_moss_dit(path, device="cpu", convrot="decode").eval()
+    with pytest.raises(ValueError, match="bf16"):
+        load_moss_dit(path, device="cpu")
+    x = torch.randn(1, TINY["latent_channels"], 3, 4)
+    t = torch.tensor([600.0])
+    txt = torch.randn(1, 5, TINY["text_dim"])
+    with torch.no_grad():
+        a = kept(x.bfloat16(), t, txt.bfloat16()).float()
+        b = dec(x.bfloat16(), t, txt.bfloat16()).float()
+        c = src(x, t, txt)
+    RESULTS["SFT convrot kept vs decoded"] = rel(a, b)
+    RESULTS["SFT convrot vs source model"] = rel(a, c)
+    assert rel(a, b) <= 2e-2 and rel(a, c) <= 6e-2
+    with pytest.raises(RuntimeError, match="bf16 file"):
+        drv.prepare_training(kept, None)
+
+
+def test_sft_previews_through_checkpoint_previews(tmp_path, files):
+    """The trainer's _CheckpointPreviews round on the tiny SFT file: the training model is parked and restored
+    unchanged, the epoch's LoRA rides on the checkpoint (a different picture from the bare SFT), and the render
+    takes the SFT recipe (CFG 3 with the negative, shift 5, block 22 skipped)."""
+    from fizgig.families.lora import FamilyLoRA
+    from fizgig.families.train import _CheckpointPreviews
+    from fizgig.moss_image.model import MossImageDiT, load_moss_dit
+    from moss_tiny import randomise
+    drv = _drv()
+    torch.manual_seed(0)
+    sft = randomise(MossImageDiT(**dict(TINY, latent_channels=128)), seed=43).eval()
+    path = _convrot_file(tmp_path / "sft.safetensors", sft)
+    train = load_moss_dit(str(files / "dit.safetensors"), device="cpu", dtype=torch.float32)
+    net = _lora(train, drv, seed=7)
+    before = {k: v.clone() for k, v in train.state_dict().items()}
+    ck = _desc().preview_checkpoint_sampling
+    cond = {"hidden_states": torch.randn(1, 5, TINY["text_dim"])}
+    neg = {"hidden_states": torch.randn(1, 3, TINY["text_dim"])}
+    seen = {}
+
+    def render(m, fl, swapped):
+        kw = dict(steps=2, seed=3, cfg=ck.cfg, neg_cond=neg, options=ck.options)
+        with torch.no_grad():
+            seen["with"] = drv.generate(m, cond, 64, 64, **kw).float()
+        seen["swapped"], seen["convrot"] = swapped, getattr(m, "_convrot", False)
+        return True
+
+    cp = _CheckpointPreviews(drv, path, "cpu", cache_mode="off")
+    assert cp.render(train, net, None, render)
+    bare, _ = drv.load_planned(path, "cpu", "bf16", 0)
+    with torch.no_grad():
+        seen["bare"] = drv.generate(bare, cond, 64, 64, steps=2, seed=3, cfg=ck.cfg, neg_cond=neg,
+                                    options=ck.options).float()
+    assert seen["convrot"] and seen["swapped"] == 0
+    assert torch.isfinite(seen["with"]).all() and not torch.allclose(seen["with"], seen["bare"])
+    after = train.state_dict()
+    assert all(torch.equal(before[k], after[k]) for k in before)
+    assert train.blocks_to_swap == 0 and train.offloader is None
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")

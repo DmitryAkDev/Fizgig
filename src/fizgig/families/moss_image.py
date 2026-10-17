@@ -55,7 +55,19 @@ MOSS_IMAGE_BASE = FamilyDescription(
                        "environment (envs/moss_te, transformers 5.x on Fizgig's own torch), made on first use; "
                        "unloaded before training.",
                   download_note="~16.8 GB in 4 shards"),
+        # MOSS-Image-SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture): Repair Studio and LoRA Royale
+        # render on it once set, and training samples can (the Samples tab tick, off by default - a Base LoRA is
+        # only partly compatible with it). ComfyUI's int8 ConvRot file loads as stored; the bf16 one loads too
+        ModelFile("moss_sft_dit", "MOSS-Image SFT DiT (previews, optional)", False, _COMFY,
+                  "diffusion_models/moss_image_sft_int8_convrot.safetensors", 5.41, role="preview_dit",
+                  hint="Optional. Repair Studio and LoRA Royale render on it once set, and training samples can "
+                       "too (a tick on the Samples tab). Never trained: Fizgig trains on the Base. ComfyUI's int8 "
+                       "ConvRot file keeps its own int8 weights; the bf16 SFT file works as well.",
+                  download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
+                  alt_repo=_COMFY, alt_path="diffusion_models/moss_image_sft_bf16.safetensors",
+                  alt_label="bf16 file", alt_note="~10.2 GB"),
     ),
+    fetch_optional_label="Include the SFT model for previews (+5.4 GB)",
     prefs_title="Model Paths (MOSS-Image)",
     text_encoder_label="Qwen3.5-9B",
     vae_label="FLUX.2 VAE",
@@ -138,6 +150,22 @@ MOSS_IMAGE_BASE = FamilyDescription(
                          source=f"{_GUIDE}; reference pipeline MOSSImagePipeline.__call__ defaults"),
     ),
     preview_steps=28,
+    # training samples on the SFT checkpoint (the driver's park_for_preview / load_preview_checkpoint /
+    # unpark_after_preview): off by default - a LoRA trained on the Base carries over to the SFT only partly
+    train_preview_checkpoint=True,
+    preview_checkpoint_tick="Use the SFT model for samples (set it in Preferences - a Base LoRA carries over "
+                            "only partly)",
+    preview_checkpoint_on=False,
+    preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 28 steps, CFG 3",
+    preview_checkpoint_sampling=SamplingSettings(
+        "MOSS-Image SFT", steps=28, cfg=3.0, sampler="euler", scheduler="simple", options=_REF_OPTS,
+        negative_prompt=True,
+        note="The SFT card's settings (shift 5, CFG 3, the negative branch skipping block 22) at the Base samples' "
+             "28 steps (the card's 50 for a final render).",
+        source=f"https://huggingface.co/{_COMFY}; OpenMOSS/MOSS-Image-SFT model card"),
+    samples_text=(("banner", "Preview prompts rendered periodically during training, on the MOSS-Image model being "
+                             "trained (or the SFT model when ticked below). Samples land in <output_dir>/sample/ "
+                             "and the Gallery button below opens the viewer."),),
     preview_cfg=3.0,
     preview_negative=_NEGATIVE,
     preview_cfg_note="3 for long prompts, up to 6 for short ones. MOSS-Image reads long natural-language captions best.",
