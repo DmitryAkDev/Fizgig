@@ -1,7 +1,7 @@
 """MOSS-Image text path (T9): the side venv, te_worker through the real proxy protocol, against an in-process
 Qwen3_5Model (tiny random weights) - from Fizgig's own venv, whose transformers stays 4.57.
 
-Needs the side venv (made on first run with network access, or FIZGIG_MOSS_TE_ENV pointing at one) and the MOSS
+Needs the side venv (envs/moss_te, made on first run with network access; FIZGIG_MOSS_TE_ENV points elsewhere) and the MOSS
 tokenizer (FIZGIG_MOSS_TOKENIZER, the cached helper repo, or the Hub); skipped when either is unavailable.
 """
 import json
@@ -16,7 +16,7 @@ CAPTIONS = ["A cat", "a red fox in the snow, {braces}\nline two, ünïcode 漢�
 
 
 def _tokenizer():
-    cand = os.environ.get("FIZGIG_MOSS_TOKENIZER", "/tmp/moss/tokenizer")
+    cand = os.environ.get("FIZGIG_MOSS_TOKENIZER", "/tmp/moss/tokenizer")      # (the box's copy by default)
     if os.path.isfile(os.path.join(cand, "tokenizer.json")):
         return cand
     from fizgig.moss_image.te_proxy import resolve_tokenizer
@@ -34,7 +34,6 @@ def _tokenizer():
 @pytest.fixture(scope="module")
 def side(tmp_path_factory):
     from fizgig.moss_image import te_env
-    os.environ.setdefault("FIZGIG_MOSS_TE_ENV", "/workspace/envs-test/moss_te")
     try:
         py = te_env.ensure()
     except Exception as e:                                # noqa: BLE001

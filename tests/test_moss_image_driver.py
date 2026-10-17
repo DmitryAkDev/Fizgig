@@ -315,7 +315,6 @@ def test_t10_cli_cache_train_reload(tmp_path):
     from fizgig.flux3.autoencoder import AutoEncoder
     from fizgig.moss_image import te_env
     from fizgig.moss_image.model import MossImageDiT
-    os.environ.setdefault("FIZGIG_MOSS_TE_ENV", "/workspace/envs-test/moss_te")
     try:
         py = te_env.ensure()
     except Exception as e:                                 # noqa: BLE001
@@ -349,7 +348,8 @@ def test_t10_cli_cache_train_reload(tmp_path):
     env["FIZGIG_MOSS_TE_MODE"] = "cpu"
     te_dir = str(tmp_path / "te" / "text_encoder")
     # the worker finds the tokenizer beside the text_encoder folder, as in the official repo layout
-    os.symlink(tok, str(tmp_path / "te" / "tokenizer"))
+    import shutil
+    shutil.copytree(tok, str(tmp_path / "te" / "tokenizer"))       # (a symlink needs admin rights on Windows)
     run = lambda *a: subprocess.run([sys.executable, *a], capture_output=True, text=True, env=env, cwd=str(tmp_path))
     r = run("-m", "fizgig.families.cache", "--family", "moss_image", "--stage", "latents", "--dataset_config",
             str(toml), "--model", str(tmp_path / "vae.safetensors"), "--device", "cpu")
