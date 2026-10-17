@@ -99,6 +99,9 @@ MOSS_IMAGE_BASE = FamilyDescription(
     slider_guidance=2.0,
     helper_files=((_REPO, ("tokenizer/*", "text_encoder/config.json")),),
     workbench_follows_samples=True,
+    # workbench renders take comfy-kitchen's INT8 attention (model._sdpa calls attend() first): an unmasked render
+    # only - a masked batch, training and the Profiler keep exact SDPA. Speed on a 12 GB card still to be measured
+    int8_attention=True,
 
     options=(
         FamilyOption("MOSS_CAPTION_DROPOUT", "Caption dropout", kind="entry", tokens="caption_dropout={}",

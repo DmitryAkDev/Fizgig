@@ -244,6 +244,82 @@ def test_royale_engine_paths(files):
     eng2.reset()
 
 
+# ---- 3. INT8 attention for workbench renders ---------------------------------------------------------------------
+@pytest.fixture
+def fake_kernel():
+    """A stand-in for comfy-kitchen's kernel (exact SDPA, counted), the module's state restored after."""
+    from fizgig.modules import int8_attention as i8
+    saved = dict(i8._STATE)
+    seen = []
+
+    def fn(q, k, v):
+        seen.append(tuple(q.shape))
+        return F.scaled_dot_product_attention(q, k, v) * 1.0
+    i8._STATE.update(checked=True, fn=fn, wanted=False)
+    try:
+        yield seen
+    finally:
+        i8._STATE.clear()
+        i8._STATE.update(saved)
+
+
+def test_int8_attention_flag_and_engine():
+    d = _desc()
+    assert d.int8_attention
+    from fizgig.families.workbench import WorkbenchEngine
+    assert WorkbenchEngine(d).int8_attention
+
+
+def test_int8_attention_only_unmasked_no_grad_renders(fake_kernel):
+    """The kernel takes the image + text attention of a render (one prompt, padded or not - the per-sample path drops
+    the padding); a masked batch (prompts of different lengths), anything under grad and anything outside renders()
+    stay on exact SDPA."""
+    from fizgig.modules import int8_attention as i8
+    fz, _ = pair(seed=41)
+    fz.requires_grad_(False)
+    n_attn = TINY["num_layers"] + 2                      # the blocks and the 2-block text refiner
+    x = torch.randn(1, TINY["latent_channels"], 2, 3)
+    c = torch.randn(1, 5, TINY["text_dim"])
+    with torch.no_grad():
+        exact = fz(x, 300.0, c)
+        assert fake_kernel == []                         # switch off: never
+        with i8.renders(True):
+            got = fz(x, 300.0, c)
+        assert len(fake_kernel) == n_attn and torch.allclose(got, exact, atol=1e-6)
+        # one padded prompt: the padding is dropped first, so the kernel still runs
+        cp = torch.cat([c, torch.zeros(1, 3, TINY["text_dim"])], 1)
+        m = torch.tensor([[True] * 5 + [False] * 3])
+        fake_kernel.clear()
+        with i8.renders(True):
+            got = fz(x, 300.0, cp, m)
+        assert len(fake_kernel) == n_attn and torch.allclose(got, exact, atol=1e-6)
+        # a masked batch of two lengths: exact SDPA with the key mask, never the kernel
+        xb = torch.randn(2, TINY["latent_channels"], 2, 3)
+        cb = torch.randn(2, 6, TINY["text_dim"])
+        mb = torch.tensor([[True] * 6, [True] * 4 + [False] * 2])
+        ref = fz(xb, torch.tensor([300.0, 600.0]), cb, mb)
+        fake_kernel.clear()
+        with i8.renders(True):
+            got = fz(xb, torch.tensor([300.0, 600.0]), cb, mb)
+        assert fake_kernel == [] and torch.equal(got, ref)
+    # under grad (training never takes it, even with the switch on)
+    with i8.renders(True):
+        fz(x, 300.0, c)
+    assert fake_kernel == []
+
+
+def test_int8_attention_on_around_engine_renders(files, fake_kernel):
+    eng, _ = _engine(files, {"steps": "1", "cfg": "3", "negative": "bad", "turbo": "0"})
+    _prime(eng, ["a fox", "bad"])
+    st = eng.default_state(32, 32)
+    st.prompt, st.seed = "a fox", 3
+    eng.generate_preview(st)
+    assert fake_kernel                                   # the render ran through it
+    from fizgig.modules import int8_attention as i8
+    assert not i8.wanted()                               # and the switch is back off afterwards
+    eng.reset()
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")
