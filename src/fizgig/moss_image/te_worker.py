@@ -98,16 +98,27 @@ def load_model(te_path, config_path, dtype, device, mode):
                 child.to(device)
         for buf_name, buf in model.named_buffers(recurse=False):
             setattr(model, buf_name, buf.to(device))
+        pin = True
         for layer in model.layers:
-            layer.to("cpu")
-            for p in layer.parameters():
-                p.data = p.data.pin_memory()
+            # each weight keeps one pinned CPU copy; a forward borrows a device copy and drops it after
+            tensors = list(layer.parameters()) + list(layer.buffers())
+            for t in tensors:
+                t.data = t.data.to("cpu")
+                if pin:
+                    try:
+                        t.data = t.data.pin_memory()
+                    except RuntimeError:          # not enough page-locked RAM: plain copies, slower transfers
+                        pin = False
+                        log("pinned memory unavailable - streaming from pageable RAM")
+            homes = [t.data for t in tensors]
 
-            def pre(mod, args, kwargs):
-                mod.to(device, non_blocking=True)
+            def pre(mod, args, kwargs, tensors=tensors, homes=homes):
+                for t, h in zip(tensors, homes):
+                    t.data = h.to(device, non_blocking=True)
 
-            def post(mod, args, kwargs, out):
-                mod.to("cpu")
+            def post(mod, args, kwargs, out, tensors=tensors, homes=homes):
+                for t, h in zip(tensors, homes):
+                    t.data = h
                 return out
             layer.register_forward_pre_hook(pre, with_kwargs=True)
             layer.register_forward_hook(post, with_kwargs=True)
@@ -133,7 +144,7 @@ def main():
     from transformers import AutoTokenizer
     major, minor = (int(x) for x in transformers.__version__.split(".")[:2])
     if (major, minor) < (5, 3):
-        raise SystemExit(f"transformers {transformers.__version__} < 5.3 - run python -m fizgig.moss_image.te_env")
+        raise SystemExit(f"transformers {transformers.__version__} < 5.3 - run src/fizgig/moss_image/te_env.py with Fizgig's python")
     device = "cpu" if a.mode == "cpu" else a.device
     dtype, out_dtype = getattr(torch, a.dtype), getattr(torch, a.out_dtype)
     t0 = time.time()

@@ -6,8 +6,8 @@ ONLY the newer transformers / hub / safetensors / tokenizers and borrows everyth
 wheels above all - from Fizgig's own venv through a .pth file (appended to sys.path, so the side venv's own packages
 win). ~80 MB, no second torch. Fizgig's venv is never modified.
 
-    python -m fizgig.moss_image.te_env            # create / repair, then print the status
-    python -m fizgig.moss_image.te_env --status
+    venv\\Scripts\\python.exe src\\fizgig\\moss_image\\te_env.py            # create / repair, print the status
+    venv\\Scripts\\python.exe src\\fizgig\\moss_image\\te_env.py --status   # (python src/... on Linux)
 
 FIZGIG_MOSS_TE_ENV overrides the folder; FIZGIG_MOSS_TE_PYTHON points at any interpreter that already has
 transformers >= 5.3 (the fallback if the .pth overlay ever breaks: a full venv with its own torch).
@@ -87,11 +87,21 @@ def status(py: str = None) -> dict:
     return info
 
 
-def _install(py: str, site: str) -> None:
+def _uv_cmd():
+    """uv as Fizgig's installer leaves it: a module in Fizgig's venv (install_fizgig.py pip-installs it), else on
+    PATH, else None."""
+    import importlib.util
     import shutil
+    if importlib.util.find_spec("uv") is not None:
+        return [sys.executable, "-m", "uv"]
     uv = shutil.which("uv")
+    return [uv] if uv else None
+
+
+def _install(py: str, site: str) -> None:
+    uv = _uv_cmd()
     if uv:
-        cmd = [uv, "pip", "install", "--python", py, *REQUIREMENTS]
+        cmd = [*uv, "pip", "install", "--python", py, *REQUIREMENTS]
     else:
         # the side venv has no pip of its own: Fizgig's pip installs into its site-packages (deps included)
         cmd = [sys.executable, "-m", "pip", "install", "--target", site, "--upgrade", *REQUIREMENTS]

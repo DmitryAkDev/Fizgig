@@ -67,6 +67,7 @@ class MossTextEncoder:
         tok = tokenizer or resolve_tokenizer(path)
         env = dict(os.environ)
         env.setdefault("PYTHONUNBUFFERED", "1")
+        env["PYTHONIOENCODING"] = "utf-8"    # Windows pipes default to the ANSI code page
         env.pop("PYTHONPATH", None)          # the worker imports nothing from Fizgig
         if os.path.isdir(tok):
             env["HF_HUB_OFFLINE"] = "1"      # weights, config and tokenizer are all local: never ask the Hub
