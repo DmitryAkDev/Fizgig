@@ -89,6 +89,19 @@ MOSS_IMAGE_BASE = FamilyDescription(
     modelspec_arch="moss-image",
     implementation=_CARD,
     ema_default="0.98",
+    # torch.compile of the 42 blocks (driver compile_targets): no graph break in a block, and after one dynamic-shape
+    # recompile new caption lengths and buckets train without recompiling; skipping block 22 on the negative branch
+    # adds no graph (CPU tests). Not measured on a GPU yet, so Auto leaves it off (no payback figures); On compiles,
+    # with the checkpoint outside the compiled region (eager-level memory on 12-16 GB cards)
+    compiles=True,
+    compile_boundary="outside",
+    compile_fullgraph=False,
+    compile_payback_steps={},
+    compile_hint=("Not measured on MOSS-Image yet, so Auto leaves it off. On compiles the 42 blocks (the "
+                  "checkpoint stays outside the compiled region, so memory stays at the uncompiled level); the "
+                  "first steps pause to compile, then a few seconds for each new image size. Requires Triton and, "
+                  "on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used with Blocks "
+                  "Swap, since swapping moves weights and compiled graphs assume they stay put."),
     precisions=("int8", "nf4", "bf16"),
     auto_precisions=("int8", "nf4"),  # bf16 is 10.2 GB of weights: past 12-16 GB cards with activations
     optimizers=("adamw", "adamw8bit"),

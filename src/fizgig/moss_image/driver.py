@@ -32,8 +32,9 @@ UNCOND_FILE = "mossimage_empty_prompt.safetensors"   # not *_mossimage[_te].safe
 
 
 def _dtype(dit):
-    """The activations' dtype: the norms' (they stay bf16 under an INT8 / NF4 base)."""
-    return dit.layers[0].norm1.weight.dtype
+    """The activations' dtype: the norms' (they stay bf16 under an INT8 / NF4 base). Read off the output norm, not a
+    block's: compiled blocks (compile_blocks) are wrappers without the block's attributes."""
+    return dit.final_norm_video.weight.dtype
 
 
 TEXT_CACHE_BATCH = 1 << 20    # a dataset's captions in one request: the worker's layer-major pass (te_worker.py)

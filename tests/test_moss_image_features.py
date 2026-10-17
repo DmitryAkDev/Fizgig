@@ -320,6 +320,76 @@ def test_int8_attention_on_around_engine_renders(files, fake_kernel):
     eng.reset()
 
 
+# ---- 4. torch.compile ---------------------------------------------------------------------------------------------
+def test_compile_offered_but_auto_waits_for_a_measurement():
+    d = _desc()
+    assert d.compiles and d.compile_boundary == "outside" and not d.compile_fullgraph
+    drv = _drv()
+    assert drv.compile_plan("auto", 100000, "int8", 0)[0] is False          # unmeasured: Auto stays off
+    assert drv.compile_plan("on", 10, "int8", 0)[0] == "outside"            # On compiles
+
+
+@pytest.mark.parametrize("boundary", ["inside", "outside"])
+def test_compile_blocks_no_breaks_no_per_step_recompiles(boundary, monkeypatch):
+    """The 42-block list compiled in place after the LoRA wrapped it (aot_eager on CPU - the same graphs inductor
+    gets): no graph break in a block; after one dynamic-shape recompile, new caption lengths and a new bucket train
+    without recompiling; sampling adds one no-grad graph, and the negative branch skipping a block adds none.
+    Losses and LoRA grads equal the eager model's."""
+    import torch._dynamo as dyn
+    from torch._dynamo.testing import CompileCounterWithBackend
+
+    from fizgig.families import compile as C
+    dyn.reset()
+    drv = _drv()
+    fz, _ = pair(seed=51)
+    eager, _ = pair(seed=51)
+    net, net_e = _lora(fz, drv), _lora(eager, drv)
+    for m in (fz, eager):
+        m.enable_gradient_checkpointing(True)
+        m.train()
+    explain = dyn.explain(fz.layers[0])(torch.randn(1, 11, TINY["dim"]),
+                                        torch.randn(1, 11, TINY["dim"] // TINY["num_heads"]),
+                                        torch.randn(1, 6, TINY["dim"]), None)
+    assert explain.graph_break_count == 0, [b.reason for b in explain.break_reasons]
+    dyn.reset()
+    cnt = CompileCounterWithBackend("aot_eager")
+    real = torch.compile
+    monkeypatch.setattr(torch, "compile", lambda m, **kw: real(m, backend=cnt, **{k: v for k, v in kw.items()
+                                                                                    if k != "backend"}))
+    monkeypatch.setattr(C, "ready_to_compile", lambda *a, **k: True)
+    drv.compile_blocks(fz, boundary=boundary)
+    assert getattr(fz.layers[0], "_handles_checkpointing", False)
+
+    def step(model, n_text, h, w, seed):
+        g = torch.Generator().manual_seed(seed)
+        x0 = torch.randn(1, TINY["latent_channels"], h, w, generator=g)
+        c = torch.randn(1, n_text, TINY["text_dim"], generator=torch.Generator().manual_seed(seed + 1))
+        loss, _ = drv.training_loss(model, x0, {"hidden_states": c}, g)
+        loss.backward()
+        return loss.item()
+    worst = 0.0
+    seen = []
+    for i, (n_text, h, w) in enumerate([(5, 2, 3), (7, 2, 3), (9, 2, 3), (6, 3, 4), (12, 3, 4)]):
+        a, b = step(fz, n_text, h, w, i), step(eager, n_text, h, w, i)
+        assert abs(a - b) <= 1e-5 * abs(b)
+        seen.append(cnt.frame_count)
+    for p, q in zip(net.parameters(), net_e.parameters()):
+        worst = max(worst, rel(p.grad, q.grad))
+    RESULTS[f"compile {boundary}: LoRA grads vs eager"] = worst
+    assert worst <= 1e-4
+    assert seen[1] == seen[-1], seen               # after the first dynamic recompile: none per step
+    fz.eval()
+    with torch.no_grad():
+        for i in range(3):
+            drv.generate(fz, {"hidden_states": torch.randn(1, 5 + i, TINY["text_dim"])}, 48, 32, steps=3, seed=1,
+                         cfg=3.0, neg_cond={"hidden_states": torch.randn(1, 2, TINY["text_dim"])},
+                         options=(("uncond_skip_layers", (1,)),))
+            seen.append(cnt.frame_count)
+    assert seen[-1] == seen[-3] and seen[-1] - seen[4] <= 2, seen
+    RESULTS[f"compile {boundary}: graphs compiled"] = float(seen[-1])
+    dyn.reset()
+
+
 def test_zz_print_results():
     for k, v in RESULTS.items():
         print(f"{k[:50]:50s} {v:.3e}")
