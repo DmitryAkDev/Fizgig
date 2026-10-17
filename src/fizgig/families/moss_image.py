@@ -1,200 +1,253 @@
-"""MOSS-Image (OpenMOSS) through the standard layer: a 5.08B single-stream DiT (42 blocks, width 3072), the
-Qwen3.5-9B text encoder (run in a side venv: it needs transformers >= 5.3, Fizgig pins 4.57) and the FLUX.2 VAE.
-Apache-2.0. Driver: moss_image/driver.py. Hidden until it has been trained on a real GPU (milestone M4).
+"""MOSS-Image (OpenMOSS / MOSI, released 16 Oct 2026): a 5B single-stream DiT for text-to-image with strong text
+rendering and JSON layout prompts, Qwen3.5-9B text encoder, the FLUX.2 autoencoder. Apache-2.0 weights.
 
-Facts from the reference pipeline (OpenMOSS-Team/MOSS-Image-Base pipeline_moss_image.py, configs), the paper
-(App. A.2) and OpenMOSS/MOSS-Image USERGUIDE.md, Oct 2026. The text encoder and its refiner inside the DiT are never
-trained (USERGUIDE: "keep the text encoder frozen"; Chris, 16 Oct 2026).
+Sources: github.com/OpenMOSS/MOSS-Image (README, USERGUIDE, paper/MOSS_Image_Technical_Report.pdf, commit c1355e6),
+the model cards and pipeline_moss_image.py (huggingface.co/OpenMOSS-Team/MOSS-Image-Base, -SFT), Comfy-Org's repack
+(huggingface.co/Comfy-Org/MOSS-Image) and ComfyUI's core support (Comfy-Org/ComfyUI PR #17095, merge e087d8f6cb).
+
 """
-from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings
+from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
 
-_REPO = "OpenMOSS-Team/MOSS-Image-Base"
+_REPO = "https://github.com/OpenMOSS/MOSS-Image"
+_CARD = "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base"
 _COMFY = "Comfy-Org/MOSS-Image"
-_CARD = f"https://huggingface.co/{_REPO}"
-_GUIDE = "https://github.com/OpenMOSS/MOSS-Image/blob/main/USERGUIDE.md"
-_NEGATIVE = "nsfw, worst quality, bad anatomy, watermark, jpeg artifact"      # the USERGUIDE's
-_REF_OPTS = (("shift", 5.0), ("uncond_skip_layers", (22,)))
+_GUIDE = f"{_REPO} USERGUIDE.md"
+_REPORT = f"{_REPO} paper/MOSS_Image_Technical_Report.pdf"
+_PIPE = f"{_CARD} pipeline_moss_image.py"
+_TURBO = "lodestones/MOSS-Image-SFT-8-steps-dmd"
+_MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")   # model.py _Block Linears
+# USERGUIDE.md Prompt Guidelines: "we recommend the following effective negative tags"
+_NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 
-def _preset(rank, lr, epochs=30, mp="1.0", slider=False):
-    # not yet measured on MOSS (M4): rank 8-16, fused AdamW, the shared 1e-4 / 2e-4 starting points
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, ft=False):
+    # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
+    # families/flux3.py), at Qwen 2.1's 0.5 MP, with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
+    # per-image loss watch with per-image LR, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
+    lo, hi = adaptive or ("1e-4", "4e-4")
     return {
-        "FAMILY_SLIDER": slider, "FAMILY_SLIDER_GUIDANCE": "2",
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
-        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42, "ADAPTIVE_LR": False,
+        "MAX_TRAIN_EPOCHS": epochs, "SAVE_EVERY_N_EPOCHS": 1, "SEED": 42,
+        "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
-        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
-        "KREA2_WARMUP_LOOK": False, "MOSS_CAPTION_DROPOUT": "0",
-        "DATASET_BATCH_SIZE": "1",
+        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
+        "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
+        "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
+        **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
 
 
-MOSS_IMAGE_BASE = FamilyDescription(
+MOSS_IMAGE = FamilyDescription(
     key="moss_image",
     arch_id="mossimage",
     display_name="MOSS-Image",
     gui_label="MOSS-Image",
     lora_name_suffix="moss",
-    aliases=("moss-image", "moss_image", "moss"),
-    experimental=True,
-    hidden=False,                     # M4 passed on an RTX 4070 Ti 12 GB (2.9 s/step at 1024, rank 16, INT8)
+    aliases=("moss-image", "mossimage"),
 
     model_files=(
-        ModelFile("moss_dit", "MOSS-Image Base DiT", True, _COMFY,
-                  "diffusion_models/moss_image_base_bf16.safetensors", 10.17, role="dit",
-                  hint="bf16 base (ComfyUI's single file: q/k/v fused, split on load). Fizgig applies its own INT8 / "
-                       "NF4; ComfyUI's int8 ConvRot file is not a training base. The official diffusers shards "
-                       "(transformer/ folder) load too.",
-                  download_note="~10.2 GB - Apache-2.0"),
-        ModelFile("moss_vae", "FLUX.2 VAE", True, _COMFY, "vae/flux2-vae.safetensors", 0.34, role="vae",
-                  hint="The FLUX.2 autoencoder - the same file Flux 3 uses."),
-        ModelFile("moss_text_encoder", "Qwen3.5-9B text encoder", True, _REPO,
-                  "text_encoder/model.safetensors.index.json", 16.8, role="text_encoder",
-                  hint="The official text_encoder/ folder (index + 4 shards + config.json). Runs in its own small "
-                       "environment (envs/moss_te, transformers 5.x on Fizgig's own torch), made on first use; "
-                       "unloaded before training.",
-                  download_note="~16.8 GB in 4 shards"),
-        # MOSS-Image-SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture): Repair Studio and LoRA Royale
-        # render on it once set, and training samples can (the Samples tab tick, off by default - a Base LoRA is
-        # only partly compatible with it). ComfyUI's int8 ConvRot file loads as stored; the bf16 one loads too
-        ModelFile("moss_sft_dit", "MOSS-Image SFT DiT (previews, optional)", False, _COMFY,
+        ModelFile("moss_image_dit", "MOSS-Image Base DiT", True, _COMFY,
+                  "diffusion_models/moss_image_base_bf16.safetensors", 10.16,
+                  "bf16 Base for training (the model card: Base is for fine-tuning and LoRAs). The SFT file "
+                  "(moss_image_sft_bf16) is for use, not training.",
+                  role="dit",
+                  # verified 17 Oct 2026: tensor for tensor the official transformer/ shards, q / k / v fused into
+                  # proj.qkv = [q; k; v]; the loader splits it back
+                  hint="MOSS-Image Base - ComfyUI's single file. The official diffusers shards "
+                       "(OpenMOSS-Team/MOSS-Image-Base transformer/) and the int8_convrot file load too."),
+        ModelFile("moss_image_vae", "FLUX.2 autoencoder (small decoder)", True, _COMFY,
+                  "vae/flux2-vae_small.safetensors", 0.25,
+                  "The FLUX.2 autoencoder with BFL's small decoder, the decoder MOSS-Image ships with.",
+                  role="vae",
+                  # MOSS-Image's own checkpoint uses the FLUX.2 small decoder "to help eliminate some strange artifacts
+                  # and spots" (a MOSS-Image core developer, r/StableDiffusion AMA, Oct 2026). This file's encoder is
+                  # FLUX.2's own, tensor for tensor, so latents are the same as with flux2-vae.safetensors (which
+                  # still loads here: same latent space, the full decoder)
+                  replaces=("flux2-vae.safetensors", "ae.safetensors"),
+                  hint="FLUX.2's encoder with the small decoder MOSS-Image was released with. Flux 3's or Klein's "
+                       "full autoencoder also works (same latents), but the small decoder avoids spots in the "
+                       "pictures."),
+        ModelFile("moss_image_turbo_lora", "Turbo LoRA (8-step previews)", False, _TURBO, "lora.safetensors", 1.19,
+                  "Optional: lodestones' 8-step DMD LoRA, CFG-free but soft on Base.", role="speed_lora",
+                  local_name="moss_image_dmd_turbo_lora.safetensors",   # the repo's own name is just lora.safetensors
+                  hint="lodestones' 8-step DMD distillation of MOSS-Image SFT (work in progress, updated often). "
+                       "Optional: with it set, previews and the workbench run 8 steps without CFG."),
+        ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
+                  "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
+                  "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "
+                  "smaller cards.",
+                  role="text_encoder",
+                  # stock Qwen3.5-9B: MOSS-Image's text_encoder/ shards are these tensors (24 of 24 sampled equal
+                  # after the reference's bf16 cast); MOSS keeps it frozen (USERGUIDE.md Post-Training)
+                  alt_repo=_COMFY, alt_path="text_encoders/qwen3.5_9b_int8_convrot.safetensors", alt_label="int8",
+                  alt_note="~9.7 GB int8 ConvRot, the file ComfyUI's MOSS-Image workflow uses; decoded at load"),
+        # MOSS-Image SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture; @Murf-Code, PR #195): Repair
+        # Studio and LoRA Royale render on it once set, and training samples can (the Samples tab tick, off by
+        # default - a Base LoRA carries over to the SFT only partly). Never trained: Fizgig trains on the Base
+        ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews, optional)", False, _COMFY,
                   "diffusion_models/moss_image_sft_int8_convrot.safetensors", 5.41, role="preview_dit",
-                  hint="Optional. Repair Studio and LoRA Royale render on it once set, and training samples can "
-                       "too (a tick on the Samples tab). Never trained: Fizgig trains on the Base. ComfyUI's int8 "
-                       "ConvRot file keeps its own int8 weights; the bf16 SFT file works as well.",
+                  hint="Optional. OpenMOSS's everyday checkpoint: Repair Studio and LoRA Royale render on it once "
+                       "set, and training samples can too (a tick on the Samples tab), showing the LoRA where most "
+                       "people use it. Never trained. ComfyUI's int8 ConvRot file is decoded at load; the bf16 SFT "
+                       "file works as well.",
                   download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
                   alt_repo=_COMFY, alt_path="diffusion_models/moss_image_sft_bf16.safetensors",
                   alt_label="bf16 file", alt_note="~10.2 GB"),
     ),
     fetch_optional_label="Include the SFT model for previews (+5.4 GB)",
-    prefs_title="Model Paths (MOSS-Image)",
     text_encoder_label="Qwen3.5-9B",
-    vae_label="FLUX.2 VAE",
+    vae_label="FLUX.2 autoencoder",
+    helper_files=(("OpenMOSS-Team/MOSS-Image-Base", ("tokenizer/*",)),),   # tokenizer.json + chat template
 
-    latent_channels=128,              # FLUX.2's 32 channels 2x2-patchified, BatchNorm-normalised
-    spatial_factor=16,
-    bucket_step=16,
-    native_megapixels=1.0,            # USERGUIDE: 1-2 MP outputs, 0.25-4 MP works
+    latent_channels=128,              # transformer/config.json latent_channels: 32 FLUX.2 channels 2x2-packed
+    spatial_factor=16,                # report Table 5: effective image stride 16 pixels
+    bucket_step=16,                   # pipeline __call__: "height and width must be positive multiples of 16"
+    native_megapixels=1.0,            # USERGUIDE.md: 1, 1.5 or 2 MP recommended, 0.25 to 4 MP supported
 
     n_blocks=42,                      # transformer/config.json num_layers
     block_prefix="layers",
-    block_note="42 identical single-stream blocks (image and text tokens together; one modulation shared by all). "
-               "The 2-block text refiner in front of them stays frozen, as does the text encoder.",
-    # LoRA Royale renders through the generic engine with the Samples tab's steps / CFG / negative and the family's
-    # sampling options (shift 5, the negative branch skipping block 22); prompt travel pads with masks
-    workbench=("repair", "profiler", "extract", "royale"),
+    block_note="42 joint blocks with one shared modulation (so per-block sliders act on attention and MLP), after a "
+               "two-block text adapter that refines the Qwen3.5 states before they meet the image.",
 
     lora=LoRAFormat(
         key_template="lora_unet_layers_{block}_{module}.{ab}.weight",
         down="lora_down", up="lora_up",
-        block_modules=("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down"),
+        block_modules=_MODULES,
         alpha_key="{prefix}.alpha",
         kohya=True,
         file_prefix="lora_unet_",
-        note="kohya keys; ComfyUI maps lora_unet_layers_N_proj_q to diffusion_model.layers.N.proj.q, and on its "
-             "fused-qkv file onto that block's qkv rows.",
-        source="ComfyUI comfy/lora.py model_lora_keys_unet; reference pipeline module names",
+        note="kohya keys over the reference module names. ComfyUI's MOSSImage branch maps lora_unet_layers_N_proj_q "
+             "/ _k / _v onto thirds of the fused proj.qkv in Comfy-Org's file; its generic map takes the same keys "
+             "on an unfused model (the OpenMOSS ComfyUI plugin). LoKR saves as diffusion_model.layers.N.proj.q, "
+             "which both maps also take.",
+        source="Comfy-Org/ComfyUI comfy/lora.py model_lora_keys_unet (PR #17095, merge e087d8f6cb)",
     ),
 
-    driver="fizgig.moss_image.driver:MossImageDriver",
-    modelspec_arch="moss-image",
-    implementation=_CARD,
-    ema_default="0.98",
-    # torch.compile of the 42 blocks (driver compile_targets): no graph break in a block, and after one dynamic-shape
-    # recompile new caption lengths and buckets train without recompiling; skipping block 22 on the negative branch
-    # adds no graph (CPU tests). Not measured on a GPU yet, so Auto leaves it off (no payback figures); On compiles,
-    # with the checkpoint outside the compiled region (eager-level memory on 12-16 GB cards)
-    compiles=True,
-    compile_boundary="outside",
-    compile_fullgraph=False,
-    compile_payback_steps={},
-    compile_hint=("Not measured on MOSS-Image yet, so Auto leaves it off. On compiles the 42 blocks (the "
-                  "checkpoint stays outside the compiled region, so memory stays at the uncompiled level); the "
-                  "first steps pause to compile, then a few seconds for each new image size. Requires Triton and, "
-                  "on Windows, a C++ compiler (VS Build Tools) - both located automatically. Never used with Blocks "
-                  "Swap, since swapping moves weights and compiled graphs assume they stay put."),
-    # full fine-tune (families/ft.py, the driver's ft_spec): the 42 blocks' six Linears rotating on an NF4 trunk;
-    # checkpoints keep ComfyUI's fused-qkv file layout. 1e-5 = the shared starting rate (not yet tuned on MOSS);
-    # memory from the shared estimates until measured on a GPU
-    finetune=True,
-    ft_learning_rate=1e-5,
-    # batch size > 1 (the driver's supports_batch: captions padded with a mask, noise / timesteps per sample): the
-    # Training tab's Batch Size box, 1 by default. Memory per extra image not yet measured on a GPU
-    max_batch_size=8,
+    driver="fizgig.moss_image.driver:MOSSImageDriver",
+    modelspec_arch="MOSS-Image",
+    implementation=_REPO,
     precisions=("int8", "nf4", "bf16"),
-    auto_precisions=("int8", "nf4"),  # bf16 is 10.2 GB of weights: past 12-16 GB cards with activations
+    auto_precisions=("int8", "nf4"),  # AI Toolkit's MOSS-Image default is an 8-bit base; bf16 stays a manual choice
+    # MEASURED 17 Oct 2026 on a 5090 (STILLS.md 4's calculation, 4 one-epoch runs + the 2-epoch smoke run). The
+    # preview round (1024², 50 steps, CFG 3) sets the peak at every precision, so the figures are the preview's peak
+    # after training (optimizer state resident; bf16 smoke run 15.1 GB vs 14.6 before training, +0.5 applied to INT8
+    # / NF4). Training alone: bf16 9.2 GB at 0.25 MP with 10 blocks swapped (7.97 resident -> 1.2 GB overhead,
+    # ~11.3 GB unswapped), 13.4 at 1 MP; INT8 8.8 and NF4 7.3 at 1 MP. Per swapped block: 0.211 GB bf16 (10 blocks
+    # cut the preview peak 2.1 GB), 0.105 INT8.
+    train_memory={"bf16": (((0.25, 15.1), (1.0, 15.1)), 0.211), "int8": (((0.25, 10.5), (1.0, 10.5)), 0.105),
+                  "nf4": (((0.25, 8.5), (1.0, 8.5)), 0.0)},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
-    # sliders (the shared trainer's two kinds): image pairs through training_loss(diff_ref=, diff_weight=), prompt
-    # pairs through noise_latents / predict. The push strength is Qwen's 2 until a MOSS slider is measured
-    slider_training=True,
-    slider_guidance=2.0,
-    helper_files=((_REPO, ("tokenizer/*", "text_encoder/config.json")),),
-    workbench_follows_samples=True,
-    # workbench renders take comfy-kitchen's INT8 attention (model._sdpa calls attend() first): an unmasked render
-    # only - a masked batch, training and the Profiler keep exact SDPA. Speed on a 12 GB card still to be measured
-    int8_attention=True,
-
-    options=(
-        FamilyOption("MOSS_CAPTION_DROPOUT", "Caption dropout", kind="entry", tokens="caption_dropout={}",
-                     default="0", width=8,
-                     hint="Share of steps trained on the empty prompt instead of the caption (0 = off, the default; "
-                          "0.05-0.1 keeps CFG working on a LoRA trained long). The empty prompt is encoded with "
-                          "the captions.",
-                     summary="caption dropout {}", section="other"),
-        FamilyOption("MOSS_TIMESTEPS", "Timesteps", choices=(
-            ("Paper (noisy-weighted)", "timesteps=paper"), ("Logit-normal", "timesteps=logit_normal"),
-            ("Uniform", "timesteps=uniform")),
-            hint="Paper: the base's own final-stage mix (a truncated logit-normal leaning noisy, 1% uniform).",
-            section="other", width=24),
-    ),
+    ema_default="0.98",
+    compiles=True,                    # driver.compile_targets: the 42 blocks
+    compile_boundary="outside",       # as Qwen 2.1's and Flux 3's: the checkpoint wraps the compiled block
+    # measured 17 Oct 2026, 5090, bf16, 1 MP, one bucket: 1.45 -> 1.07 s/step compiled (-26%), the first epoch
+    # 13 s slower (compiling) = paid back in ~35 steps; 200 leaves room for runs with several bucket shapes.
+    # INT8 / NF4 not measured yet: bf16's figure, and Klein's NF4 one, so Auto compiles the default INT8 base.
+    compile_payback_steps={"bf16": 200, "int8": 200, "nf4": 400},
+    # int8_attention left off: the model routes attention through int8_attention.attend(), but the speed-up isn't
+    # measured yet (ABILITIES.md: keep it where it measures faster)
+    finetune=True,                    # driver.ft_spec: every block's six Linears on an NF4 trunk
+    ft_learning_rate=1e-5,            # FINETUNE.md's default; the report's pretraining LR was 5e-5 (Muon + AdamW)
+    slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
+    # edit_training stays off: the released checkpoints don't condition on reference images (report section 8: "does
+    # not directly condition on reference images or support image editing"; pipeline docstring: defaults are "not
+    # ... reference-image variants"). The RoPE keeps a reference-index axis for a later release.
+    workbench_follows_samples=True,   # CFG 3 needs the Samples tab's negative (empty = the reference's default)
+    activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
+    repair_size=1024,                 # a 1 MP model (CHECKLIST.md Workbench)
 
     sampling=(
-        SamplingSettings("MOSS-Image Base", steps=50, cfg=3.0, sampler="euler", scheduler="simple", options=_REF_OPTS,
+        SamplingSettings("res_multistep, 30 steps, CFG 4", steps=30, cfg=4.0, sampler="res_multistep",
+                         scheduler="simple",
+                         options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep")),
                          negative_prompt=True,
-                         note="Shift 5, CFG 3 (3-6; more for short prompts), >= 50 steps. The negative branch skips "
-                              "block 22 (two forwards per step, as the reference).",
-                         source=f"{_GUIDE}; reference pipeline MOSSImagePipeline.__call__ defaults"),
+                         note="ComfyUI's second-order res_multistep on the reference's shift-5 grid. Picked by eye "
+                              "from res_multistep 20 / 30 / 50 at CFG 3 and 4 and Euler 30 / 50 on the same seeds.",
+                         source="Peter's comparison, 18 Oct 2026 (after r/StableDiffusion's res_multistep reports)"),
+        SamplingSettings("Euler, 30 steps", steps=30, cfg=3.0, sampler="euler", scheduler="simple",
+                         options=(("shift", 5.0), ("uncond_skip", (22,))), negative_prompt=True,
+                         note="AI Toolkit's MOSS-Image sample settings: the reference sampler at 30 steps.",
+                         source="ostris/ai-toolkit 7b94dc5, extensions_built_in/diffusion_models/ui.tsx (moss_image)"),
+        SamplingSettings("Reference (diffusers pipeline)", steps=50, cfg=3.0, sampler="euler", scheduler="simple",
+                         options=(("shift", 5.0), ("uncond_skip", (22,))), negative_prompt=True,
+                         note="Flow-matching Euler on the shift-5 grid snapped to the 1000 training sigmas; CFG 3 with "
+                              "block 22 skipped in the negative branch; the negative is empty by default.",
+                         source=f"{_PIPE} (MOSSImageScheduler, __call__ defaults); {_CARD} model card"),
+        SamplingSettings("ComfyUI workflow", steps=50, cfg=3.0, sampler="euler", scheduler="sgm_uniform",
+                         options=(("shift", 5.0), ("uncond_skip", (22,))), negative_prompt=True,
+                         note="ModelSamplingSD3 shift 5, SkipLayerGuidanceDiTSimple layer 22 on the negative. ComfyUI's "
+                              "scheduler does not snap to the training grid, so the same seed differs slightly.",
+                         source=f"{_REPO} comfyui/moss-image/example_workflows/moss-image-api.json, comfyui/README.md"),
     ),
-    preview_steps=28,
+    speed_loras=(
+        SpeedLoRA(
+            name="MOSS-Image DMD Turbo LoRA (8-step)",
+            repo=_TURBO,
+            file="lora.safetensors",
+            pairs_with="MOSS-Image SFT",
+            strength=1.0,             # the model card: lora.safetensors at 1.0 (lora_latest at 0.7)
+            settings=SamplingSettings("Turbo 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
+                                      options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
+                                      note="8 steps, no CFG, the reference's shift-5 grid.",
+                                      source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
+            load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
+            pref_key="moss_image_turbo_lora",
+            community_settings=(("12-16 steps for stronger prompt adherence; strength 0.8 at 16 steps",
+                                 "r/StableDiffusion 'MOSS-Image INT8 ComfyUI' thread; dskjal's ComfyUI guide"),),
+            caveats=("Distilled from MOSS-Image SFT; Fizgig trains on Base, so previews show the LoRA on Base.",),
+            source=f"https://huggingface.co/{_TURBO}",
+        ),
+    ),
+    # no preview_speed_lora: the DMD LoRA's renders are visibly soft on Base (Peter, 18 Oct 2026); it stays a choice
+    preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)
+    preview_cfg=4.0,                  # USERGUIDE.md: 3-6 recommended; 4 won the side-by-side
+    preview_negative=_NEGATIVE,
+    preview_cfg_note="4 = Fizgig's default (MOSS-Image's guide: 3-6; raise it for short prompts). The negative branch "
+                     "skips block 22, as the reference does. 1 = no CFG.",
+    samples_text=(("sampler", "res_multistep on MOSS-Image's shift-5 schedule (in ComfyUI: res_multistep after "
+                              "ModelSamplingSD3 shift 5), block 22 skipped in the negative branch."),),
     # training samples on the SFT checkpoint (the driver's park_for_preview / load_preview_checkpoint /
-    # unpark_after_preview): off by default - a LoRA trained on the Base carries over to the SFT only partly
+    # unpark_after_preview; @Murf-Code, PR #195): off by default - a LoRA trained on the Base carries over only partly
     train_preview_checkpoint=True,
     preview_checkpoint_tick="Use the SFT model for samples (set it in Preferences - a Base LoRA carries over "
                             "only partly)",
     preview_checkpoint_on=False,
-    preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 28 steps, CFG 3",
+    preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
-        "MOSS-Image SFT", steps=28, cfg=3.0, sampler="euler", scheduler="simple", options=_REF_OPTS,
-        negative_prompt=True,
-        note="The SFT card's settings (shift 5, CFG 3, the negative branch skipping block 22) at the Base samples' "
-             "28 steps (the card's 50 for a final render).",
+        "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",
+        options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep")), negative_prompt=True,
+        note="The Base samples' sampler (res_multistep 30, CFG 4, shift 5, the negative branch skipping block 22) on "
+             "the SFT checkpoint.",
         source=f"https://huggingface.co/{_COMFY}; OpenMOSS/MOSS-Image-SFT model card"),
-    samples_text=(("banner", "Preview prompts rendered periodically during training, on the MOSS-Image model being "
-                             "trained (or the SFT model when ticked below). Samples land in <output_dir>/sample/ "
-                             "and the Gallery button below opens the viewer."),),
-    preview_cfg=3.0,
-    preview_negative=_NEGATIVE,
-    preview_cfg_note="3 for long prompts, up to 6 for short ones. MOSS-Image reads long natural-language captions best.",
     preview_width=1024,
     preview_height=1024,
-    repair_size=1024,
-
     presets=(
-        ("✨ MOSS-Image Character (rank 16, 1e-4)", _preset(16, 1e-4)),
-        ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, 5e-5)),
-        # sliders run hot and short (Qwen's / Krea 2's recipe: rank 8, 2e-4, 0.5 MP); not yet measured on MOSS
-        ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, 2e-4, epochs=20, mp="0.5", slider=True)),
+        # untrained starting values (see _preset)
+        # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
+        # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
+        ("✨ MOSS-Image Fast (rank 16, 1e-4)", _preset(16)),
+        ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32)),
+        ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, lr=5e-5)),
+        ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
+        ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
     ),
+    workbench=("repair", "profiler", "extract", "royale"),
 
     notes=(
-        ("Licence: Apache-2.0 (weights and code).", _CARD),
-        ("Keep the text encoder frozen (OpenMOSS); Fizgig also keeps the DiT's text refiner frozen.", _GUIDE),
-        ("Text: Qwen3.5-9B last hidden state of the chat template with thinking on, per caption without padding "
-         "(up to 4096 tokens); the image's positions start after the prompt's length.", "pipeline_moss_image.py"),
-        ("Training: flow matching (sigma = 1000 timestep), velocity noise - x0, per-image token-mean MSE, no "
-         "weighting; timesteps on the 1000-step grid.", "MOSS-Image paper App. A.2"),
+        ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
+         "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform; the "
+         "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
+         f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
+        ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "
+         "unpadded, up to 4096 tokens. Keep the text encoder frozen.",
+         f"{_PIPE} encode_prompt; Comfy-Org/ComfyUI comfy/text_encoders/moss_image.py; {_GUIDE} Post-Training"),
+        ("No edit or reference-image training: the released checkpoints are text-to-image only. 'Layout editing' "
+         "means regenerating from an edited layout prompt, not conditioning on a picture.",
+         f"{_REPORT} section 6 and 8; {_GUIDE}"),
+        ("No speed LoRA or distilled checkpoint yet (DMD distillation is announced as coming), so previews run the "
+         "full 50 steps with CFG.", f"{_GUIDE} Few-Step Distillation"),
     ),
 )

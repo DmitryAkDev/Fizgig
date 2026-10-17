@@ -33,6 +33,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [Preparing images and captions](#preparing-images-and-captions)
 - [Klein 9B training](#klein-9b-training)
 - [Flux 3 Image Klein training](#flux-3-image-klein-training)
+- [MOSS-Image training](#moss-image-training)
 - [Krea 2 training](#krea-2-training)
 - [MiniMax H3 training](#minimax-h3-training)
 - [Qwen Image 2.1 training](#qwen-image-21-training)
@@ -70,6 +71,15 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 | Distilled DiT `flux3_image_klein_sd_bf16.safetensors` | diffusion_models/ | 16-step previews (`--preview_checkpoint`) and the workbench tabs |
 | Autoencoder `flux2-vae.safetensors` | vae/ | `--vae` (cache step: `--model`) |
 | Text encoder `qwen3vl_4b_bf16.safetensors` | text_encoders/ | `--text_encoder` (cache step: `--model`) |
+
+**MOSS-Image** (none gated):
+
+| File | Download | Used for |
+|---|---|---|
+| Base DiT `moss_image_base_bf16.safetensors` | [Comfy-Org/MOSS-Image → diffusion_models](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/diffusion_models) | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks |
+| Autoencoder `flux2-vae_small.safetensors` | [Comfy-Org/MOSS-Image → vae](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/vae): FLUX.2's encoder with the small decoder MOSS-Image ships with (Flux 3's `flux2-vae.safetensors` works too) | `--vae` (cache step: `--model`) |
+| SFT DiT `moss_image_sft_int8_convrot.safetensors` (optional) | [Comfy-Org/MOSS-Image → diffusion_models](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/diffusion_models) | previews on the SFT model (`--preview_checkpoint`) |
+| Text encoder `qwen3.5_9b_bf16.safetensors` | [Comfy-Org/Qwen3.5 → text_encoders](https://huggingface.co/Comfy-Org/Qwen3.5/tree/main/text_encoders) | `--text_encoder` (cache step: `--model`) |
 
 **Krea 2:**
 
@@ -111,7 +121,7 @@ The quickest way to get every file is the fetcher the Preferences download butto
 
 ## What's family-specific at a glance
 
-Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `minimax`, `krea2`, `qwen_image21`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
+Every family trains through the same two scripts — `src/fizgig/families/cache.py` and `src/fizgig/families/train.py`, selected with `--family` (`klein`, `flux3`, `minimax`, `krea2`, `qwen_image21`, `moss_image`) — and shares the dataset format, pause/resume, Context LoRA, LoKR, sliders, fine-tuning and the memory planner. What differs:
 
 | Feature | Klein 9B | Flux 3 Image Klein | MiniMax H3 | Krea 2 | Qwen Image 2.1 |
 |---|---|---|---|---|---|
@@ -340,6 +350,46 @@ python src/fizgig/families/train.py \
 - `--train_blocks` and Model Area presets aren't offered yet: Flux 3's block map isn't charted.
 
 The saved LoRA loads in ComfyUI's standard LoRA loader.
+
+---
+
+## MOSS-Image training
+
+MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4.
+
+### Full example
+
+The **Fast** preset, as the GUI's planner builds it: rank 16, 0.5 MP (`resolution = [704, 704]` in the TOML), Adaptive LR 1e-4 to 2e-4, 30 epochs:
+
+```bash
+python src/fizgig/families/cache.py --family moss_image --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae_small.safetensors
+python src/fizgig/families/cache.py --family moss_image --stage text    --dataset_config my_dataset.toml --model /models/qwen3.5_9b_bf16.safetensors
+
+python src/fizgig/families/train.py \
+  --family moss_image \
+  --dataset_config my_dataset.toml \
+  --dit /models/moss_image_base_bf16.safetensors \
+  --output_dir ./output_loras/my_subject \
+  --output_name my_subject \
+  --network_dim 16 --network_alpha 16 \
+  --learning_rate 1e-4 \
+  --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 \
+  --max_train_epochs 30 \
+  --save_every_n_epochs 1 \
+  --seed 42 \
+  --optimizer_type adamw \
+  --precision auto --compile_blocks auto \
+  --ema_decay 0.98 \
+  --save_state --save_state_on_train_end --keep_last_n_states 2 \
+  --vae /models/flux2-vae_small.safetensors \
+  --text_encoder /models/qwen3.5_9b_bf16.safetensors \
+  --sample_prompts sample_prompts.txt \
+  --sample_every_n_epochs 1 \
+  --sample_width 1024 --sample_height 1024 --sample_steps 30 --sample_cfg_scale 4.0 \
+  --sample_negative "worst quality, bad anatomy, watermark, jpeg artifact"
+```
+
+See [MOSS-Image](MOSS_IMAGE.md) for the presets and preview settings.
 
 ---
 

@@ -20,6 +20,7 @@ _SPECS = {
     "zimage": ("auto", "Tongyi-MAI/Z-Image-Turbo", "tokenizer"),
     "anima": ("auto", "circlestone-labs/Anima-Base-v1.0-Diffusers", "tokenizer"),
     "sdxl": ("clip", "stabilityai/stable-diffusion-xl-base-1.0", "tokenizer"),
+    "moss_image": ("auto", "OpenMOSS-Team/MOSS-Image-Base", "tokenizer"),
 }
 _TOK, _LOCK = {}, threading.Lock()
 

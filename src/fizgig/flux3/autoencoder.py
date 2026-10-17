@@ -5,6 +5,8 @@ vae/flux2-vae.safetensors), with BatchNorm latent statistics."""
 
 import math
 
+import re
+
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
@@ -116,10 +118,11 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self):
+    def __init__(self, ch=CH):
+        """ch: 128 for the FLUX.2 decoder, 96 for BFL's FLUX.2 small decoder (the one MOSS-Image ships)."""
         super().__init__()
         self.post_quant_conv = nn.Conv2d(EMBED_DIM, EMBED_DIM, 1)
-        block_in = CH * CH_MULT[-1]
+        block_in = ch * CH_MULT[-1]
         self.conv_in = nn.Conv2d(EMBED_DIM, block_in, 3, padding=1)
         self.mid = nn.Module()
         self.mid.block_1 = ResnetBlock(block_in, block_in)
@@ -131,8 +134,8 @@ class Decoder(nn.Module):
             up.block = nn.ModuleList()
             up.attn = nn.ModuleList()
             for _ in range(NUM_RES_BLOCKS + 1):
-                up.block.append(ResnetBlock(block_in, CH * CH_MULT[level]))
-                block_in = CH * CH_MULT[level]
+                up.block.append(ResnetBlock(block_in, ch * CH_MULT[level]))
+                block_in = ch * CH_MULT[level]
             if level != 0:
                 up.upsample = Upsample(block_in)
             self.up.insert(0, up)
@@ -151,10 +154,10 @@ class Decoder(nn.Module):
 
 
 class AutoEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, decoder_ch=CH):
         super().__init__()
         self.encoder = Encoder()
-        self.decoder = Decoder()
+        self.decoder = Decoder(decoder_ch)
         self.bn_eps = 1e-4
         self.bn = nn.BatchNorm2d(LATENT_CHANNELS, eps=self.bn_eps, affine=False, track_running_stats=True)
 
@@ -189,14 +192,44 @@ def latent_shape(height: int, width: int) -> tuple[int, int]:
     return height // DOWNSAMPLING_RATIO, width // DOWNSAMPLING_RATIO
 
 
+def _from_diffusers(sd):
+    """diffusers AutoencoderKLFlux2 names -> the reference's: down_blocks.i / up_blocks.i (up_blocks counted from the
+    lowest resolution) -> down.i / up.(levels-1-i), resnets.j -> block.j, mid_block -> mid.block_1 / attn_1 / block_2,
+    conv_shortcut -> nin_shortcut, conv_norm_out -> norm_out; quant convs move into the encoder / decoder; the
+    attention's Linear weights become 1x1 convs."""
+    n = len(CH_MULT)
+    out = {}
+    for k, v in sd.items():
+        k2 = k
+        if k2.startswith(("quant_conv.", "post_quant_conv.")):
+            k2 = ("encoder." if k2.startswith("quant") else "decoder.") + k2
+        k2 = re.sub(r"\.down_blocks\.(\d+)\.resnets\.", r".down.\1.block.", k2)
+        k2 = re.sub(r"\.down_blocks\.(\d+)\.downsamplers\.0\.", r".down.\1.downsample.", k2)
+        k2 = re.sub(r"\.up_blocks\.(\d+)\.resnets\.", lambda m: f".up.{n - 1 - int(m.group(1))}.block.", k2)
+        k2 = re.sub(r"\.up_blocks\.(\d+)\.upsamplers\.0\.", lambda m: f".up.{n - 1 - int(m.group(1))}.upsample.", k2)
+        k2 = k2.replace(".mid_block.resnets.0.", ".mid.block_1.").replace(".mid_block.resnets.1.", ".mid.block_2.")
+        k2 = k2.replace(".mid_block.attentions.0.", ".mid.attn_1.")
+        k2 = (k2.replace("attn_1.group_norm.", "attn_1.norm.").replace("attn_1.to_q.", "attn_1.q.")
+              .replace("attn_1.to_k.", "attn_1.k.").replace("attn_1.to_v.", "attn_1.v.")
+              .replace("attn_1.to_out.0.", "attn_1.proj_out."))
+        k2 = k2.replace(".conv_shortcut.", ".nin_shortcut.").replace(".conv_norm_out.", ".norm_out.")
+        if ".attn_1." in k2 and k2.endswith(".weight") and v.dim() == 2:
+            v = v[:, :, None, None]
+        out[k2] = v
+    return out
+
+
 def load_flux3_vae(path: str, device="cpu", dtype=torch.float32) -> AutoEncoder:
-    """ae.safetensors / flux2-vae.safetensors -> AutoEncoder (fp32, as the reference pipeline runs it)."""
+    """ae.safetensors / flux2-vae.safetensors (or flux2-vae_small: the full encoder with BFL's small decoder) ->
+    AutoEncoder (fp32, as the reference pipeline runs it)."""
     from safetensors.torch import load_file
     sd = load_file(path, device="cpu")
     for p in ("vae.", "first_stage_model."):
         if all(k.startswith(p) for k in sd):
             sd = {k[len(p):]: v for k, v in sd.items()}
-    ae = AutoEncoder()
+    if "decoder.conv_norm_out.weight" in sd:      # diffusers names (Comfy-Org's flux2-vae_small, BFL's small decoder)
+        sd = _from_diffusers(sd)
+    ae = AutoEncoder(decoder_ch=sd["decoder.conv_out.weight"].shape[1] // CH_MULT[0])
     expected = set(ae.state_dict())
     missing = sorted(k for k in expected - set(sd) if not k.endswith("num_batches_tracked"))
     unexpected = sorted(set(sd) - expected)
