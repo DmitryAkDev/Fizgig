@@ -112,7 +112,7 @@ An H3 fine-tune is a normal H3 checkpoint: load it in ComfyUI directly, or extra
 
 ## Subjects
 
-A fine-tune can train up to four subjects from their own folders, and **Leave the rest of the model alone** on the Subjects card keeps them out of prompts that don't use their trigger words. A fine-tune has no LoRA to switch off, so Fizgig saves what the original model makes for each training picture before the first step and holds the trigger-free pass to that. **Works with other people in the picture** is for LoRAs.
+A fine-tune can train up to four subjects from their own folders, and **Leave the rest of the model alone** on the Subjects card keeps them out of prompts that don't use their trigger words. A fine-tune has no LoRA to switch off, so Fizgig saves what the original model makes for each training picture before the first step and holds the trigger-free pass to that. **Fizgig LoRA Isolation** is for LoRAs.
 
 ## Regularisation images (optional)
 

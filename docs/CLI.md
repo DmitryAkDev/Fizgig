@@ -559,7 +559,7 @@ Every family, Standard LoRA and fine-tune runs. `--dop` adds a second pass to ea
 
 A caption with several triggers (a photo of both people) has each one swapped. Images whose caption has no trigger train as usual. Each epoch logs the preservation loss: how far the LoRA moves the trigger-free prompt from the base model.
 
-The web app's **Subjects** card always uses the tested recipe, `--dop --dop_every 2 --dop_weight 2`. **Works with other people in the picture** adds three things, which the launch builds for you:
+The web app's **Subjects** card always uses the tested recipe, `--dop --dop_every 2 --dop_weight 2`. **Fizgig LoRA Isolation** adds three things, which the launch builds for you:
 - each subject's 16 side-by-side pictures, built first by `src/fizgig/scripts/multi_person.py --subject FOLDER FUSED_WORD OUT_DIR` (one `--subject` per person) and trained as one more dataset block per subject;
 - `--lr_boost fizgig_mp_=2`, so those pictures train at 2x the learning rate;
 - a `caption_replace` list in each subject's dataset block, which reads `zwxem, a woman` as `zwxemwoman`, with `--dop_trigger zwxemwoman --dop_class "a woman"`.

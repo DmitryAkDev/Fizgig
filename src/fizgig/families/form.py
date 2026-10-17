@@ -169,16 +169,17 @@ def slider_sources(desc):
 
 CONCEPT_COUNTS = ("2 subjects", "3 subjects", "4 subjects")
 SUBJECT_COUNTS = ("1 subject",) + CONCEPT_COUNTS
-# the Subjects card's "When other people are in the picture": off / DOP / DOP + multi-person (the measured recipe)
+# the Subjects card's "Your subject and other people": off / DOP / Fizgig LoRA Isolation (DOP + multi-person, the measured recipe)
 PEOPLE_MODES = ("Off - a normal LoRA", "Leave the rest of the model alone",
-                "Works with other people in the picture")
+                "Fizgig LoRA Isolation")
 PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in prompts that don't use its trigger "
                "word.\n"
                "Leave the rest of the model alone: ask for \"a man at a party\" without the trigger word and you get "
                "a stranger, just as the model made before you trained. Your subject only appears when you call for "
                "them.\n"
-               "Works with other people in the picture: your subjects can stand together in one picture, or next to "
-               "a person the model already knows well, and every face stays right. Best for people. "
+               "Fizgig LoRA Isolation: your subjects can stand together in one picture, or next to "
+               "a person the model already knows well, and every face stays right. Best for people, and best with two "
+               "or more people in the LoRA. "
                "Training takes about 1.5x as long. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
@@ -754,11 +755,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         if desc.loss_watch:             # a new AI caption would be encoded with the trigger unfused
             disabled.add("KREA2_AUTO_RECAPTION")
             force["KREA2_AUTO_RECAPTION"] = False
-            notes["KREA2_AUTO_RECAPTION"] = "Off while other people keep their faces (Subjects card)."
+            notes["KREA2_AUTO_RECAPTION"] = "Off with Fizgig LoRA Isolation (Subjects card)."
             for k in ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"):   # side-by-sides: hard on purpose
                 disabled.add(k)
                 force[k] = False
-                notes[k] = "Off while other people keep their faces (Subjects card)."
+                notes[k] = "Off with Fizgig LoRA Isolation (Subjects card)."
         values = {**values, "FAMILY_DOP": True}
         notes["SAMPLE_PROMPT"] = ("Write prompts as your captions are (\"zwxem, a woman at a cafe\"): previews read "
                                   "them the way training reads the captions.")
