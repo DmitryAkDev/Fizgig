@@ -247,6 +247,8 @@ def caches(desc, inputs):
     size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
     Enable Cache off."""
     resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
+    if multi_person_on(desc, inputs) and not slider_on(desc, inputs, "prompts"):
+        return True      # Fizgig LoRA Isolation builds its side-by-sides every start: always cache them (only what's new)
     return bool(inputs.get("enable_cache", True) and (not resuming or inputs.get("recache"))
                 and not slider_on(desc, inputs, "prompts"))
 
@@ -507,6 +509,8 @@ def option_tokens(desc, inputs, missing=None):
     value; an unset key takes the option's default). "pref:KEY" becomes that Preferences file's path; `missing`
     (a list) collects (pref key, option) for every such file that is not set or not on disk."""
     vals = inputs.get("FAMILY_OPTIONS") or {}
+    if multi_person_on(desc, inputs):   # checks that can't run beside Fizgig LoRA Isolation (H3 reference distillation)
+        vals = {**vals, **{o.key: "" for o in desc.options if getattr(o, "isolation_off", False)}}
     models = inputs.get("models") or {}
 
     def path(v):
@@ -620,7 +624,7 @@ def train_command(desc, inputs, plan):
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
     mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
-    if (st.get("FAMILY_DOP") or mp_subs) and not (slider_on(desc, st) or edit_on(desc, st)):
+    if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
             trig, cls = [s["fused"] for s in mp_subs], [s["phrase"] for s in mp_subs]
@@ -949,6 +953,8 @@ def dataset_toml(desc, inputs):
             import json as _json
             if mp[f][0]["rules"]:            # none when the captions are used as written
                 lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
+            if isolation_photos_only(desc):  # a clip / voice family trains Isolation's subjects from their stills
+                lines.append("photos_only = true")
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
     if reps.get(folder, 1) > 1:
         lines.append(f"num_repeats = {reps[folder]}")
@@ -1045,9 +1051,22 @@ def dop_rules(st):
     return trig, cls
 
 
+def dop_on(desc, st):
+    """DOP (the Subjects card's "Leave the rest of the model alone", and under Fizgig LoRA Isolation): a family that
+    offers it (description subject_isolation), never an edit or a slider."""
+    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st))
+
+
 def multi_person_on(desc, st):
-    """Multi-person mode (families/multi_person.py): a standard LoRA run with the tick on."""
-    return bool(st.get("FAMILY_MULTI_PERSON")) and not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+    """Fizgig LoRA Isolation (multi-person mode, families/multi_person.py): a standard LoRA run with the tick on, on a
+    family that offers it."""
+    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+
+
+def isolation_photos_only(desc):
+    """Fizgig LoRA Isolation trains people from their stills: a family that also trains clips or voice (MiniMax H3)
+    leaves those out of the subjects' folders - the side-by-sides are stills and DOP's preservation pass is a picture's."""
+    return "photo" in desc.media and bool({"clip", "voice"} & set(desc.media))
 
 
 def multi_person_subjects(desc, st):
@@ -1063,25 +1082,34 @@ def multi_person_subjects(desc, st):
         where = (cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson"
         kind = mp.kind_key(st.get("FAMILY_SUBJECT_KIND" + ("" if n == 1 else str(n))))
         if len(t) != 1:
-            out.append((folder, None, f"Other people keep their faces: {name.lower()} needs exactly one trigger "
+            out.append((folder, None, f"Fizgig LoRA Isolation: {name.lower()} needs exactly one trigger "
                                       f"word ({len(t)} given) - one person per folder", where))
             continue
         if st.get("FAMILY_MP_MANUAL"):   # the captions as written: the trigger is already the joined word
             sub, why = mp.subject_as_written(t[0], c[0] if c else "", kind)
         else:
             sub, why = mp.subject(folder, t[0], c[0] if c else "", ext, kind)
-        out.append((folder, sub, f"Other people keep their faces: {name.lower()} - {why}" if why else "", where))
+        out.append((folder, sub, f"Fizgig LoRA Isolation: {name.lower()} - {why}" if why else "", where))
     return out
 
 
 def multi_person_problems(desc, v):
     if not multi_person_on(desc, v):
         return []
-    return [why for _f, _s_, why, _w in multi_person_subjects(desc, v) if why]
+    out = [why for _f, _s_, why, _w in multi_person_subjects(desc, v) if why]
+    if isolation_photos_only(desc):      # it trains people from their stills: a folder of only clips has none
+        folders = [_s(v.get("image_folder"))] + ([_s(f) for f in v.get("extra_folders") or []]
+                                                 if v.get("multiconcept") else [])
+        for (name, _t, _c), f in zip(_dop_folders(v), folders):
+            if f and "photo" not in dataset_media(f):
+                out.append(f"Fizgig LoRA Isolation: {name.lower()} has no photos. It trains people from their photos "
+                           f"(clips and voice are left out), so add some photos of them to its folder, or pick "
+                           f"another option under Your subject and other people.")
+    return out
 
 
 def dop_problems(desc, v):
-    if not (v.get("FAMILY_DOP") or multi_person_on(desc, v)) or slider_on(desc, v) or edit_on(desc, v):
+    if not (dop_on(desc, v) or multi_person_on(desc, v)):
         return []
     out = []
     for name, t, c in _dop_folders(v):

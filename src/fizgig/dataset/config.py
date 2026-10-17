@@ -83,6 +83,9 @@ class ImageDatasetParams(BaseDatasetParams):
     # Caption rewrites applied as each caption is read, the user's .txt files untouched: [[from, to], ...], whole
     # words, case-insensitive, in order (multi-person mode fuses "zwxem, a woman" into "zwxemwoman")
     caption_replace: Optional[list] = None
+    # Photos only: a family that trains clips or voice globs neither from this folder (Fizgig LoRA Isolation on
+    # MiniMax H3 trains people from their stills)
+    photos_only: bool = False
 
 
 @dataclass
@@ -146,6 +149,7 @@ class ConfigSanitizer:
         "extra_reference_directory": str,
         "is_reg": bool,
         "caption_replace": [[str]],
+        "photos_only": bool,
     }
 
     # Options that come from argparse only (not from user config)

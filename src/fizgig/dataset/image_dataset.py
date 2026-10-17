@@ -848,6 +848,7 @@ class ImageDataset(torch.utils.data.Dataset):
         is_reg: bool = False,
         clip_megapixels: Optional[float] = None,
         caption_replace: Optional[list] = None,
+        photos_only: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -887,9 +888,15 @@ class ImageDataset(torch.utils.data.Dataset):
         # orphan and the run trains on nothing.
         self.family = _described_family(architecture)
         _media = tuple(getattr(self.family, "media", ()) or ())
-        _extra = ((VIDEO_EXTENSIONS if "clip" in _media else ()) +
-                  (AUDIO_EXTENSIONS if "voice" in _media else ()))
+        _extra = () if photos_only else ((VIDEO_EXTENSIONS if "clip" in _media else ()) +
+                                         (AUDIO_EXTENSIONS if "voice" in _media else ()))
         self.extra_extensions = _extra
+        if photos_only and os.path.isdir(image_directory):
+            _left = [f for f in os.listdir(image_directory)
+                     if os.path.splitext(f)[1].lower() in {e.lower() for e in VIDEO_EXTENSIONS + AUDIO_EXTENSIONS}]
+            if _left:
+                logger.info(f"[isolation] {len(_left)} clip/voice file(s) in {image_directory} left out: "
+                            f"Fizgig LoRA Isolation trains people from their photos")
         self.datasource = ImageDirectoryDatasource(image_directory, caption_extension,
                                                    control_directory, extra_extensions=_extra,
                                                    family=self.family, caption_replace=caption_replace,

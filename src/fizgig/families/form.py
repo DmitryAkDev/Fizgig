@@ -745,6 +745,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH"}
     if kind != "standard":
         hidden.add("FAMILY_FAST_ID")
+    if not desc.subject_isolation:                    # a family without it (a music model): a normal LoRA, always
+        hidden |= {"FAMILY_DOP", "FAMILY_MULTI_PERSON", "FAMILY_PEOPLE_MODE"}
+        force.update({k: False for k in ("FAMILY_DOP", "FAMILY_MULTI_PERSON") if values.get(k)})
+        values = {**values, "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False}
     if kind not in ("standard", "finetune"):          # DOP keeps a subject apart: a LoRA's or a fine-tune's job
         hidden.add("FAMILY_DOP")
     if kind != "standard":                            # multi-person mode: a LoRA (its LR boost is per step)
@@ -760,8 +764,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                 disabled.add(k)
                 force[k] = False
                 notes[k] = "Off with Fizgig LoRA Isolation (Subjects card)."
+        for o in desc.options:          # a family check that can't run beside it (H3 reference distillation)
+            if getattr(o, "isolation_off", False):
+                disabled.add(o.key)
+                if values.get(o.key):
+                    force[o.key] = False
+                notes[o.key] = "Off with Fizgig LoRA Isolation (Subjects card)."
         values = {**values, "FAMILY_DOP": True}
-        notes["SAMPLE_PROMPT"] = ("Write prompts as your captions are (\"zwxem, a woman at a cafe\"): previews read "
+        notes["SAMPLE_PROMPT"] =("Write prompts as your captions are (\"zwxem, a woman at a cafe\"): previews read "
                                   "them the way training reads the captions.")
     if kind in ("edit", "slider"):      # the first folder has a partner folder (originals, the -1 end): one subject
         hidden.add("subjects")

@@ -218,6 +218,7 @@ class FamilyOption:
     setting: str = ""                 # the old settings key this option's value is read from on first use
     show_if_media: str = ""           # shown only when the dataset holds this media kind ("clip", "voice")
     mixed_only: bool = False          # shown only when the dataset mixes voice with photos or clips
+    isolation_off: bool = False       # a check that can't run with Fizgig LoRA Isolation: off and greyed while it's on
     requires: str = ""                # shown (and sent) only while this check is ticked ("KEY") or this choice is
     #                                   picked ("KEY=LABEL", matched as pick() matches)
     suggestions: tuple = ()           # entry: ready-made values offered in an editable dropdown ("6-49 · why")
@@ -320,6 +321,9 @@ class FamilyDescription:
     # options a click on the box sets ((option key, value) pairs, still editable after); multi_concept_hint: a line
     # added to the box's hint
     multi_concept: bool = True
+    # The Subjects card's "Your subject and other people" (DOP, and Fizgig LoRA Isolation on top of it): False hides
+    # both and the run trains as a normal LoRA (a music model has no people in a picture to keep apart)
+    subject_isolation: bool = True
     multi_concept_defaults: tuple = ()
     multi_concept_hint: str = ""
     clip_spec: Optional[ClipSpec] = None

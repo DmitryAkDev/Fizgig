@@ -135,7 +135,8 @@ OPTIONS = (
     FamilyOption("H3_DISTILL", "Learn identity from my dataset (reference distillation)", kind="check",
                  tokens="distill=1 aux:distill=1 --dit=pref:minimax_ref_dit",
                  hint="Experiment. Teaches the LoRA to reproduce identity the way H3 does from a reference photo. "
-                      "Needs the ref2va model in Preferences.", summary="distill", setting="MINIMAX_DISTILL", section="other"),
+                      "Needs the ref2va model in Preferences.", summary="distill", setting="MINIMAX_DISTILL", section="other",
+                 isolation_off=True),     # the side-by-sides' block would hand two-person pictures in as references
     FamilyOption("H3_DISTILL_WEIGHT", "   teacher ", kind="entry", inline=True, always_shown=True, width=5,
                  suggestions=("0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"), tokens="distill_weight={}", default="0.8",
                  requires="H3_DISTILL", summary="teacher {}", setting="MINIMAX_DISTILL_WEIGHT", section="other"),
