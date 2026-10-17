@@ -193,8 +193,11 @@ Field notes:
 - **`num_repeats`** — multiplies how often each image appears per epoch. Leave at 1 and train more epochs instead, unless you're balancing multiple `[[datasets]]` blocks against each other.
 - **`cache_directory`** — where latents and text embeddings are stored. **Give every dataset its own cache directory.** The training set is built from the cache, and a shared cache directory can mix a previous dataset's images into your run. (Fizgig cross-checks the cache against `image_directory` and skips orphans with a warning, but a dedicated directory per dataset is the clean way.)
 - **Multiple `[[datasets]]` blocks** are supported — each with its own `image_directory`, `cache_directory`, and optional per-dataset overrides of any `[general]` key (e.g. a different `num_repeats` to weight one folder more heavily).
+- **`caption_replace = [["zwxem, a woman", "zwxemwoman"]]`** — rewrites captions as they're read (whole words, any case, in order); your `.txt` files aren't changed. Fizgig LoRA Isolation uses it to join each trigger to its class.
+- **`photos_only = true`** — a family that trains clips or voice (MiniMax H3) reads only the pictures in this folder. Fizgig LoRA Isolation sets it on H3, which trains people from their photos.
+- **`is_reg = true`** — marks a fine-tune's regularisation set: those images train at `--reg_lr_multiplier` (default 0.2) times the learning rate, as a light anchor on the class. A LoRA run trains such a block as ordinary images and says so in the log.
 
-If you change captions, re-run the text cache step. If you add/remove/edit images, re-run both cache steps.
+If you change captions, re-run the text cache step. If you add/remove/edit images, re-run both cache steps (a picture edited after it was cached is encoded again even with `--skip_existing`).
 
 ---
 
@@ -556,6 +559,7 @@ Every family, Standard LoRA and fine-tune runs. `--dop` adds a second pass to ea
 | `--dop_class woman` | what replaces each trigger: one per trigger in order (`woman, man`) or one for all; empty = the triggers are just left out |
 | `--dop_weight 1.0` | the preservation loss's weight |
 | `--dop_every 1` | a preservation pass every N steps; raise `--dop_weight` by the same factor to keep the same preservation on average (the web UI's "Every second step" sends `--dop_every 2` with the weight doubled) |
+| `--dop_ft_samples 8` | fine-tunes only: how many of the original model's predictions are made per image before the first step (a fine-tune has no adapter to switch off, so these stand in for the base model; saved beside the run so a continued fine-tune reuses them) |
 
 A caption with several triggers (a photo of both people) has each one swapped. Images whose caption has no trigger train as usual. Each epoch logs the preservation loss: how far the LoRA moves the trigger-free prompt from the base model.
 
