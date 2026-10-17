@@ -76,6 +76,19 @@ def save_cond(desc, item, cond, refs=""):
               item.text_encoder_output_cache_path, metadata=md)
 
 
+def save_cond_file(desc, path, caption, cond, key=""):
+    """A text encoding at a path of its own, in the text cache's format (DOP's trigger-free captions sit beside each
+    item's own cache)."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    md = {"architecture": desc.arch_id, "caption1": caption, "format_version": FORMAT_VERSION}
+    save_file({f"cond__{k}": _clean(v, k, key) for k, v in cond.items()}, path, metadata=md)
+
+
+def cond_file_matches(path, caption):
+    """An existing text encoding written from this caption."""
+    return _cached_matches(path, caption, "")
+
+
 def _cached_matches(path, caption, refs):
     """An existing text cache that still fits: same caption and same before-image sizes."""
     from safetensors import safe_open

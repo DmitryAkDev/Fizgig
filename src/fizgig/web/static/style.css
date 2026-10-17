@@ -2066,5 +2066,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .model-strip > .card-content { padding: 14px 20px; }
 .model-strip .field-row { margin: 0; }
 
+/* a hint with one line per choice (Subjects card): spaced, each choice's name bold and white as the tick titles */
+.hint-lines > div { margin: 0 0 6px; }
+.hint-lines b { font-style: normal; font-weight: 700; color: var(--text-primary); }
+.note-lines { color: var(--text-explain); }   /* the Subjects card's caption preview: an explanation, not a warning */
 /* Studio (H3): the Clip row's ticks after Steps / Turbo - a gap before each, so every box reads with its own word */
 #stVideoRows .st-inline .checkbox-label { margin-left: 14px; }

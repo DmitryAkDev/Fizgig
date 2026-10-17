@@ -247,6 +247,8 @@ def caches(desc, inputs):
     size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
     Enable Cache off."""
     resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
+    if multi_person_on(desc, inputs) and not slider_on(desc, inputs, "prompts"):
+        return True      # Fizgig LoRA Isolation builds its side-by-sides every start: always cache them (only what's new)
     return bool(inputs.get("enable_cache", True) and (not resuming or inputs.get("recache"))
                 and not slider_on(desc, inputs, "prompts"))
 
@@ -448,6 +450,23 @@ def problems(desc, inputs):
 
 
 # ---------------------------------------------------------------------------------------------------- commands
+def _media_count(folder):
+    """Training items (photos, clips, songs) in a folder."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    try:
+        return sum(1 for n in os.listdir(folder) if os.path.splitext(n)[1].lower() in exts)
+    except OSError:
+        return 0
+
+
+def _balance_repeats(folders):
+    """Multi Concept's balance: each folder repeated so its items come to about the largest folder's."""
+    counts = {f: _media_count(f) for f in folders}
+    top = max(counts.values() or [0])
+    return {f: max(1, round(top / c)) for f, c in counts.items() if c}
+
+
 def dataset_media(folder):
     """The media kinds in a training folder: {"photo", "clip", "voice"} (the dataset layer's extensions)."""
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
@@ -490,6 +509,8 @@ def option_tokens(desc, inputs, missing=None):
     value; an unset key takes the option's default). "pref:KEY" becomes that Preferences file's path; `missing`
     (a list) collects (pref key, option) for every such file that is not set or not on disk."""
     vals = inputs.get("FAMILY_OPTIONS") or {}
+    if multi_person_on(desc, inputs):   # checks that can't run beside Fizgig LoRA Isolation (H3 reference distillation)
+        vals = {**vals, **{o.key: "" for o in desc.options if getattr(o, "isolation_off", False)}}
     models = inputs.get("models") or {}
 
     def path(v):
@@ -602,6 +623,18 @@ def train_command(desc, inputs, plan):
     if ctx and not ft_on(desc, st):         # a fine-tune trains the base itself: there is no LoRA to stack on
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
+    mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
+    if dop_on(desc, st) or mp_subs:
+        trig, cls = dop_rules(st)
+        if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
+            trig, cls = [s["fused"] for s in mp_subs], [s["phrase"] for s in mp_subs]
+        # the tested recipe, always (Peter, 16 Oct 2026: every second step is proven, every step not needed): on half
+        # the steps at twice the weight - the same preservation on average, about half the extra time (the weight
+        # scales the DOP pass's loss, never the run's learning rate - its gradient joins the step's own)
+        every, weight = 2, 1.0
+        cmd += ["--dop", "--dop_weight", f"{weight * every:g}", "--dop_every", str(every)]
+        if trig:
+            cmd += ["--dop_trigger", ", ".join(trig), "--dop_class", ", ".join(cls)]
     if st.get("ADAPTIVE_LR") and desc.adaptive_lr and not ft_on(desc, st):   # a fine-tune trains at its own rate
         cmd += ["--adaptive_lr",
                 "--adaptive_lr_min", str(st.get("ADAPTIVE_LR_MIN", "1e-4")).split(" ")[0],
@@ -655,8 +688,12 @@ def train_command(desc, inputs, plan):
     except ValueError:
         bs1 = True
     lw = (st.get("loss_watch") or {}) if desc.loss_watch else {}
+    if multi_person_on(desc, st):    # the side-by-sides are hard on purpose: no verdicts, per-image LR or look warm-up
+        lw = {**lw, "detect": False, "per_image_lr": False, "warmup": False}
     watch = [("detect", "--log_per_image_loss"), ("per_image_lr", "--per_image_lr"), ("warmup", "--warmup_look_outliers")]
     can_recaption = bool(st.get("captioner"))   # every family captions with the shared captioner
+    # multi-person mode reads triggers fused as captions load; a new AI caption is encoded as written, unfused
+    can_recaption = can_recaption and not multi_person_on(desc, st)
     if can_recaption:
         watch.append(("recaption", "--auto_recaption"))
     if bs1:
@@ -701,6 +738,11 @@ def train_command(desc, inputs, plan):
         if val:
             cmd += [flag, val]
     trig = _s(st.get("METADATA_TRIGGER_PHRASE")) or _s(st.get("caption_trigger"))
+    if mp_subs:
+        from fizgig.families import multi_person as _mp
+        trig = ", ".join(s["fused"] for s in mp_subs)        # the LoRA answers to the fused words
+        if any(s["kind"] == "person" for s in mp_subs):      # the side-by-side pictures' steps (people only)
+            cmd += ["--lr_boost", f"{_mp.PREFIX}={_mp.LR_BOOST:g}"]
     if trig and trig.lower() != "trigger_word":
         cmd += ["--metadata_trigger_phrase", trig]
     cmd += _preview_flags(desc, st, plan, cmd)
@@ -732,6 +774,8 @@ def train_command(desc, inputs, plan):
                     cmd += [flag, _model(st, desc, role)]
         else:
             cmd.append("--slider_pairs")
+    if "--dop" in cmd and "--text_encoder" not in cmd:
+        cmd += ["--text_encoder", _model(st, desc, "text_encoder")]   # the swapped captions are encoded at the start
     if desc.options:
         cmd = _dedupe_flags(cmd + option_tokens(desc, st)[0])
     cont = (st.get("FAMILY_FT_CONTINUE") or {}) if ft_on(desc, st) else {}
@@ -788,6 +832,10 @@ def _preview_flags(desc, st, plan, cmd):
             ln = ln.split(" --")[0].strip()      # drop Klein-style inline flags
             if ln:
                 lines.append(ln)
+        if multi_person_on(desc, st):            # the previews read the prompts fused, as training reads the captions
+            from fizgig.families import multi_person as mp
+            rules = [r for _f, s, _w, _x in multi_person_subjects(desc, st) if s for r in s["rules"]]
+            lines = [mp.fuse(ln, rules) for ln in lines]
         plan.dirs.append(samples_dir)            # the sample folder exists either way
         if lines or _sample_image(desc, sm):     # a reference alone previews too ('generate from this picture')
             prompts = os.path.join(samples_dir, f"{desc.key}_prompts.txt")
@@ -896,7 +944,21 @@ def dataset_toml(desc, inputs):
         cmp_ = 0.0
     if cmp_ > 0 and "clip" in desc.media and any("clip" in dataset_media(f) for f in [folder] + extra):
         lines.append(f"clip_megapixels = {cmp_:g}")      # clips cache and train at their own size
+    reps = _balance_repeats([folder] + extra) if extra and inputs.get("concept_balance") else {}
+    mp = {f: (s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s} \
+        if multi_person_on(desc, inputs) else {}
+
+    def _fuse(f):
+        if f in mp:          # TOML arrays of strings read as JSON writes them
+            import json as _json
+            if mp[f][0]["rules"]:            # none when the captions are used as written
+                lines.append(f"caption_replace = {_json.dumps(mp[f][0]['rules'])}")
+            if isolation_photos_only(desc):  # a clip / voice family trains Isolation's subjects from their stills
+                lines.append("photos_only = true")
     lines += ["", "[[datasets]]", f'image_directory = "{folder.replace(chr(92), "/")}"']
+    if reps.get(folder, 1) > 1:
+        lines.append(f"num_repeats = {reps[folder]}")
+    _fuse(folder)
     if edit_on(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_EDIT_DIR")).replace(chr(92), "/")}"')
         if edit_extras_on(desc, inputs):
@@ -908,8 +970,17 @@ def dataset_toml(desc, inputs):
         lines.append(f'cache_directory = "{cache_dir_for(root, folder).replace(chr(92), "/")}"')
     for f in extra:                      # Multi Concept: each subject its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"']
+        if reps.get(f, 1) > 1:
+            lines.append(f"num_repeats = {reps[f]}")
+        _fuse(f)
         if root:
             lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+    for f, (_s_, w) in mp.items():        # multi-person mode: each person's composites, already captioned fused
+        if _s_["kind"] != "person":
+            continue
+        lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
+        if root:
+            lines.append(f'cache_directory = "{cache_dir_for(root, w).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)
     if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"']
@@ -927,25 +998,129 @@ def multi_concept_problems(desc, inputs):
         return []
     norm = lambda f: f.lower().replace("\\", "/").rstrip("/")
     seen, out = {norm(_s(inputs.get("image_folder")))}, []
-    extra = [_s(f) for f in (inputs.get("extra_folders") or []) if _s(f)]
-    if not extra:
-        out.append("Multi Concept is on but no second subject folder is set — pick one, or turn the mode off.")
+    wanted = list(inputs.get("extra_folders") or [])
+    for i, f in enumerate(wanted, start=2):
+        if not _s(f):
+            out.append(f"Subjects: set the subject {i} folder, or pick fewer subjects.")
+    extra = [_s(f) for f in wanted if _s(f)]
+    if not wanted:
+        out.append("Subjects: no folder set for subject 2 - pick one, or choose 1 subject.")
     ext = _s(inputs.get("caption_ext")) or ".txt"
     for f in extra:
         if norm(f) in seen:
-            out.append(f"Multi Concept: {f} is the same folder as another subject — each needs its own folder.")
+            out.append(f"Subjects: {f} is the same folder as another subject - each needs its own folder.")
             continue
         seen.add(norm(f))
         if not os.path.isdir(f):
-            out.append(f"Multi Concept: folder does not exist: {f}")
+            out.append(f"Subjects: folder does not exist: {f}")
         elif not any(fn.lower().endswith(ext.lower()) for fn in os.listdir(f)):
-            out.append(f"Multi Concept: no {ext} captions in {f}. Caption both folders before training — each "
-                       f"subject needs its own trigger word in every caption, or they will blend.")
+            out.append(f"Subjects: no {ext} captions in {f}. Caption every subject's folder before training - "
+                       f"each needs its own trigger word in every caption, or they will blend.")
     return out
 
 
 def automagic(inputs):
     return _s(inputs.get("OPTIMIZER_TYPE")).lower() == "automagic3"
+
+
+def _dop_folders(st):
+    """DOP's per-folder (name, words to remove, replacements): the training folder's, then subject 2's (Multi
+    Concept). A folder's box left empty takes that folder's own trigger word (the Captions tab's, which the web
+    server puts in DOP_FOLDER_TRIGGER / DOP_FOLDER_TRIGGER2)."""
+    out = [("Subject 1", _s(st.get("FAMILY_DOP_TRIGGER")) or _s(st.get("DOP_FOLDER_TRIGGER"))
+            or _s(st.get("CAPTION_TRIGGER_WORD")) or _s(st.get("caption_trigger")), _s(st.get("FAMILY_DOP_CLASS")))]
+    if st.get("multiconcept"):
+        for i, _f in enumerate(st.get("extra_folders") or [], start=2):
+            out.append((f"Subject {i}", _s(st.get(f"FAMILY_DOP_TRIGGER{i}")) or _s(st.get(f"DOP_FOLDER_TRIGGER{i}")),
+                        _s(st.get(f"FAMILY_DOP_CLASS{i}"))))
+    rows = []
+    for name, trig, cls in out:
+        t = [x for x in (y.strip() for y in trig.split(",")) if x]
+        c = [x.strip() for x in cls.split(",")]
+        rows.append((name, t, c * len(t) if len(c) == 1 else c))     # one replacement (or none) for them all
+    return rows
+
+
+def dop_rules(st):
+    """DOP's (words to remove, replacements) over every folder, in order."""
+    trig, cls = [], []
+    for _name, t, c in _dop_folders(st):
+        if len(c) == len(t):
+            trig += t
+            cls += c
+    return trig, cls
+
+
+def dop_on(desc, st):
+    """DOP (the Subjects card's "Leave the rest of the model alone", and under Fizgig LoRA Isolation): a family that
+    offers it (description subject_isolation), never an edit or a slider."""
+    return bool(st.get("FAMILY_DOP")) and desc.subject_isolation and not (slider_on(desc, st) or edit_on(desc, st))
+
+
+def multi_person_on(desc, st):
+    """Fizgig LoRA Isolation (multi-person mode, families/multi_person.py): a standard LoRA run with the tick on, on a
+    family that offers it."""
+    return bool(st.get("FAMILY_MULTI_PERSON")) and desc.subject_isolation and         not (slider_on(desc, st) or edit_on(desc, st) or ft_on(desc, st))
+
+
+def isolation_photos_only(desc):
+    """Fizgig LoRA Isolation trains people from their stills: a family that also trains clips or voice (MiniMax H3)
+    leaves those out of the subjects' folders - the side-by-sides are stills and DOP's preservation pass is a picture's."""
+    return "photo" in desc.media and bool({"clip", "voice"} & set(desc.media))
+
+
+def multi_person_subjects(desc, st):
+    """[(folder, subject or None, problem, composites folder)] for each subject folder, in order: its one trigger
+    word fused with its class ("zwxem" + "a woman" -> "zwxemwoman"), and where its composites are built."""
+    from fizgig.families import multi_person as mp
+    folders = [_s(st.get("image_folder"))] + ([_s(f) for f in st.get("extra_folders") or []]
+                                              if st.get("multiconcept") else [])
+    ext = _s(st.get("caption_ext")) or ".txt"
+    root = _s(st.get("cache_root"))
+    out = []
+    for n, (folder, (name, t, c)) in enumerate(zip(folders, _dop_folders(st)), start=1):
+        where = (cache_dir_for(root, folder) if root else folder.rstrip("/\\")) + "-multiperson"
+        kind = mp.kind_key(st.get("FAMILY_SUBJECT_KIND" + ("" if n == 1 else str(n))))
+        if len(t) != 1:
+            out.append((folder, None, f"Fizgig LoRA Isolation: {name.lower()} needs exactly one trigger "
+                                      f"word ({len(t)} given) - one person per folder", where))
+            continue
+        if st.get("FAMILY_MP_MANUAL"):   # the captions as written: the trigger is already the joined word
+            sub, why = mp.subject_as_written(t[0], c[0] if c else "", kind)
+        else:
+            sub, why = mp.subject(folder, t[0], c[0] if c else "", ext, kind)
+        out.append((folder, sub, f"Fizgig LoRA Isolation: {name.lower()} - {why}" if why else "", where))
+    return out
+
+
+def multi_person_problems(desc, v):
+    if not multi_person_on(desc, v):
+        return []
+    out = [why for _f, _s_, why, _w in multi_person_subjects(desc, v) if why]
+    if isolation_photos_only(desc):      # it trains people from their stills: a folder of only clips has none
+        folders = [_s(v.get("image_folder"))] + ([_s(f) for f in v.get("extra_folders") or []]
+                                                 if v.get("multiconcept") else [])
+        for (name, _t, _c), f in zip(_dop_folders(v), folders):
+            if f and "photo" not in dataset_media(f):
+                out.append(f"Fizgig LoRA Isolation: {name.lower()} has no photos. It trains people from their photos "
+                           f"(clips and voice are left out), so add some photos of them to its folder, or pick "
+                           f"another option under Your subject and other people.")
+    return out
+
+
+def dop_problems(desc, v):
+    if not (dop_on(desc, v) or multi_person_on(desc, v)):
+        return []
+    out = []
+    for name, t, c in _dop_folders(v):
+        if not t:
+            out.append(f"Subjects: no trigger word found for {name.lower()} - tick "
+                       "Correct a trigger word and type it, or caption the folder with one.")
+        elif len(c) != len(t):
+            out.append(f"Subjects: {name.lower()} has {len(t)} trigger words "
+                       f"({', '.join(t)}) but {len(c)} 'what it is' words - give one for each, in the same order, one "
+                       "for them all, or none.")
+    return out
 
 
 def start_problems(desc, inputs):
@@ -961,6 +1136,8 @@ def start_problems(desc, inputs):
     out += problems(desc, inputs)
     out += checks.learning_rate_range(v)
     out += multi_concept_problems(desc, v)
+    out += dop_problems(desc, v)
+    out += multi_person_problems(desc, v)
     if automagic(v) and not v.get("ADAPTIVE_LR") and not ft_on(desc, v):
         try:
             lr = float(v.get("LEARNING_RATE"))
@@ -1067,6 +1244,14 @@ def plan(desc, inputs):
         return p                        # nothing to write or run
     p.files.append((inputs["DATASET_CONFIG"], p.dataset_toml))
     train = train_command(desc, inputs, p)
+    people = [(f, s, w) for f, s, _why, w in multi_person_subjects(desc, inputs) if s and s["kind"] == "person"] \
+        if multi_person_on(desc, inputs) else []
+    if people:                          # the side-by-side pictures: people only (an animal or a style has none)
+        cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "multi_person.py"),
+               "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        for f, s, w in people:
+            cmd += ["--subject", f, s["fused"], w]
+        p.stages.append(Stage("Multi-person composites", cmd))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]

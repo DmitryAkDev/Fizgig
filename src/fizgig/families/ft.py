@@ -731,8 +731,15 @@ class SharedBackend:
     def start_always(self):
         return self.rot.start_always()
 
-    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0):
-        windows, stream, why, usable = plan_windows(self.dit, self.spec, self.rot, free_gb, allow_stream, mp,
+    def plan(self, free_gb, allow_stream=True, mp=None, max_parts=0, held_grads=False):
+        """held_grads: every trained weight's gradient is held at once this run (DOP's pass joins the step's
+        backward, so each weight waits for both passes' gradients before its free-each-gradient step: measured +8.3
+        GB on Krea 2's 4.04B-parameter attention window) - planned as the window factor's weights-plus-gradient."""
+        spec = self.spec
+        if held_grads and spec.window_factor < 2.0:
+            import dataclasses
+            spec = dataclasses.replace(spec, window_factor=2.0)
+        windows, stream, why, usable = plan_windows(self.dit, spec, self.rot, free_gb, allow_stream, mp,
                                                     max_parts)
         if windows is not None and stream and any(isinstance(w, tuple) for w in windows):
             from fizgig.krea2.rotation import RotationOffloader

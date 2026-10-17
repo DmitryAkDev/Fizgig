@@ -36,6 +36,7 @@ Every script supports `--help` for the full argument list. This document covers 
 - [Krea 2 training](#krea-2-training)
 - [MiniMax H3 training](#minimax-h3-training)
 - [Qwen Image 2.1 training](#qwen-image-21-training)
+- [Keeping a subject to its trigger (DOP)](#keeping-a-subject-to-its-trigger-dop)
 - [Sample previews during training](#sample-previews-during-training)
 - [Pause and resume](#pause-and-resume)
 - [VRAM guidance (block swap)](#vram-guidance-block-swap)
@@ -543,6 +544,27 @@ The other two presets change only a few flags. **Standard** is `--network_dim 16
 **Other** — `--context_lora_path FILE --context_lora_strength S` trains on top of an existing Qwen LoRA, frozen and active in training and previews (not with `--finetune`). `--metadata_title/author/description/license/tags/trigger_phrase` are recorded in the saved LoRA. The saved file loads in ComfyUI's standard LoRA loader.
 
 ---
+
+## Keeping a subject to its trigger (DOP)
+
+Every family, Standard LoRA and fine-tune runs. `--dop` adds a second pass to each step: the same picture, with the caption's trigger swapped for `--dop_class` (or dropped when that is empty), trained to match what the base model itself predicts there. Without the trigger the LoRA learns to change nothing, so the subject stops leaking into plain prompts ("a woman ..."). It costs about 1.5-2x the time per step. Differential Output Preservation comes from Ostris's AI-Toolkit.
+
+| Flag | Meaning |
+|---|---|
+| `--dop` | turn it on (needs `--text_encoder`: the swapped captions are encoded once at the start) |
+| `--dop_trigger zwxem` | the word in the captions that means the subject; several subjects comma-separated (`zwxem, qrtpl`). Default `--trigger_word` |
+| `--dop_class woman` | what replaces each trigger: one per trigger in order (`woman, man`) or one for all; empty = the triggers are just left out |
+| `--dop_weight 1.0` | the preservation loss's weight |
+| `--dop_every 1` | a preservation pass every N steps; raise `--dop_weight` by the same factor to keep the same preservation on average (the web UI's "Every second step" sends `--dop_every 2` with the weight doubled) |
+
+A caption with several triggers (a photo of both people) has each one swapped. Images whose caption has no trigger train as usual. Each epoch logs the preservation loss: how far the LoRA moves the trigger-free prompt from the base model.
+
+The web app's **Subjects** card always uses the tested recipe, `--dop --dop_every 2 --dop_weight 2`. **Fizgig LoRA Isolation** adds three things, which the launch builds for you:
+- each subject's 16 side-by-side pictures, built first by `src/fizgig/scripts/multi_person.py --subject FOLDER FUSED_WORD OUT_DIR` (one `--subject` per person) and trained as one more dataset block per subject;
+- `--lr_boost fizgig_mp_=2`, so those pictures train at 2x the learning rate;
+- a `caption_replace` list in each subject's dataset block, which reads `zwxem, a woman` as `zwxemwoman`, with `--dop_trigger zwxemwoman --dop_class "a woman"`.
+
+How to caption for it: [People in group pictures](MULTI_PERSON.md).
 
 ## Sample previews during training
 

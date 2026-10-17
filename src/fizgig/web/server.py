@@ -242,6 +242,13 @@ def folder_trigger(folder) -> str:
     return str((m if isinstance(m, dict) else {}).get(_trigger_key(folder), "") or "")
 
 
+def subject_trigger(folder, ext=".txt") -> str:
+    """A subject folder's trigger word: the one saved for it on the Captions tab, else the word its captions open
+    with (a folder never opened on the Captions tab)."""
+    from fizgig.families import multi_person as mp
+    return folder_trigger(folder).rstrip(",").strip() or (mp.caption_trigger(folder, ext) if folder else "")
+
+
 def set_folder_trigger(folder, word):
     k = _trigger_key(folder)
     if not k:
@@ -700,6 +707,94 @@ def _refmod_plan(values, image_folder):
     return None, st, p
 
 
+def _multi_person_notes(vals, image_folder, multi_person=True):
+    """The Subjects card's line under each subject: its trigger word, or (other people keeping their faces) the word
+    it trains as and what it was read as - the subject's own boxes override - or why it can't be made."""
+    from fizgig.families import multi_person as mp
+    ext = str(vals.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt"
+    rows = [(str(image_folder or "").strip(), "FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS")]
+    if vals.get("FAMILY_MULTICONCEPT"):
+        rows += [(str(vals.get(d) or "").strip(), t, c)
+                 for d, t, c in form.CONCEPT_ROWS[:form.concept_count(vals) - 1]]
+    notes, classes = {}, []
+    dop = bool(vals.get("FAMILY_DOP"))
+    fused_rules = []
+    found = {}                     # the correction boxes' greyed text: the trigger word and class Fizgig read
+    for n, (folder, tkey, ckey) in enumerate(rows, start=1):
+        if not folder:
+            notes[f"_subject{n}_as"] = ("Pick the training folder on the Start tab to see it here." if n == 1 else
+                                        f"Pick subject {n}'s folder above to see it here.")
+            continue
+        trig = str(vals.get(tkey) or "").strip() or subject_trigger(folder, ext)
+        cls = str(vals.get(ckey) or "").strip()
+        auto_trig = subject_trigger(folder, ext)
+        if auto_trig:
+            found[tkey] = auto_trig
+            got, _w = mp.subject(folder, auto_trig, "", ext)
+            if got:
+                found[ckey] = got["phrase"].split()[-1]
+        cap = mp.sample_caption(folder, trig.split(",")[0].strip() if trig else "", ext)
+        lines = [f"Trigger word: {trig}" if trig else "Trigger word: none found in this folder's captions",
+                 f"One of its captions: {cap}" if cap else "One of its captions: none found - caption the folder first"]
+        if not multi_person:
+            if dop and cap and trig:
+                pairs = list(zip([t.strip() for t in trig.split(",") if t.strip()],
+                                 [c.strip() for c in cls.split(",")] * 8))
+                kept = mp.dop_caption(cap, pairs)
+                lines += [f"Trains on: {cap}", f"And keeps as the model made it: {kept}" if kept else
+                          "And keeps as the model made it: nothing - this caption has no trigger word"]
+            elif cap:
+                lines.append(f"Trains on: {cap} (as written)")
+            notes[f"_subject{n}_as"] = "\n".join(lines)
+            continue
+        manual = bool(vals.get("FAMILY_MP_MANUAL"))
+        kind = mp.kind_key(vals.get("FAMILY_SUBJECT_KIND" + ("" if n == 1 else str(n))))
+        s, why = mp.subject_as_written(trig, cls, kind) if manual else mp.subject(folder, trig, cls, ext, kind)
+        if not s:
+            notes[f"_subject{n}_as"] = "\n".join(lines + [f"Can't keep other people's faces with this folder: {why}"])
+            continue
+        if s["phrase"]:
+            classes.append(s["phrase"])
+        fused_rules += s["rules"]
+        lines[0] = (f"Trains as: {s['fused']} - a style or look, its trigger word kept as written. Use {s['fused']} "
+                    "in your prompts; without it, pictures stay as the model made them." if s["kind"] == "style" else
+                    f"Trains as: {s['fused']} - used as your captions write it ({s['phrase']}). Use "
+                    f"{s['fused']} in your prompts." if manual else
+                    f"Trains as: {s['fused']} - Fizgig joins the trigger word to what the subject is "
+                    f"(\"{s['trigger']}, {s['phrase']}\" becomes \"{s['fused']}\"), which keeps the subjects apart. "
+                    f"Your caption files aren't changed. Use {s['fused']} in your prompts.")
+        if manual and cap and not re.search(r"(?<!\w)" + re.escape(s["fused"]) + r"(?!\w)", cap, re.I):
+            lines.append(f"Check your captions: this one never uses {s['fused']} - with Use my captions exactly as "
+                         f"written on, write {s['fused']} into them (see How to caption for this).")
+        if cap:
+            fused = mp.fuse(cap, s["rules"])
+            kept = mp.dop_caption(fused, [(s["fused"], s["phrase"])])
+            who = mp.stranger_example() or "one of 32 example people, described"
+            lines += [f"Trains on: {fused}",
+                      f"And keeps as the model made it: {kept}" if kept else
+                      "And keeps as the model made it: nothing - this caption has no trigger word"]
+            lines.append(f"Plus {mp.PER_SUBJECT} side-by-side pictures of {s['fused']} next to a stranger, e.g.: {who} "
+                         f"on the left, and {s['fused']} on the right, {mp.TAIL}" if s["kind"] == "person" else
+                         f"No side-by-side pictures: {s['fused']} isn't a person"
+                         + (" (Subject {} is: From its captions found {})".format(n, s["phrase"])
+                            if kind == "auto" and s["phrase"] else "") + ".")
+        notes[f"_subject{n}_as"] = "\n".join(lines)
+    notes["__placeholders"] = found
+    if multi_person and fused_rules:          # the previews' prompts, as they will be read
+        prompts = [ln.strip() for ln in str(vals.get("SAMPLE_PROMPT") or "").splitlines() if ln.strip()]
+        read = [mp.fuse(p, fused_rules) for p in prompts]
+        if any(a != b for a, b in zip(prompts, read)):
+            notes["SAMPLE_PROMPT"] = "Previews will use: " + " | ".join(read)
+    same = sorted({c for c in classes if classes.count(c) > 1})
+    if same:                 # two women measured: right at epoch 16 where a woman and a man were at 10
+        plural = lambda w: {"woman": "women", "man": "men", "child": "children", "person": "people"}.get(w, w + "s")
+        words = {2: "Two", 3: "Three", 4: "Four"}
+        kinds_ = " and ".join(f"{words.get(classes.count(c), classes.count(c))} of your subjects are "
+                              f"{plural(c.split()[-1])}" for c in same)      # "Two of your subjects are women"
+        notes["MAX_TRAIN_EPOCHS"] = f"{kinds_}: subjects of the same kind can need about 1.6x the epochs."
+    return notes
+
+
 def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     if family_key == refmod.KEY:
         return _refmod_plan(values, image_folder)
@@ -713,6 +808,12 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
     trig = folder_trigger(image_folder)
     if trig:                                         # the folder's own trigger word (Captions tab)
         values["CAPTION_TRIGGER_WORD"] = trig.rstrip(",").strip()
+    # DOP's word to remove when a folder's box is empty: that folder's own trigger word
+    ext = str(values.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt"
+    values["DOP_FOLDER_TRIGGER"] = subject_trigger(image_folder, ext) if image_folder else ""
+    for i, (d, _t, _c) in enumerate(form.CONCEPT_ROWS, start=2):
+        concept = str(values.get(d) or "").strip()
+        values[f"DOP_FOLDER_TRIGGER{i}"] = subject_trigger(concept, ext) if concept else ""
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
@@ -2743,6 +2844,12 @@ class Handler(BaseHTTPRequestHandler):
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)))
+                if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
+                    mpn = _multi_person_notes(vals, b.get("image_folder") or "",
+                                              multi_person=st["kind"] == "standard" and
+                                              bool(vals.get("FAMILY_MULTI_PERSON")))
+                    st["placeholders"] = mpn.pop("__placeholders", {})
+                    st["notes"].update(mpn)
                 if st["kind"] == "finetune" and desc.finetune:      # the fine-tune card's plan line (the desktop's)
                     from fizgig.web import ft_plan
                     st["notes"]["FAMILY_FT_ROTATIONS"], st["pending"] = ft_plan.line(

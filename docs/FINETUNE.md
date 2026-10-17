@@ -110,6 +110,10 @@ An H3 fine-tune is a normal H3 checkpoint: load it in ComfyUI directly, or extra
 - **Krea 2 and Qwen Image 2.1: 1e-5** (choosing Fine-tune sets it, and turns Adaptive LR off). On Krea 2, 1e-4 trains, but treat it as the top of the experiment range; the best results are found lower. When a run looks almost right but slightly overcooked, lower the rate rather than the epoch count.
 - The regularisation **LR ×** multiplier (below) is part of the same tuning space.
 
+## Subjects
+
+A fine-tune can train up to four subjects from their own folders, and **Leave the rest of the model alone** on the Subjects card keeps them out of prompts that don't use their trigger words. A fine-tune has no LoRA to switch off, so Fizgig saves what the original model makes for each training picture before the first step and holds the trigger-free pass to that. **Fizgig LoRA Isolation** is for LoRAs.
+
 ## Regularisation images (optional)
 
 Full fine-tuning moves every weight, so a long run on a few subjects drifts the model's whole notion of people; there is no low-rank bound to limit it. Point **Regularisation images** at a folder of ordinary photos of the broader class and they train at a reduced rate as an anchor. Leave the folder empty to train without one.
