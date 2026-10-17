@@ -37,7 +37,7 @@ MOSS_IMAGE_BASE = FamilyDescription(
     lora_name_suffix="moss",
     aliases=("moss-image", "moss_image", "moss"),
     experimental=True,
-    hidden=True,                      # until M4 (a real GPU run on Chris's 4070 Ti) and the docs (M5)
+    hidden=False,                     # M4 passed on an RTX 4070 Ti 12 GB (2.9 s/step at 1024, rank 16, INT8)
 
     model_files=(
         ModelFile("moss_dit", "MOSS-Image Base DiT", True, _COMFY,

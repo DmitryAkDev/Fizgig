@@ -26,8 +26,8 @@ def _drv():
 def test_t1_description_and_registry():
     from fizgig.families import registry
     d = _desc()
-    assert d.validate() == [] and d.hidden and registry.by_arch_id("mossimage") is d
-    assert d not in registry.training_families()            # hidden until M4
+    assert d.validate() == [] and not d.hidden and registry.by_arch_id("mossimage") is d
+    assert d in registry.training_families()                # visible since M4
     assert d.n_blocks == 42 and d.lora.block_modules == MODULES and d.latent_channels == 128
     assert {f.role for f in d.model_files} >= {"dit", "vae", "text_encoder"}
     keys = [o.key for o in d.options]
