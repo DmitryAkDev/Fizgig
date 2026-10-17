@@ -182,6 +182,7 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "or more people in the LoRA. "
                "Training takes about 1.5x as long. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
+VIDEO = "https://youtu.be/8uW5NdL5b20"          # the Subjects card video: setting up Fizgig LoRA Isolation
 GUIDE = "https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md"     # the multi-person captioning guide (docs/MULTI_PERSON.md)
 from fizgig.families.multi_person import KINDS as SUBJECT_KINDS  # noqa: E402
 KIND_HINT = ("What each subject is decides what Fizgig adds to its training.\n"
@@ -206,10 +207,12 @@ def form(desc):
         section is None or o.section == section) and (mode is None or (o.mode == "finetune") == (mode == "finetune"))]
     sections = []
 
-    def add(sid, title, tab, rows, collapsed=False):
+    def add(sid, title, tab, rows, collapsed=False, help=None):
+        """help: {"href", "text"} - a ? in the card's title bar opening its video"""
         rows = [r for r in rows if r]
         if rows:
-            sections.append({"id": sid, "title": title, "tab": tab, "rows": rows, "collapsed": collapsed})
+            sections.append({"id": sid, "title": title, "tab": tab, "rows": rows, "collapsed": collapsed,
+                             **({"help": help} if help else {})})
 
     add("model", "Base Model", "training",
         by_section("model") + ([_row("_model_note", desc.model_note, "note")] if desc.model_note else []))
@@ -361,7 +364,8 @@ def form(desc):
              "FAMILY_TRAINING_ADAPTER")
     params = [r for r in params if not (r and r["key"] in TILES)] + [r for r in params if r and r["key"] in TILES]
     add("params", "Training Parameters", "training", params)
-    add("subjects", "Subjects", "training", subjects)
+    add("subjects", "Subjects", "training", subjects,
+        help={"href": VIDEO, "text": "Video: how to set up Fizgig LoRA Isolation"})
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,

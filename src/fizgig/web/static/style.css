@@ -304,6 +304,13 @@ body {
 .collapsible-header:hover {
   background: var(--bg-hover);
 }
+.sec-help {         /* a card's help video: a round ? at the right of its title bar */
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--border); color: var(--text-primary); background: var(--bg-surface);
+  font-size: 10pt; font-weight: 700; text-decoration: none; flex: none;
+}
+.sec-help:hover { background: var(--bg-hover); border-color: var(--text-explain); }
 .collapsible-title {
   font-family: var(--font-family);
   font-size: 12pt;

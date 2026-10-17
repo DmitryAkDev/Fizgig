@@ -158,6 +158,10 @@ function renderSections(tab, host) {
     const body = el("div", {class: "card-content" + (sec.collapsed ? " collapsed" : "")});
     const head = el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
       el("span", {text: (sec.collapsed ? "▶ " : "▼ ") + sec.title}));
+    if (sec.help) {         // the card's video, opened from a ? in its title bar (the click doesn't fold the card)
+      head.append(el("a", {class: "sec-help", href: sec.help.href, target: "_blank", rel: "noopener",
+        title: sec.help.text, text: "?", onclick: (e) => e.stopPropagation()}));
+    }
     for (const r of sec.rows) body.append(renderRow(r));
     host.append(el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body));
   }

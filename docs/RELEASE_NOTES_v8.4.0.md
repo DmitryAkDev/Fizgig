@@ -2,9 +2,9 @@
 
 **Fizgig LoRA Isolation: train 2 identities into one LoRA and keep everyone else looking like themselves.** A normal LoRA of a person spreads their face onto other people in the picture: strangers in the background, a friend beside them, a crowd. Fizgig LoRA Isolation trains your subjects so they can stand together in one picture, or next to someone the model already knows well, and every face stays its own.
 
-On Krea 2, against a normal LoRA trained on the same pictures with the same settings: 48 of 50 strangers read as the trained person with the normal LoRA, 0 of 50 with Fizgig LoRA Isolation, and likeness of the trained person was the same (ArcFace 0.78 against 0.77).
+On Krea 2, against a normal LoRA trained on the same pictures with the same settings: 48 of 50 strangers read as the trained person with the normal LoRA, 0 of 50 with Fizgig LoRA Isolation, and likeness of the trained person was the same (ArcFace 0.78 against 0.77). [See it in action](https://youtu.be/CNh4sN5vN_8).
 
-A second person in a LoRA is usually the problem, the two faces blending into each other. Here the second person is part of the fix: learning two identities together is what teaches the LoRA that each face belongs to its own trigger. They don't need to be the same gender: in the test above the second person was a woman, and every stranger was a man.
+A second person in a LoRA is usually the problem, the two faces blending into each other. Here the second person is part of the fix: learning two identities together is what teaches the LoRA that each face belongs to its own trigger. They don't need to be the same gender: in [the demo](https://youtu.be/CNh4sN5vN_8) the second person was a woman, and every stranger was a man.
 
 **How it works:** DOP at the base, with Fizgig's own layers on top.
 - **DOP (Differential Output Preservation),** from @ostris's AI-Toolkit: each picture also trains with its trigger removed, held to what the base model would draw.
@@ -29,7 +29,7 @@ It's set up on the new **Subjects** card on the Training tab, and works on every
 - Prompt with the joined word the card shows, for example `gweltman man at a cafe`, and describe the other people in your prompt.
 - The side-by-side pictures use a set of 32 generated strangers with natural skin texture, so they never pull your LoRA towards poor skin and no real person's photo is used. The set downloads with your models (21 MB).
 
-The guide: [docs/MULTI_PERSON.md](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
+How to set it up: [video](https://youtu.be/8uW5NdL5b20) (also the **?** on the Subjects card) · [captioning guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
 
 **On H3** the subjects train from their photos: clips and voice files in a subject's folder are left out, a folder with no photos is refused at the start, and reference distillation is off while Isolation is on. **On ACE-Step** the card offers neither DOP nor Isolation.
 
