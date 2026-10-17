@@ -103,7 +103,6 @@ async function chooseFamily(key) {
   S.family = key;
   S.fam = S.schema.families.find((f) => f.key === key);
   for (const sel of document.querySelectorAll(".family-pick")) sel.value = key;
-  if ($("trigCheckCard")) $("trigCheckCard").style.display = key.startsWith("acestep") ? "none" : "";   // no subjects in a song
   if (S.all[key]) {
     S.values = {...defaults(), ...S.all[key]};
   } else {                              // a first visit takes the family's first preset, as the desktop does
@@ -5296,6 +5295,10 @@ function wireCaptions() {
     $("tcWord").value = word;
     const box = $("tcResult");
     box.innerHTML = "";
+    if (S.family.startsWith("acestep")) {
+      box.append(el("div", {class: "field-hint", text: "ACE-Step trains songs: there's no subject word joined to check."}));
+      return;
+    }
     if (!word) { box.append(el("div", {class: "field-hint", text: "Type a trigger word first."})); return; }
     box.append(el("div", {class: "field-hint", text: "Checking…"}));
     let r;
@@ -5319,6 +5322,7 @@ function wireCaptions() {
     }
   };
   $("tcCheck").addEventListener("click", tcRun);
+  $("tcFamily").addEventListener("change", () => setTimeout(() => { if ($("tcResult").textContent) tcRun(); }, 300));
   $("tcWord").addEventListener("keydown", (e) => { if (e.key === "Enter") tcRun(); });
   $("capSongs").addEventListener("click", async () => {
     const r = await capRun("/api/captions/songs", capJobBody({words: $("capSongWords").value}));

@@ -357,8 +357,11 @@
             <div class="card-title">Check a trigger word</div>
             <div class="card-desc">Before you caption, check how this model's text encoder reads your trigger word.
               Fizgig LoRA Isolation joins it to what the subject is (zwxem + woman trains as zwxemwoman), and a good
-              word keeps "woman" whole. Checked with the model chosen on the Training tab.</div>
+              word keeps "woman" whole. Each model's text encoder reads words its own way, so pick the model you'll train.</div>
             <div class="card-content">
+              <div class="field-row"><span class="field-label">Model:</span>
+                <select class="w-combo-lg family-pick" id="tcFamily"></select>
+                <span class="field-hint">The same choice as the Start and Training tabs.</span></div>
               <div class="field-row"><span class="field-label">Trigger word:</span>
                 <input type="text" id="tcWord" class="w-combo" placeholder="e.g. zwxem">
                 <span class="field-label">It is:</span>
