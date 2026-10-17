@@ -1,0 +1,279 @@
+"""MOSS-Image driver for Fizgig's standard layer (families/driver.py).
+
+* conditioning: Qwen3.5-9B last_hidden_state of the chat template (thinking on), per caption, unpadded, from the
+  side-venv worker (te_proxy.py) -> {"hidden_states": (L, 4096) bf16}. The text encoder and the DiT's text refiner
+  are never trained.
+* latents: the FLUX.2 autoencoder (flux3/autoencoder.py, Comfy-Org's flux2-vae file), BatchNorm-normalised and
+  2x2-packed -> (128, h, w) at /16, exactly the layout the reference pipeline decodes
+* training: flow matching, x_t = (1 - sigma) x0 + sigma noise, target noise - x0, DiT timestep 1000 sigma, plain
+  token-mean MSE (paper eq. 3); sigma from the paper's eq. 4 grid distribution (or logit-normal / uniform). Caption
+  dropout (family option, default 0) swaps in the encoded empty prompt, which the text cache stage writes beside the
+  captions' cache.
+* sampling: the reference Euler loop - shift 5, CFG against an encoded negative, the negative branch skipping block 22
+  (uncond_skip_layers), optional SLG (sampling.py)
+"""
+import logging
+import os
+import random
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver
+from fizgig.moss_image import sampling as S
+
+logger = logging.getLogger(__name__)
+
+BLOCK_MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")
+N_BLOCKS = 42
+UNCOND_FILE = "mossimage_empty_prompt.safetensors"   # not *_mossimage[_te].safetensors: the
+#                                                       text stage would prune it as a stale item cache
+
+
+def _dtype(dit):
+    """The activations' dtype: the norms' (they stay bf16 under an INT8 / NF4 base)."""
+    return dit.layers[0].norm1.weight.dtype
+
+
+class MossImageDriver(FamilyDriver):
+    _uncond = None
+    _text_datasets = None
+
+    # ---- models ---------------------------------------------------------------------------------
+    def load_dit(self, path, device):
+        from fizgig.moss_image.model import load_moss_dit
+        return load_moss_dit(path, device=device).eval().requires_grad_(False)
+
+    def max_blocks_to_swap(self, dit=None):
+        return (len(dit.layers) if dit is not None else N_BLOCKS) - 2
+
+    def enable_block_swap(self, dit, num_blocks, device, supports_backward=True):
+        dit.enable_block_swap(num_blocks, device, supports_backward)
+        dit.move_to_device_except_swap_blocks(device)
+
+    def block_swap_mode(self, dit, inference):
+        if inference:
+            dit.switch_block_swap_for_inference()
+        else:
+            dit.switch_block_swap_for_training()
+
+    def enable_gradient_checkpointing(self, dit, on=True):
+        dit.enable_gradient_checkpointing(on)
+
+    def compile_targets(self, dit):
+        return dit.layers
+
+    def load_vae(self, path, device):
+        from fizgig.flux3.autoencoder import load_flux3_vae
+        return load_flux3_vae(path, device=device)
+
+    def load_text_encoder(self, path, device):
+        from fizgig.moss_image.te_proxy import MossTextEncoder
+        return MossTextEncoder(path, device=device)
+
+    def unload_text_encoder(self, te):
+        """Before the worker stops: after a text cache stage, the empty prompt's encoding goes beside each dataset's
+        cache (caption dropout reads it), unless it is already there."""
+        try:
+            dirs = [getattr(ds, "cache_directory", None) for ds in (self._text_datasets or ())]
+            todo = [d for d in dirs if d and not os.path.isfile(os.path.join(d, UNCOND_FILE))]
+            if todo:
+                from safetensors.torch import save_file
+                h = te.encode([""])[0].to(torch.bfloat16).contiguous()
+                for d in todo:
+                    os.makedirs(d, exist_ok=True)
+                    save_file({"hidden_states": h}, os.path.join(d, UNCOND_FILE),
+                              metadata={"architecture": "mossimage", "caption1": ""})
+                logger.info(f"[caption_dropout] empty-prompt embed cached ({h.shape[0]} tokens)")
+        finally:
+            self._text_datasets = None
+            te.unload()
+
+    def cache_stage(self, stage, datasets, args, device, aux):
+        if stage == "text":
+            self._text_datasets = list(datasets)
+        return False                       # the shared encode path runs
+
+    # ---- encoding -------------------------------------------------------------------------------
+    @torch.no_grad()
+    def encode_images(self, vae, images):
+        from fizgig.flux3 import sampling as F3
+        p = next(vae.parameters())
+        out = []
+        for a in images:
+            x = torch.from_numpy(np.ascontiguousarray(a[..., :3])).permute(2, 0, 1).float().div(127.5).sub(1.0)
+            tokens, ids = vae.encode(x.to(p.device, p.dtype))
+            h, w = int(ids[:, 1].max()) + 1, int(ids[:, 2].max()) + 1
+            out.append(F3.to_latents(tokens, h, w).float().cpu())
+        return out
+
+    @torch.no_grad()
+    def encode_text(self, te, captions):
+        return [{"hidden_states": h.to(torch.bfloat16).cpu()} for h in te.encode(captions)]
+
+    # ---- options --------------------------------------------------------------------------------
+    #   caption_dropout   e.g. 0.05: that share of steps trains on the empty prompt (default 0 = off)
+    #   timesteps         paper (default) | logit_normal | uniform
+    def set_options(self, options):
+        super().set_options(options)
+        self._uncond = None
+        p = float(self.options.get("caption_dropout") or 0)
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"caption_dropout must be between 0 and 1, got {p}")
+        kind = self.options.get("timesteps") or "paper"
+        if kind not in ("paper", "logit_normal", "uniform"):
+            raise ValueError(f"timesteps: paper, logit_normal or uniform - got {kind!r}")
+
+    def prepare_training(self, dit, group, net=None):
+        p = float(self.options.get("caption_dropout") or 0)
+        if p <= 0:
+            return
+        from safetensors.torch import load_file
+        for ds in getattr(group, "datasets", ()):
+            f = os.path.join(getattr(ds, "cache_directory", "") or "", UNCOND_FILE)
+            if os.path.isfile(f):
+                self._uncond = load_file(f)["hidden_states"][None]
+                break
+        if self._uncond is None:
+            logger.warning("[caption_dropout] no empty-prompt embed in the cache folders (re-run the text cache) - "
+                           "caption dropout is off for this run")
+        else:
+            logger.info(f"[caption_dropout] {p:.2f} of steps train on the empty prompt")
+
+    def run_metadata(self):
+        return {"ss_caption_dropout": str(self.options.get("caption_dropout") or 0),
+                "ss_timestep_sampling": self.options.get("timesteps") or "paper"}
+
+    # ---- training -------------------------------------------------------------------------------
+    def _sample_sigma(self, generator, min_t, max_t):
+        return S.scale_t(S.sample_t(generator, self.options.get("timesteps") or "paper"), min_t, max_t)
+
+    def _text(self, cond, device, generator=None):
+        h = cond["hidden_states"]
+        h = h if h.dim() == 3 else h[None]
+        mask = cond.get("mask")
+        p = float(self.options.get("caption_dropout") or 0)
+        if self._uncond is not None and p > 0 and generator is not None:
+            if torch.rand(1, generator=generator).item() < p:
+                return self._uncond.to(device), None
+        if mask is not None:
+            mask = (mask if mask.dim() == 2 else mask[None]).to(device).bool()
+        return h.to(device), mask
+
+    def _forward(self, dit, xt, sigma, text, mask):
+        dt = _dtype(dit)
+        t = torch.full((xt.shape[0],), float(sigma) * S.NUM_TRAIN_TIMESTEPS, device=xt.device, dtype=torch.float32)
+        return dit(xt.to(dt), t, text.to(dt), mask)
+
+    def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
+                      diff_weight=0.0):
+        if refs:
+            raise RuntimeError("MOSS-Image has no edit training")
+        device = latents.device
+        x0 = latents.float()
+        x0 = x0 if x0.dim() == 4 else x0[None]
+        noise = torch.randn(x0.shape, generator=generator).to(device)
+        sigma = self._sample_sigma(generator, min_t, max_t)
+        xt = (1 - sigma) * x0 + sigma * noise
+        text, mask = self._text(cond, device, generator)
+        pred = self._forward(dit, xt, sigma, text, mask)
+        target = noise - x0
+        if diff_ref is not None and diff_weight > 0.0:
+            # image-pair sliders (Krea 2's weighting): each token's error weighted by how much the two poles differ
+            d = (x0 - diff_ref.to(device).float().reshape(x0.shape)).abs().mean(dim=1)       # (1, h, w)
+            dm = d.mean().clamp_min(1e-8)
+            r = (d / dm).clamp(max=8.0)
+            wgt = (1.0 - float(diff_weight)) + float(diff_weight) * r
+            wgt = wgt / wgt.mean().clamp_min(1e-8)
+            if float(dm) <= 1e-6:
+                wgt = torch.ones_like(wgt)
+            return ((pred.float() - target).pow(2).mean(dim=1) * wgt).mean(), {"t": sigma}
+        return F.mse_loss(pred.float(), target), {"t": sigma}
+
+    def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
+        x0 = latents.float()
+        x0 = x0 if x0.dim() == 4 else x0[None]
+        noise = torch.randn(x0.shape, generator=generator).to(latents.device)
+        sigma = self._sample_sigma(generator, min_t, max_t)
+        return {"xt": (1 - sigma) * x0 + sigma * noise, "t": sigma}
+
+    def predict(self, dit, state, cond):
+        text, mask = self._text(cond, state["xt"].device)
+        return self._forward(dit, state["xt"], state["t"], text, mask)
+
+    # ---- sampling -------------------------------------------------------------------------------
+    @torch.no_grad()
+    def initial_noise(self, seed, width, height):
+        return S.initial_noise(seed, height, width)
+
+    @torch.no_grad()
+    def generate(self, dit, cond, width, height, *, steps, seed, cfg=1.0, neg_cond=None, sigmas=None, options=(),
+                 noise=None, on_step=None, refs=None):
+        opts = dict(options)
+        device = next(p for p in dit.parameters()).device
+        if sigmas is not None and len(sigmas) not in (steps, steps + 1):
+            sigmas = None                   # an explicit schedule only applies at its own step count
+        text, mask = self._text(cond, device)
+        neg = neg_mask = None
+        if cfg != 1.0:
+            if neg_cond is None:
+                raise ValueError("MOSS-Image samples with CFG against an encoded negative (the empty prompt counts); "
+                                 "none was given")
+            neg, neg_mask = self._text(neg_cond, device)
+        uncond_skip = opts.get("uncond_skip_layers", S.UNCOND_SKIP_LAYERS)
+        if isinstance(uncond_skip, (int, str)):
+            uncond_skip = [int(x) for x in str(uncond_skip).replace(",", " ").split()] if str(uncond_skip) else []
+        return S.sample(dit, text, height, width, steps=steps, seed=seed, cfg=cfg, neg=neg, mask=mask,
+                        neg_mask=neg_mask, shift=float(opts.get("shift", S.SHIFT)), uncond_skip_layers=uncond_skip,
+                        slg_layers=tuple(opts.get("slg_layers", ())), slg_scale=float(opts.get("slg_scale", 0.0)),
+                        slg_start=float(opts.get("slg_start", 0.0)), slg_stop=float(opts.get("slg_stop", 1.0)),
+                        sigma_schedule=sigmas, noise=noise, device=device, on_step=on_step)
+
+    def pad_conditioning(self, conds):
+        """Prompt travel: zero-padded to one length with a mask of each prompt's own tokens. The DiT never lets a
+        padded token act as a key and starts the image's positions after the real tokens, so a padded prompt renders
+        exactly as the unpadded one."""
+        rows = [c["hidden_states"][0] if c["hidden_states"].dim() == 3 else c["hidden_states"] for c in conds]
+        L = max(r.shape[0] for r in rows)
+        out = []
+        for h in rows:
+            pad = L - h.shape[0]
+            out.append({"hidden_states": torch.cat([h, h.new_zeros(pad, h.shape[1])]) if pad else h,
+                        "mask": torch.cat([torch.ones(h.shape[0], dtype=torch.bool),
+                                           torch.zeros(pad, dtype=torch.bool)])})
+        return out
+
+    @torch.no_grad()
+    def decode(self, vae, latents, width, height):
+        from PIL import Image
+
+        from fizgig.flux3 import sampling as F3
+        z = latents[0] if latents.dim() == 4 else latents
+        h, w = z.shape[-2:]
+        p = next(vae.parameters())
+        img = vae.decode(F3.to_tokens(z.float()).to(p.device, p.dtype), F3.latent_ids(h, w, p.device))
+        img = img.float().clamp(-1, 1)
+        # the reference pipeline's postprocess: (x + 1) / 2, then round to uint8
+        arr = ((img + 1) * 127.5).round().clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+        return Image.fromarray(arr)
+
+    # ---- LoRA structure -------------------------------------------------------------------------
+    def block_map(self, dit=None):
+        """The 42 single-stream blocks, six Linears each. The text refiner (text_embedder.*) is not in the map: it
+        and the text encoder stay frozen."""
+        names = {n for n, _ in dit.named_modules()} if dit is not None else None
+        n = len(dit.layers) if dit is not None else N_BLOCKS
+        blocks = []
+        for i in range(n):
+            mods = [f"layers.{i}.{m}" for m in BLOCK_MODULES]
+            blocks.append(Block(f"block_{i}", f"Block {i}", [m for m in mods if names is None or m in names]))
+        return [BlockGroup("Blocks", blocks)]
+
+    def alias_flat(self, flat):
+        """diffusers / PEFT names from other trainers: transformer.layers.N... is already ours once the prefix goes;
+        the fused qkv of ComfyUI's file has no single Linear here (fused_parts would be the place, with an ft_spec)."""
+        for p in ("transformer_", "diffusion_model_"):
+            if flat.startswith(p):
+                return flat[len(p):]
+        return None
