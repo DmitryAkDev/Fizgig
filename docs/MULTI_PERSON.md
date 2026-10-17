@@ -4,7 +4,7 @@
 
 On the Training tab's **Subjects** card, **Fizgig LoRA Isolation** trains a LoRA of one or more people that behaves with everyone else: your subjects can stand together in one picture, or next to someone the model already knows, and every face stays right. Without the trigger word you get the model's own people, just as before you trained. It's Fizgig's own techniques combined with DOP (Differential Output Preservation, from @ostris's AI-Toolkit).
 
-**Videos:** [see it in action](https://youtu.be/CNh4sN5vN_8) · [how to set up the Subjects card](https://youtu.be/8uW5NdL5b20) (also the **?** on the card).
+**Videos:** [see it in action](https://youtu.be/CNh4sN5vN_8) · [how to set up the Subjects card](https://youtu.be/8uW5NdL5b20) (also linked at the top of the card).
 
 It depends on how each person's photos are captioned. Follow the rules below and Fizgig does the rest.
 

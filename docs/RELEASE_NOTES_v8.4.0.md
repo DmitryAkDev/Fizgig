@@ -29,7 +29,7 @@ It's set up on the new **Subjects** card on the Training tab, and works on every
 - Prompt with the joined word the card shows, for example `gweltman man at a cafe`, and describe the other people in your prompt.
 - The side-by-side pictures use a set of 32 generated strangers with natural skin texture, so they never pull your LoRA towards poor skin and no real person's photo is used. The set downloads with your models (21 MB).
 
-How to set it up: [video](https://youtu.be/8uW5NdL5b20) (also the **?** on the Subjects card) · [captioning guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
+How to set it up: [video](https://youtu.be/8uW5NdL5b20) (also linked at the top of the Subjects card) · [captioning guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MULTI_PERSON.md).
 
 **On H3** the subjects train from their photos: clips and voice files in a subject's folder are left out, a folder with no photos is refused at the start, and reference distillation is off while Isolation is on. **On ACE-Step** the card offers neither DOP nor Isolation.
 
