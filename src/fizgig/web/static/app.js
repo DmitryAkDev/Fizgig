@@ -205,8 +205,8 @@ function triggerCheckBlock() {
     el("div", {class: "field-hint", text: "The word Fizgig joins on: the same trigger can join cleanly with one " +
       "(dlor + woman) and break with another (dlor + man). A style or look is never joined, so only the word itself " +
       "is checked."}),
-    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Your other subjects' trigger words:"}), others),
-    el("div", {class: "field-hint", text: "Optional: the other subjects in this same LoRA, separated by commas. Two " +
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Other triggers:"}), others),
+    el("div", {class: "field-hint", text: "Optional: the trigger words of your other subjects in this same LoRA, separated by commas. Two " +
       "subjects whose words start with the same letter, or share a piece, can blend into each other, so the check " +
       "looks for that too. Leave it empty for a one-subject LoRA."}),
     el("div", {class: "field-row"}, el("button", {class: "btn btn-primary", text: "Check", onclick: run})),
