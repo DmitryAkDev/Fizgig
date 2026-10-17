@@ -304,13 +304,19 @@ body {
 .collapsible-header:hover {
   background: var(--bg-hover);
 }
-.sec-help {         /* a card's help video: a round ? at the right of its title bar */
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 50%;
-  border: 1px solid var(--border); color: var(--text-primary); background: var(--bg-surface);
-  font-size: 10pt; font-weight: 700; text-decoration: none; flex: none;
+.sec-video {        /* a card's help video: a link across the top of the card */
+  display: flex; align-items: center; gap: 14px; margin: 12px 0 14px 0; padding: 10px 16px 10px 12px;
+  background: var(--bg-inset); border: 1px solid var(--border); border-left: 4px solid #CC0000;
+  border-radius: 8px; text-decoration: none; color: var(--text-primary); max-width: 760px;
+  transition: background 0.1s, border-color 0.1s;
 }
-.sec-help:hover { background: var(--bg-hover); border-color: var(--text-explain); }
+.sec-video:hover { background: var(--bg-hover); border-color: #CC0000; }
+.sec-video-play {
+  flex: none; width: 36px; height: 36px; border-radius: 50%; background: #CC0000; color: #FFFFFF;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13pt; padding-left: 3px;
+}
+.sec-video-text { display: flex; flex-direction: column; gap: 2px; font-size: 11pt; }
+.sec-video-sub { font-size: 9pt; color: var(--text-secondary); }
 .collapsible-title {
   font-family: var(--font-family);
   font-size: 12pt;

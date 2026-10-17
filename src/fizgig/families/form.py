@@ -208,7 +208,7 @@ def form(desc):
     sections = []
 
     def add(sid, title, tab, rows, collapsed=False, help=None):
-        """help: {"href", "text"} - a ? in the card's title bar opening its video"""
+        """help: {"href", "text", "sub"?} - the card's video, a link across its top"""
         rows = [r for r in rows if r]
         if rows:
             sections.append({"id": sid, "title": title, "tab": tab, "rows": rows, "collapsed": collapsed,
@@ -365,7 +365,8 @@ def form(desc):
     params = [r for r in params if not (r and r["key"] in TILES)] + [r for r in params if r and r["key"] in TILES]
     add("params", "Training Parameters", "training", params)
     add("subjects", "Subjects", "training", subjects,
-        help={"href": VIDEO, "text": "Video: how to set up Fizgig LoRA Isolation"})
+        help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",
+              "sub": "A step-by-step video of this card · Watch on YouTube"})
     if desc.edit_training:
         add("edit", "Edit pairs", "training", [
             _row("_edit_note", desc.edit_note, "note") if desc.edit_note else None,
