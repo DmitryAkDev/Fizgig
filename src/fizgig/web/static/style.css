@@ -304,7 +304,7 @@ body {
 .collapsible-header:hover {
   background: var(--bg-hover);
 }
-.tc-box { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }   /* Check a trigger word */
+.tc-box { grid-column: 1 / -1; margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }   /* Check a trigger word */
 .tc-box > summary { cursor: pointer; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
 .tc-box > .field-hint { max-width: 760px; margin: 4px 0 8px; line-height: 1.45; }
 .tc-verdict { margin: 10px 0 6px; font-weight: 600; }      /* Check a trigger word's answer */

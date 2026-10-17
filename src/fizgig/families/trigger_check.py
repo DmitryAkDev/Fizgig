@@ -79,8 +79,11 @@ def _verdict(tok, trigger, cls, others):
     notes, ok = [], True
     if cls and not (_splits_clean(start, trigger, cls) and _splits_clean(mid, trigger, cls)):
         ok = False
-        notes.append(f"breaks '{cls}': the model reads {joined} as {' | '.join(mid)}, so the class word isn't whole. "
-                     "A word ending in a consonant usually joins cleanly.")
+        tip = ("Words ending in a vowel often do this; one ending in a consonant usually joins cleanly."
+               if trigger[-1:].lower() in "aeiouy" else
+               f"Its ending runs into '{cls}'. Try a different last letter, or one of the words below.")
+        notes.append(f"breaks '{cls}': the model reads {joined} as {' | '.join(mid)}, so '{cls}' isn't a whole "
+                     f"word any more. {tip}")
     if len(alone) == 1 and len(trigger) > 2:
         notes.append(f"'{trigger}' is a single piece the text encoder already knows - it may carry a meaning of its own. "
                      "A made-up word in two or three pieces is safer.")
