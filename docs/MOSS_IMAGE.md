@@ -20,7 +20,6 @@ python -m fizgig.scripts.fetch_models --family moss_image
 |---|---|---|
 | Base DiT (training) | `moss_image_base_bf16.safetensors` from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image) | 10.2 GB |
 | Autoencoder | `flux2-vae_small.safetensors` from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image): FLUX.2's encoder with the small decoder MOSS-Image ships with | 0.25 GB |
-| Turbo LoRA (optional) | `lora.safetensors` from [lodestones/MOSS-Image-SFT-8-steps-dmd](https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd): 8-step previews, softer on Base | 1.2 GB |
 | SFT DiT (previews) | `moss_image_sft_int8_convrot.safetensors` from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image) | 5.4 GB |
 | Text encoder | `qwen3.5_9b_bf16.safetensors` from [Comfy-Org/Qwen3.5](https://huggingface.co/Comfy-Org/Qwen3.5) | 19.3 GB |
 

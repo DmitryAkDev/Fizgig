@@ -6,7 +6,7 @@ the model cards and pipeline_moss_image.py (huggingface.co/OpenMOSS-Team/MOSS-Im
 (huggingface.co/Comfy-Org/MOSS-Image) and ComfyUI's core support (Comfy-Org/ComfyUI PR #17095, merge e087d8f6cb).
 
 """
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
+from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
 
 _REPO = "https://github.com/OpenMOSS/MOSS-Image"
 _CARD = "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base"
@@ -14,7 +14,6 @@ _COMFY = "Comfy-Org/MOSS-Image"
 _GUIDE = f"{_REPO} USERGUIDE.md"
 _REPORT = f"{_REPO} paper/MOSS_Image_Technical_Report.pdf"
 _PIPE = f"{_CARD} pipeline_moss_image.py"
-_TURBO = "lodestones/MOSS-Image-SFT-8-steps-dmd"
 _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")   # model.py _Block Linears
 # USERGUIDE.md Prompt Guidelines: "we recommend the following effective negative tags"
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
@@ -69,11 +68,6 @@ MOSS_IMAGE = FamilyDescription(
                   hint="FLUX.2's encoder with the small decoder MOSS-Image was released with. Flux 3's or Klein's "
                        "full autoencoder also works (same latents), but the small decoder avoids spots in the "
                        "pictures."),
-        ModelFile("moss_image_turbo_lora", "Turbo LoRA (8-step previews)", False, _TURBO, "lora.safetensors", 1.19,
-                  "Optional: lodestones' 8-step DMD LoRA, CFG-free but soft on Base.", role="speed_lora",
-                  local_name="moss_image_dmd_turbo_lora.safetensors",   # the repo's own name is just lora.safetensors
-                  hint="lodestones' 8-step DMD distillation of MOSS-Image SFT (work in progress, updated often). "
-                       "Optional: with it set, previews and the workbench run 8 steps without CFG."),
         ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
                   "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
                   "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "
@@ -86,18 +80,16 @@ MOSS_IMAGE = FamilyDescription(
         # MOSS-Image SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture; @Murf-Code, PR #195): Repair
         # Studio and LoRA Royale render on it once set, and training samples do (the Samples tab tick, on by
         # default - a Base LoRA carries over to the SFT only partly). Never trained: Fizgig trains on the Base
-        ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews)", False, _COMFY,
+        ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews)", True, _COMFY,
                   "diffusion_models/moss_image_sft_int8_convrot.safetensors", 5.41, role="preview_dit",
                   hint="OpenMOSS's everyday checkpoint: training samples, Repair Studio and LoRA Royale render on "
                        "it (untick it on the Samples tab for samples on the Base), showing the LoRA where most "
                        "people use it. Never trained. ComfyUI's int8 ConvRot file is decoded at load; the bf16 SFT "
                        "file works as well.",
                   download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
-                  fetch_optional=False,       # the download button always fetches it: samples render on it
                   alt_repo=_COMFY, alt_path="diffusion_models/moss_image_sft_bf16.safetensors",
                   alt_label="bf16 file", alt_note="~10.2 GB"),
     ),
-    fetch_optional_label="Include the Turbo LoRA (+1.2 GB, soft on Base)",
     text_encoder_label="Qwen3.5-9B",
     vae_label="FLUX.2 autoencoder",
     helper_files=(("OpenMOSS-Team/MOSS-Image-Base", ("tokenizer/*",)),),   # tokenizer.json + chat template
@@ -183,26 +175,6 @@ MOSS_IMAGE = FamilyDescription(
                               "scheduler does not snap to the training grid, so the same seed differs slightly.",
                          source=f"{_REPO} comfyui/moss-image/example_workflows/moss-image-api.json, comfyui/README.md"),
     ),
-    speed_loras=(
-        SpeedLoRA(
-            name="MOSS-Image DMD Turbo LoRA (8-step)",
-            repo=_TURBO,
-            file="lora.safetensors",
-            pairs_with="MOSS-Image SFT",
-            strength=1.0,             # the model card: lora.safetensors at 1.0 (lora_latest at 0.7)
-            settings=SamplingSettings("Turbo 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
-                                      options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
-                                      note="8 steps, no CFG, the reference's shift-5 grid.",
-                                      source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
-            load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
-            pref_key="moss_image_turbo_lora",
-            community_settings=(("12-16 steps for stronger prompt adherence; strength 0.8 at 16 steps",
-                                 "r/StableDiffusion 'MOSS-Image INT8 ComfyUI' thread; dskjal's ComfyUI guide"),),
-            caveats=("Distilled from MOSS-Image SFT; Fizgig trains on Base, so previews show the LoRA on Base.",),
-            source=f"https://huggingface.co/{_TURBO}",
-        ),
-    ),
-    # no preview_speed_lora: the DMD LoRA's renders are visibly soft on Base (Peter, 18 Oct 2026); it stays a choice
     preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)
     preview_cfg=4.0,                  # USERGUIDE.md: 3-6 recommended; 4 won the side-by-side
     preview_negative=_NEGATIVE,
