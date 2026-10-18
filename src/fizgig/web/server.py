@@ -2779,7 +2779,17 @@ class Handler(BaseHTTPRequestHandler):
             for e in sorted(os.scandir(target), key=lambda e: e.name.lower()):
                 if e.name.startswith("."):
                     continue
-                (dirs if e.is_dir() else files).append({"name": e.name, "path": e.path})
+                isdir = e.is_dir()
+                item = {"name": e.name, "path": e.path}
+                try:                                 # dates and size for the picker's columns (stat is cached on Windows)
+                    st = e.stat()
+                    item["mtime"] = st.st_mtime
+                    item["ctime"] = getattr(st, "st_birthtime", None) or (st.st_ctime if os.name == "nt" else None)
+                    if not isdir:
+                        item["size"] = st.st_size
+                except OSError:
+                    pass
+                (dirs if isdir else files).append(item)
         except OSError:
             pass
         parent = os.path.dirname(target)

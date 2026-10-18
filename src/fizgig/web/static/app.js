@@ -5913,16 +5913,50 @@ async function browse(path) {
   places.innerHTML = "";
   for (const p of r.places || []) places.append(el("button", {class: "btn btn-sm", text: p.name, title: p.path,
     onclick: () => browse(p.path)}));
+  S.pickListing = r;
+  $("pickerFilter").value = "";
+  pickerRender();
+}
+
+// the picker's list: folders first, then files, sorted by the chosen column (remembered), filtered by name
+const pickSort = {key: "name", desc: false};
+try { Object.assign(pickSort, JSON.parse(localStorage.getItem("fizgig.pickSort") || "{}")); } catch (e) { /* none saved */ }
+function pickerRender() {
+  const r = S.pickListing;
+  if (!r) return;
+  const q = $("pickerFilter").value.trim().toLowerCase();
+  const ext = (n) => (n.includes(".") ? n.slice(n.lastIndexOf(".") + 1) : "").toLowerCase();
+  const cmpName = (a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: "base"});
+  const k = pickSort.key;
+  const cmp = (a, b) => {
+    let c = k === "name" ? 0 : k === "type" ? ext(a.name).localeCompare(ext(b.name)) : (a[k] ?? -1) - (b[k] ?? -1);
+    c = c || cmpName(a, b);
+    return pickSort.desc ? -c : c;
+  };
+  const when = (t) => t ? new Date(t * 1000).toLocaleString([], {year: "numeric", month: "short", day: "numeric",
+    hour: "2-digit", minute: "2-digit"}) : "";
+  const size = (n) => n == null ? "" : n < 1024 ? n + " B" : n < 2 ** 20 ? (n / 1024).toFixed(0) + " KB"
+    : n < 2 ** 30 ? (n / 2 ** 20).toFixed(1) + " MB" : (n / 2 ** 30).toFixed(2) + " GB";
+  const shown = (xs) => xs.filter((x) => !q || x.name.toLowerCase().includes(q)).sort(cmp);
+  const row = (x, dir, go) => el("div", {class: "picker-item" + (dir ? " dir" : ""), title: x.path, onclick: go}, [
+    el("span", {text: (dir ? "📁 " : "") + x.name}), el("span", {class: "m", text: when(k === "ctime" ? x.ctime : x.mtime)}),
+    el("span", {class: "z", text: dir ? "" : size(x.size)})]);
   const list = $("pickerList");
-  list.innerHTML = "";
-  for (const d of r.dirs) list.append(el("div", {class: "picker-item dir", text: "📁 " + d.name, onclick: () => browse(d.path)}));
-  if (!pickDir) {
-    for (const f of r.files) {
-      list.append(el("div", {class: "picker-item", text: f.name, onclick: () => {
-        $("pickerModal").classList.remove("active"); pickDone(f.path);
-      }}));
-    }
+  list.replaceChildren(...shown(r.dirs).map((d) => row(d, true, () => browse(d.path))),
+    ...(pickDir ? [] : shown(r.files).map((f) => row(f, false, () => { $("pickerModal").classList.remove("active"); pickDone(f.path); }))));
+  $("pickerSort").value = k;
+  $("pickerDir").textContent = pickSort.desc ? "↓" : "↑";
+  for (const h of document.querySelectorAll(".picker-head span")) {
+    h.classList.toggle("on", h.dataset.sort === k || (k === "ctime" && h.dataset.sort === "mtime"));
+    h.classList.toggle("desc", pickSort.desc);
   }
+  document.querySelector('.picker-head span[data-sort="mtime"]').textContent = k === "ctime" ? "Date created" : "Date modified";
+}
+function pickerSortBy(key, flip) {
+  if (flip && pickSort.key === key) pickSort.desc = !pickSort.desc;
+  else { pickSort.key = key; pickSort.desc = key !== "name" && key !== "type"; }   // dates and sizes: newest / biggest first
+  try { localStorage.setItem("fizgig.pickSort", JSON.stringify(pickSort)); } catch (e) { /* private window */ }
+  pickerRender();
 }
 
 // ---- Open on your phone: a QR code with a one-time pass (the server's /api/phone_link). It shows for 30 s when asked
@@ -6744,6 +6778,11 @@ function wire() {
     finally { $("pickerUpload").classList.remove("disabled"); }
   });
   $("pickerPath").addEventListener("change", (e) => browse(e.target.value));
+  $("pickerFilter").addEventListener("input", pickerRender);
+  $("pickerSort").addEventListener("change", (e) => pickerSortBy(e.target.value, false));
+  $("pickerDir").addEventListener("click", () => pickerSortBy(pickSort.key, true));
+  for (const h of document.querySelectorAll(".picker-head span"))
+    h.addEventListener("click", () => pickerSortBy(h.dataset.sort === "mtime" && pickSort.key === "ctime" ? "ctime" : h.dataset.sort, true));
   // New folder: made in the folder on show, then opened (Use this folder picks it)
   const newRow = (on) => { $("pickerNewRow").style.display = on ? "" : "none"; if (on) $("pickerNewName").focus(); };
   $("pickerNew").addEventListener("click", () => { $("pickerNewMsg").textContent = ""; $("pickerNewName").value = ""; newRow(true); });

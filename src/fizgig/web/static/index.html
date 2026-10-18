@@ -1557,7 +1557,7 @@
   </div>
 
   <div class="modal-backdrop" id="pickerModal">
-    <div class="modal-window" style="width: 640px;">
+    <div class="modal-window" style="width: 760px; max-width: 96vw;">
       <div class="modal-header"><span id="pickerTitle">Choose</span>
         <button class="btn" data-close="pickerModal">✕</button></div>
       <div class="modal-body">
@@ -1571,6 +1571,13 @@
           <button class="btn btn-primary" id="pickerNewMake">Create</button>
           <button class="btn" id="pickerNewCancel">Cancel</button></div>
         <div class="field-hint" id="pickerNewMsg"></div>
+        <div class="field-row"><input type="text" id="pickerFilter" placeholder="Filter names…" style="flex:1">
+          <span class="field-label">Sort by</span>
+          <select id="pickerSort"><option value="name">Name</option><option value="mtime">Date modified</option>
+            <option value="ctime">Date created</option><option value="size">Size</option><option value="type">Type</option></select>
+          <button class="btn btn-sm" id="pickerDir" title="Reverse the order">↑</button></div>
+        <div class="picker-head"><span data-sort="name">Name</span><span data-sort="mtime">Date modified</span>
+          <span data-sort="size">Size</span></div>
         <div id="pickerList" class="picker-list"></div>
       </div>
       <div class="modal-footer"><span class="field-hint upload-status" id="pickerUpMsg"></span>
