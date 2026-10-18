@@ -232,11 +232,12 @@ MOSS_IMAGE = FamilyDescription(
     preview_width=1024,
     preview_height=1024,
     presets=(
-        # 1 MP throughout: MOSS-Image pretrained to 1024² and responds better to it than to 0.25 MP (Peter, 18 Oct
-        # 2026); the Fast (0.25 MP) preset was dropped. Lower Target Megapixels by hand on a small card
+        # 1 MP: MOSS-Image pretrained to 1024² and responds better to it than to 0.25 MP (Peter, 18 Oct 2026). Fast is
+        # Standard at 0.25 MP and rank 16, for quicker runs and small cards
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=50)),
+        ("✨ MOSS-Image Fast (rank 16, 0.25 MP)", _preset(16, epochs=50, mp="0.25")),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, lr=5e-5, epochs=50)),
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
