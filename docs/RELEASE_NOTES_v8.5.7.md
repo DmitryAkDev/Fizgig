@@ -4,7 +4,7 @@
 
 **Fizgig LoRA Isolation:** the side-by-side pictures are rebuilt when you edit or replace a training photo under the same name. Before, they kept using the old version of that photo.
 
-Thanks for the careful bug reports by email.
+Thanks to **[@mabseyuk](https://github.com/mabseyuk)** for both reports.
 
 ---
 
