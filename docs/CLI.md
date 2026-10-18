@@ -355,7 +355,7 @@ The saved LoRA loads in ComfyUI's standard LoRA loader.
 
 ## MOSS-Image training
 
-MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4.
+MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4. The LoRA trains every Linear in all 42 blocks, block 22 included; with MOSS-Image SFT or a fine-tune of it as `--dit`, add `--family_option lora_sft=1` so it trains attention only.
 
 ### Full example
 

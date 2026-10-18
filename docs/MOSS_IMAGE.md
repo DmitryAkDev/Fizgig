@@ -23,7 +23,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
 | Text encoder | [`qwen3.5_9b_bf16.safetensors`](https://huggingface.co/Comfy-Org/Qwen3.5/blob/main/text_encoders/qwen3.5_9b_bf16.safetensors) from Comfy-Org/Qwen3.5 (not in the Comfy-Org/MOSS-Image repo, which only has quantised ones) | 19.3 GB |
 | Autoencoder | `flux2-vae_small.safetensors` from [Comfy-Org/MOSS-Image](https://huggingface.co/Comfy-Org/MOSS-Image): FLUX.2's encoder with the small decoder MOSS-Image ships with | 0.25 GB |
 
-- **Train on Base.** MOSS-Image SFT is OpenMOSS's fine-tuned model for everyday use. Fizgig never trains it, but previews on it.
+- **Train on Base.** MOSS-Image SFT is OpenMOSS's fine-tuned model for everyday use, and Fizgig previews on it. If you do train on SFT or a model fine-tuned from it, tick **Base is SFT or a fine-tune of it** on the Training tab: the LoRA then trains attention only, because training SFT's feed-forward layers breaks anatomy.
 - **Autoencoder:** Flux 3's or Klein 9B's full FLUX.2 autoencoder also works, with the same latents, but the small decoder avoids spots in the pictures.
 - **Text encoder alternatives:** Comfy-Org's `qwen3.5_9b_int8_convrot.safetensors` (9.7 GB) also works. So do the official diffusers folders (OpenMOSS-Team/MOSS-Image-Base `transformer/` and `text_encoder/`): give the path of any shard.
 - **Optional Turbo LoRA:** Preferences has an empty row for a turbo LoRA (today, lodestones' 8-step DMD LoRA, which is softer on Base). Set it, then raise **Turbo LoRA strength** on the Samples tab and set Steps and CFG for it (8 steps, CFG 1).
@@ -40,6 +40,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
 - **1 MP throughout:** MOSS-Image finished its training at 1024², and LoRAs respond better at 1 MP than at smaller sizes. On a small card, lower Target Megapixels on the Training tab.
 - **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98, saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
 - **Picking an epoch:** scrub the epochs in LoRA Royale to choose the best one.
+- **What the LoRA trains:** every Linear in all 42 blocks, block 22 included. Leaving block 22 out, as AI Toolkit does, cost likeness in side-by-side runs.
 
 ## Memory
 
@@ -57,7 +58,6 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 
 - **Samples render on the SFT model** by default, so you see your LoRA where you'll use it, though a Base LoRA carries over only partly. Untick the box on the Samples tab to preview on the Base model being trained. Repair Studio, LoRA Royale and the other workbench tabs render on SFT too.
 - **Sampler:** previews render as ComfyUI does with the settings below: res_multistep on the simple schedule (shift 5) for 30 steps at CFG 4, with block 22 left out of the negative branch for the first half of the steps (ComfyUI's SLG switch on). That beat OpenMOSS's own recipe, Euler at 50 steps, CFG 3, in side-by-side tests.
-- **Block 22 and the LoRA:** the LoRA trains block 22 like every other block. Previews leave it out of the negative branch only; leaving it out of training cost likeness.
 - **Negative:** the default is `worst quality, bad anatomy, watermark, jpeg artifact`.
 
 ## In ComfyUI
