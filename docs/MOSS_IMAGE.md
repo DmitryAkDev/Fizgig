@@ -70,7 +70,7 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 | Negative prompt | `worst quality, bad anatomy, watermark, jpeg artifact` |
 | VAE | `flux2-vae_small.safetensors` |
 | Text encoder | `qwen3.5_9b_bf16.safetensors` |
-| Your LoRA | LoraLoaderModelOnly |
+| Your LoRA | Load LoRA |
 
 - **Text encoder:** use the bf16 one. MOSS-Image's developers say the text encoder is more fragile than the model, so avoid heavy quants of it.
 - **Seeds:** ComfyUI's schedule isn't snapped to the training grid, so a seed renders slightly differently there than in Fizgig.
