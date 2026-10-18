@@ -1,12 +1,12 @@
-# Fizgig v8.6.0: better MOSS-Image likeness
+# Fizgig v8.6.0: improved MOSS-Image likeness
 
-**MOSS-Image LoRAs capture faces much better.** LoRAs now train all 42 of MOSS-Image's blocks. Block 22 used to be left out, as AI Toolkit does, and in side-by-side runs on the same dataset including it gave clearly better likeness from the first epochs on. Update Fizgig and retrain to get it; LoRAs you already have work as before.
+**Improved MOSS-Image likeness.** LoRAs now train all 42 of MOSS-Image's blocks. Block 22 used to be left out, as AI Toolkit does; in side-by-side runs on the same dataset, including it improved likeness from the first epochs on. Update Fizgig and retrain to get it; LoRAs you already have work as before.
 
-**Training on MOSS-Image SFT.** A new tick on the Training tab, **Base is SFT or a fine-tune of it**, is for training on SFT or a model fine-tuned from it: the LoRA then trains attention only, since training SFT's feed-forward layers breaks anatomy within a few epochs. In our tests Base still trains better than SFT, so the recommended way stays the same: train on Base, then use the LoRA on SFT in ComfyUI.
+**Training on MOSS-Image SFT.** A new tick on the Training tab, **Base is SFT or a fine-tune of it**, is for training on SFT or a model fine-tuned from it: the LoRA then trains attention only, since training SFT's feed-forward layers breaks anatomy within a few epochs. In our tests so far Base trains more reliably than SFT, so the recommended way stays the same: train on Base, then use the LoRA on SFT in ComfyUI.
 
 **MOSS-Image Fast preset.** The Fast preset is back: Standard's settings at 0.25 MP and rank 16, for quicker runs and smaller cards. With face-cropped datasets (Image Prep's face crop) it performs very well. In 8.5.5 earlier today I said 0.25 MP wasn't the best size for MOSS-Image, and I was wrong. Getting here has been a bit of a puzzle, and I'm sure there's still progress to be made, but it feels like we're getting there.
 
-**MOSS-Image presets run 70 epochs.** MOSS-Image LoRAs are slow to converge: likeness often seems to level off, then keeps improving with more training. In our tests a 53-image dataset was still getting better at 1,600 steps (epoch 30), so Standard and Fast now run 70 epochs, enough for a 25-image dataset to get there. Look at the late epochs in LoRA Royale before settling on an early peak.
+**MOSS-Image presets run 70 epochs.** MOSS-Image LoRAs are slow to converge: likeness often seems to level off, then keeps improving with more training. In our tests a 53-image dataset was still improving at 1,600 steps (epoch 30), so Standard and Fast now run 70 epochs, enough for a 25-image dataset to get there. Look at the late epochs in LoRA Royale before settling on an early peak.
 
 **MOSS-Image previews with block swap now work.** On cards where the SFT preview model streams blocks, previews failed with "expected mat1 and mat2 to have the same dtype", and INT8 training with block swap failed the same way. Both are fixed. Thanks to **[@Ferocit](https://github.com/Ferocit)** for the report (#201).
 
