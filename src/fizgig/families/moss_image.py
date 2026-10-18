@@ -86,10 +86,10 @@ MOSS_IMAGE = FamilyDescription(
         # MOSS-Image SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture; @Murf-Code, PR #195): Repair
         # Studio and LoRA Royale render on it once set, and training samples do (the Samples tab tick, on by
         # default - a Base LoRA carries over to the SFT only partly). Never trained: Fizgig trains on the Base
-        ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews, optional)", False, _COMFY,
+        ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews)", False, _COMFY,
                   "diffusion_models/moss_image_sft_int8_convrot.safetensors", 5.41, role="preview_dit",
-                  hint="Optional. OpenMOSS's everyday checkpoint: Repair Studio and LoRA Royale render on it once "
-                       "set, and training samples can too (a tick on the Samples tab), showing the LoRA where most "
+                  hint="OpenMOSS's everyday checkpoint: training samples, Repair Studio and LoRA Royale render on "
+                       "it (untick it on the Samples tab for samples on the Base), showing the LoRA where most "
                        "people use it. Never trained. ComfyUI's int8 ConvRot file is decoded at load; the bf16 SFT "
                        "file works as well.",
                   download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
