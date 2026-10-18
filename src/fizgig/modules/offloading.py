@@ -49,7 +49,7 @@ def _synchronize_device(device: torch.device):
 
 def _streamed_linears(layer: nn.Module):
     """{name: module} for the Linears a swap streams, keyed with LoRA wrappers' ".base" dropped, so a block whose
-    Linears carry a LoRA pairs with one whose don't (MOSS-Image trains no LoRA on block 22)."""
+    Linears carry a LoRA pairs with one whose don't (#199)."""
     out = {}
     for name, m in layer.named_modules():
         if hasattr(m, "weight") and m.weight is not None and m.__class__.__name__.endswith("Linear"):

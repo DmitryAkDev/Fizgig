@@ -8,8 +8,8 @@
 * training: flow matching on the Base checkpoint, x_t = (1 - sigma) x0 + sigma noise, target noise - x0, the DiT told
   1000 * sigma; sigma drawn from the final pretraining stage's distribution (technical report Appendix A.2, Table 6:
   truncated logit-normal, mu -1.09, s 0.95, cutoff 0.95 rescaled onto the 1000-step grid, 1% uniform), not AI
-  Toolkit's shift-5 uniform. The LoRA leaves block 22 alone, as AI Toolkit's does: the negative branch skips that
-  block, so CFG's contrast there stays the base model's
+  Toolkit's shift-5 uniform. The LoRA trains all 42 blocks, block 22 included (leaving it out, as AI Toolkit does,
+  cost likeness in A/B runs: the positive branch always runs it)
 * sampling: the reference's snapped shift-5 schedule, Euler, CFG 3 with block 22 skipped in the negative branch
 
 No edit training: the released checkpoints are text-to-image only (technical report section 8, "does not directly
@@ -313,9 +313,9 @@ class MOSSImageDriver(FamilyDriver):
         return [BlockGroup("Blocks", main), BlockGroup("Text adapter", text)]
 
     def lora_target_names(self, dit):
-        """The 42 blocks' Linears except the blocks the negative branch skips (block 22), as AI Toolkit trains
-        MOSS-Image: there CFG contrasts the base block with itself skipped, so a LoRA on it would move that contrast.
-        The text adapter stays frozen with the text encoder (OpenMOSS's guide: keep the text encoder frozen;
-        @Murf-Code, PR #195). Repair Studio still shows both, for LoRAs from trainers that do adapt them."""
-        skip = tuple(f"layers.{i}." for i in S.UNCOND_SKIP)
-        return [m for m in super().lora_target_names(dit) if m.startswith("layers.") and not m.startswith(skip)]
+        """The 42 blocks' Linears, block 22 included: the negative branch skips it, but the positive one always runs
+        it, and training it gave clearly better likeness than leaving it out as AI Toolkit does. The text adapter
+        stays frozen with the text encoder (OpenMOSS's guide: keep the text encoder frozen; @Murf-Code, PR #195;
+        training it exaggerated expressions epoch by epoch). Repair Studio still shows it, for LoRAs from trainers
+        that do adapt it."""
+        return [m for m in super().lora_target_names(dit) if m.startswith("layers.")]
