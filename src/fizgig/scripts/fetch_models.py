@@ -162,7 +162,7 @@ def _described_families():
         ws = [Weight(f.pref_key, f.repo, f.path, f.size_gb, f.label + (" — " + f.note if f.note else ""),
                      optional=f.fetch_is_optional, gated=f.gated, local_name=f.local_name or None,
                      replaces=f.replaces)
-              for f in d.model_files if f.repo and f.path]
+              for f in d.model_files if f.repo and f.path and f.bulk_fetch]
         out[d.key] = ws + ([] if any(w.pref_key == _CAPTION_TE.pref_key for w in ws) else [_CAPTION_TE]) + [_STRANGERS]
     return out
 

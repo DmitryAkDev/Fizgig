@@ -103,4 +103,22 @@ Every model brings quirks: reference images, frames, sound, an unusual mask or q
 
 Either way, no `if family == ...` in shared code. Every optional feature in [ABILITIES.md](ABILITIES.md) started this way.
 
+## What a driver doesn't bring
+
+A model pull request adds the model: its description, driver and model package. The layer change above is for something the model itself needs, such as reference images or sound. These belong in their own issue and pull request, not in a model's:
+
+- **Training features any model could use:**
+  - batch size
+  - caption dropout
+  - timestep pickers or loss weightings
+  - new optimizers or schedulers
+  - new kinds of LoRA
+
+  Even when they're off by default, they change shared code, the Training tab and the memory plans for every family. Open an issue so they can be designed once for all models. A family option (`FamilyOption`) is for something only that model has, like MiniMax H3's sound.
+- **Second environments, worker processes or dependency changes:** no side virtual environment, no subprocess running part of the model, and no change to Fizgig's pinned versions. Everything runs in the one install, so a model works offline, on pods and behind antivirus without anything new appearing on first use. If the reference needs a newer library than Fizgig pins, port the parts the model uses into its package, and check them against the library (MOSS-Image's Qwen3.5 text encoder is a text-only port, checked bit for bit against transformers 5.20).
+- **Changes to other families:** no new defaults, memory settings or presets for models other than yours.
+- **Tests:** `tests/` isn't tracked in the repo. Keep your checks locally, and describe what you measured in the pull request.
+
+Everything inside your own package is yours to shape: a loader for an unusual file, a memory-saving path for the text encoder, a preview checkpoint through the existing ability. If you're unsure which side something falls on, ask in the model's Discussion.
+
 Please open a discussion before starting a family, so two people don't build the same one.
