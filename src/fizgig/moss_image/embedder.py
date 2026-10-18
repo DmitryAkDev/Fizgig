@@ -290,6 +290,44 @@ def read_text_state_dict(path, dtype=torch.bfloat16) -> dict:
 STREAM_TOKENS = 1 << 18           # a streamed pass's captions: about 2 GB of bf16 hidden states at width 4096
 
 
+_RAM = {}                            # (path, mtime, dtype) -> the pinned state dict kept between workbench prompts
+
+
+def _kept_state_dict(path, dtype):
+    """read_text_state_dict, kept in pinned RAM for the next prompt (0.5 s to the GPU, about 6 s from the file) when
+    the computer has the room: the workbench loads the encoder for every new prompt."""
+    import os
+    import psutil
+    key = (os.path.abspath(path), os.path.getmtime(path), dtype)
+    if key in _RAM:
+        return _RAM[key]
+    drop_kept_state_dict()
+    sd = read_text_state_dict(path, dtype)
+    gb = sum(v.numel() * v.element_size() for v in sd.values()) / 1024 ** 3
+    if psutil.virtual_memory().available / 1024 ** 3 < gb + 8.0:
+        return sd
+    try:
+        sd = {k: v.contiguous().pin_memory() for k, v in sd.items()}
+    except RuntimeError:
+        sd = {k: v.contiguous() for k, v in sd.items()}
+    _RAM[key] = sd
+    logger.info(f"[text encoder] kept in RAM between prompts ({gb:.1f} GB)")
+    return sd
+
+
+def kept_gb(path):
+    """GB of the state dict kept for `path`, 0.0 when none is."""
+    import os
+    for (p, _, _), sd in _RAM.items():
+        if p == os.path.abspath(path):
+            return sum(v.numel() * v.element_size() for v in sd.values()) / 1024 ** 3
+    return 0.0
+
+
+def drop_kept_state_dict():
+    _RAM.clear()
+
+
 class MOSSTextEncoder:
     """stream=True (cards without room for the bf16 encoder, about 15 GB): the weights stay on the CPU and encode()
     runs layer-major - each of the 32 layers goes to the GPU once per group of captions and runs every caption in
@@ -298,10 +336,11 @@ class MOSSTextEncoder:
     once."""
 
     def __init__(self, model_path, device="cuda", dtype=torch.bfloat16, int8=False, tokenizer=None, cfg=QWEN35_9B,
-                 stream=False):
+                 stream=False, keep_in_ram=False):
         with torch.device("meta"):
             wrapper = _Wrapper(cfg)
-        sd = read_text_state_dict(model_path, dtype)
+        sd = (_kept_state_dict(model_path, dtype) if keep_in_ram and not int8 and torch.cuda.is_available()
+              else read_text_state_dict(model_path, dtype))
         missing, unexpected = wrapper.load_state_dict(sd, strict=False, assign=True)
         if missing or unexpected:
             raise ValueError(f"{model_path}: not the Qwen3.5-9B text encoder - missing {missing[:5]} "

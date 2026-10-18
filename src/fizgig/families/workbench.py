@@ -118,6 +118,7 @@ class WorkbenchEngine:
     def __init__(self, description):
         self.desc = description
         self.driver = description.load_driver()
+        self.driver.keep_text_encoder = True
         self.pipeline = None
         self.dit = self.vae = self.net = None
         self.te_path = None
@@ -560,7 +561,9 @@ class WorkbenchEngine:
                (ref, int(size[0]), int(size[1])) if kind == "edit" else ()) + tuple(self.driver.text_cache_key())
         need = [p for p in prompts if (p,) + tag not in self._prompt_cache]
         if need:
-            te_gb = os.path.getsize(self.te_path) / 1024 ** 3 if os.path.exists(self.te_path) else 0.0
+            te_gb = self.driver.text_encoder_gb(self.te_path)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()             # the last render's cached blocks are not in use
             park = self.lowmem or _free_vram_gb() < te_gb + 2.0
             if park:
                 self._park_dit("cpu")
@@ -1099,6 +1102,7 @@ class WorkbenchEngine:
         self._clear_blend_state()
         self._eq = {}
         self._prompt_cache = {}
+        getattr(self.driver, "drop_text_encoder", lambda: None)()
         self._invalidate_baseline_cache()
         self._invalidate_activation_cache()
         self._act_modules = None

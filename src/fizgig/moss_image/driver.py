@@ -122,7 +122,17 @@ class MOSSImageDriver(FamilyDriver):
         from fizgig.moss_image.embedder import MOSSTextEncoder, TOKENIZER_REPO
         from transformers import AutoTokenizer
         tok = self.from_pretrained(AutoTokenizer, TOKENIZER_REPO, subfolder="tokenizer")
-        return MOSSTextEncoder(path, device=device, stream=free_vram_gb() < 18.0, tokenizer=tok)
+        return MOSSTextEncoder(path, device=device, stream=free_vram_gb() < 18.0, tokenizer=tok,
+                               keep_in_ram=self.keep_text_encoder)
+
+    def text_encoder_gb(self, path):
+        """The language model alone once it has loaded (the file also holds the vision tower and heads)."""
+        from fizgig.moss_image.embedder import kept_gb
+        return kept_gb(path) or super().text_encoder_gb(path)
+
+    def drop_text_encoder(self):
+        from fizgig.moss_image.embedder import drop_kept_state_dict
+        drop_kept_state_dict()
 
     def cache_stage(self, stage, datasets, args, device, aux):
         """The shared text cache, with the dataset's captions in large groups so a streamed encoder moves each layer

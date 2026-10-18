@@ -13,6 +13,7 @@ Conventions every driver follows:
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -67,6 +68,17 @@ class FamilyDriver:
     def unload_text_encoder(self, te) -> None:
         """Free the encoder's VRAM (caching and preview-prompt encoding load it, then drop it)."""
         raise NotImplementedError
+
+    # set by the workbench, which loads the encoder for every new prompt: a driver may keep its weights in RAM
+    # between loads (drop_text_encoder frees them)
+    keep_text_encoder = False
+
+    def drop_text_encoder(self) -> None:
+        """Free anything load_text_encoder kept in RAM."""
+
+    def text_encoder_gb(self, path: str) -> float:
+        """The encoder's VRAM once loaded, for deciding whether the DiT must make room: the file's size."""
+        return os.path.getsize(path) / 1024 ** 3 if os.path.exists(path) else 0.0
 
     # ---- files loaded by name (tokenizers, processors, configs): cache first, so a cached setup runs offline -----
     @staticmethod
