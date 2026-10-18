@@ -23,7 +23,7 @@ _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, ft=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
     # families/flux3.py), at Qwen 2.1's 0.5 MP, with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
-    # per-image loss watch with per-image LR, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
+    # per-image loss watch off, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
     lo, hi = adaptive or ("1e-4", "4e-4")
     return {
         "NETWORK_DIM": rank, "NETWORK_ALPHA": rank, "NETWORK_TYPE": "LoRA (standard)", "LEARNING_RATE": lr,
@@ -32,7 +32,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, ft=
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
         "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_EMA": "0.98 (recommended)",
-        "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": True, "KREA2_AUTO_RECAPTION": False,
+        "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),

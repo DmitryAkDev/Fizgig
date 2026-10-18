@@ -39,7 +39,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
 | **MOSS-Image Fine-tune** | — | 1e-5 | rotations | 0.5 MP |
 
 - **Fast is the recommended start,** and gives excellent results.
-- **Learning rate:** every preset uses a fixed one, with AdamW, EMA 0.98 and the per-image loss watch, saving every epoch. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
+- **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98, saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
 - **Picking an epoch:** scrub the epochs in LoRA Royale to choose the best one.
 
 ## Memory
