@@ -1549,9 +1549,30 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
                 context=(context_lora_path, context_lora_strength) if context_lora_path else None)
 
-    def state(epoch):
-        _save_state(output_dir, output_name, net, optimizer, epoch=epoch, global_step=global_step, arch_id=arch,
-                    ema=ema, extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None)
+    def state(epoch, required=False):
+        """Save the resume state. A failed write (a full disk, or a sync / antivirus program holding the file) is
+        retried once, then only warned about: the epoch's LoRA is already saved, and the state only serves a resume.
+        A pause needs it (required=True), so there the second failure stops the run."""
+        for attempt in (1, 2):
+            try:
+                _save_state(output_dir, output_name, net, optimizer, epoch=epoch, global_step=global_step,
+                            arch_id=arch, ema=ema,
+                            extra={"adaptive_lr_state": adaptive.state_dict()} if adaptive else None)
+                return True
+            except (OSError, RuntimeError) as e:
+                if attempt == 2 and required:
+                    raise
+                if attempt == 1:
+                    logger.warning(f"[state] saving the epoch {epoch} resume state failed ({e}) - trying again")
+                    time.sleep(5)
+                else:
+                    import shutil       # a half-written state must not count as the newest when states are pruned
+                    shutil.rmtree(os.path.join(output_dir, f"{output_name}-{epoch:06d}-state"), ignore_errors=True)
+                    logger.warning(f"[state] the epoch {epoch} resume state could not be saved ({e}). Training "
+                                   f"carries on and the epoch's LoRA is saved; only resuming from this epoch is "
+                                   f"lost. Check free disk space, and keep the output folder out of OneDrive / "
+                                   f"Dropbox sync: {output_dir}")
+        return False
 
     if sample_at_first and start_epoch == 0:
         previews(ftr.epochs_done if ftr is not None else 0)
@@ -1807,9 +1828,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             save_lora(os.path.join(output_dir, f"{output_name}-{done:06d}.safetensors"), done)
         state_saved = False
         if save_state and cadence:
-            state(done)
-            prune_state_dirs(output_dir, output_name, keep_last_n_states)
-            state_saved = True
+            state_saved = state(done)
+            if state_saved:
+                prune_state_dirs(output_dir, output_name, keep_last_n_states)
         if sample_every_n_epochs and done % sample_every_n_epochs == 0:
             _tp = time.time()
             previews(done)
@@ -1825,7 +1846,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 logger.info(f"[pause] requested - state for epoch {done} already saved; exiting cleanly")
             else:
                 logger.info(f"[pause] requested - saving state at epoch {done} and exiting cleanly")
-                state(done)
+                state(done, required=True)
             progress.close()
             sys.exit(0)
         if slider_prompts and done < max_train_epochs:
