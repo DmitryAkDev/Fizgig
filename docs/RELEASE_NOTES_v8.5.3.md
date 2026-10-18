@@ -4,7 +4,7 @@
 
 **Linux: the app window works straight after install.** The installers (NVIDIA and AMD) and the updater now install Qt for the app window inside Fizgig's venv, so `./launch_fizgig.sh` opens Fizgig in its own window without installing anything else. If Qt can't install on your system, Fizgig opens in your browser instead, and the message says how to get the window.
 
-Already installed on Linux? Run `git pull`, then `venv/bin/pip install "pywebview[qt]"` (or run the installer again).
+Already installed on Linux (NVIDIA)? Run `git pull` once, then `./update_fizgig.sh`, the new Linux updater; use it for every update from now on. On Linux AMD, run `./install_fizgig_rocm.sh` again.
 
 Thanks to u/WiseDuck on Reddit for the report.
 
