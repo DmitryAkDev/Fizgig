@@ -1588,6 +1588,33 @@ def run_prompts(out_dir, name) -> list:
     return []
 
 
+def _caption_media_filter(names, family):
+    """Which of a folder's files the family trains on: an image family's captions list leaves out the folder's
+    recordings and clips. A song's waveform picture and a clip's still and sound stay, for their cards."""
+    try:
+        desc = _files_family(family) if family else None
+    except Exception:
+        desc = None
+    if desc is None:
+        return lambda n: True
+    media = set(desc.media)
+    stems = lambda exts: {os.path.splitext(n)[0] for n in names if os.path.splitext(n)[1].lower() in exts}
+    clip_stems = stems({".mp4"}) if "clip" in media else set()
+    song_stems = stems(_AUDIO) if "voice" in media else set()
+
+    def keep(n):
+        stem, e = os.path.splitext(n)
+        e = e.lower()
+        if stem in clip_stems:
+            return True
+        if e in _AUDIO:
+            return "voice" in media
+        if e in (".mp4", ".webm"):
+            return "clip" in media
+        return "photo" in media or stem in song_stems
+    return keep
+
+
 def pair_songs(entries):
     """[(name, path, extra), ...] with each song given the picture of the same name beside it (its waveform) and
     its length, and those pictures left out as items of their own. A clip preview (MiniMax H3: <stem>.mp4 with its
@@ -2705,7 +2732,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "not a checkpoint"}, 404)
             return self._stream(p)
         if path == "/api/captions":
-            return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0])
+            return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0],
+                                  (qs.get("family") or [""])[0])
         return self.json({"error": "not found"}, 404)
 
     def _log_stream(self, since):
@@ -2796,15 +2824,16 @@ class Handler(BaseHTTPRequestHandler):
                                      "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path),
                                      "run": base(e.name)} for e in items]})
 
-    def _captions(self, folder, ext):
+    def _captions(self, folder, ext, family=""):
         out = []
         try:
             names = sorted(os.listdir(folder))
         except OSError:
             return self.json({"items": []})
+        keep = _caption_media_filter(names, family)
         for n in names:
             stem, e = os.path.splitext(n)
-            if e.lower() not in MEDIA:
+            if e.lower() not in MEDIA or not keep(n):
                 continue
             cap = os.path.join(folder, stem + ext)
             try:

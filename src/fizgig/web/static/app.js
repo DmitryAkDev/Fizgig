@@ -1432,7 +1432,7 @@ async function likenessPicker() {
   grid.innerHTML = "";
   $("likModal").classList.add("active");
   if (!folder) return;
-  const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}`).catch(() => ({items: []}));
+  const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   for (const it of r.items.filter((x) => LIK_PICS.test(x.name))) {
     const fig = el("figure", {title: it.name, onclick: () => {
       const i = S.lik.picked.indexOf(it.name);
@@ -1619,7 +1619,7 @@ async function loadDatasets() {
 
 // a dataset's pictures in the viewer, stepping through them all
 async function datasetPictures(d) {
-  const r = await api(`/api/captions?folder=${encodeURIComponent(d.path)}&ext=${encodeURIComponent(capExt())}`)
+  const r = await api(`/api/captions?folder=${encodeURIComponent(d.path)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
     .catch(() => ({items: []}));
   const q = (p) => `/api/media?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`;
   const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp|avif|gif)$/i.test(it.name))
@@ -1903,7 +1903,7 @@ function imageLossCaption(im, run, live) {
     box.style.display = "";
     box.replaceChildren(el("div", {class: "field-hint", text: "Loading…"}));
     let r;
-    try { r = await api(`/api/runs/caption?id=${encodeURIComponent(run.id)}&key=${encodeURIComponent(im.key)}&ext=${encodeURIComponent(capExt())}`); }
+    try { r = await api(`/api/runs/caption?id=${encodeURIComponent(run.id)}&key=${encodeURIComponent(im.key)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`); }
     catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
     const ta = el("textarea", {rows: 5, class: "il-cap-text"});
     ta.value = r.caption;
@@ -3127,7 +3127,7 @@ async function lookPickOpen() {
   S.prep.picking = true;
   host.style.display = "";
   host.replaceChildren(el("div", {class: "field-hint", text: "Loading the folder's pictures…"}));
-  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}`).catch(() => ({items: []}));
+  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp)$/i.test(it.name));
   host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best nail the look you want."}),
     ...pics.map((it) => el("button", {class: "look-tile pick" + (S.prep.bases.includes(it.path) ? " chosen" : ""),
@@ -5142,7 +5142,7 @@ async function capRun(path, body) {
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
   if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
-  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}`)
+  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
     .catch(() => null);
   if (!r || !r.items) return;
   const now = new Map(r.items.map((i) => [i.name, i]));
@@ -5210,7 +5210,7 @@ async function loadCaptions() {
     "Choose the training folder on the Start tab first.";
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
-  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}`);
+  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
   S.cap.items = r.items;
   renderCaptions();
 }
