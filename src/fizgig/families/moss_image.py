@@ -232,8 +232,8 @@ MOSS_IMAGE = FamilyDescription(
     preview_width=1024,
     preview_height=1024,
     presets=(
-        # 1 MP: MOSS-Image pretrained to 1024² and responds better to it than to 0.25 MP (Peter, 18 Oct 2026). Fast is
-        # Standard at 0.25 MP and rank 16, for quicker runs and small cards. 70 epochs: a 53-image run was still
+        # Standard at 1 MP (MOSS-Image pretrained to 1024²); Fast is Standard at 0.25 MP and rank 16, which does very
+        # well on face-cropped datasets (Peter's runs, 18 Oct 2026). 70 epochs: a 53-image run was still
         # improving at 1,590 steps (epoch 30), so a 25-image set needs ~65 epochs to get there (Peter, 18 Oct 2026)
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
