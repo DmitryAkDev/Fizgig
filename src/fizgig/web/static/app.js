@@ -768,6 +768,8 @@ function gpuPickCard() {
 // where uploads go: Preferences' training data folder (the desktop's Input Directories > Training images), else
 // training_data inside Fizgig
 function showUploadRoot() {
+  // on the machine running Fizgig, Choose… picks the folder itself: uploading would only copy it
+  $("uploadCard").style.display = pageIsElsewhere() ? "" : "none";
   api("/api/upload/root").then((d) => {
     S.uploadRoot = d;
     if (!S.onPod) $("imageFolder").placeholder = d.root + (d.root.includes("\\") ? "\\" : "/") + "my_subject";
