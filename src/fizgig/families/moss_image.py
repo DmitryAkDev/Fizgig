@@ -84,7 +84,7 @@ MOSS_IMAGE = FamilyDescription(
                   alt_repo=_COMFY, alt_path="text_encoders/qwen3.5_9b_int8_convrot.safetensors", alt_label="int8",
                   alt_note="~9.7 GB int8 ConvRot, the file ComfyUI's MOSS-Image workflow uses; decoded at load"),
         # MOSS-Image SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture; @Murf-Code, PR #195): Repair
-        # Studio and LoRA Royale render on it once set, and training samples can (the Samples tab tick, off by
+        # Studio and LoRA Royale render on it once set, and training samples do (the Samples tab tick, on by
         # default - a Base LoRA carries over to the SFT only partly). Never trained: Fizgig trains on the Base
         ModelFile("moss_image_sft_dit", "MOSS-Image SFT DiT (previews, optional)", False, _COMFY,
                   "diffusion_models/moss_image_sft_int8_convrot.safetensors", 5.41, role="preview_dit",
@@ -93,10 +93,11 @@ MOSS_IMAGE = FamilyDescription(
                        "people use it. Never trained. ComfyUI's int8 ConvRot file is decoded at load; the bf16 SFT "
                        "file works as well.",
                   download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
+                  fetch_optional=False,       # the download button always fetches it: samples render on it
                   alt_repo=_COMFY, alt_path="diffusion_models/moss_image_sft_bf16.safetensors",
                   alt_label="bf16 file", alt_note="~10.2 GB"),
     ),
-    fetch_optional_label="Include the SFT model for previews (+5.4 GB)",
+    fetch_optional_label="Include the Turbo LoRA (+1.2 GB, soft on Base)",
     text_encoder_label="Qwen3.5-9B",
     vae_label="FLUX.2 autoencoder",
     helper_files=(("OpenMOSS-Team/MOSS-Image-Base", ("tokenizer/*",)),),   # tokenizer.json + chat template
@@ -214,7 +215,7 @@ MOSS_IMAGE = FamilyDescription(
     train_preview_checkpoint=True,
     preview_checkpoint_tick="Use the SFT model for samples (set it in Preferences - a Base LoRA carries over "
                             "only partly)",
-    preview_checkpoint_on=False,
+    preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",
