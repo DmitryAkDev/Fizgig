@@ -57,7 +57,7 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 ## Previews
 
 - **Samples render on the SFT model** by default, so you see your LoRA where you'll use it, though a Base LoRA carries over only partly. Untick the box on the Samples tab to preview on the Base model being trained. Repair Studio, LoRA Royale and the other workbench tabs render on SFT too.
-- **Sampler:** res_multistep for 30 steps at CFG 4 on MOSS-Image's shift-5 schedule, with block 22 left out of the negative branch. That was the best of side-by-side tests against OpenMOSS's own recipe, Euler at 50 steps, CFG 3.
+- **Sampler:** previews render as ComfyUI does with the settings below: res_multistep on the simple schedule (shift 5) for 30 steps at CFG 4, with block 22 left out of the negative branch for the first half of the steps (ComfyUI's SLG switch on). That beat OpenMOSS's own recipe, Euler at 50 steps, CFG 3, in side-by-side tests.
 - **Block 22 and the LoRA:** training leaves block 22 out of the LoRA too, so CFG's contrast there stays the base model's.
 - **Negative:** the default is `worst quality, bad anatomy, watermark, jpeg artifact`.
 
@@ -66,7 +66,7 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 | Node | Setting |
 |---|---|
 | KSampler | sampler `res_multistep`, scheduler `simple`, 30 steps, CFG 4 |
-| SkipLayerGuidanceDiTSimple | layer 22, on the negative (whenever CFG is above 1) |
+| SkipLayerGuidanceDiTSimple | single layer 22, start 0, end 0.5 (the MOSS template's SLG switch on) |
 | Negative prompt | `worst quality, bad anatomy, watermark, jpeg artifact` |
 | VAE | `flux2-vae_small.safetensors` |
 | Text encoder | [`qwen3.5_9b_bf16.safetensors`](https://huggingface.co/Comfy-Org/Qwen3.5/blob/main/text_encoders/qwen3.5_9b_bf16.safetensors), in `models/text_encoders` |

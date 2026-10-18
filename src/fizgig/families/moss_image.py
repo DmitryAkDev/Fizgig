@@ -162,11 +162,13 @@ MOSS_IMAGE = FamilyDescription(
     sampling=(
         SamplingSettings("res_multistep, 30 steps, CFG 4", steps=30, cfg=4.0, sampler="res_multistep",
                          scheduler="simple",
-                         options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep")),
+                         options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep"),
+                                  ("schedule", "simple"), ("slg_end", 0.5)),
                          negative_prompt=True,
-                         note="ComfyUI's second-order res_multistep on the reference's shift-5 grid. Picked by eye "
-                              "from res_multistep 20 / 30 / 50 at CFG 3 and 4 and Euler 30 / 50 on the same seeds.",
-                         source="Peter's comparison, 18 Oct 2026 (after r/StableDiffusion's res_multistep reports)"),
+                         note="As ComfyUI renders it: res_multistep on ComfyUI's simple schedule (shift 5), CFG 4, and "
+                              "the SLG switch on (SkipLayerGuidanceDiTSimple: block 22 skipped in the negative branch "
+                              "for the first half, sigma >= 0.83).",
+                         source="Peter's ComfyUI comparison, 18 Oct 2026 (ComfyUI's MOSS-Image template, SLG on)"),
         SamplingSettings("Euler, 30 steps", steps=30, cfg=3.0, sampler="euler", scheduler="simple",
                          options=(("shift", 5.0), ("uncond_skip", (22,))), negative_prompt=True,
                          note="AI Toolkit's MOSS-Image sample settings: the reference sampler at 30 steps.",
@@ -221,9 +223,10 @@ MOSS_IMAGE = FamilyDescription(
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",
-        options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep")), negative_prompt=True,
-        note="The Base samples' sampler (res_multistep 30, CFG 4, shift 5, the negative branch skipping block 22) on "
-             "the SFT checkpoint.",
+        options=(("shift", 5.0), ("uncond_skip", (22,)), ("sampler", "res_multistep"), ("schedule", "simple"),
+                 ("slg_end", 0.5)), negative_prompt=True,
+        note="The Base samples' sampler (ComfyUI's res_multistep / simple 30, CFG 4, shift 5, SLG block 22 for the "
+             "first half) on the SFT checkpoint.",
         source=f"https://huggingface.co/{_COMFY}; OpenMOSS/MOSS-Image-SFT model card"),
     preview_width=1024,
     preview_height=1024,

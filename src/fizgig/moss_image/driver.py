@@ -260,7 +260,8 @@ class MOSSImageDriver(FamilyDriver):
         skip = tuple(opts.get("uncond_skip", S.UNCOND_SKIP) or ())
         return S.sample(dit, self._real_tokens(cond), height, width, steps=steps, seed=seed, cfg=cfg, neg_text=neg,
                         noise=noise, on_step=on_step, sigmas=sigmas, shift=float(opts.get("shift", S.SHIFT)),
-                        uncond_skip=skip, sampler=str(opts.get("sampler", "euler")))
+                        uncond_skip=skip, sampler=str(opts.get("sampler", "euler")),
+                        scheduler=str(opts.get("schedule", "reference")), slg_end=float(opts.get("slg_end", 1.0)))
 
     def pad_conditioning(self, conds):
         """Prompt travel (LoRA Royale): prompts zero-padded to one length with a mask of each one's real tokens.
