@@ -6,7 +6,7 @@ the model cards and pipeline_moss_image.py (huggingface.co/OpenMOSS-Team/MOSS-Im
 (huggingface.co/Comfy-Org/MOSS-Image) and ComfyUI's core support (Comfy-Org/ComfyUI PR #17095, merge e087d8f6cb).
 
 """
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
+from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
 
 _REPO = "https://github.com/OpenMOSS/MOSS-Image"
 _CARD = "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base"
@@ -240,6 +240,12 @@ MOSS_IMAGE = FamilyDescription(
         ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, lr=5e-5, epochs=50)),
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
+    ),
+    options=(
+        FamilyOption("MOSS_LORA_SFT", "Base is SFT or a fine-tune of it", kind="check", tokens="lora_sft=1",
+                     hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: the LoRA then trains "
+                          "attention only (q, k, v, o). Training its feed-forward layers breaks anatomy.",
+                     mode="lora", section="after", summary="SFT base"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

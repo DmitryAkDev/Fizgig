@@ -32,7 +32,6 @@ N_BLOCKS = 42                 # transformer/config.json num_layers
 N_TEXT_BLOCKS = 2             # the text adapter's blocks (pipeline _TextProjection)
 BLOCK_MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")
 ATTN_MODULES = ("proj.q", "proj.k", "proj.v", "proj.o")
-SFT_FINGERPRINT = 3658.7646484375  # sum of the SFT checkpoint's layers.41.norm2.weight (Base: 3658.7021484375)
 TEXT_MODULES = ("qkv", "proj", "ffn_gate", "ffn_up", "ffn_down")
 
 # technical report Appendix A.2, Table 6, the last Stage 3 interval (steps 274,001-310,000, the released weights)
@@ -44,11 +43,7 @@ class MOSSImageDriver(FamilyDriver):
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path, device):
         from fizgig.moss_image.model import load_moss_dit
-        dit = load_moss_dit(path, device=device).eval().requires_grad_(False)
-        # the SFT checkpoint, by a weight it alone carries (any of its files, whatever the name): a LoRA trained on
-        # it keeps to attention (lora_target_names)
-        dit._moss_sft = abs(dit.layers[-1].norm2.weight.double().sum().item() - SFT_FINGERPRINT) < 1e-3
-        return dit
+        return load_moss_dit(path, device=device).eval().requires_grad_(False)
 
     # ---- training previews on the SFT checkpoint (train_preview_checkpoint; after @Murf-Code, PR #195) -------------
     def park_for_preview(self, dit, device):
@@ -323,17 +318,13 @@ class MOSSImageDriver(FamilyDriver):
         it, and training it gave clearly better likeness than leaving it out as AI Toolkit does. The text adapter
         stays frozen with the text encoder (OpenMOSS's guide: keep the text encoder frozen; @Murf-Code, PR #195;
         training it exaggerated expressions epoch by epoch). Repair Studio still shows it, for LoRAs from trainers
-        that do adapt it. On the SFT checkpoint only attention trains: its feed-forward layers trained gave body horror
-        within a few epochs."""
+        that do adapt it. On SFT or a fine-tune of it (the lora_sft option) only attention trains: its feed-forward
+        layers trained gave body horror within a few epochs."""
         names = [m for m in super().lora_target_names(dit) if m.startswith("layers.")]
-        if getattr(dit, "_moss_sft", False):
+        if str(self.options.get("lora_sft", "")) == "1":
             names = [m for m in names if m.endswith(ATTN_MODULES)]
         return names
 
-    def prepare_training(self, dit, group, net=None):
-        if getattr(dit, "_moss_sft", False):
-            logger.info("SFT checkpoint: the LoRA trains attention only (q, k, v, o)")
-
     def quant_target_names(self, dit):
-        """Every block Linear, whichever of them the LoRA trains (the SFT checkpoint's feed-forward layers too)."""
+        """Every block Linear, whichever of them the LoRA trains (an SFT base's feed-forward layers too)."""
         return [m for m in super().lora_target_names(dit) if m.startswith("layers.")]
