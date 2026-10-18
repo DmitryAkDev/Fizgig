@@ -293,6 +293,8 @@ class FamilyDescription:
     # fetches)
     # a line under the Training tab's Base Model picker while the family is selected (e.g. what its previews are)
     model_note: str = ""
+    # an orange status line under the Training tab's model picker (e.g. support that is new and changing daily)
+    status_note: str = ""
     # a grey note beside Load Preset while that preset is the selection: (preset name, note) pairs
     preset_notes: tuple = ()
     # an edit family whose workbench reference has a strength (the latents scaled by it), and whose travel renders can

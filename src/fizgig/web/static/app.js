@@ -141,6 +141,10 @@ function defaults() {
 
 function renderAll() {
   $("familyNotes").textContent = S.fam.model_note || "";
+  for (const st of document.querySelectorAll(".family-status")) {    // the model's status line (description status_note)
+    st.textContent = S.fam.status_note || "";
+    st.style.display = S.fam.status_note ? "" : "none";
+  }
   renderSections("samples", $("samplesForm"));
   renderSections("training", $("trainingForm"));
   renderPresets();
