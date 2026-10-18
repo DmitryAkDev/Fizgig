@@ -1163,9 +1163,12 @@ function queueSummary(q, r) {
   const items = q.items || [], n = items.length;
   const side = $("sideQueue"), up = $("runUpNext");
   side.style.display = up.style.display = n ? "" : "none";
-  if (!n) return;
+  if (!n) { S.queueSumSig = null; return; }
   const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
     q.waiting ? `Queue waiting: ${q.waiting}` : "";
+  const sig = JSON.stringify([text, q.held, q.reason, q.waiting, items.map((it) => [it.id, it.lora])]);
+  if (sig === S.queueSumSig) return;              // as renderWebQueue: a rebuild mid-click drops Start queue's click
+  S.queueSumSig = sig;
   side.classList.toggle("held", !!q.held);
   const badge = $("sideQueueBadge");
   badge.textContent = q.held ? "Held" : q.waiting ? "Waiting" : `${n} queued`;
@@ -1196,6 +1199,11 @@ function renderWebQueue(q) {
   $("webQueueHold").style.display = q.held || !items.length ? "none" : "";
   $("webQueueClear").style.display = items.length ? "" : "none";
   S.queueIds = items.map((it) => it.id);
+  // rebuilt only when the queue changes: rebuilding on every poll replaced a button between press and release, and
+  // the browser dropped that click (Remove sometimes did nothing)
+  const sig = JSON.stringify(items.map((it) => [it.id, it.lora, it.family, it.image_folder, it.queued_at]));
+  if (sig === S.queueSig) return;
+  S.queueSig = sig;
   const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
   const host = $("webQueueList");
   host.innerHTML = "";
