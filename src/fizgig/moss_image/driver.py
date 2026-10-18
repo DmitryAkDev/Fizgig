@@ -326,5 +326,7 @@ class MOSSImageDriver(FamilyDriver):
         return names
 
     def quant_target_names(self, dit):
-        """Every block Linear, whichever of them the LoRA trains (an SFT base's feed-forward layers too)."""
+        """Every block Linear, whichever of them the LoRA trains (an SFT base's feed-forward layers too): block swap
+        pairs blocks layer by layer, so every block must hold the same dtype - block 22 left bf16 among INT8 blocks
+        got INT8 weights swapped into a plain Linear (#201)."""
         return [m for m in super().lora_target_names(dit) if m.startswith("layers.")]
