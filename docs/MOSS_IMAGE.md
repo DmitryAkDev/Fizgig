@@ -65,7 +65,6 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 
 | Node | Setting |
 |---|---|
-| ModelSamplingSD3 | shift 5 |
 | KSampler | sampler `res_multistep`, scheduler `simple`, 30 steps, CFG 4 |
 | SkipLayerGuidanceDiTSimple | layer 22, on the negative (whenever CFG is above 1) |
 | Negative prompt | `worst quality, bad anatomy, watermark, jpeg artifact` |
