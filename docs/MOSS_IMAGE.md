@@ -74,4 +74,4 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 | Your LoRA | Load LoRA |
 
 - **Text encoder:** use the bf16 one. MOSS-Image's developers say the text encoder is more fragile than the model, so avoid heavy quants of it.
-- **Same as Fizgig:** with the settings above and the same seed and resolution, ComfyUI gives matching images and the same likeness scores as Fizgig's previews.
+- **Same as Fizgig:** a LoRA trained on Base and run on SFT, with the settings above and the same seed and resolution, gives matching images in ComfyUI and the same likeness scores as Fizgig's previews.

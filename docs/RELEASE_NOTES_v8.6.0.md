@@ -8,7 +8,7 @@
 
 **MOSS-Image presets run 70 epochs.** MOSS-Image LoRAs are slow to converge: likeness often seems to level off, then keeps improving with more training. In our tests a 53-image dataset was still improving at 1,600 steps (epoch 30), so Standard and Fast now run 70 epochs, enough for a 25-image dataset to get there. Look at the late epochs in LoRA Royale before settling on an early peak.
 
-**What you see in Fizgig is what you get in ComfyUI.** With the same seed, resolution and sampler settings, Fizgig's MOSS-Image previews and ComfyUI give matching images and the same ArcFace likeness scores. It's an easy check to do yourself: in ComfyUI, use CFG 4, res_multistep with the simple scheduler, 30 steps, and SLG on, as in ComfyUI's MOSS-Image template.
+**What you see in Fizgig is what you get in ComfyUI.** Training on Base with previews on SFT, then running the LoRA on SFT in ComfyUI with the same seed, resolution and sampler settings, Fizgig's MOSS-Image previews and ComfyUI give matching images and the same ArcFace likeness scores. It's an easy check to do yourself: in ComfyUI, use CFG 4, res_multistep with the simple scheduler, 30 steps, and SLG on, as in ComfyUI's MOSS-Image template.
 
 **MOSS-Image previews with block swap now work.** On cards where the SFT preview model streams blocks, previews failed with "expected mat1 and mat2 to have the same dtype", and INT8 training with block swap failed the same way. Both are fixed. Thanks to **[@Ferocit](https://github.com/Ferocit)** for the report (#201).
 
