@@ -464,7 +464,10 @@ def _log(msg):
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + str(msg).rstrip() + "\n")
     except OSError:
         pass
-    print(msg, flush=True)
+    try:
+        print(msg, flush=True)
+    except (OSError, ValueError):     # the terminal that started it has closed (launch_fizgig.sh runs it in the background)
+        pass
 
 
 def _log_pywebview():
@@ -677,9 +680,15 @@ def main():
         except Exception:
             pass
         page_ready = threading.Event()
+        started = threading.Event()       # webview.start came back (or failed: no engine) - the watchdog stands down
 
         def watchdog():                    # a window that never appears ends, its server with it, not left unseen
-            if not window.events.shown.wait(120):
+            for _ in range(120):
+                if window.events.shown.wait(1):
+                    break
+                if started.is_set():       # no window at all: the browser took over and the server must stay up
+                    return
+            else:
                 _stop(own)
                 os._exit(1)
             # a window that appears but never runs the page (a white window: a broken WebView2, its sandbox on a
@@ -694,15 +703,19 @@ def main():
                     pass
         threading.Thread(target=watchdog, daemon=True).start()
         profile = user_file("app_profile")
-        webview.start(private_mode=False, storage_path=profile, icon=_icon(profile))
+        try:
+            webview.start(private_mode=False, storage_path=profile, icon=_icon(profile))
+        finally:
+            started.set()
         if fallback[0]:
             raise RuntimeError(fallback[0])
     except Exception as e:
         # no engine here (a Linux machine without GTK/WebKit or Qt, Windows without WebView2) or a window that never
         # showed the page: the browser, and how to get the window
         how = (f"For the window, install Microsoft Edge WebView2 Runtime: {WEBVIEW2_URL}" if os.name == "nt" else
-               "For the window on Linux: install your distro's WebKitGTK (e.g. gir1.2-webkit2-4.1 and python3-gi) "
-               "or `pip install pywebview[qt]` in Fizgig's venv.")
+               "For the window on Linux, in Fizgig's venv: `venv/bin/pip install \"pywebview[qt]\"`, or WebKitGTK: "
+               "your distro's gir1.2-webkit2-4.1 and libgirepository dev packages, then `venv/bin/pip install "
+               "PyGObject` (the distro's python3-gi isn't seen inside the venv).")
         _log(f"[app] no app window ({e}) - opening the web UI in your browser instead. {how}")
         webbrowser.open(url)
         if own is not None:
