@@ -209,6 +209,9 @@ def main():
         print()
     else:
         rocm_deps() if rocm else cuda_deps()
+        if sys.platform.startswith("linux"):     # Qt for the app window (install_fizgig.py's install_linux_window)
+            if run([PY, "-m", "uv", "pip", "install", "--python", PY, "pywebview[qt]>=5,<7"]) != 0:
+                print("NOTE: Qt for the app window didn't install; Fizgig opens in your browser instead.")
     # Community LoRAs + H3 training adapters. Idempotent, and a failure (offline) never aborts the update.
     run([PY, os.path.join("src", "fizgig", "scripts", "fetch_turbo_lora.py")])
     if not rocm:
