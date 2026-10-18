@@ -178,8 +178,9 @@ MOSS_IMAGE = FamilyDescription(
                          source=f"{_PIPE} (MOSSImageScheduler, __call__ defaults); {_CARD} model card"),
         SamplingSettings("ComfyUI workflow", steps=50, cfg=3.0, sampler="euler", scheduler="sgm_uniform",
                          options=(("shift", 5.0), ("uncond_skip", (22,))), negative_prompt=True,
-                         note="ModelSamplingSD3 shift 5, SkipLayerGuidanceDiTSimple layer 22 on the negative. ComfyUI's "
-                              "scheduler does not snap to the training grid, so the same seed differs slightly.",
+                         note="SkipLayerGuidanceDiTSimple layer 22 on the negative, and no ModelSamplingSD3 node: ComfyUI's "
+                              "MOSS-Image model brings its own sampling, and adding one renders badly (Peter, 18 Oct 2026). "
+                              "ComfyUI's scheduler does not snap to the training grid, so the same seed differs slightly.",
                          source=f"{_REPO} comfyui/moss-image/example_workflows/moss-image-api.json, comfyui/README.md"),
     ),
     speed_loras=(
