@@ -477,33 +477,49 @@ async function refreshState() {
 }
 
 // Steps and CFG follow the Turbo LoRA, as the desktop's Samples tab: its own (Qwen: 8 steps, CFG 1) while it renders -
-// file set in Preferences AND strength above 0 - else the plain model's (Qwen: 25, CFG 3). They switch on a first visit
-// or when the turbo turned on or off since last seen (the file set, or the strength moved across 0), and only a box
-// still on the other side's default, so a value you typed is never replaced.
+// file set in Preferences AND strength above 0 - else the plain model's (Qwen: 25, CFG 3). Only an empty box or one on
+// another of these defaults switches, so a value you typed is never replaced.
 // A preview-checkpoint tick (Klein's / Flux 3's distilled) does the same with its row's follow: ticked with the file
 // set, Steps shows the distilled's own count (Flux 3: 16), unticked the Base's (50).
+// A model with both (Qwen Image 2.1, MOSS-Image) gets one answer for the boxes they share: a ticked preview checkpoint's
+// own values, else a live Turbo's, else the plain model's. Each used to switch the boxes on its own, so an unticked
+// checkpoint put the plain model's 25 steps, CFG 3 back under a live Turbo LoRA (noisy previews). A box still on any
+// of the defaults is put right on every load, which also mends a form saved in that state.
 function turboFollow() {
-  for (const s of S.fam.form.sections) for (const row of s.rows) {
-    if (!row || !(row.turbo || row.follow)) continue;
-    let live, flag, sides;
-    if (row.turbo) {
+  const rows = [];
+  for (const s of S.fam.form.sections) for (const row of s.rows) if (row && (row.turbo || row.follow)) rows.push(row);
+  if (!rows.length) return;
+  const want = {}, known = {}, flags = {};
+  const note = (side) => { for (const [k, v] of Object.entries(side)) (known[k] = known[k] || []).push(parseFloat(v)); };
+  for (const row of rows) {
+    const sides = row.turbo || row.follow;
+    note(sides.on); note(sides.off);
+    Object.assign(want, sides.off);
+  }
+  for (const pass of ["turbo", "follow"]) for (const row of rows) {
+    if (!row[pass]) continue;
+    let live;
+    if (pass === "turbo") {
       const raw = S.values.FAMILY_TURBO_STRENGTH;
       const strength = parseFloat(raw === undefined || raw === "" ? row.default : raw);
-      live = !!S.state.turbo_file && strength > 0; flag = "__turbo_live"; sides = row.turbo;
+      live = !!S.state.turbo_file && strength > 0; flags.__turbo_live = live;
     } else {
       const v = S.values[row.key];
-      live = !!S.state.checkpoint_file && !!(v === undefined ? row.default : v);
-      flag = "__follow_" + row.key; sides = row.follow;
+      live = !!S.state.checkpoint_file && !!(v === undefined ? row.default : v); flags["__follow_" + row.key] = live;
     }
-    if (S.values[flag] === live) continue;
-    const want = live ? sides.on : sides.off, other = live ? sides.off : sides.on;
-    const moved = Object.keys(want).filter((k) => S.values[k] === undefined || S.values[k] === "" ||
-      parseFloat(S.values[k]) === parseFloat(other[k]));        // "3.0" is the default 3
-    for (const k of moved) S.values[k] = want[k];
-    S.values[flag] = live;
-    syncInputs(moved);
-    saveStateSoon();
+    if (live) Object.assign(want, row[pass].on);
   }
+  const moved = Object.keys(want).filter((k) => {
+    const v = S.values[k];
+    if (v === undefined || v === "") return true;
+    return parseFloat(v) !== parseFloat(want[k]) && known[k].includes(parseFloat(v));   // "3.0" is the default 3
+  });
+  const flagsChanged = Object.entries(flags).some(([f, live]) => S.values[f] !== live);
+  if (!moved.length && !flagsChanged) return;
+  for (const k of moved) S.values[k] = want[k];
+  Object.assign(S.values, flags);
+  syncInputs(moved);
+  saveStateSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);
 
