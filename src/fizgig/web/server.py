@@ -1276,6 +1276,13 @@ def _folder_problem(e, out_dir) -> str:
             f"(Output), or set the default in Preferences > LoRA output.")
 
 
+def _resumed(result):
+    """A resume that started: the queue held for that paused run stops showing as held."""
+    if isinstance(result, dict) and not result.get("error") and not result.get("problems"):
+        webqueue.resumed()
+    return result
+
+
 def _start(family_key, values, image_folder, resume="", ft_continue=None, note=""):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
@@ -3126,15 +3133,15 @@ class Handler(BaseHTTPRequestHandler):
                                                    f"for is {v.get('FAMILY_FT_ROTATIONS')}: "
                                                    f"{os.path.basename(last['resume'])} is the finished model. To "
                                                    f"train it further, raise Train for and press Resume again."}, 400)
-                    return self.json(_start(last["family"], v, last["image_folder"],
+                    return self.json(_resumed(_start(last["family"], v, last["image_folder"],
                                             ft_continue={"continue": cont, "rotations": left},
                                             note=f"=== Resuming the fine-tune from {os.path.basename(last['resume'])}: "
-                                                 f"{left} rotation(s) left ==="))
+                                                 f"{left} rotation(s) left ===")))
                 if not os.path.isdir(last["resume"]):
                     return self.json({"error": "The paused run's saved state isn't there any more: "
                                                + last["resume"]}, 400)
-                return self.json(_start(last["family"], last["values"], last["image_folder"], resume=last["resume"],
-                                        note=f"=== Resuming from {last['resume']} ==="))
+                return self.json(_resumed(_start(last["family"], last["values"], last["image_folder"],
+                                                 resume=last["resume"], note=f"=== Resuming from {last['resume']} ===")))
             if path == "/api/run/slider_prompts":    # a prompt slider's new ends, taken at its next epoch boundary
                 with _lock:
                     running = _run["proc"] is not None and _run["proc"].poll() is None
