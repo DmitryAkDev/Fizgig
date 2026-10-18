@@ -6,7 +6,7 @@ the model cards and pipeline_moss_image.py (huggingface.co/OpenMOSS-Team/MOSS-Im
 (huggingface.co/Comfy-Org/MOSS-Image) and ComfyUI's core support (Comfy-Org/ComfyUI PR #17095, merge e087d8f6cb).
 
 """
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
+from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
 
 _REPO = "https://github.com/OpenMOSS/MOSS-Image"
 _CARD = "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base"
@@ -14,6 +14,7 @@ _COMFY = "Comfy-Org/MOSS-Image"
 _GUIDE = f"{_REPO} USERGUIDE.md"
 _REPORT = f"{_REPO} paper/MOSS_Image_Technical_Report.pdf"
 _PIPE = f"{_CARD} pipeline_moss_image.py"
+_TURBO = "lodestones/MOSS-Image-SFT-8-steps-dmd"
 _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")   # model.py _Block Linears
 # USERGUIDE.md Prompt Guidelines: "we recommend the following effective negative tags"
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
@@ -68,6 +69,12 @@ MOSS_IMAGE = FamilyDescription(
                   hint="FLUX.2's encoder with the small decoder MOSS-Image was released with. Flux 3's or Klein's "
                        "full autoencoder also works (same latents), but the small decoder avoids spots in the "
                        "pictures."),
+        ModelFile("moss_image_turbo_lora", "Turbo LoRA (optional)", False, _TURBO, "lora.safetensors", 1.19,
+                  "Optional speed LoRA for previews; leave empty to preview at full quality.", role="speed_lora",
+                  bulk_fetch=False,           # its own Download link only: soft on Base today (Peter, 18 Oct 2026)
+                  hint="Optional. A turbo / DMD LoRA for fast previews - lodestones' 8-step DMD distillation of "
+                       "MOSS-Image SFT today (work in progress; soft on Base). Leave it empty for full-quality "
+                       "previews. With one set, choose its steps and CFG on the Samples tab; the workbench follows."),
         ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
                   "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
                   "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "
@@ -175,6 +182,28 @@ MOSS_IMAGE = FamilyDescription(
                               "scheduler does not snap to the training grid, so the same seed differs slightly.",
                          source=f"{_REPO} comfyui/moss-image/example_workflows/moss-image-api.json, comfyui/README.md"),
     ),
+    speed_loras=(
+        SpeedLoRA(
+            name="MOSS-Image Turbo LoRA",
+            repo=_TURBO,
+            file="lora.safetensors",
+            pairs_with="MOSS-Image SFT",
+            strength=1.0,             # lodestones' card: lora.safetensors at 1.0 (lora_latest at 0.7)
+            settings=SamplingSettings("Turbo 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
+                                      options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
+                                      note="8 steps, no CFG, the reference's shift-5 grid.",
+                                      source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
+            load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
+            pref_key="moss_image_turbo_lora",
+            community_settings=(("12-16 steps for stronger prompt adherence; strength 0.8 at 16 steps",
+                                 "r/StableDiffusion 'MOSS-Image INT8 ComfyUI' thread; dskjal's ComfyUI guide"),),
+            caveats=("Distilled from MOSS-Image SFT, and soft on Base (Peter's comparison, 18 Oct 2026).",),
+            source=f"https://huggingface.co/{_TURBO}",
+        ),
+    ),
+    preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
+    preview_speed_strength=0.0,       # the Samples tab's Turbo LoRA strength starts at 0 (full-quality previews);
+    #                                   raise it with the Steps / CFG boxes set for the turbo (1 at 8 steps, CFG 1)
     preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)
     preview_cfg=4.0,                  # USERGUIDE.md: 3-6 recommended; 4 won the side-by-side
     preview_negative=_NEGATIVE,

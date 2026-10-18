@@ -49,6 +49,9 @@ class ModelFile:
     # the download button fetches it only with the section's optional tick (description.fetch_optional_label);
     # None = not required -> optional
     fetch_optional: Optional[bool] = None
+    # False: left out of "Download models for me" altogether - the row's own Download link only (a file nobody needs
+    # by default, kept so a user can add it: MOSS-Image's Turbo LoRA)
+    bulk_fetch: bool = True
     # a file added after most users set the family up: its line in the one-time "new model files" popup (shown when
     # the family's DiT is set but this file is not; description.announce_intro opens it). "" = never announced
     announce: str = ""
