@@ -20,9 +20,9 @@ _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ff
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 
-def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, ft=False):
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
-    # families/flux3.py), at Qwen 2.1's 0.5 MP, with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
+    # families/flux3.py), at 1 MP (the last pretraining stage's area), with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
     # per-image loss watch off, saved every epoch. adaptive=(min, max) turns Adaptive LR on.
     lo, hi = adaptive or ("1e-4", "4e-4")
     return {
@@ -231,10 +231,10 @@ MOSS_IMAGE = FamilyDescription(
     preview_width=1024,
     preview_height=1024,
     presets=(
-        # untrained starting values (see _preset)
+        # 1 MP throughout: MOSS-Image pretrained to 1024² and responds better to it than to 0.25 MP (Peter, 18 Oct
+        # 2026); the Fast (0.25 MP) preset was dropped. Lower Target Megapixels by hand on a small card
         # a fixed learning rate: Adaptive LR walks to its floor on MOSS-Image's flat loss (@Murf-Code's runs, PR
         # #195; Peter's runs agree that 1e-4 suits it). Adaptive LR stays on the Training tab, off by default
-        ("✨ MOSS-Image Fast (rank 16, 1e-4)", _preset(16, epochs=50, mp="0.25")),
         ("✨ MOSS-Image Standard (rank 32, 1e-4)", _preset(32, epochs=50)),
         ("✨ MOSS-Image Style (rank 16, 5e-5)", _preset(16, lr=5e-5, epochs=50)),
         ("✨ MOSS-Image Slider (rank 8, 2e-4)", _preset(8, lr=2e-4, epochs=20, slider=True)),

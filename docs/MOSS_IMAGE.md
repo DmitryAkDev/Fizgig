@@ -32,13 +32,12 @@ python -m fizgig.scripts.fetch_models --family moss_image
 
 | Preset | Rank | Learning rate | Epochs | Size |
 |---|---|---|---|---|
-| **MOSS-Image Fast** | 16 | 1e-4 | 50 | 0.25 MP |
-| **MOSS-Image Standard** | 32 | 1e-4 | 50 | 0.5 MP |
-| **MOSS-Image Style** | 16 | 5e-5 | 50 | 0.5 MP |
-| **MOSS-Image Slider** | 8 | 2e-4 | 20 | 0.5 MP |
-| **MOSS-Image Fine-tune** | — | 1e-5 | rotations | 0.5 MP |
+| **MOSS-Image Standard** | 32 | 1e-4 | 50 | 1 MP |
+| **MOSS-Image Style** | 16 | 5e-5 | 50 | 1 MP |
+| **MOSS-Image Slider** | 8 | 2e-4 | 20 | 1 MP |
+| **MOSS-Image Fine-tune** | — | 1e-5 | rotations | 1 MP |
 
-- **Fast is the recommended start,** and gives excellent results.
+- **1 MP throughout:** MOSS-Image finished its training at 1024², and LoRAs respond better at 1 MP than at smaller sizes. On a small card, lower Target Megapixels on the Training tab.
 - **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98, saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
 - **Picking an epoch:** scrub the epochs in LoRA Royale to choose the best one.
 
