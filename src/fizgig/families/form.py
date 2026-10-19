@@ -887,6 +887,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
         else:
             hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
+    for key, old, new in desc.value_moves:     # a changed default, moved once in a saved form
+        mark = f"_moved_{key}"
+        if not values.get(mark):
+            force[mark] = True
+            if str(values.get(key, "")).strip() == str(old):
+                force[key] = new
     if desc.train_preview_checkpoint and desc.standard_base:
         # another Base than the released one (Kromoss, a fine-tune, SFT): previews on it by default, the model the LoRA
         # will be used on. The tick moves once per Base file, so a choice made after that stays

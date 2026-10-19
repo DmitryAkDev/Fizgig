@@ -427,6 +427,9 @@ class FamilyDescription:
     # DiT (a fine-tune of it, SFT) the preview-checkpoint tick defaults off - previews render on the model the LoRA
     # will be used on. () = no check
     standard_base: tuple = ()
+    # a changed default moved in saved forms: ((key, old value, new value), ...). Each form moves once (a marker is
+    # saved with it), so a value chosen after that stays
+    value_moves: tuple = ()
     preview_checkpoint_steps_note: str = "Base samples only — Distilled is locked at 4 steps"
     # measured training memory for the Auto plan: {precision: (peak GB with no block swap, GB saved per swapped
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
