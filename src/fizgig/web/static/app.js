@@ -362,6 +362,8 @@ function renderRow(r) {
     wrap.append(h);
   }
   if (link) wrap.append(el("div", {class: "field-hint"}, link));
+  if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",
+    target: "_blank", rel: "noopener", href: r.warn_link, text: " Best values: the Reddit discussion →"}) : ""));
   return wrap;
 }
 

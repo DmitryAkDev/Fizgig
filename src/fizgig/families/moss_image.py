@@ -248,17 +248,18 @@ MOSS_IMAGE = FamilyDescription(
                      hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: the LoRA then trains "
                           "attention only (q, k, v, o). Training its feed-forward layers breaks anatomy.",
                      mode="lora", section="after", summary="SFT base"),
-        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="",
+        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="60",
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
                           "fine detail are refined. Empty = the model's own schedule, about 11%.",
-                     summary="clean-end {}%"),
+                     warn="Experimental figure.", warn_link="", summary="clean-end {}%"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
-         "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform; the "
+         "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
+         "Clean-end share moves the curve's centre, 60% of steps below sigma 0.5 by default; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "
