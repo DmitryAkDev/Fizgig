@@ -242,6 +242,31 @@ def timestep_flags(inputs):
     return out
 
 
+def uncached_pictures(toml_text):
+    """How many pictures in the dataset TOML's folders have no latent or no text cache in their cache folder (a
+    resume skips caching, so a cache deleted by hand would leave it nothing to train on)."""
+    import tomllib
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    try:
+        sets = tomllib.loads(toml_text or "").get("datasets") or []
+    except tomllib.TOMLDecodeError:
+        return 0
+    n = 0
+    for ds in sets:
+        img, cdir = ds.get("image_directory"), ds.get("cache_directory")
+        if not img or not cdir or not os.path.isdir(img):
+            continue
+        names = os.listdir(cdir) if os.path.isdir(cdir) else []
+        # <stem>_<WxH>_<arch>.safetensors and <stem>_<arch>_te.safetensors: the stem is all but the last two parts
+        te = {"_".join(f[:-len(".safetensors")].split("_")[:-2]) for f in names if f.endswith("_te.safetensors")}
+        lat = {"_".join(f.split("_")[:-2]) for f in names
+               if f.endswith(".safetensors") and not f.endswith("_te.safetensors")}
+        n += sum(1 for f in os.listdir(img) if os.path.splitext(f)[1].lower() in exts
+                 and (os.path.splitext(f)[0] not in lat or os.path.splitext(f)[0] not in te))
+    return n
+
+
 def caches(desc, inputs):
     """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
     size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with
@@ -1254,6 +1279,12 @@ def plan(desc, inputs):
         for f, s, w in people:
             cmd += ["--subject", f, s["fused"], w]
         p.stages.append(Stage("Multi-person composites", cmd))
+    resuming = inputs.get("resuming") or bool(_s(inputs.get("RESUME_TRAINING")))
+    if resuming and not inputs.get("recache") and inputs.get("enable_cache", True):
+        n = uncached_pictures(p.dataset_toml)
+        if n:                           # a resume expects its cache; deleted by hand, it's made again (only what's gone)
+            inputs["recache"] = True
+            p.console.append(f"[cache] {n} picture(s) have no cache - caching them before the run resumes.\n")
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]
