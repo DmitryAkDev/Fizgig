@@ -1671,8 +1671,9 @@ function previewMode(m) {
   if (!m) { box.style.display = "none"; return; }
   const how = `${m.steps} steps, CFG ${Number(m.cfg).toFixed(1).replace(/\.0$/, "")}`;
   box.textContent = m.turbo
-    ? `⚡ Turbo LoRA in use: ${m.turbo} at strength ${m.strength}, ${how}. Fast previews, but they can look softer ` +
-      "than the finished LoRA."
+    ? `⚡ Turbo LoRA in use: ${m.turbo} at strength ${m.strength}, ${how}. For full-quality previews, set Turbo ` +
+      "LoRA strength to 0 above (Steps and CFG go back with it); tick Change the previews of the run going now " +
+      "for it to apply from this run's next preview."
     : `Previews render on ${m.model || "the model being trained"}: ${how}, no Turbo LoRA.`;
   box.style.display = "";
 }
