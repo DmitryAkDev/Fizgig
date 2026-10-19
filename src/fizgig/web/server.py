@@ -1595,6 +1595,17 @@ def run_prompts(out_dir, name) -> list:
     return []
 
 
+def epoch_prompts(sample_dir, name) -> dict:
+    """The prompts each epoch's previews used, as the trainer recorded them ({"4": [prompt, ...]}); {} for runs from
+    before it recorded them, which show the run's settings instead."""
+    try:
+        with open(os.path.join(sample_dir, f".prompts_{name}.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        return {str(k): list(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _caption_media_filter(names, family):
     """Which of a folder's files the family trains on: an image family's captions list leaves out the folder's
     recordings and clips. A song's waveform picture and a clip's still and sound stay, for their cards."""
@@ -2824,8 +2835,10 @@ class Handler(BaseHTTPRequestHandler):
         if run:
             items = [e for e in items if infos[e.name].get("run") == run]
         out = pair_songs([(e.name, e.path, {"time": e.stat().st_mtime, **infos[e.name]}) for e in items[:1500]])
-        return self.json({"items": out[:1000] if run else out[:300], "runs": runs,
-                          "prompts": run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else []})
+        by_epoch = epoch_prompts(folder, run) if run else {}
+        newest = by_epoch[max(by_epoch, key=int)] if by_epoch else None
+        return self.json({"items": out[:1000] if run else out[:300], "runs": runs, "epoch_prompts": by_epoch,
+                          "prompts": newest or (run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else [])})
 
     def _checkpoints(self, folder):
         """The run's saved LoRAs / checkpoints in its output folder, newest first."""

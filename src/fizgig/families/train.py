@@ -229,6 +229,24 @@ def _small_card_previews():
         return False
 
 
+def _record_prompts(sample_dir, output_name, epoch, prompts):
+    """The prompts an epoch's previews used (<sample_dir>/.prompts_<name>.json, by epoch), so the gallery shows each
+    preview's own prompt after a mid-run change, not the run's first ones."""
+    path = os.path.join(sample_dir, f".prompts_{output_name}.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = {}
+    data[str(epoch)] = [str(p) for p in prompts]
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        os.replace(path + ".tmp", path)
+    except OSError as e:
+        logger.warning(f"[sample] could not record the preview prompts ({e})")
+
+
 def _read_sample_override(output_dir):
     """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
     web UI's Samples tab): {prompts, prompt (the first), seed, width, height} while a prompt is set, else None. A
@@ -1528,6 +1546,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 steps=asked_steps or ck.steps, cfg=ck.cfg if asked_cfg is None else asked_cfg,
                 neg=neg if (ck.cfg if asked_cfg is None else asked_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
             last_prompt[0] = prompts[-1] if prompts else None
+            _record_prompts(sample_dir, output_name, epoch, prompts)
             return
         _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,
                          steps=sample_steps, cfg=sample_cfg_scale, neg=neg, width=w, height=h,
@@ -1536,6 +1555,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
                          strengths=sample_strengths if epoch > 0 else ())   # before training the LoRA is all zero
         last_prompt[0] = prompts[-1] if prompts else None
+        _record_prompts(sample_dir, output_name, epoch, prompts)
 
     ckpt_previews = None
     if preview_checkpoint and encoded is not None:
