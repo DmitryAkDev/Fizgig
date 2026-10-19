@@ -1112,9 +1112,11 @@ async function start(path, body) {
 const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
 async function resumeClick() {
   const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
-  // the previews as the Samples tab has them now (prompts, seed, size, steps, CFG, Turbo strength) go with the resume
+  // the previews as the Samples tab has them now (prompts, seed, size, steps, CFG, Turbo strength, the preview
+  // checkpoint tick) go with the resume
   const samples = r.family === S.family ? Object.fromEntries(["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH",
-    "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH"].map((k) => [k, S.values[k]])) : {};
+    "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT"]
+    .filter((k) => k in S.values).map((k) => [k, S.values[k]])) : {};
   const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
     String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
   if (!diff.length) { box.style.display = "none"; return start("/api/resume", {samples}); }
