@@ -69,7 +69,8 @@ DEFAULTS = {
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
-    "SAMPLE_EVERY_N_EPOCHS": "1", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
+    "SAMPLE_EVERY_N_EPOCHS": "1", "SAMPLE_LATER": False, "SAMPLE_UNTIL_EPOCH": "10",
+    "SAMPLE_EVERY_AFTER": "5", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
 }
 
 
@@ -612,6 +613,12 @@ def form(desc):
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
         *by_section("samples"),
         _row("SAMPLE_EVERY_N_EPOCHS", "Every N epochs", default=str(getattr(desc, "preview_every", 1) or 1)),
+        _row("SAMPLE_LATER", "Then preview less often", "check",
+             "Off: previews every N epochs all the way through. On: every N epochs up to the epoch below, then every "
+             "so many epochs after it (whole multiples, e.g. 15, 20, 25), so a long run doesn't stop for a preview "
+             "every epoch once you've seen how it's going."),
+        _row("SAMPLE_UNTIL_EPOCH", "After epoch", default="10"),
+        _row("SAMPLE_EVERY_AFTER", "Preview every N epochs", default="5"),
         _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
              default="auto") if desc.train_preview_checkpoint else None,
     ])
@@ -848,6 +855,10 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     ts = _timestep_note(values)
     if ts:
         notes["MAX_TIMESTEP"] = ts
+    if not values.get("SAMPLE_LATER"):        # Then preview less often: its two boxes wait for the tick
+        disabled |= {"SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER"}
+    if kind == "finetune":                     # a fine-tune previews at whole rotations
+        hidden |= {"SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER"}
     if kind in ("edit", "slider"):
         hidden.add("_prompts_note")     # the family's advice on writing prompts: these runs don't use them
     if kind == "edit":
@@ -1081,7 +1092,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                     "recaption": b("KREA2_AUTO_RECAPTION") and desc.loss_watch},
         captioner=captioner, caption_trigger=s("CAPTION_TRIGGER_WORD"),
         caption_overrides=caption_overrides,
-        samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "width": s("SAMPLE_WIDTH"),
+        samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "later": b("SAMPLE_LATER"),
+                 "until": s("SAMPLE_UNTIL_EPOCH"), "after": s("SAMPLE_EVERY_AFTER"), "width": s("SAMPLE_WIDTH"),
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or
                  str(desc.preview_cfg), "negative": s("SAMPLE_NEGATIVE"), "seed": s("SAMPLE_SEED"),
                  "at_first": b("SAMPLE_AT_FIRST"), "prompts": s("SAMPLE_PROMPT").splitlines(), "reference": s("SAMPLE_REFERENCE"),

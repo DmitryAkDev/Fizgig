@@ -250,8 +250,8 @@ def _record_prompts(sample_dir, output_name, epoch, prompts):
 
 def _read_sample_override(output_dir):
     """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
-    web UI's Samples tab): {prompts, prompt (the first), seed, width, height, steps, cfg, turbo} while a prompt is
-    set, else None. A "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field
+    web UI's Samples tab): {prompts, prompt (the first), seed, width, height, steps, cfg, turbo, every, until, after}
+    while a prompt is set, else None (every / until / after: the preview cadence, see preview_due). A "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field
     is ignored. steps / cfg / turbo (the Turbo LoRA's strength) are None when the override doesn't set them."""
     path = os.path.join(output_dir, ".sample_override.json")
     try:
@@ -269,10 +269,20 @@ def _read_sample_override(output_dir):
             return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
                     "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
                     "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
-                    "turbo": turbo if turbo is not None and turbo >= 0 else None}
+                    "turbo": turbo if turbo is not None and turbo >= 0 else None,
+                    **{k: (lambda v: v if v is not None and v >= 0 else None)(num(k, int))
+                       for k in ("every", "until", "after")}}
     except (OSError, ValueError, TypeError):
         pass
     return None
+
+
+def preview_due(done, every, until=0, after=0):
+    """Whether epoch `done` previews: every `every` epochs, or with `until` and `after` both set (the Samples tab's
+    "Then preview less often"), every `every` up to and including epoch `until`, then on whole multiples of `after`."""
+    if until > 0 and after > 0 and done > until:
+        return done % after == 0
+    return every > 0 and done % every == 0
 
 
 SLIDER_LIVE = ".slider_prompts.json"            # written by the web UI while a prompt slider trains
@@ -859,7 +869,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  training_adapter=None, training_adapter_strength=1.0,
                  context_lora_path=None, context_lora_strength=1.0, min_timestep=0.0, max_timestep=1.0,
                  speed_lora=None, speed_lora_strength=None,
-                 vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_width=None,
+                 vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_until_epoch=0,
+                 sample_every_n_epochs_after=0, sample_width=None,
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
                  sample_at_first=False, sample_seed=42, sample_reference=None, sample_image=None,
                  sample_strengths=(), slider_pairs=False, slider_diff_weight=1.0, slider_prompts=None, slider_guidance=3.0,
@@ -1530,6 +1541,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 st[k] = st[k].to(device)
 
     ov_cache = [None, None]                  # the override's prompts and their encoding, kept while they don't change
+
+    def _preview_due(done):
+        """This epoch previews, by the launch cadence or the live override's (the Samples tab, changed mid-run)."""
+        every, until, after = sample_every_n_epochs, sample_until_epoch, sample_every_n_epochs_after
+        ov = _read_sample_override(output_dir)
+        if ov:
+            every = ov["every"] if ov.get("every") else every
+            until = ov["until"] if ov.get("until") is not None else until
+            after = ov["after"] if ov.get("after") is not None else after
+        return preview_due(done, every, until, after)
     speed_bad = [False]                      # the speed LoRA matched no layers: not tried again
 
     def _previews(epoch):
@@ -1949,7 +1970,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             state_saved = state(done)
             if state_saved:
                 prune_state_dirs(output_dir, output_name, keep_last_n_states)
-        if sample_every_n_epochs and done % sample_every_n_epochs == 0:
+        if sample_every_n_epochs and _preview_due(done):
             _tp = time.time()
             previews(done)
             progress.start_t += time.time() - _tp       # the bar's s/it is training speed, not previews
@@ -2040,6 +2061,10 @@ def setup_parser():
     p.add_argument("--text_encoder", default=None)
     p.add_argument("--sample_prompts", default=None, help="One prompt per line")
     p.add_argument("--sample_every_n_epochs", type=int, default=0)
+    p.add_argument("--sample_until_epoch", type=int, default=0,
+                   help="With --sample_every_n_epochs_after: previews every --sample_every_n_epochs up to this epoch")
+    p.add_argument("--sample_every_n_epochs_after", type=int, default=0,
+                   help="...then on whole multiples of this")
     p.add_argument("--sample_width", type=int, default=None)
     p.add_argument("--sample_height", type=int, default=None)
     p.add_argument("--sample_steps", type=int, default=None)
@@ -2153,7 +2178,9 @@ def main():
         context_lora_path=a.context_lora_path, context_lora_strength=a.context_lora_strength,
         min_timestep=a.min_timestep, max_timestep=a.max_timestep, speed_lora=a.speed_lora,
         vae_path=a.vae, te_path=a.text_encoder,
-        sample_prompts=prompts, sample_every_n_epochs=a.sample_every_n_epochs, sample_width=a.sample_width,
+        sample_prompts=prompts, sample_every_n_epochs=a.sample_every_n_epochs,
+        sample_until_epoch=a.sample_until_epoch, sample_every_n_epochs_after=a.sample_every_n_epochs_after,
+        sample_width=a.sample_width,
         sample_height=a.sample_height, sample_steps=a.sample_steps, sample_cfg_scale=a.sample_cfg_scale,
         sample_negative=a.sample_negative, sample_at_first=a.sample_at_first, sample_seed=a.sample_seed,
         sample_strengths=tuple(float(x) for x in a.sample_strengths.split(",") if x.strip()),

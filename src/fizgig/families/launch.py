@@ -876,6 +876,9 @@ def _preview_flags(desc, st, plan, cmd):
         except (TypeError, ValueError):
             pass
     if prompts and every.isdigit() and int(every) > 0:
+        later = [str(sm.get(k) or "").strip() for k in ("until", "after")] if sm.get("later") else []
+        if later and all(x.isdigit() and int(x) > 0 for x in later):   # Then preview less often (off = nothing)
+            out += ["--sample_until_epoch", later[0], "--sample_every_n_epochs_after", later[1]]
         out += ["--sample_prompts", prompts, "--sample_every_n_epochs", every,
                 "--vae", _model(st, desc, "vae"),
                 "--text_encoder", _model(st, desc, "text_encoder"),

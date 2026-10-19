@@ -876,6 +876,7 @@ _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 # results are the same); the run trains on as it was
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
                        "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT",   # + previews on the checkpoint
+                       "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP")
 
 
@@ -3216,10 +3217,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"ok": True, "on": False})
                 live = {"prompts": prompts, "seed": _seed(b.get("seed"), 1234),
                         "width": _seed(b.get("width"), 1024), "height": _seed(b.get("height"), 1024)}
-                for k in ("steps", "cfg", "turbo"):   # the Samples tab's Steps, CFG and Turbo strength, when given
+                for k in ("steps", "cfg", "turbo", "every", "until", "after"):   # Steps, CFG, Turbo strength and
+                    # the preview cadence (until / after 0 = Then preview less often off), when given
                     try:
                         if str(b.get(k, "")).strip() != "":
-                            live[k] = float(b[k]) if k != "steps" else int(float(b[k]))
+                            live[k] = float(b[k]) if k in ("cfg", "turbo") else int(float(b[k]))
                     except (TypeError, ValueError):
                         pass
                 _write_json(side, live)
