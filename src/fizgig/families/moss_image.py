@@ -79,9 +79,13 @@ MOSS_IMAGE = FamilyDescription(
         ModelFile("moss_image_turbo_lora", "Turbo LoRA (optional)", False, _TURBO, "lora.safetensors", 1.19,
                   "Optional speed LoRA for previews; leave empty to preview at full quality.", role="speed_lora",
                   bulk_fetch=False,           # its own Download link only: soft on Base today (Peter, 18 Oct 2026)
-                  hint="Optional. A turbo / DMD LoRA for fast previews - lodestones' 8-step DMD distillation of "
-                       "MOSS-Image SFT today (work in progress; soft on Base). Leave it empty for full-quality "
-                       "previews. With one set, choose its steps and CFG on the Samples tab; the workbench follows."),
+                  hint="Optional. A turbo / DMD LoRA for fast previews on the training model: lodestones' 8-step "
+                       "DMD of SFT (soft on Base), or Kromoss's own 8-step LoRA (distilled from Base) for a Kromoss "
+                       "Base. Leave it empty for full-quality previews. With one set, choose its steps and CFG on the "
+                       "Samples tab; the workbench follows.",
+                  alt_repo="lodestones/Kromoss", alt_path="8-steps-dmd-lora.safetensors",
+                  alt_label="Download Kromoss Turbo",
+                  alt_note="Kromoss Turbo ~1.2 GB - 8 steps, CFG 1, for previews on Kromoss"),
         ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
                   "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
                   "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "

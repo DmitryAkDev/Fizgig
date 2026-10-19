@@ -82,7 +82,8 @@ async function boot() {
     for (const f of S.schema.families) sel.append(el("option", {value: f.key, text: f.gui_label || f.display_name}));
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
-  if (st.tab) showTab(st.tab);
+  showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
+  newsCard();
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
@@ -1654,6 +1655,23 @@ async function loadCheckpoints() {
     others ? el("a", {href: "#", class: "inline-link", text: S.ckptAll ? `Only ${run}'s` :
       `Show the ${others} from other runs in this folder`,
       onclick: (e) => { e.preventDefault(); S.ckptAll = !S.ckptAll; loadCheckpoints(); }}) : document.createTextNode(""));
+}
+
+// ---- Start tab: the News card (fizgig/web/news.py, newest first) ----------------------------------------------
+function newsCard() {
+  const host = $("newsCard");
+  const items = (S.schema.news || []).slice(0, 3);
+  host.style.display = items.length ? "" : "none";
+  const body = $("newsBody");
+  body.innerHTML = "";
+  for (const it of items) {
+    const item = el("div", {class: "news-item"},
+      el("div", {class: "news-head"}, el("b", {text: it.title}), el("span", {class: "field-hint", text: " · " + it.date})));
+    for (const para of String(it.body || "").split("\n\n")) item.append(el("p", {class: "news-text", text: para}));
+    if (it.links && it.links.length) item.append(el("div", {class: "news-links"}, ...it.links.map((l) =>
+      el("a", {class: "inline-link", target: "_blank", rel: "noopener", href: l.href, text: l.text + " →"}))));
+    body.append(item);
+  }
 }
 
 // ---- Start tab: your training data (the folders in the training data folder) ---------------------------------

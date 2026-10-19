@@ -250,6 +250,11 @@ body {
   margin: 0 36px 16px 36px;
   padding: 0;
 }
+.news-card { border-left: 3px solid var(--accent-hover); }
+.news-item + .news-item { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.news-head b { color: var(--text-primary); font-size: 14px; }
+.news-text { color: var(--text-explain); margin: 6px 0 0; line-height: 1.45; }
+.news-links { margin-top: 6px; display: flex; gap: 14px; flex-wrap: wrap; }
 .section-card.accent-card {
   border-color: var(--accent);
 }
