@@ -20,7 +20,7 @@ NEWS = [
         "title": "Kromoss and its 8-step Turbo LoRA",
         "body": (
             "Kromoss, lodestones' sharper fine-tune of MOSS-Image Base, can now be your MOSS Base. In Preferences, "
-            "pick Kromoss beside Download models for me, and add its Turbo LoRA with Download Kromoss Turbo.\n\n"
+            "pick Kromoss beside Download models for me, and add the Turbo LoRA with Download on the Turbo LoRA row.\n\n"
             "Training is unchanged. Previews then render on Kromoss itself, the model you'll use the LoRA on, instead "
             "of on SFT; with the Turbo LoRA at strength 1 on the Samples tab, they render in 8 steps."
         ),

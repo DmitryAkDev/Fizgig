@@ -14,7 +14,7 @@ _COMFY = "Comfy-Org/MOSS-Image"
 _GUIDE = f"{_REPO} USERGUIDE.md"
 _REPORT = f"{_REPO} paper/MOSS_Image_Technical_Report.pdf"
 _PIPE = f"{_CARD} pipeline_moss_image.py"
-_TURBO = "lodestones/MOSS-Image-SFT-8-steps-dmd"
+_TURBO = "lodestones/Kromoss"         # its 8-step DMD LoRA, distilled from Base: previews on Base or Kromoss
 _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")   # model.py _Block Linears
 # USERGUIDE.md Prompt Guidelines: "we recommend the following effective negative tags"
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
@@ -76,16 +76,13 @@ MOSS_IMAGE = FamilyDescription(
                   hint="FLUX.2's encoder with the small decoder MOSS-Image was released with. Flux 3's or Klein's "
                        "full autoencoder also works (same latents), but the small decoder avoids spots in the "
                        "pictures."),
-        ModelFile("moss_image_turbo_lora", "Turbo LoRA (optional)", False, _TURBO, "lora.safetensors", 1.19,
+        ModelFile("moss_image_turbo_lora", "Turbo LoRA (optional)", False, _TURBO, "8-steps-dmd-lora.safetensors", 1.19,
                   "Optional speed LoRA for previews; leave empty to preview at full quality.", role="speed_lora",
                   bulk_fetch=False,           # its own Download link only: soft on Base today (Peter, 18 Oct 2026)
-                  hint="Optional. A turbo / DMD LoRA for fast previews on the training model: lodestones' 8-step "
-                       "DMD of SFT (soft on Base), or Kromoss's own 8-step LoRA (distilled from Base) for a Kromoss "
-                       "Base. Leave it empty for full-quality previews. With one set, choose its steps and CFG on the "
-                       "Samples tab; the workbench follows.",
-                  alt_repo="lodestones/Kromoss", alt_path="8-steps-dmd-lora.safetensors",
-                  alt_label="Download Kromoss Turbo",
-                  alt_note="Kromoss Turbo ~1.2 GB - 8 steps, CFG 1, for previews on Kromoss"),
+                  hint="Optional. lodestones' 8-step Turbo LoRA from Kromoss, distilled from MOSS-Image Base: fast "
+                       "previews on Base or Kromoss (previews on the SFT checkpoint never take a Turbo LoRA). Leave it "
+                       "empty for full-quality previews. With one set, set its strength, steps and CFG on the Samples "
+                       "tab; the workbench follows."),
         ModelFile("moss_image_text_encoder", "Qwen3.5-9B text encoder", True, "Comfy-Org/Qwen3.5",
                   "text_encoders/qwen3.5_9b_bf16.safetensors", 19.31,
                   "Used for caching only, then unloaded. Loads text-only (about 15 GB), or 8-bit (about 9 GB) on "
@@ -200,18 +197,18 @@ MOSS_IMAGE = FamilyDescription(
         SpeedLoRA(
             name="MOSS-Image Turbo LoRA",
             repo=_TURBO,
-            file="lora.safetensors",
-            pairs_with="MOSS-Image SFT",
-            strength=1.0,             # lodestones' card: lora.safetensors at 1.0 (lora_latest at 0.7)
+            file="8-steps-dmd-lora.safetensors",
+            pairs_with="MOSS-Image Base",
+            strength=1.0,             # the Kromoss card: strength 1
             settings=SamplingSettings("Turbo 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
                                       options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
                                       note="8 steps, no CFG, the reference's shift-5 grid.",
                                       source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
             load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
             pref_key="moss_image_turbo_lora",
-            community_settings=(("12-16 steps for stronger prompt adherence; strength 0.8 at 16 steps",
-                                 "r/StableDiffusion 'MOSS-Image INT8 ComfyUI' thread; dskjal's ComfyUI guide"),),
-            caveats=("Distilled from MOSS-Image SFT, and soft on Base (Peter's comparison, 18 Oct 2026).",),
+            # replaced lodestones' SFT 8-step DMD (lodestones/MOSS-Image-SFT-8-steps-dmd) 19 Oct 2026: distilled from
+            # SFT and soft on Base, while Fizgig's Turbo previews only ever run on the training model (Base / Kromoss)
+            caveats=("Distilled from MOSS-Image Base (Kromoss card: Base 27.19 -> 27.53 CLIP with it, Kromoss 27.82).",),
             source=f"https://huggingface.co/{_TURBO}",
         ),
     ),
