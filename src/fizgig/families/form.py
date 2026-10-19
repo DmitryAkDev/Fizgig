@@ -551,8 +551,9 @@ def form(desc):
             hint=(f"0 = off: full-quality previews ({desc.preview_steps} steps{cfg_off}). 1 = on: the {sp.name} "
                   f"renders previews in {spd[0]} steps{cfg_on}, much faster but softer, so they undersell your LoRA. "
                   "Steps and CFG switch with it. Previews only, never the saved LoRA."
-                  + ((" It works on previews of the training model or on Kromoss as the preview model, never on "
-                      "SFT: with SFT, untick " f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it.")
+                  + (" It works with Kromoss as the preview model, and on previews of your Base, but not with SFT: "
+                     "with SFT as the preview model this box is greyed out. To use it, set Kromoss as the preview "
+                     "model in Preferences."
                      if desc.checkpoint_speed_except else
                      (" It works on previews of the training model only: untick "
                       f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it.")
@@ -931,8 +932,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         elif speed_file and desc.preview_speed() is not None and not desc.samples_turbo_pace:
             # previews on this checkpoint never take the speed LoRA (it joins previews on the training model)
             disabled.add("FAMILY_TURBO_STRENGTH")
-            notes["FAMILY_TURBO_STRENGTH"] = (f"The {desc.preview_speed().name} applies to previews on the training "
-                                              f"model: untick \"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
+            notes["FAMILY_TURBO_STRENGTH"] = (
+                f"Greyed out: the {desc.preview_speed().name} doesn't work with this preview model. Set Kromoss as the "
+                "preview model in Preferences to use it." if desc.checkpoint_speed_except else
+                f"The {desc.preview_speed().name} applies to previews on the training model: untick "
+                f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo}
