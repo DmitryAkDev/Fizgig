@@ -12,6 +12,7 @@ Why training adapters exist: on Qwen Image 2.1 a plain LoRA collapsed at lr 5e-4
 Adaptive LR a no-adapter run fell to 37 likeness at step 2000 while Fizgig's adapter held 74-77 (26 Sep 2026).
 """
 import argparse
+import dataclasses
 import datetime
 import gc
 import json
@@ -1589,8 +1590,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     fl.set_strength(SPEED, strength_now if turbo_ck else 0.0)
                 return _render_previews(
                     driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name, steps=ck_steps, cfg=ck_cfg,
-                    neg=neg if ck_cfg > 1.0 else None, width=w, height=h, seed=sd,
-                    speed=speed_desc.settings if turbo_ck else ck, swapped=bool(swp), refs=ref_latents)
+                    neg=neg, width=w, height=h, seed=sd,
+                    # the asked CFG, not the checkpoint's own: _render_previews reads CFG 1 as "the recipe's"
+                    speed=speed_desc.settings if turbo_ck else dataclasses.replace(ck, cfg=ck_cfg),
+                    swapped=bool(swp), refs=ref_latents)
             ckpt_previews.render(dit, net, ema, _ck_render)
             write_mode({"model": os.path.basename(preview_checkpoint), "steps": ck_steps, "cfg": ck_cfg,
                         "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0})
