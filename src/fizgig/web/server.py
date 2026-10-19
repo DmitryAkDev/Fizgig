@@ -1601,7 +1601,8 @@ def epoch_prompts(sample_dir, name) -> dict:
     try:
         with open(os.path.join(sample_dir, f".prompts_{name}.json"), encoding="utf-8") as f:
             data = json.load(f)
-        return {str(k): list(v) for k, v in data.items()} if isinstance(data, dict) else {}
+        return ({str(k): list(v) for k, v in data.items() if str(k).isdigit() and isinstance(v, list)}
+                if isinstance(data, dict) else {})
     except (OSError, ValueError):
         return {}
 
