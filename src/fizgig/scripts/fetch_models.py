@@ -336,7 +336,10 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         log(f"  [new]  {w.pref_key}: {os.path.basename(current)} has a newer version, {w.filename}")
         current = ""                             # an earlier version of ours: fetch the new one and point at it
     if current and os.path.isfile(current):
-        if os.path.basename(current) != w.filename:
+        if os.path.basename(current) != w.filename and w.switch_from:
+            log(f"  [keep] {w.pref_key} -> {os.path.basename(current)}: your own file, so {w.filename} was not "
+                "downloaded. To use the pick, clear that row in Preferences, then download again.")
+        elif os.path.basename(current) != w.filename:
             log(f"  [keep] {w.pref_key} -> {os.path.basename(current)} (your own choice, not replacing it)")
         else:
             log(f"  [ok]   {w.filename} — already set up")
