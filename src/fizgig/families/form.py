@@ -572,6 +572,8 @@ def form(desc):
              "(one per line) and tick Change the previews of the run going now.", "note")
         if desc.edit_training else None,
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
+        _row("_prompts_note", " ".join(t for k, t in desc.samples_text if k == "prompts"), "note")
+        if any(k == "prompts" for k, _t in desc.samples_text) else None,
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
              "One prompt per line."),
         _row("_overtrain_tip", "Tip - catch overtraining early: give one prompt something your dataset doesn't have, "
@@ -846,6 +848,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     ts = _timestep_note(values)
     if ts:
         notes["MAX_TIMESTEP"] = ts
+    if kind in ("edit", "slider"):
+        hidden.add("_prompts_note")     # the family's advice on writing prompts: these runs don't use them
     if kind == "edit":
         notes["SAMPLE_PROMPT"] = ("An Edit LoRA run doesn't use these prompts or the reference: its previews apply "
                                   "the edit instruction to the test photo on the Training tab's Edit pairs card.")

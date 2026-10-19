@@ -223,7 +223,10 @@ MOSS_IMAGE = FamilyDescription(
     preview_cfg_note="4 = Fizgig's default (MOSS-Image's guide: 3-6; raise it for short prompts). The negative branch "
                      "skips block 22, as the reference does. 1 = no CFG.",
     samples_text=(("sampler", "res_multistep on MOSS-Image's shift-5 schedule (in ComfyUI: res_multistep, simple "
-                              "scheduler), block 22 skipped in the negative branch."),),
+                              "scheduler), block 22 skipped in the negative branch."),
+                  ("prompts", "MOSS-Image doesn't respond well to short one-line prompts, and they can make the "
+                              "previews look worse. Describe the picture in a few sentences: framing, light, "
+                              "background and detail.")),
     # training samples on the SFT checkpoint (the driver's park_for_preview / load_preview_checkpoint /
     # unpark_after_preview; @Murf-Code, PR #195): off by default - a LoRA trained on the Base carries over only partly
     train_preview_checkpoint=True,
