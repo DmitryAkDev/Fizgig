@@ -227,6 +227,9 @@ MOSS_IMAGE = FamilyDescription(
     preview_checkpoint_tick="Use the SFT model for samples (set it in Preferences - a Base LoRA carries over "
                             "only partly)",
     preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
+    # the released Base's last-block norm (measured 19 Oct 2026: Base 3658.7021484375, SFT bf16 and int8 3658.7646484375,
+    # Kromoss 3658.6904296875); any other Base DiT previews on itself
+    standard_base=("layers.41.norm2.weight", 3658.7021484375),
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",

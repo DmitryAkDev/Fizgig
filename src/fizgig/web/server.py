@@ -2988,10 +2988,12 @@ class Handler(BaseHTTPRequestHandler):
                 ck = desc.preview_checkpoint()
                 ckf = pref_path(prefs, ck[0].pref_key) if ck else ""
                 vals = b.get("values") or {}
+                dit = next((f.pref_key for f in desc.model_files if f.role == "dit"), "")
                 st = form.state(desc, vals, b.get("image_folder") or "",
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
-                                checkpoint_file=bool(ckf and os.path.isfile(ckf)))
+                                checkpoint_file=bool(ckf and os.path.isfile(ckf)),
+                                base_file=pref_path(prefs, dit) if dit else "")
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
                     mpn = _multi_person_notes(vals, b.get("image_folder") or "",
                                               multi_person=st["kind"] == "standard" and

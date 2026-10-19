@@ -709,7 +709,7 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
-def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False):
+def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file=""):
     """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
     (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
@@ -887,6 +887,18 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
         else:
             hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
+    if desc.train_preview_checkpoint and desc.standard_base:
+        # another Base than the released one (Kromoss, a fine-tune, SFT): previews on it by default, the model the LoRA
+        # will be used on. The tick moves once per Base file, so a choice made after that stays
+        from fizgig.families.base_check import is_standard_base
+        std, mark = is_standard_base(desc, base_file), str(values.get("_SAMPLE_CHECKPOINT_BASE") or "")
+        if std is False:
+            notes["SAMPLE_CHECKPOINT"] = (f"Your Base DiT isn't {desc.display_name}'s own Base, so previews render on it, "
+                                        "the model you'll use the LoRA on. Tick this to preview on the other model instead.")
+            if mark != base_file:
+                force["SAMPLE_CHECKPOINT"], force["_SAMPLE_CHECKPOINT_BASE"] = False, base_file
+        elif std and mark:            # back on the released Base: its default again
+            force["SAMPLE_CHECKPOINT"], force["_SAMPLE_CHECKPOINT_BASE"] = desc.preview_checkpoint_on, ""
     if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
         # the Distilled: Steps and CFG switch to its own values and stay editable (the tick's follow), as the Turbo
         # LoRA's do; CFG 1 hides the negative (above)

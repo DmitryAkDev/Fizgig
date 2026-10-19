@@ -423,6 +423,10 @@ class FamilyDescription:
     # its Samples tab tick: the label, whether it starts ticked (each family's choice is then kept), and the Steps note
     preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
     preview_checkpoint_on: bool = True
+    # (tensor name, sum) that identifies the model's own released Base (families/base_check.py): with any other Base
+    # DiT (a fine-tune of it, SFT) the preview-checkpoint tick defaults off - previews render on the model the LoRA
+    # will be used on. () = no check
+    standard_base: tuple = ()
     preview_checkpoint_steps_note: str = "Base samples only — Distilled is locked at 4 steps"
     # measured training memory for the Auto plan: {precision: (peak GB with no block swap, GB saved per swapped
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.

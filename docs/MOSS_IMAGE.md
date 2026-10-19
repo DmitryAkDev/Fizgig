@@ -79,6 +79,7 @@ Fizgig never trains the text encoder or the model's text adapter, as OpenMOSS ad
 ## Previews
 
 - **Samples render on the SFT model** by default, so you see your LoRA where you'll use it, though a Base LoRA carries over only partly. Untick the box on the Samples tab to preview on the Base model being trained. Repair Studio, LoRA Royale and the other workbench tabs render on SFT too.
+- **With any other Base DiT** (Kromoss, a fine-tune of Base, SFT itself), samples render on that model instead, the one you'll use the LoRA on: the SFT tick turns off by itself once when you set such a Base, and you can tick it back on.
 - **Sampler:** previews render as ComfyUI does with the settings below: res_multistep on the simple schedule (shift 5) for 30 steps at CFG 4, with block 22 left out of the negative branch for the first half of the steps (ComfyUI's SLG switch on). That beat OpenMOSS's own recipe, Euler at 50 steps, CFG 3, in side-by-side tests.
 - **Negative:** the default is `worst quality, bad anatomy, watermark, jpeg artifact`.
 
