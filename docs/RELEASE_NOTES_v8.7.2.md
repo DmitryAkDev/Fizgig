@@ -2,18 +2,6 @@
 
 **MOSS-Image now ships with Clean-end share at 30%.** That brings its training schedule close to Krea 2's (18-28%) and Qwen Image's (25%), the models that pick up likeness fastest in my own training, against MOSS's own 11%. This is about training only: how MOSS-Image generates images is unchanged, and you sample it exactly as before.
 
-**It applies to fine-tunes too.** A MOSS-Image fine-tune uses the same Clean-end share as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy.
-
-**Which cards can fine-tune MOSS-Image, at 1 MP.** Fizgig plans this for you: it trains as much of the model at once as your card holds, and rotates through the rest.
-
-| Card | Base | SFT base (attention only) |
-|:--|:--|:--|
-| 24 GB and up | The whole model at once, nothing rotates | The whole model at once |
-| 16 GB | 7 parts per rotation | The whole model at once |
-| 12 GB | Many small parts, with blocks streamed from system RAM (works, but slow) | The same, with fewer parts |
-
-These come from Fizgig's memory planner; MOSS-Image's own fine-tune memory figures will be refined from real runs. A fine-tune also needs plenty of system RAM; the Log says how much when it starts.
-
 **Where MOSS-Image training stands now.** Since it arrived in 8.5, these are the settings we've fixed:
 
 - Previews render the way ComfyUI does, so what you see during training is what you get.
@@ -29,7 +17,21 @@ The result, on the same dataset, ArcFace likeness against 3 reference photos:
 | Before (model's own schedule) | 40% | 44% | 52% | 58% | 63% | 60% |
 | Now (Clean-end 30%) | 42% | 59% | 63% | 66% | 69% | 69% |
 
-The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. **By eye the Clean-end 30% pictures are vastly better too: far sharper and more accurate, with no body horror.** **On the model's own schedule the composition hopped massively from epoch to epoch; with Clean-end it holds steady.** That opens MOSS-Image up properly for LoRA training as well as fine-tuning.
+The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. **By eye the Clean-end 30% pictures are vastly better too: far sharper and more accurate, with no body horror.** **On the model's own schedule the composition hopped massively from epoch to epoch; with Clean-end it holds steady.**
+
+**Clean-end share applies to fine-tunes too.** A MOSS-Image fine-tune uses the same 30% as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy.
+
+**Which cards can fine-tune MOSS-Image, at 1 MP.** Fizgig plans this for you: it trains as much of the model at once as your card holds, and rotates through the rest.
+
+| Card | Base | SFT base (attention only) |
+|:--|:--|:--|
+| 24 GB and up | The whole model at once, nothing rotates | The whole model at once |
+| 16 GB | 7 parts per rotation | The whole model at once |
+| 12 GB | Many small parts, with blocks streamed from system RAM (works, but slow) | The same, with fewer parts |
+
+These come from Fizgig's memory planner; MOSS-Image's own fine-tune memory figures will be refined from real runs. A fine-tune also needs plenty of system RAM; the Log says how much when it starts.
+
+That opens MOSS-Image up properly for LoRA training as well as fine-tuning.
 
 ---
 
