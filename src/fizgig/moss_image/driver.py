@@ -140,11 +140,13 @@ class MOSSImageDriver(FamilyDriver):
         the free VRAM with room to run, else streamed layer-major from the CPU (embedder.MOSSTextEncoder) - still
         exact bf16, which OpenMOSS ask for (their text encoder is "much more unstable than DiT"), not 8-bit."""
         from fizgig.families.quant import free_vram_gb
-        from fizgig.moss_image.embedder import MOSSTextEncoder, TOKENIZER_REPO
+        from fizgig.moss_image.embedder import MOSSTextEncoder, TOKENIZER_REPO, from_file_wanted
         from transformers import AutoTokenizer
         tok = self.from_pretrained(AutoTokenizer, TOKENIZER_REPO, subfolder="tokenizer")
-        return MOSSTextEncoder(path, device=device, stream=free_vram_gb() < 18.0, tokenizer=tok,
-                               keep_in_ram=self.keep_text_encoder)
+        stream = free_vram_gb() < 18.0
+        # streamed on a computer without the RAM to hold it (16 / 24 GB): read from the file, a layer at a time
+        return MOSSTextEncoder(path, device=device, stream=stream, tokenizer=tok,
+                               keep_in_ram=self.keep_text_encoder, from_file=stream and from_file_wanted())
 
     def text_encoder_gb(self, path):
         """The language model alone once it has loaded (the file also holds the vision tower and heads)."""

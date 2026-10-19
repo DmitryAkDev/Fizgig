@@ -49,7 +49,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
 ## Memory
 
 - **Training:** Auto trains on an INT8 base, or NF4 on smaller cards, and compiles the blocks for about 25% faster steps on longer runs. bf16 is a manual choice.
-- **Text encoder:** it always runs at full precision. On cards without room for it (about 15 GB), it streams from system memory one layer at a time, still exact, so captions cache on any card.
+- **Text encoder:** it always runs at full precision. On cards without room for it (about 15 GB), it streams from system memory one layer at a time, still exact, so captions cache on any card. On a computer with less than 30 GB of RAM it streams from the file instead, a layer at a time, so it needs about 6 GB of RAM rather than about 20 GB.
 - **12 GB cards:** these train with SFT previews and stay under about 10.5 GB.
 
 ## Fine-tuning
