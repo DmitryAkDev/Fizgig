@@ -30,7 +30,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 **Get it.** In **Preferences → MOSS-Image**:
 
 1. **Kromoss:** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (10.2 GB) and sets it as your Base DiT. (Or use **Download Kromoss** on the Base DiT row and point the row at the file.)
-2. **Its Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. It's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good: we suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it.
+2. **Its Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. It's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good, much better than the earlier MOSS-Image speed LoRAs: we suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it.
 
 **What happens then.**
 
