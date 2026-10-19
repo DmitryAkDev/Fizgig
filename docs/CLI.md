@@ -359,7 +359,7 @@ MOSS-Image trains through the shared cache script and trainer with `--family mos
 
 ### Full example
 
-The **Fast** preset, as the GUI's planner builds it: rank 16, 0.5 MP (`resolution = [704, 704]` in the TOML), Adaptive LR 1e-4 to 2e-4, 30 epochs:
+The **Fast** preset, as the GUI's planner builds it: rank 16, 0.25 MP (`resolution = [512, 512]` in the TOML), LR 1e-4, 70 epochs, clean-end share 60%:
 
 ```bash
 python src/fizgig/families/cache.py --family moss_image --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae_small.safetensors
@@ -373,13 +373,13 @@ python src/fizgig/families/train.py \
   --output_name my_subject \
   --network_dim 16 --network_alpha 16 \
   --learning_rate 1e-4 \
-  --adaptive_lr --adaptive_lr_min 1e-4 --adaptive_lr_max 2e-4 \
-  --max_train_epochs 30 \
+  --max_train_epochs 70 \
   --save_every_n_epochs 1 \
   --seed 42 \
   --optimizer_type adamw \
   --precision auto --compile_blocks auto \
   --ema_decay 0.98 \
+  --family_option lownoise_pct=60 \
   --save_state --save_state_on_train_end --keep_last_n_states 2 \
   --vae /models/flux2-vae_small.safetensors \
   --text_encoder /models/qwen3.5_9b_bf16.safetensors \
