@@ -24,7 +24,7 @@ from fizgig.families import launch
 
 ADAPTIVE_MIN = ("1e-5", "5e-5", "1e-4", "2e-4", "3e-4")
 ADAPTIVE_MAX = ("1e-4", "2e-4", "3e-4", "4e-4")
-MEGAPIXELS = ("0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2")
+MEGAPIXELS = ("0.25", "0.37", "0.5", "0.75", "1.0", "1.05", "1.5", "2.0", "2.4", "3.0", "4.2")
 SWAP = ("Auto (detect from GPU)", "0  (No swap — 16GB fp8 / 24GB bf16)", "4  (Light — 14GB fp8 / 20GB bf16)",
         "8  (Moderate — 12GB fp8 / 16GB bf16)", "12 (Aggressive — 10GB fp8 / 12GB bf16)", "16 (Max — 8GB fp8 / 10GB bf16)",
         "1", "2", "3", "5", "6", "7", "9", "10", "11", "13", "14", "15")        # the desktop's Blocks Swap list
@@ -267,7 +267,7 @@ def form(desc):
              upload=True, start="lora"),
         _row("CONTEXT_LORA_STRENGTH", "Context LoRA strength"),
         None if not pictures else _row("DATASET_MEGAPIXELS", "Target Megapixels", "combo",
-             "Images are resized to this area, any aspect ratio: 0.25 = about 512 x 512, 1.0 = 1024 x 1024, 2.4 = 1536 x "
+             "Images are resized to this area, any aspect ratio: 0.25 = 496 x 496, 1.0 = 992 x 992, 1.05 = 1024 x 1024, 2.4 = 1536 x "
              "1536, 4.2 = 2048 x 2048. 4.2 MP wants 24-32 GB.", MEGAPIXELS),
         _row("CLIP_MEGAPIXELS", "Clip Target Megapixels", "combo",
              "The size your video clips are cached and trained at; photos keep the Target Megapixels. A clip takes "
