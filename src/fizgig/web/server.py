@@ -2841,8 +2841,14 @@ class Handler(BaseHTTPRequestHandler):
             items = [e for e in items if infos[e.name].get("run") == run]
         out = pair_songs([(e.name, e.path, {"time": e.stat().st_mtime, **infos[e.name]}) for e in items[:1500]])
         by_epoch = epoch_prompts(folder, run) if run else {}
+        try:
+            with open(os.path.join(folder, f".previews_{run}.json"), encoding="utf-8") as f:
+                mode = json.load(f) if run else None
+        except (OSError, ValueError):
+            mode = None
         newest = by_epoch[max(by_epoch, key=int)] if by_epoch else None
         return self.json({"items": out[:1000] if run else out[:300], "runs": runs, "epoch_prompts": by_epoch,
+                          "preview_mode": mode if isinstance(mode, dict) else None,
                           "prompts": newest or (run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else [])})
 
     def _checkpoints(self, folder):

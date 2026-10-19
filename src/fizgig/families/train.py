@@ -1570,6 +1570,23 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ckpt_previews = _CheckpointPreviews(
                 driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
                 context=(context_lora_path, context_lora_strength) if context_lora_path else None)
+    if encoded is not None:         # what this run's previews render with, for the gallery (.previews_<name>.json)
+        if ckpt_previews is not None and not slider:
+            ck = desc.preview_checkpoint_sampling
+            mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
+                    "steps": asked_steps or (ck.steps if ck else sample_steps),
+                    "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None else asked_cfg}
+        else:
+            mode = {"model": "", "steps": sample_steps, "cfg": sample_cfg_scale,
+                    "turbo": speed_desc.name if (speed_lora and speed_desc) else "",
+                    "strength": (speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
+                    if (speed_lora and speed_desc) else 0}
+        try:
+            os.makedirs(sample_dir, exist_ok=True)
+            with open(os.path.join(sample_dir, f".previews_{output_name}.json"), "w", encoding="utf-8") as f:
+                json.dump(mode, f)
+        except OSError as e:
+            logger.warning(f"[sample] could not record the preview settings ({e})")
 
     def state(epoch, required=False):
         """Save the resume state. A failed write (a full disk, or a sync / antivirus program holding the file) is

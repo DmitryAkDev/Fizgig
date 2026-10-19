@@ -1382,6 +1382,7 @@ async function loadGallery() {
   let g = await get(want);
   let run = want;
   if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
+  previewMode(g.preview_mode);
   const sel = $("galleryRun");
   sel.innerHTML = "";
   // "this run" while it trains; once it has ended it is the last run
@@ -1655,6 +1656,20 @@ async function loadCheckpoints() {
     others ? el("a", {href: "#", class: "inline-link", text: S.ckptAll ? `Only ${run}'s` :
       `Show the ${others} from other runs in this folder`,
       onclick: (e) => { e.preventDefault(); S.ckptAll = !S.ckptAll; loadCheckpoints(); }}) : document.createTextNode(""));
+}
+
+// the Previews so far card: what this run's previews render with (recorded by the trainer when the run started)
+function previewMode(m) {
+  const box = $("galleryMode");
+  if (!box) return;
+  box.className = "preview-mode" + (m && m.turbo ? " turbo" : "");
+  if (!m) { box.style.display = "none"; return; }
+  const how = `${m.steps} steps, CFG ${Number(m.cfg).toFixed(1).replace(/\.0$/, "")}`;
+  box.textContent = m.turbo
+    ? `⚡ Turbo LoRA in use: ${m.turbo} at strength ${m.strength}, ${how}. Fast previews, but they can look softer ` +
+      "than the finished LoRA."
+    : `Previews render on ${m.model || "the model being trained"}: ${how}, no Turbo LoRA.`;
+  box.style.display = "";
 }
 
 // ---- Start tab: the News card (fizgig/web/news.py, newest first) ----------------------------------------------
