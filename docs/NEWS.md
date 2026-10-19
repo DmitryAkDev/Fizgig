@@ -25,11 +25,11 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 ## 19 Oct 2026: Kromoss and its 8-step Turbo LoRA
 
-**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a full fine-tune of MOSS-Image Base made to fix Base's blurriness. Fizgig now offers it as your MOSS Base, with its own 8-step Turbo LoRA for fast previews.
+**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a full fine-tune of MOSS-Image Base made to fix Base's blurriness. Fizgig can now train on it as an option, and its 8-step Turbo LoRA gives fast previews on Base or Kromoss. MOSS-Image Base stays the default. Training on Kromoss is new: lodestones presents it as a drop-in replacement for SFT, not as a training base, so time will tell whether it's wiser to train on Kromoss or on Base. The Turbo LoRA below works with either.
 
 **Get it.** In **Preferences → MOSS-Image**:
 
-1. **Kromoss:** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (10.2 GB) and sets it as your Base DiT. (Or use **Download Kromoss** on the Base DiT row and point the row at the file.)
+1. **Kromoss (optional):** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (10.2 GB) and sets it as your Base DiT. (Or use **Download Kromoss** on the Base DiT row and point the row at the file.)
 2. **Its Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. It's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good compared with the earlier MOSS-Image speed LoRAs. We suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it.
 
 **What happens then.**
