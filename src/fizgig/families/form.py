@@ -892,6 +892,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         # LoRA's do; CFG 1 hides the negative (above)
         if desc.preview_checkpoint_sampling is None:
             disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}
+        if speed_file and desc.preview_speed() is not None and not desc.samples_turbo_pace:
+            # previews on the checkpoint never take the speed LoRA (it joins previews on the training model)
+            disabled.add("FAMILY_TURBO_STRENGTH")
+            notes["FAMILY_TURBO_STRENGTH"] = (f"The {desc.preview_speed().name} applies to previews on the training "
+                                              f"model: untick \"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels}

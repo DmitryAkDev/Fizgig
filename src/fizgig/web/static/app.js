@@ -486,7 +486,8 @@ async function refreshState() {
 // A model with both (Qwen Image 2.1, MOSS-Image) gets one answer for the boxes they share: a ticked preview checkpoint's
 // own values, else a live Turbo's, else the plain model's. Each used to switch the boxes on its own, so an unticked
 // checkpoint put the plain model's 25 steps, CFG 3 back under a live Turbo LoRA (noisy previews). A box still on any
-// of the defaults is put right on every load, which also mends a form saved in that state.
+// of the defaults is put right when the form loads, which also mends a form saved in that state; after that the boxes
+// move only when a switch changes, so steps typed by hand stay (they used to snap back to the mode's default).
 function turboFollow() {
   const rows = [];
   for (const s of S.fam.form.sections) for (const row of s.rows) if (row && (row.turbo || row.follow)) rows.push(row);
@@ -517,6 +518,9 @@ function turboFollow() {
     return parseFloat(v) !== parseFloat(want[k]) && known[k].includes(parseFloat(v));   // "3.0" is the default 3
   });
   const flagsChanged = Object.entries(flags).some(([f, live]) => S.values[f] !== live);
+  const loading = S._turboFollowFor !== S.fam;       // the first pass for this model's form
+  S._turboFollowFor = S.fam;
+  if (!flagsChanged && !loading) return;
   if (!moved.length && !flagsChanged) return;
   for (const k of moved) S.values[k] = want[k];
   Object.assign(S.values, flags);
