@@ -872,9 +872,11 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
 
 
 _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
-# the Samples tab settings a Resume takes from the form as it is now (the run trains on as it was)
+# the settings a Resume takes from the form as it is now: the Samples tab's, and block swap (memory only, the
+# results are the same); the run trains on as it was
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
-                       "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT")   # + previews on the checkpoint
+                       "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT",   # + previews on the checkpoint
+                       "BLOCKS_SWAP")
 
 
 # a prompt slider's live prompts: the request the web UI writes, and what the trainer took (fizgig.families.train's
