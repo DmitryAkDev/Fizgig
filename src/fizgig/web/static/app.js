@@ -536,6 +536,9 @@ function turboFollow() {
   syncInputs(moved);
   saveStateSoon();
   if (S.values.__SAMPLE_LIVE && moved.length) sampleLiveSoon();
+  // what hangs on the moved values (the negative box shows only above CFG 1) is worked out again from them; the next
+  // pass finds nothing to move, so this settles after one round
+  if (moved.length) refreshStateSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);
 

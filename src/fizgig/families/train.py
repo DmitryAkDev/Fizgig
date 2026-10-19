@@ -1164,7 +1164,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         f"{sample_width}x{sample_height}")
             te = driver.load_reference_text_encoder(te_path, device)
             encoded = driver.encode_text_with_references(te, sample_prompts, [ref_imgs] * len(sample_prompts))
-            if sample_cfg_scale > 1.0:
+            if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
                 neg = driver.encode_text_with_references(te, [sample_negative or ""], [ref_imgs])[0]
         elif sample_image and desc.preview_image:
             from PIL import Image
@@ -1172,12 +1172,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         f"path")
             te = driver.load_text_encoder(te_path, device)
             encoded = driver.encode_text_with_image(te, sample_prompts, Image.open(sample_image))
-            if sample_cfg_scale > 1.0:
+            if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
                 neg = driver.encode_text(te, [sample_negative or ""])[0]     # negatives stay text-only
         else:
             te = driver.load_text_encoder(te_path, device)
             encoded = driver.encode_text(te, sample_prompts)
-            if sample_cfg_scale > 1.0:
+            if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
                 neg = driver.encode_text(te, [sample_negative or ""])[0]
         driver.unload_text_encoder(te)
         del te
@@ -1563,6 +1563,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 conds = encoded
         if not sd:          # seed 0 = a fresh random seed every preview round, as on the other trainers
             sd = random.randint(1, 2 ** 31 - 1)
+        if cfg_now and cfg_now > 1.0 and neg is None:
+            # CFG asked for mid-run on a run that has no negative encoded (a CFG-free family): render without it
+            logger.warning(f"[sample] CFG {cfg_now:g} needs a negative prompt this run did not encode - this preview "
+                           "renders at CFG 1")
+            cfg_now = 1.0
         if speed_now is not None:       # the Turbo LoRA at this round's strength; 0 = this round without it
             if strength_now > 0:
                 net.set_strength(SPEED, strength_now)
