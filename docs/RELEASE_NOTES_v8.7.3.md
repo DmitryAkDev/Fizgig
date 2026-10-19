@@ -8,6 +8,8 @@
 | 12 GB | 2 parts per rotation | The whole model at once (peak 8.3 GB) |
 | 10 GB | 9 parts per rotation | Many small parts, with blocks streamed from system RAM (works, but slow) |
 
+The 16 GB figures are measured, and a preview peaks lower than training (9.9 GB); the 12 GB and 10 GB rows are Fizgig's plan from the same measurements, not yet run on those cards.
+
 **Fine-tune previews work again.** A fine-tune with a preview checkpoint set (MOSS-Image's SFT previews, on by default) had its first preview fail, and then trained on with previews off. A fine-tune now previews on the model it's training.
 
 **"Train attention only".** The MOSS-Image tick that was called "Base is SFT or a fine-tune of it" is now **Train attention only**, since that's what it does. It's still the one to tick on SFT or a fine-tune of it, where training the feed-forward layers breaks anatomy. It also uses less VRAM, so a fine-tune fits a smaller card, but on Base it may cost quality or slow convergence.
@@ -36,6 +38,8 @@ The result, on the same dataset, ArcFace likeness against 3 reference photos:
 | Now (Clean-end 30%) | 42% | 59% | 63% | 66% | 69% | 69% |
 
 The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. **By eye the Clean-end 30% pictures are vastly better too: far sharper and more accurate, with no body horror.** **On the model's own schedule the composition hopped massively from epoch to epoch; with Clean-end it holds steady.**
+
+**It holds at 1 MP too.** A second dataset on the Standard preset (rank 32, 1 MP, Clean-end 30%) reached 66% ArcFace likeness by epoch 12 and 72% by epoch 32, above the 71% that the dataset's own photos score against the same three reference photos. **By eye those epochs were superb.**
 
 **Clean-end share applies to fine-tunes too.** A MOSS-Image fine-tune uses the same 30% as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy. Fine-tuning is probably best done from Base, though: SFT has already been taken a long way in one direction.
 

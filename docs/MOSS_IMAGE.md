@@ -40,9 +40,9 @@ python -m fizgig.scripts.fetch_models --family moss_image
 
 - **Size:** Standard trains at 1 MP, the size MOSS-Image finished its training at. **Fast** is Standard at 0.25 MP and rank 16: much quicker steps and less memory, and it performs very well on face-cropped datasets (Image Prep's face crop).
 - **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98 (Style has EMA off), saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
-- **Slow to converge:** MOSS-Image LoRAs keep improving for longer than you might expect. Likeness often seems to level off, then still improves with more training: in our tests a 53-image dataset was still improving at 1,600 steps (epoch 30). The presets run 70 epochs so a 25-image dataset gets there too.
+- **How long to train:** with Clean-end share at 30%, likeness arrives early and keeps improving. On the Standard preset a 62-image dataset reached 66% ArcFace likeness by epoch 12 and 72% by epoch 32, above the 71% that the dataset's own photos score against the same three reference photos, and it was still rising. By eye those epochs were superb. The presets run 70 epochs so smaller datasets get there too.
 - **Picking an epoch:** scrub the epochs in LoRA Royale to choose the best one, and look at the late ones before settling on an early peak.
-- **Clean-end share:** 30% of training steps by default go to nearly-clean images (noise below half), where faces and fine detail are refined. The model's own schedule puts about 11% there and the rest on layout and composition, which made the picture jump from epoch to epoch and slowed likeness. 30 gave the best likeness in testing, with composition and shape coming in sooner than at 60; it's still an experimental figure, so share what you find. Empty the box for the model's own schedule.
+- **Clean-end share:** 30% of training steps by default go to nearly-clean images (noise below half), where faces and fine detail are refined. The model's own schedule puts about 11% there and the rest on layout and composition, which made the picture jump from epoch to epoch and slowed likeness. 30 gave the best likeness in testing, with composition and shape coming in sooner than at 60; it's still an experimental figure, so share what you find. Empty the box for the model's own schedule. By eye the Clean-end pictures were also far sharper and more accurate, with no body horror, and the composition holds steady between epochs instead of hopping.
 - **What the LoRA trains:** every Linear in all 42 blocks, block 22 included. Leaving block 22 out, as AI Toolkit does, cost likeness in side-by-side runs.
 
 ## Memory
@@ -50,6 +50,24 @@ python -m fizgig.scripts.fetch_models --family moss_image
 - **Training:** Auto trains on an INT8 base, or NF4 on smaller cards, and compiles the blocks for about 25% faster steps on longer runs. bf16 is a manual choice.
 - **Text encoder:** it always runs at full precision. On cards without room for it (about 15 GB), it streams from system memory one layer at a time, still exact, so captions cache on any card.
 - **12 GB cards:** these train with SFT previews and stay under about 10.5 GB.
+
+## Fine-tuning
+
+A full fine-tune trains the model itself rather than a LoRA (Training tab, **Fine-tune**; the **MOSS-Image Fine-tune** preset is LR 1e-5). The general guide is [FINETUNE.md](FINETUNE.md).
+
+- **Fine-tune Base.** SFT has already been taken a long way in one direction. Clean-end share applies to a fine-tune as it does to a LoRA.
+- **What fits, at 1 MP.** Measured on real fine-tunes: training the whole model at once peaked at **12.6 GB** (all parts) and **8.3 GB** (Train attention only); a preview peaked at 9.9 GB, under training. Fizgig plans from these figures:
+
+| Card | Base (all parts) | Train attention only |
+|:--|:--|:--|
+| 16 GB and up | The whole model at once, nothing rotates | The whole model at once |
+| 12 GB | 2 parts per rotation | The whole model at once |
+| 10 GB | 9 parts per rotation | Many small parts, with blocks streamed from system RAM (slow) |
+
+  The 16 GB figures are measured; the 12 GB and 10 GB rows are the planner's, from the same measurements, not yet run on those cards. The fine-tune's bf16 master copy takes about 9.5 GB of system RAM.
+- **Train attention only** is for SFT or a fine-tune of it. On Base it learns much more slowly: after 10 rotations on the same dataset, a full Base fine-tune scored 49% ArcFace likeness and an attention-only one 19% (both rendered on the fine-tuned Base). It's about 25% faster per step.
+- **Previews** render on the model being fine-tuned, not on SFT (a fine-tune changes the model itself), so they look like Base renders: flatter and less polished than the SFT previews a LoRA run shows.
+- **EMA** is off for a fine-tune.
 
 ## Captions
 
