@@ -33,6 +33,9 @@ What happens then:
 ## Also
 
 - **Samples tab:** the Steps and CFG you type stay put. They used to jump back to a default when the tab refreshed.
+- **Change previews mid-run, steps included.** **Change the previews of the run going now** on the Samples tab now carries **Steps, CFG and Turbo LoRA strength** as well as the prompts, seed and size, and they apply from the next preview with no pause. Turbo strength 0 renders a round without the Turbo LoRA; a Turbo strength needs a run that started with a Turbo LoRA set.
+- **Resume takes your preview settings.** Pause → Resume now picks up the Samples tab's prompts, seed, size, steps, CFG and Turbo strength as they are now. The run trains on with its own training settings.
+- **Previews so far says what the previews render with:** a line between the likeness chart and the thumbnails shows the model, steps and CFG, or, in amber, that a Turbo LoRA is in use, since Turbo previews can look softer than the finished LoRA.
 - **Fizgig opens on the Start tab**, with a News card at the top for what's new. The full articles are in [NEWS.md](https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md).
 
 ## Updating from an earlier version
