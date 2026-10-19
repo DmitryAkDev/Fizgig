@@ -36,7 +36,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 - **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, with the same settings and memory.
 - **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself when you set Kromoss; tick it back on if you want SFT previews.
-- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab. Steps move to 12 and CFG to 1.
+- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab. Steps move to 12 and CFG to 1. **On MOSS-Image Base, untick Use the SFT model for samples first**: previews on SFT never use a Turbo LoRA, so with it unticked they render on Base with the Turbo LoRA (on Kromoss the tick is already off).
 - Switch back to MOSS-Image Base and SFT previews come back on.
 
 **In ComfyUI:** load Kromoss in place of MOSS-Image Base. With its Turbo LoRA at strength 1: CFG 1, euler / simple, and 12 steps (its card says 8; 12 looked much better in our tests). Without it, its model card recommends Euler, 50 steps, CFG 3, shift 5.
