@@ -200,6 +200,7 @@ class FamilyOption:
     hint: str = ""                    # the grey line under the control
     warn: str = ""                    # an amber line under the hint (web), with `warn_link` (an href) after it
     warn_link: str = ""
+    featured: bool = False            # the row stands out (web): a soft accent panel, for a control worth noticing
     choice_hints: tuple = ()          # (label, amber line) shown while that choice is picked
     choice_notes: tuple = ()          # (label, grey line) shown in place of the hint while that choice is picked
     choice_values: tuple = ()         # choice: the old setting's value each choice stands for, in choice order

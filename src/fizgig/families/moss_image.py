@@ -253,7 +253,7 @@ MOSS_IMAGE = FamilyDescription(
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
                           "fine detail are refined. Empty = the model's own schedule, about 11%.",
                      warn="Experimental figure.",
-                     warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%"),
+                     warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

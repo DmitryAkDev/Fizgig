@@ -242,7 +242,7 @@ function renderRow(r) {
   // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
   // across the card - from the schema's row kind, so every model's form lays out the same way
   const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide"}[r.kind] || "field";
-  const wrap = el("div", {class: "form-row kind-" + kind, "data-key": r.key});
+  const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : ""), "data-key": r.key});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
     wrap.append(el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
       el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1})));

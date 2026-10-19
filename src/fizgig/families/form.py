@@ -110,7 +110,8 @@ def _option_row(opt):
     return _row(opt.key, opt.label, kind, opt.hint, opt.choice_labels() if opt.kind == "choice" else
                 [s.split(" · ")[0] for s in opt.suggestions], default, option=True, suffix=opt.suffix,
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
-                **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}))
+                **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
+                **({"featured": True} if opt.featured else {}))
 
 
 def model_keys(desc):
