@@ -21,7 +21,8 @@ NEWS = [
         "body": (
             "Kromoss, lodestones' sharper fine-tune of MOSS-Image Base, can now be trained on as an option; Base stays "
             "the default, and time will tell which is wiser to train on. To try it, pick Kromoss beside Download models "
-            "for me in Preferences. The new Turbo LoRA (Download on the Turbo LoRA row) works with either.\n\n"
+            "for me in Preferences. The new Turbo LoRA (Download on the Turbo LoRA row) works with either; on Base, "
+            "untick Use the SFT model for samples to use it.\n\n"
             "Training is unchanged. Previews then render on Kromoss itself, the model you'll use the LoRA on, instead "
             "of on SFT; with the Turbo LoRA at strength 1 on the Samples tab, they render in 12 steps. The Turbo LoRA is very good compared with the earlier MOSS-Image speed LoRAs; we suggest 12 steps rather than its card's 8."
         ),
