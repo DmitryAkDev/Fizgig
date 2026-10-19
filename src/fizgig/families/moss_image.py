@@ -244,11 +244,12 @@ MOSS_IMAGE = FamilyDescription(
         ("✨ MOSS-Image Fine-tune (1e-5)", _preset(16, lr=1e-5, ft=True)),
     ),
     options=(
-        FamilyOption("MOSS_LORA_SFT", "Base is SFT or a fine-tune of it", kind="check", tokens="lora_sft=1",
-                     hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: training (a LoRA or a "
-                          "fine-tune) then covers attention only (q, k, v, o). Training its feed-forward layers breaks "
-                          "anatomy.",
-                     section="after", summary="SFT base"),
+        FamilyOption("MOSS_LORA_SFT", "Train attention only", kind="check", tokens="lora_sft=1",
+                     hint="A LoRA or a fine-tune trains only attention (q, k, v, o), not the feed-forward layers. "
+                          "Recommended on MOSS-Image SFT or a fine-tune of it, where training the feed-forward "
+                          "layers breaks anatomy. Uses less VRAM, so a fine-tune fits a smaller card, but on Base "
+                          "it may cost quality or slow convergence.",
+                     section="after", summary="attention only"),
         FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="30",
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
