@@ -175,10 +175,12 @@ class MOSSImageDriver(FamilyDriver):
     def ft_spec(self, dit):
         # each block's six Linears are the parts (attention q / k / v / o ~0.018 GB each, the fused MLP up+gate 0.094,
         # the down projection 0.047 in bf16). ComfyUI's file fuses q / k / v into one proj.qkv = [q; k; v] tensor; the
-        # diffusers shards keep them apart. The text adapter, embedders, modulations and the final layer stay frozen.
+        # diffusers shards keep them apart. The text adapter, embedders, modulations and the final layer stay frozen,
+        # as for a LoRA; on SFT or a fine-tune of it (lora_sft) only attention trains, as for a LoRA.
         # Memory figures are not measured yet (no GPU in the driver's session): the cautious defaults apply.
         from fizgig.families.ft import FTSpec
-        return FTSpec(blocks="layers", components=BLOCK_MODULES,
+        sft = str(self.options.get("lora_sft", "")) == "1"
+        return FTSpec(blocks="layers", components=ATTN_MODULES if sft else BLOCK_MODULES,
                       file_layout=(("proj.q.weight", "proj.qkv.weight", 0, 3),
                                    ("proj.k.weight", "proj.qkv.weight", 1, 3),
                                    ("proj.v.weight", "proj.qkv.weight", 2, 3)))

@@ -245,9 +245,10 @@ MOSS_IMAGE = FamilyDescription(
     ),
     options=(
         FamilyOption("MOSS_LORA_SFT", "Base is SFT or a fine-tune of it", kind="check", tokens="lora_sft=1",
-                     hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: the LoRA then trains "
-                          "attention only (q, k, v, o). Training its feed-forward layers breaks anatomy.",
-                     mode="lora", section="after", summary="SFT base"),
+                     hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: training (a LoRA or a "
+                          "fine-tune) then covers attention only (q, k, v, o). Training its feed-forward layers breaks "
+                          "anatomy.",
+                     section="after", summary="SFT base"),
         FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="30",
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
