@@ -178,7 +178,7 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "word.\n"
                "Leave the rest of the model alone: ask for \"a man at a party\" without the trigger word and you get "
                "a stranger, just as the model made before you trained. Your subject only appears when you call for "
-               "them.\n"
+               "them. Not ideal with just one person: for a one-person LoRA, use Off.\n"
                "Fizgig LoRA Isolation: your subjects can stand together in one picture, or next to "
                "a person the model already knows well, and every face stays right. Best for people, and best with two "
                "or more people in the LoRA. "
