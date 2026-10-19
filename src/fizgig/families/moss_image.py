@@ -227,8 +227,7 @@ MOSS_IMAGE = FamilyDescription(
     # training samples on the SFT checkpoint (the driver's park_for_preview / load_preview_checkpoint /
     # unpark_after_preview; @Murf-Code, PR #195): off by default - a LoRA trained on the Base carries over only partly
     train_preview_checkpoint=True,
-    preview_checkpoint_tick="Use the preview model for samples (SFT or Kromoss, set in Preferences - a Base LoRA "
-                            "carries over only partly)",
+    preview_checkpoint_tick="Use the preview model for samples (SFT or Kromoss, set in Preferences)",
     # previews on SFT never take the Turbo LoRA (distilled from Base, untested on SFT); on Kromoss they can
     checkpoint_speed_except=("layers.41.norm2.weight", 3658.7646484375),
     preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
