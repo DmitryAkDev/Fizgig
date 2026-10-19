@@ -78,7 +78,8 @@ Headless, there is no Preferences tab: **model locations are passed as flags on 
 |---|---|---|
 | Base DiT `moss_image_base_bf16.safetensors` | [Comfy-Org/MOSS-Image → diffusion_models](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/diffusion_models) | training (`--dit`); quantised to INT8 or NF4 at load when `--precision` asks |
 | Autoencoder `flux2-vae_small.safetensors` | [Comfy-Org/MOSS-Image → vae](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/vae): FLUX.2's encoder with the small decoder MOSS-Image ships with (Flux 3's `flux2-vae.safetensors` works too) | `--vae` (cache step: `--model`) |
-| SFT DiT `moss_image_sft_int8_convrot.safetensors` (optional) | [Comfy-Org/MOSS-Image → diffusion_models](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/diffusion_models) | previews on the SFT model (`--preview_checkpoint`) |
+| Preview model (optional): SFT `moss_image_sft_int8_convrot.safetensors`, or Kromoss `kromoss_int8_convrot.safetensors` | [Comfy-Org/MOSS-Image → diffusion_models](https://huggingface.co/Comfy-Org/MOSS-Image/tree/main/diffusion_models), or [lodestones/Kromoss → diffusion_models](https://huggingface.co/lodestones/Kromoss/tree/main/diffusion_models) | previews on that model (`--preview_checkpoint`) |
+| Turbo LoRA `8-steps-dmd-lora.safetensors` (optional) | [lodestones/Kromoss](https://huggingface.co/lodestones/Kromoss/blob/main/8-steps-dmd-lora.safetensors) | fast previews (`--speed_lora`, with `--sample_steps 12 --sample_cfg_scale 1`) on Kromoss as the preview model or on the Base, never on SFT |
 | Text encoder `qwen3.5_9b_bf16.safetensors` | [Comfy-Org/Qwen3.5 → text_encoders](https://huggingface.co/Comfy-Org/Qwen3.5/tree/main/text_encoders) | `--text_encoder` (cache step: `--model`) |
 
 **Krea 2:**
@@ -355,7 +356,7 @@ The saved LoRA loads in ComfyUI's standard LoRA loader.
 
 ## MOSS-Image training
 
-MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4. The LoRA trains every Linear in all 42 blocks, block 22 included; with MOSS-Image SFT or a fine-tune of it as `--dit`, add `--family_option lora_sft=1` so it trains attention only (the GUI's Train attention only; it also lowers a fine-tune's VRAM on Base, at a possible cost in quality). `--family_option lownoise_pct=30` sets the clean-end share (the GUI default; leave it out for the model's own schedule, about 11%).
+MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4. The LoRA trains every Linear in all 42 blocks, block 22 included; with MOSS-Image SFT or a fine-tune of it as `--dit`, add `--family_option lora_sft=1` so it trains attention only (the GUI's Train attention only; it also lowers a fine-tune's VRAM on Base, at a possible cost in quality). `--family_option lownoise_pct=30` sets the clean-end share (the GUI default; leave it out for the model's own schedule, about 11%). Train on the Base: a LoRA trained on Kromoss began to overbake after about 750 steps in our test. Kromoss works as `--preview_checkpoint` in place of SFT, and there `--speed_lora` (its Turbo LoRA) joins the previews; with SFT as the preview checkpoint, `--speed_lora` is left out of them.
 
 ### Full example
 
