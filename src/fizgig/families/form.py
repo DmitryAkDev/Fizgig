@@ -544,12 +544,17 @@ def form(desc):
         live, plain = {"SAMPLE_STEPS": str(spd[0])}, {"SAMPLE_STEPS": str(desc.preview_steps)}
         if not desc.samples_cfg_free and sp.settings.cfg != desc.preview_cfg:
             live["SAMPLE_CFG_SCALE"], plain["SAMPLE_CFG_SCALE"] = f"{sp.settings.cfg:g}", f"{desc.preview_cfg:g}"
+        cfg_on = "" if desc.samples_cfg_free else f", CFG {sp.settings.cfg:g}"
+        cfg_off = "" if desc.samples_cfg_free else f", CFG {desc.preview_cfg:g}"
         turbo_rows = [_row(
-            "FAMILY_TURBO_STRENGTH", "Turbo LoRA strength", default=f"{spd[1]:g}",
-            hint=(f"0 = previews on the plain model ({desc.preview_steps} steps). For fast previews set 1 and "
-                  f"{sp.settings.steps} steps (the {sp.name}). Below 1 (around 0.7) with more steps often gives "
-                  "cleaner previews." if not spd[1] else
-                  f"The {sp.name} for previews, default {spd[1]:g} at {spd[0]} steps. 0 = the plain model."),
+            "FAMILY_TURBO_STRENGTH", "Turbo LoRA strength", default=f"{spd[1]:g}", boxed=True,
+            hint=(f"0 = off: full-quality previews ({desc.preview_steps} steps{cfg_off}). 1 = on: the {sp.name} "
+                  f"renders previews in {spd[0]} steps{cfg_on}, much faster but softer, so they undersell your LoRA. "
+                  "Steps and CFG switch with it. Previews only, never the saved LoRA."
+                  + (" It works on previews of the training model only: untick "
+                     f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it."
+                     if desc.train_preview_checkpoint else "")
+                  + (" Default " + f"{spd[1]:g}." if spd[1] else "")),
             turbo={"on": live, "off": plain})]
     if sp is not None and sp.pref_key:
         turbo_rows.append(_row("TURBO_MISSING", "", "note",
@@ -569,10 +574,23 @@ def form(desc):
              "a pose, angle or setting none of your photos show. Early epochs follow it. When the LoRA starts to "
              "overtrain, that's the first thing to fail, as the previews drift back to your photos. The last epoch that "
              "still follows it is a good one to keep.", "note") if pictures else None,
+        # the switches side by side (the grid tiles ticks), then the Turbo box, then the boxes they change
         _row("__SAMPLE_LIVE", "Change the previews of the run going now", "check",
              "On by default. While it's ticked, a change you make here (prompts, seed, size, steps, CFG, Turbo "
              "strength) goes to the run training now, from its next preview; new prompts are encoded again then. "
              "Untick to put the run back on its own.") if pictures else None,
+        _row("SAMPLE_AT_FIRST", "Preview before training starts", "check"),
+        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on,
+                **({"follow": {"on": {"SAMPLE_STEPS": str(desc.preview_checkpoint_sampling.steps),
+                                      "SAMPLE_CFG_SCALE": f"{desc.preview_checkpoint_sampling.cfg:g}"},
+                               "off": {"SAMPLE_STEPS": str(desc.preview_steps),
+                                       "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
+                   if desc.preview_checkpoint_sampling else {}))] if desc.train_preview_checkpoint else []),
+        _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
+             "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "
+             "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
+        if desc.preview_strengths else None,
+        *turbo_rows,
         _row("SAMPLE_REFERENCE", "Reference", "path",
              f"Optional - fed through {desc.display_name}'s text encoder vision path so previews become visually "
              "aware of it ('prompt from a picture', not a pixel edit). Leave empty for normal previews."
@@ -586,22 +604,10 @@ def form(desc):
         _row("SAMPLE_HEIGHT", "Height", "choice", choices=SIZES, default=str(desc.preview_height)) if pictures else None,
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
-        *turbo_rows,
         *by_section("samples"),
         _row("SAMPLE_EVERY_N_EPOCHS", "Every N epochs", default=str(getattr(desc, "preview_every", 1) or 1)),
-        _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
-             "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "
-             "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
-        if desc.preview_strengths else None,
-        _row("SAMPLE_AT_FIRST", "Preview before training starts", "check"),
-        *([_row("SAMPLE_CHECKPOINT", desc.preview_checkpoint_tick, "check", default=desc.preview_checkpoint_on,
-                **({"follow": {"on": {"SAMPLE_STEPS": str(desc.preview_checkpoint_sampling.steps),
-                                      "SAMPLE_CFG_SCALE": f"{desc.preview_checkpoint_sampling.cfg:g}"},
-                               "off": {"SAMPLE_STEPS": str(desc.preview_steps),
-                                       "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
-                   if desc.preview_checkpoint_sampling else {})),
-           _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
-                default="auto")] if desc.train_preview_checkpoint else []),
+        _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
+             default="auto") if desc.train_preview_checkpoint else None,
     ])
     if not desc.samples_cfg_free:
         add("samples_adv", "Guidance", "samples", [

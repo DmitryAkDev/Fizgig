@@ -250,6 +250,13 @@ body {
   margin: 0 36px 16px 36px;
   padding: 0;
 }
+/* a row that explains a switch with a big effect (the Samples tab's Turbo LoRA strength): its own full-width box */
+.section-card[id^="sec-"] .form-row.row-boxed { grid-column: 1 / -1; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.06); }
+.section-card[id^="sec-"] .form-row.row-boxed .field-label { color: #FCD9A0; }
+.section-card[id^="sec-"] .form-row.row-boxed .field-row > input { flex: 0 0 140px; max-width: 140px; }
+.section-card[id^="sec-"] .form-row.row-boxed .field-hint { white-space: normal; font-style: normal; line-height: 1.45; }
+
 /* the Previews so far card: what the previews render with */
 .preview-mode { margin: 8px 0 10px; padding: 7px 11px; border-radius: 6px; font-size: 12.5px;
   color: var(--text-explain); background: rgba(138, 155, 174, 0.10); border: 1px solid var(--border); }
