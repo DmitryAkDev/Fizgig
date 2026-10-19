@@ -5,10 +5,11 @@
 | Epoch | 3 | 6 | 9 | 12 | 15 |
 |:--|:-:|:-:|:-:|:-:|:-:|
 | Old schedule (~11%) | 40% | 44% | 52% | 58% | 63% |
-| Clean-end 60% | 65% | 54% | 59% | 63% | 51% |
+| Clean-end 60% (overnight run) | 50% | 63% | 66% | 68% | 69% |
+| Clean-end 60% (today, alongside the 30% run) | 65% | 54% | 59% | 63% | 51% |
 | Clean-end 30% | 42% | 59% | 63% | 66% | 69% |
 
-ArcFace likeness against 3 reference photos, one preview per epoch, same 53-image dataset (the 30% run's previews were upper-body shots until epoch 14, headshots from 15). It's still a figure to explore, so please keep sharing what you find in the [Reddit discussion](https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/). If the box still shows 60 from an earlier run, set it to 30. On the command line it's `--family_option lownoise_pct=30`.
+ArcFace likeness against 3 reference photos, one preview per epoch, same dataset (the 30% run's previews were upper-body shots until epoch 14, headshots from 15). It's still a figure to explore, so please keep sharing what you find in the [Reddit discussion](https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/). If the box still shows 60 from an earlier run, set it to 30. On the command line it's `--family_option lownoise_pct=30`.
 
 **The Clean-end share box stands out in the web UI,** so it's easy to find on the Training tab.
 
