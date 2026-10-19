@@ -28,6 +28,7 @@ What happens then:
 
 - **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, at the same memory.
 - **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself; tick it back on for SFT previews. The same happens with any Base DiT that isn't MOSS-Image Base (a fine-tune of Base, or SFT itself). Switch back to MOSS-Image Base and SFT previews come back on.
+- **The Turbo LoRA stays off unless you turn it on.** Previews on Kromoss render at full quality, 30 steps and CFG 4, and they're still quicker than SFT previews because there's no switch to a second model.
 - **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. **On MOSS-Image Base, untick Use the SFT model for samples first** to use it: previews then render on Base with the Turbo LoRA (on Kromoss the tick is already off). Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
 
 ## Also
@@ -41,7 +42,7 @@ What happens then:
 ## Updating from an earlier version
 
 - **Clean-end share moves to 30 by itself.** If your MOSS-Image Training tab still had 8.7.0's 60, it changes to 30 the first time you open it after updating. Any other value you set stays, and you can change it again afterwards.
-- **Turbo preview steps move from 8 to 12 by itself** if your MOSS-Image Samples tab had 8, the first time you open it after updating.
+- **Turbo preview steps move from 8 to 12 by itself** if your MOSS-Image Samples tab had 8 with the Turbo LoRA on, the first time you open it after updating.
 - **Turbo LoRA:** if you had the earlier SFT Turbo LoRA set, it stays until you change it. Use **Download** on the Turbo LoRA row and point the row at the new file.
 - **Kromoss via Download models for me** fetches only Kromoss; files you already have are skipped. Your MOSS-Image Base file stays on disk, so you can switch back.
 - **Already training on SFT or a fine-tune?** The first time you open the Samples tab after updating, **Use the SFT model for samples** turns off, so previews render on your own Base. Tick it back on if you prefer SFT.

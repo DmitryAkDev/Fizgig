@@ -887,11 +887,15 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["_edit_extras_found"] = _extras_found(desc, values, image_folder)
         else:
             hidden |= {"FAMILY_EDIT_EXTRAS_DIR", "_edit_extras_found"}
-    for key, old, new in desc.value_moves:     # a changed default, moved once in a saved form
+    for key, old, new, *when in desc.value_moves:     # a changed default, moved once in a saved form
         mark = f"_moved_{key}"
         if not values.get(mark):
             force[mark] = True
-            if str(values.get(key, "")).strip() == str(old):
+            try:                                  # a move tied to another setting: only while that one is on (> 0)
+                on = not when or float(str(values.get(when[0]) or 0)) > 0
+            except ValueError:
+                on = False
+            if on and str(values.get(key, "")).strip() == str(old):
                 force[key] = new
     if desc.train_preview_checkpoint and desc.standard_base:
         # another Base than the released one (Kromoss, a fine-tune, SFT): previews on it by default, the model the LoRA

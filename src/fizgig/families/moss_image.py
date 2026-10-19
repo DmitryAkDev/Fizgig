@@ -233,7 +233,7 @@ MOSS_IMAGE = FamilyDescription(
     # Kromoss 3658.6904296875); any other Base DiT previews on itself
     standard_base=("layers.41.norm2.weight", 3658.7021484375),
     value_moves=(("MOSS_LOWNOISE_PCT", "60", "30"),     # 8.7.0 defaulted to 60, 8.7.1 to 30 (saved forms kept 60)
-                 ("SAMPLE_STEPS", "8", "12")),           # the Turbo's 8 steps became 12 in 8.7.4
+                 ("SAMPLE_STEPS", "8", "12", "FAMILY_TURBO_STRENGTH")),   # the Turbo's 8 steps became 12 (8.7.4)
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",
