@@ -847,7 +847,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     n_pics = _picture_count(image_folder) if small and kind == "standard" and image_folder else None
     if n_pics and n_pics < small[0]:            # a small dataset on a family that converges slowly on one
         tip = "💡 Hint: " + small[1].format(n=n_pics)
-        notes["MAX_TRAIN_EPOCHS"] = notes["MAX_TRAIN_EPOCHS"] + "\n" + tip if notes.get("MAX_TRAIN_EPOCHS") else tip
+        notes["MAX_TRAIN_EPOCHS"] = notes["MAX_TRAIN_EPOCHS"] + " " + tip if notes.get("MAX_TRAIN_EPOCHS") else tip
     lr_note = _lr_hint(desc, values, kind, image_folder)
     if lr_note:
         notes[lr_note[0]] = lr_note[1]
