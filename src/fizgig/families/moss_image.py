@@ -231,6 +231,9 @@ MOSS_IMAGE = FamilyDescription(
     # training samples on the SFT checkpoint (the driver's park_for_preview / load_preview_checkpoint /
     # unpark_after_preview; @Murf-Code, PR #195): off by default - a LoRA trained on the Base carries over only partly
     train_preview_checkpoint=True,
+    # MOSS-Image takes longer than the other families to converge on a small dataset (Peter, 19 Oct 2026)
+    small_dataset_hint=(50, "a small dataset. With {n} images, MOSS-Image can take longer to converge than other "
+                            "models, so allow more epochs before judging it."),
     preview_checkpoint_tick="Use the preview model for samples (SFT or Kromoss, set in Preferences)",
     # previews on SFT never take the Turbo LoRA (distilled from Base, untested on SFT); on Kromoss they can
     checkpoint_speed_except=("layers.41.norm2.weight", 3658.7646484375),

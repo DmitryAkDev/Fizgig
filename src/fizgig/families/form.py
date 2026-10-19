@@ -843,6 +843,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         long_run = False
     if long_run:
         notes["MAX_TRAIN_EPOCHS"] = f"💡 Hint: {hint[1]}. {hint[2]}"
+    small = getattr(desc, "small_dataset_hint", ()) or ()
+    n_pics = _picture_count(image_folder) if small and kind == "standard" and image_folder else None
+    if n_pics and n_pics < small[0]:            # a small dataset on a family that converges slowly on one
+        tip = "💡 Hint: " + small[1].format(n=n_pics)
+        notes["MAX_TRAIN_EPOCHS"] = notes["MAX_TRAIN_EPOCHS"] + "\n" + tip if notes.get("MAX_TRAIN_EPOCHS") else tip
     lr_note = _lr_hint(desc, values, kind, image_folder)
     if lr_note:
         notes[lr_note[0]] = lr_note[1]
@@ -1000,6 +1005,24 @@ def _timestep_note(values):
 _lr_counts = {}                     # folder -> (modified time, pictures)
 
 
+def _picture_count(image_folder):
+    """The pictures in a training folder, cached until the folder changes; None when it can't be read."""
+    try:
+        mt = os.stat(image_folder).st_mtime
+    except (OSError, TypeError):
+        return None
+    hit = _lr_counts.get(image_folder)
+    if not hit or hit[0] != mt:
+        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
+        exts = {e.lower() for e in IMAGE_EXTENSIONS}
+        try:
+            n = sum(1 for e in os.scandir(image_folder) if e.is_file() and os.path.splitext(e.name)[1].lower() in exts)
+        except OSError:
+            n = 0
+        hit = _lr_counts[image_folder] = (mt, n)
+    return hit[1]
+
+
 def _lr_hint(desc, values, kind, image_folder):
     """The desktop's large-dataset hint: a standard LoRA whose learning rate (adaptive: Min LR) is at or above the
     family's lr_hint rate, on more steps an epoch than its count (one picture a step), moves a long way each epoch -
@@ -1015,21 +1038,8 @@ def _lr_hint(desc, values, kind, image_folder):
             return None
     except ValueError:
         return None
-    try:
-        mt = os.stat(image_folder).st_mtime
-    except OSError:
-        return None
-    hit = _lr_counts.get(image_folder)
-    if not hit or hit[0] != mt:
-        from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
-        exts = {e.lower() for e in IMAGE_EXTENSIONS}
-        try:
-            n = sum(1 for e in os.scandir(image_folder) if e.is_file() and os.path.splitext(e.name)[1].lower() in exts)
-        except OSError:
-            n = 0
-        hit = _lr_counts[image_folder] = (mt, n)
-    n = hit[1]
-    if n <= hint[1]:
+    n = _picture_count(image_folder)
+    if n is None or n <= hint[1]:
         return None
     if adaptive:
         return key, (f"💡 Hint: a large dataset. With {n} images, a Min LR of {raw} moves the LoRA a long way each "
