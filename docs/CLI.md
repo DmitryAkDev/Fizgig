@@ -451,7 +451,7 @@ The non-obvious flags (`--help` lists them all):
 - `--compile_blocks auto|on|outside|off` — torch.compile the transformer blocks (`outside` = the high-resolution boundary: checkpoint kept outside the compiled region, eager-level memory, chosen automatically by `auto`/`on` where inside-the-graph would not fit): roughly **2× faster steady-state steps** on the INT8 path after a one-off warm-up (~90 s + a pause on each new latent shape). `auto` (default) weighs the warm-up against the run length and only compiles when it pays. Needs triton (installs with requirements; `triton-windows` on Windows) and, on Windows, the MSVC C++ Build Tools — direct installer: https://aka.ms/vs/17/release/vs_BuildTools.exe ("Desktop development with C++" workload). Missing either → a console note and the run continues uncompiled.
 - `--ema_decay 0.98` — weight averaging: checkpoints and previews come from a smoothed average of the weights. `0` (the CLI default) turns it off.
 - `--min_timestep` / `--max_timestep` — restrict training to a noise band, on a 0-1 scale.
-- `--speed_lora FILE` — the Turbo LoRA, attached for 8-step previews on the training model and absent from the saved LoRA; `--speed_lora_strength` defaults to 1.
+- `--speed_lora FILE` — the Turbo LoRA, attached for 8-step previews on the training model and absent from the saved LoRA; `--speed_lora_strength` defaults to 1; `0` renders previews without it until a live preview change asks for a strength, when it loads at the next preview.
 
 **The per-image loss watch** (any of these enables the watcher)
 

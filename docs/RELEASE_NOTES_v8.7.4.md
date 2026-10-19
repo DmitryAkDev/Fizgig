@@ -32,7 +32,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 - **Training is unchanged:** your LoRAs train on Base.
 - **Previews render on Kromoss** with your LoRA on top, while **Use the preview model for samples** is ticked on the Samples tab (it is by default). Repair Studio and LoRA Royale render on it too.
-- **The Turbo LoRA stays off unless you turn it on.** For fast previews, set **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. It works with Kromoss as the preview model, and on previews of your Base, but not with SFT: with SFT as the preview model the strength box is greyed out, so set Kromoss as the preview model to use it.
+- **The Turbo LoRA stays off unless you turn it on.** For fast previews, set **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. You can do this mid-run too, on a run started without it: it joins from the next preview. It works with Kromoss as the preview model, and on previews of your Base, but not with SFT: with SFT as the preview model the strength box is greyed out, so set Kromoss as the preview model to use it.
 
 **In ComfyUI:** use Kromoss in place of SFT with your Base-trained LoRA. With its Turbo LoRA at strength 1: 12 steps (its card says 8; 12 looked much better in our tests), CFG 1, euler / simple. Without it, its model card recommends Euler, 50 steps, CFG 3, shift 5.
 
@@ -45,6 +45,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 - **Change previews mid-run, steps included.** **Change the previews of the run going now** on the Samples tab now carries **Steps, CFG and Turbo LoRA strength** as well as the prompts, seed and size, and they apply from the next preview with no pause. The tick is now on by default: only what you change is sent, so a run keeps its own preview settings until you change one. Turbo strength 0 renders a round without the Turbo LoRA, and raising it brings the Turbo LoRA in at the next preview, even on a run that started at 0.
 - **Resume takes your preview settings.** Pause → Resume now picks up the Samples tab's prompts, seed, size, steps, CFG, Turbo strength and the **Use the preview model for samples** tick as they are now, so a pause is how to switch previews to or from the preview model mid-run. The run trains on with its own training settings.
 - **Previews so far says what the previews render with:** a line between the likeness chart and the thumbnails shows the model, steps and CFG, or, in amber, that a Turbo LoRA is in use, since Turbo previews can look softer than the finished LoRA.
+- **Download models for me says when your own file keeps a pick:** if the preview model row already points at a file of your own, picking SFT or Kromoss keeps your file. The download log now says so, and that to use the pick you clear that row in Preferences, then download again.
 - **Fizgig opens on the Start tab**, with a News card at the top for what's new. The full articles are in [NEWS.md](https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md).
 
 ## Updating from an earlier version
