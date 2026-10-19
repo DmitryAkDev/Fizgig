@@ -355,11 +355,11 @@ The saved LoRA loads in ComfyUI's standard LoRA loader.
 
 ## MOSS-Image training
 
-MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4. The LoRA trains every Linear in all 42 blocks, block 22 included; with MOSS-Image SFT or a fine-tune of it as `--dit`, add `--family_option lora_sft=1` so it trains attention only. `--family_option lownoise_pct=60` sets the clean-end share (the GUI default; leave it out for the model's own schedule, about 11%).
+MOSS-Image trains through the shared cache script and trainer with `--family moss_image`. You need the three files from the [download table](#model-files-where-they-come-from-where-they-go); the dataset TOML is the same as the other families'. Previews run res_multistep for 30 steps with CFG 4. The LoRA trains every Linear in all 42 blocks, block 22 included; with MOSS-Image SFT or a fine-tune of it as `--dit`, add `--family_option lora_sft=1` so it trains attention only. `--family_option lownoise_pct=30` sets the clean-end share (the GUI default; leave it out for the model's own schedule, about 11%).
 
 ### Full example
 
-The **Fast** preset, as the GUI's planner builds it: rank 16, 0.25 MP (`resolution = [512, 512]` in the TOML), LR 1e-4, 70 epochs, clean-end share 60%:
+The **Fast** preset, as the GUI's planner builds it: rank 16, 0.25 MP (`resolution = [512, 512]` in the TOML), LR 1e-4, 70 epochs, clean-end share 30%:
 
 ```bash
 python src/fizgig/families/cache.py --family moss_image --stage latents --dataset_config my_dataset.toml --model /models/flux2-vae_small.safetensors
@@ -379,7 +379,7 @@ python src/fizgig/families/train.py \
   --optimizer_type adamw \
   --precision auto --compile_blocks auto \
   --ema_decay 0.98 \
-  --family_option lownoise_pct=60 \
+  --family_option lownoise_pct=30 \
   --save_state --save_state_on_train_end --keep_last_n_states 2 \
   --vae /models/flux2-vae_small.safetensors \
   --text_encoder /models/qwen3.5_9b_bf16.safetensors \
