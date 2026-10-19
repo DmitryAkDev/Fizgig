@@ -9,7 +9,7 @@ Everything on this page works on every model unless it says otherwise: [Klein 9B
 - **Live likeness scoring** — pick 3 dataset photos and every sample gets a colour-coded likeness badge (ArcFace, CPU — zero training-speed cost), with a per-epoch trend chart and best-epoch highlight, live while the run goes.
 - **Training Run Visualiser** — scrub the run epoch by epoch in the browser, Royale-style, with share-ready WebM/PNG export.
 - **Every epoch checkpoint carries its own preview as the thumbnail**, so file browsers and LoRA managers show what each epoch looks like.
-- **Change the previews of the run going now** (a tick on the Samples tab) changes the preview prompts, seed, size, steps, CFG and Turbo LoRA strength mid-run from the next preview, no restart (a Turbo strength needs a run started with a Turbo LoRA set); **Resume** also takes the Samples tab's preview settings as they are now, the preview-checkpoint tick (SFT, Distilled) included; **Sample now** and **Save now** on the run card render or save at the next step. The top bar carries VRAM/RAM gauges.
+- **Change the previews of the run going now** (a tick on the Samples tab) changes the preview prompts, seed, size, steps, CFG and Turbo LoRA strength mid-run from the next preview, no restart (a Turbo strength works on a run started at 0 too, as long as the Turbo LoRA file is set in Preferences); **Resume** also takes the Samples tab's preview settings as they are now, the preview-checkpoint tick (SFT, Distilled) included; **Sample now** and **Save now** on the run card render or save at the next step. The top bar carries VRAM/RAM gauges.
 
 ## Dataset prep
 

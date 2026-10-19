@@ -706,9 +706,6 @@ class _CheckpointPreviews:
                 fl.add_file(self._lora_file, TRAINABLE_PREVIEW)
                 if self.context:
                     fl.add_file(self.context[0], CONTEXT, self.context[1])
-                if self.speed:
-                    fl.add_file(self.speed[0], SPEED, self.speed[1])
-                    self.driver.frozen_file_added(m, self.speed[0], self.speed[1], "speed")
                 logger.info(f"[sample] previews on {os.path.basename(self.path)}"
                             + (f" ({swapped} blocks streamed)" if swapped else ""))
             return render(m, fl, swapped)
@@ -899,12 +896,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if speed_lora and speed_desc is None:
         logger.warning(f"[sample] {desc.display_name} declares no preview speed LoRA - ignoring --speed_lora")
         speed_lora = None
-    if speed_desc is not None and speed_lora_strength is not None and speed_lora_strength <= 0:
-        logger.info(f"[sample] {speed_desc.name} at strength 0 - previews render without it")
-        speed_lora = speed_desc = None
+    # strength 0: previews render without it, and it loads at the first preview a live change asks it for
+    speed_idle = speed_desc is not None and speed_lora_strength is not None and speed_lora_strength <= 0
+    if speed_idle:
+        logger.info(f"[sample] {speed_desc.name} at strength 0 - previews render without it until a strength is "
+                    "asked for")
     # --speed_lora on its own means the turbo's own recipe (strength, steps); the GUI passes its Samples-tab values
     asked_steps, asked_cfg = sample_steps, sample_cfg_scale   # a preview checkpoint takes these when given
-    sample_steps = sample_steps or (speed_desc.settings.steps if speed_desc else desc.preview_steps)
+    sample_steps = sample_steps or (speed_desc.settings.steps if speed_desc and not speed_idle else desc.preview_steps)
     sample_cfg_scale = desc.preview_cfg if sample_cfg_scale is None else sample_cfg_scale
     sample_width = sample_width or desc.preview_width
     sample_height = sample_height or desc.preview_height
@@ -1215,22 +1214,25 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         driver.frozen_file_added(dit, context_lora_path, context_lora_strength, "context")
         logger.info(f"[context] {os.path.basename(context_lora_path)} frozen + active at {context_lora_strength:g} "
                     f"({n} Linears)")
-    if speed_lora and encoded is not None:
-        _ss = speed_desc.strength if speed_lora_strength is None else speed_lora_strength
-        n = net.add_file(speed_lora, SPEED, _ss)
-        driver.frozen_file_added(dit, speed_lora, _ss, "speed")
-    if speed_lora and encoded is not None and n == 0:
-        net.remove(SPEED)
-        logger.warning(f"[sample] {os.path.basename(speed_lora)} matched no {desc.display_name} layers "
-                       f"(a turbo LoRA for another model?) - previews render without it, at "
-                       f"{desc.preview_steps} steps")
-        speed_lora = None
-        sample_steps = desc.preview_steps
-    elif speed_lora and encoded is not None:
+    def _add_speed(strength):
+        """The speed LoRA onto the training model, off and on CPU between previews; False when it matched nothing."""
+        n = net.add_file(speed_lora, SPEED, strength)
+        driver.frozen_file_added(dit, speed_lora, strength, "speed")
+        if n == 0:
+            net.remove(SPEED)
+            logger.warning(f"[sample] {os.path.basename(speed_lora)} matched no {desc.display_name} layers "
+                           f"(a turbo LoRA for another model?) - previews render without it")
+            return False
         net.set_enabled(SPEED, False)
         net.move_adapter(SPEED, "cpu")
         logger.info(f"[sample] {speed_desc.name}: {n} Linears, on CPU between previews, on only while they render "
-                    f"({sample_steps} steps, strength {speed_desc.strength if speed_lora_strength is None else speed_lora_strength:g})")
+                    f"(strength {strength:g})")
+        return True
+
+    if speed_lora and encoded is not None and not speed_idle:
+        if not _add_speed(speed_desc.strength if speed_lora_strength is None else speed_lora_strength):
+            speed_lora = None
+            sample_steps = desc.preview_steps
     if network_type == "lokr" and "lokr" not in desc.network_types:
         raise RuntimeError(f"{desc.display_name} does not offer LoKR")
     ftr = None
@@ -1528,6 +1530,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 st[k] = st[k].to(device)
 
     ov_cache = [None, None]                  # the override's prompts and their encoding, kept while they don't change
+    speed_bad = [False]                      # the speed LoRA matched no layers: not tried again
 
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
@@ -1555,8 +1558,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     cfg_now = ask_cfg = ov["cfg"]
                 if ov.get("turbo") is not None:
                     if speed_now is None and ov["turbo"] > 0:
-                        logger.info("[sample override] Turbo strength ignored - this run started without a Turbo "
-                                    "LoRA (set one, then start the run again)")
+                        logger.info("[sample override] Turbo strength ignored - no Turbo LoRA file is set in "
+                                    "Preferences for this run")
                     elif speed_now is not None:
                         strength_now = ov["turbo"]
                 if not ref_imgs:        # an edit keeps the reference's canvas: its latents are already encoded
@@ -1574,10 +1577,13 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                            "renders at CFG 1")
             cfg_now = 1.0
         if speed_now is not None:       # the Turbo LoRA at this round's strength; 0 = this round without it
-            if strength_now > 0:
-                net.set_strength(SPEED, strength_now)
-            else:
+            if strength_now <= 0:
                 speed_now = None
+            elif ckpt_previews is None or slider:     # on the training model: loaded the first time it is asked for
+                if net.has(SPEED) or (not speed_bad[0] and _add_speed(strength_now)):
+                    net.set_strength(SPEED, strength_now)
+                else:
+                    speed_bad[0], speed_now = True, None
         if ckpt_previews is not None and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
             # a checkpoint that takes the speed LoRA (Kromoss): this round with it while its strength is above 0
@@ -1586,6 +1592,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ck_cfg = (cfg_now if turbo_ck else (ck.cfg if ask_cfg is None else ask_cfg))
 
             def _ck_render(m, fl, swp):
+                if turbo_ck and not fl.has(SPEED):     # loaded onto the checkpoint the first round that asks for it
+                    fl.add_file(ckpt_previews.speed[0], SPEED, strength_now)
+                    driver.frozen_file_added(m, ckpt_previews.speed[0], strength_now, "speed")
                 if ckpt_previews.speed is not None and fl.has(SPEED):
                     fl.set_strength(SPEED, strength_now if turbo_ck else 0.0)
                 return _render_previews(
@@ -1648,14 +1657,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
                     "steps": asked_steps or (ck.steps if ck else sample_steps),
                     "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None else asked_cfg}
-            if ckpt_previews.speed is not None:
+            if ckpt_previews.speed is not None and not speed_idle:
                 mode.update(turbo=speed_desc.name, strength=ckpt_previews.speed[1], steps=sample_steps,
                             cfg=sample_cfg_scale)
         else:
             mode = {"model": "", "steps": sample_steps, "cfg": sample_cfg_scale,
-                    "turbo": speed_desc.name if (speed_lora and speed_desc) else "",
+                    "turbo": speed_desc.name if (speed_lora and speed_desc and not speed_idle) else "",
                     "strength": (speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
-                    if (speed_lora and speed_desc) else 0}
+                    if (speed_lora and speed_desc and not speed_idle) else 0}
         write_mode(mode)
 
     def state(epoch, required=False):

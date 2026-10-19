@@ -803,12 +803,14 @@ def _preview_flags(desc, st, plan, cmd):
                 ts = float(str(st.get("FAMILY_TURBO_STRENGTH", "") or dflt))
         except ValueError:
             ts = dflt
-        if ts > 0:                              # strength 0 = previews without the turbo: don't load it
+        if ts > 0:
             out += ["--speed_lora", speed_path]
             if abs(ts - dflt) > 1e-9:
                 out += ["--speed_lora_strength", f"{max(0.0, min(2.0, ts)):g}"]
         else:
             turbo_steps = None
+            if not desc.samples_turbo_pace:     # strength 0: known to the run, loaded at the first preview that asks
+                out += ["--speed_lora", speed_path, "--speed_lora_strength", "0"]
     samples_dir = st.get("samples_dir") or os.path.join(_s(st.get("LORA_OUTPUT_DIR")), "sample")
     prompts = None
     if edit_on(desc, st):              # edit previews: the edit instruction, not the Samples-tab prompts
