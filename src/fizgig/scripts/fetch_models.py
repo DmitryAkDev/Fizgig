@@ -333,7 +333,7 @@ def fetch_weight(w, models_dir, prefs, token=None, log=print, dry_run=False):
         log(f"  [pick] {w.pref_key}: {os.path.basename(current)} -> {w.filename} (your choice on the download card)")
         current = ""
     if current and os.path.basename(current) in w.replaces:
-        log(f"  [new]  {w.pref_key}: {os.path.basename(current)} has a newer version, {w.filename}")
+        log(f"  [new]  {w.pref_key}: {os.path.basename(current)} is replaced by {w.filename}")
         current = ""                             # an earlier version of ours: fetch the new one and point at it
     if current and os.path.isfile(current):
         if os.path.basename(current) != w.filename and w.switch_from:
