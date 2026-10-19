@@ -570,9 +570,9 @@ def form(desc):
              "overtrain, that's the first thing to fail, as the previews drift back to your photos. The last epoch that "
              "still follows it is a good one to keep.", "note") if pictures else None,
         _row("__SAMPLE_LIVE", "Change the previews of the run going now", "check",
-             "While this is ticked, the run training now makes its next previews from these prompts, seed and size - "
-             "change them whenever you like; new prompts are encoded again at its next preview. Untick to go back to "
-             "the run's own.") if pictures else None,
+             "On by default. While it's ticked, a change you make here (prompts, seed, size, steps, CFG, Turbo "
+             "strength) goes to the run training now, from its next preview; new prompts are encoded again then. "
+             "Untick to put the run back on its own.") if pictures else None,
         _row("SAMPLE_REFERENCE", "Reference", "path",
              f"Optional - fed through {desc.display_name}'s text encoder vision path so previews become visually "
              "aware of it ('prompt from a picture', not a pixel edit). Leave empty for normal previews."

@@ -115,7 +115,9 @@ async function chooseFamily(key) {
     }
   }
   if (S.trigger !== undefined) S.values.CAPTION_TRIGGER_WORD = S.trigger;     // the folder's, not the model's
-  S.values.__SAMPLE_LIVE = false;            // a live preview change is for one run, never remembered
+  // on whenever a form loads: a change made here while a run trains goes to its next previews (only a change is
+  // sent, so a run started from the queue keeps its own prompts until you change something)
+  S.values.__SAMPLE_LIVE = true;
   renderAll();
   await refreshState();
   saveState();
@@ -459,6 +461,11 @@ async function refreshState() {
     if (box && shown !== undefined && disabled.has(k)) { box.value = shown; box.dataset.shown = "1"; }
     else if (box && box.dataset.shown) { delete box.dataset.shown; syncInputs([k]); }
     const n = $("note_" + k);
+    if (n && k === "__SAMPLE_LIVE") {          // its note follows the run (liveNote), not the form's state
+      S._liveNoteFor = undefined;
+      liveNote(!!(S.run && (S.run.running || S.run.state === "starting")));
+      return;
+    }
     if (n) {
       if (n.tagName === "INPUT") { n.value = S.state.notes[k] || ""; return; }
       if (n.classList.contains("note-lines")) {    // one line each, "Label: text" with the label bold (Subjects card)
@@ -1138,6 +1145,7 @@ async function pollRun() {
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
+  liveNote(live);
   const label = RUN_LABELS[r.state] || r.state;
   $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
   $("runBadge").textContent = label;
@@ -2978,9 +2986,19 @@ const sampleLiveSoon = debounce(async () => {
       cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_STRENGTH});
     if (note) note.textContent = r.on ? "Sent: the run's next previews use these." : "The run is back on its own prompts.";
   } catch (e) {
-    if (note) note.textContent = e.message;
+    if (note) note.textContent = S.run && (S.run.running || S.run.state === "starting") ? e.message : liveIdleText();
   }
 }, 700);
+
+// the tick's note follows the run: what a change would do now, never an old message from before the run started
+const liveIdleText = () => "On: a change here goes to a run while it trains, from its next preview.";
+function liveNote(live) {
+  const note = $("note___SAMPLE_LIVE");
+  if (!note || S._liveNoteFor === live) return;
+  S._liveNoteFor = live;
+  note.textContent = !S.values.__SAMPLE_LIVE ? "" : live ?
+    "On: a change here goes to the run training now, from its next preview." : liveIdleText();
+}
 
 // a run's model, training folder and settings into the form (Start again, a queued run's Edit)
 async function loadIntoForm(s) {
