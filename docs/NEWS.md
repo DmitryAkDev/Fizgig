@@ -27,7 +27,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 **[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a fine-tune of MOSS-Image Base made to fix Base's blurriness, presented as a drop-in replacement for SFT. Fizgig now offers it as your **preview model** in place of SFT: you train on Base as before, and your previews show the LoRA on Kromoss. Its 8-step Turbo LoRA works on Kromoss previews too.
 
-We recommend training on MOSS-Image Base, not on Kromoss: in our test, a LoRA trained on Kromoss overbaked sooner.
+**We recommend training on MOSS-Image Base, not on Kromoss:** in our test, a LoRA trained on Kromoss began to overbake after about 750 steps (epoch 12 on a 62-image dataset), where the same training on Base held up.
 
 **Set it up.** In **Preferences → MOSS-Image**:
 
