@@ -38,7 +38,10 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 ## Also
 
+- **A tidier Samples tab:** the preview switches sit side by side, **Turbo LoRA strength** has its own box with a plain explanation of what it does, and the boxes they change (size, steps, seed and the rest) sit underneath.
 - **Samples tab:** the Steps and CFG you type stay put. They used to jump back to a default when the tab refreshed.
+- **Previews no longer stop when you turn CFG on mid-run.** A run that started at CFG 1 (on a Turbo LoRA) had no negative prompt ready, so raising CFG mid-run failed its next preview and switched previews off for the rest of the run. The negative is now always ready.
+- **The Negative Prompt box follows the Turbo switch:** it showed at CFG 1 and hid at CFG 4; it's now the right way round.
 - **Change previews mid-run, steps included.** **Change the previews of the run going now** on the Samples tab now carries **Steps, CFG and Turbo LoRA strength** as well as the prompts, seed and size, and they apply from the next preview with no pause. The tick is now on by default: only what you change is sent, so a run keeps its own preview settings until you change one. Turbo strength 0 renders a round without the Turbo LoRA; a Turbo strength needs a run that started with a Turbo LoRA set.
 - **Resume takes your preview settings.** Pause → Resume now picks up the Samples tab's prompts, seed, size, steps, CFG, Turbo strength and the **Use the preview model for samples** tick as they are now, so a pause is how to switch previews to or from the preview model mid-run. The run trains on with its own training settings.
 - **Previews so far says what the previews render with:** a line between the likeness chart and the thumbnails shows the model, steps and CFG, or, in amber, that a Turbo LoRA is in use, since Turbo previews can look softer than the finished LoRA.
@@ -52,6 +55,7 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 - **Kromoss via Download models for me** fetches only Kromoss; files you already have are skipped. Your SFT file stays on disk, so you can switch the preview model back.
 - **Already training on SFT or a fine-tune?** The first time you open the Samples tab after updating, **Use the preview model for samples** turns off, so previews render on your own Base. Tick it back on if you prefer the preview model.
 - **On a RunPod pod:** restart the pod to update.
+- **Pod updated on the afternoon of 19 Oct?** A transient bug stopped **Download models for me** with an error ('Strangers' object has no attribute 'alt'). It's fixed: restart the pod, then press the button again to fetch whatever is missing.
 
 ---
 
