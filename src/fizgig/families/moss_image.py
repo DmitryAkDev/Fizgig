@@ -96,14 +96,15 @@ MOSS_IMAGE = FamilyDescription(
                   hint="The model training samples, Repair Studio and LoRA Royale render your LoRA on (untick it on "
                        "the Samples tab for samples on the Base): MOSS-Image SFT, OpenMOSS's everyday model, or "
                        "lodestones' Kromoss, a sharper fine-tune of Base made for generating, on which the Turbo "
-                       "LoRA works too. Never trained. The int8 ConvRot files are decoded at load; the bf16 files "
-                       "work as well.",
+                       "LoRA works too. MOSS-Image SFT is recommended for previews: Kromoss can work well, but it "
+                       "doesn't perform as well in early epochs. Never trained. The int8 ConvRot files are decoded at "
+                       "load; the bf16 files work as well.",
                   download_note="~5.4 GB (int8 ConvRot) - Apache-2.0",
                   # Kromoss (lodestones/Kromoss): a full fine-tune of Base, presented as a drop-in for SFT. As a
                   # training base it overbaked sooner than Base in Peter's test (19 Oct 2026), so it's offered here,
                   # for previews, and not on the Base row
                   alt_repo="lodestones/Kromoss", alt_path="diffusion_models/kromoss_int8_convrot.safetensors",
-                  alt_label="Download Kromoss", fetch_choice=("MOSS-Image SFT", "Kromoss"), alt_size_gb=5.41,
+                  alt_label="Download Kromoss", fetch_choice=("MOSS-Image SFT (recommended)", "Kromoss"), alt_size_gb=5.41,
                   alt_note="Kromoss ~5.4 GB (int8 ConvRot) - sharper, and takes the Turbo LoRA for fast previews"),
     ),
     text_encoder_label="Qwen3.5-9B",
