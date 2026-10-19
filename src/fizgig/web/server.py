@@ -3002,7 +3002,8 @@ class Handler(BaseHTTPRequestHandler):
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)),
-                                base_file=pref_path(prefs, dit) if dit else "")
+                                base_file=pref_path(prefs, dit) if dit else "",
+                                checkpoint_path=ckf if ckf and os.path.isfile(ckf) else "")
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
                     mpn = _multi_person_notes(vals, b.get("image_folder") or "",
                                               multi_person=st["kind"] == "standard" and

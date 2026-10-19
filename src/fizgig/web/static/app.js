@@ -509,7 +509,10 @@ function turboFollow() {
     note(sides.on); note(sides.off);
     Object.assign(want, sides.off);
   }
-  for (const pass of ["turbo", "follow"]) for (const row of rows) {
+  // the later pass wins the boxes they share: normally the preview checkpoint's own values, but a checkpoint that
+  // takes the Turbo LoRA (Kromoss) renders a live Turbo's steps and CFG
+  const order = S.state && S.state.checkpoint_turbo ? ["follow", "turbo"] : ["turbo", "follow"];
+  for (const pass of order) for (const row of rows) {
     if (!row[pass]) continue;
     let live;
     if (pass === "turbo") {

@@ -430,6 +430,9 @@ class FamilyDescription:
     # a changed default moved in saved forms: ((key, old value, new value[, only while this key is above 0]), ...).
     # Each form moves once (a marker is saved with it), so a value chosen after that stays
     value_moves: tuple = ()
+    # the preview checkpoint that never takes the speed LoRA, as (tensor name, sum); any other preview checkpoint
+    # does (MOSS-Image: SFT doesn't, Kromoss does). () = previews on a checkpoint never take it
+    checkpoint_speed_except: tuple = ()
     preview_checkpoint_steps_note: str = "Base samples only — Distilled is locked at 4 steps"
     # measured training memory for the Auto plan: {precision: (peak GB with no block swap, GB saved per swapped
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.

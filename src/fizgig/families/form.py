@@ -551,8 +551,11 @@ def form(desc):
             hint=(f"0 = off: full-quality previews ({desc.preview_steps} steps{cfg_off}). 1 = on: the {sp.name} "
                   f"renders previews in {spd[0]} steps{cfg_on}, much faster but softer, so they undersell your LoRA. "
                   "Steps and CFG switch with it. Previews only, never the saved LoRA."
-                  + (" It works on previews of the training model only: untick "
-                     f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it."
+                  + ((" It works on previews of the training model or on Kromoss as the preview model, never on "
+                      "SFT: with SFT, untick " f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it.")
+                     if desc.checkpoint_speed_except else
+                     (" It works on previews of the training model only: untick "
+                      f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" above to use it.")
                      if desc.train_preview_checkpoint else "")
                   + (" Default " + f"{spd[1]:g}." if spd[1] else "")),
             turbo={"on": live, "off": plain})]
@@ -715,12 +718,14 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
-def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file=""):
+def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file="",
+          checkpoint_path=""):
     """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
     (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
     checkpoint (Klein's Distilled) is."""
     hidden, disabled, notes, force, actions = set(), set(), {}, {}, {}
+    ck_turbo = False                              # previews on a preview checkpoint that takes the Turbo LoRA
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
     if speed_file and desc.samples_turbo_pace:     # H3 with its Turbo on renders at the Turbo row's steps
@@ -920,14 +925,17 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         # LoRA's do; CFG 1 hides the negative (above)
         if desc.preview_checkpoint_sampling is None:
             disabled |= {"SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "SAMPLE_NEGATIVE"}
-        if speed_file and desc.preview_speed() is not None and not desc.samples_turbo_pace:
-            # previews on the checkpoint never take the speed LoRA (it joins previews on the training model)
+        from fizgig.families.base_check import checkpoint_takes_speed
+        if checkpoint_takes_speed(desc, checkpoint_path):
+            ck_turbo = True                       # Kromoss as the preview model: the Turbo LoRA joins it
+        elif speed_file and desc.preview_speed() is not None and not desc.samples_turbo_pace:
+            # previews on this checkpoint never take the speed LoRA (it joins previews on the training model)
             disabled.add("FAMILY_TURBO_STRENGTH")
             notes["FAMILY_TURBO_STRENGTH"] = (f"The {desc.preview_speed().name} applies to previews on the training "
                                               f"model: untick \"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
-            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels}
+            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo}
 
 
 def _extras_found(desc, values, image_folder):

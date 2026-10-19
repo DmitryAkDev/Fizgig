@@ -650,9 +650,10 @@ class _CheckpointPreviews:
     system RAM when it isn't block-swapped and the cache mode allows (auto: decided once per run, free RAM >= 18 GB,
     so caching never flip-flops); any failure to reuse it falls back to a fresh load."""
 
-    def __init__(self, driver, path, device, cache_mode="auto", int8=False, context=None):
+    def __init__(self, driver, path, device, cache_mode="auto", int8=False, context=None, speed=None):
         self.driver, self.path, self.device = driver, path, torch.device(device)
         self.cache_mode, self.int8, self.context = str(cache_mode or "auto").lower(), bool(int8), context
+        self.speed = speed                 # (path, strength): the speed LoRA, on a checkpoint that takes it (Kromoss)
         self.cached = None                 # (model, FamilyLoRA, swapped) on the CPU between epochs
         self._auto = None
         self._lora_file = os.path.join(os.environ.get("TEMP") or os.environ.get("TMPDIR") or "/tmp",
@@ -704,6 +705,9 @@ class _CheckpointPreviews:
                 fl.add_file(self._lora_file, TRAINABLE_PREVIEW)
                 if self.context:
                     fl.add_file(self.context[0], CONTEXT, self.context[1])
+                if self.speed:
+                    fl.add_file(self.speed[0], SPEED, self.speed[1])
+                    self.driver.frozen_file_added(m, self.speed[0], self.speed[1], "speed")
                 logger.info(f"[sample] previews on {os.path.basename(self.path)}"
                             + (f" ({swapped} blocks streamed)" if swapped else ""))
             return render(m, fl, swapped)
@@ -1575,12 +1579,21 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 speed_now = None
         if ckpt_previews is not None and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
-            ckpt_previews.render(dit, net, ema, lambda m, fl, swp: _render_previews(
-                driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name,
-                steps=ask_steps or ck.steps, cfg=ck.cfg if ask_cfg is None else ask_cfg,
-                neg=neg if (ck.cfg if ask_cfg is None else ask_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
-            write_mode({"model": os.path.basename(preview_checkpoint), "turbo": "", "steps": ask_steps or ck.steps,
-                        "cfg": ck.cfg if ask_cfg is None else ask_cfg})
+            # a checkpoint that takes the speed LoRA (Kromoss): this round with it while its strength is above 0
+            turbo_ck = ckpt_previews.speed is not None and speed_now is not None
+            ck_steps = (steps_now if turbo_ck else (ask_steps or ck.steps))
+            ck_cfg = (cfg_now if turbo_ck else (ck.cfg if ask_cfg is None else ask_cfg))
+
+            def _ck_render(m, fl, swp):
+                if ckpt_previews.speed is not None and fl.has(SPEED):
+                    fl.set_strength(SPEED, strength_now if turbo_ck else 0.0)
+                return _render_previews(
+                    driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name, steps=ck_steps, cfg=ck_cfg,
+                    neg=neg if ck_cfg > 1.0 else None, width=w, height=h, seed=sd,
+                    speed=speed_desc.settings if turbo_ck else ck, swapped=bool(swp), refs=ref_latents)
+            ckpt_previews.render(dit, net, ema, _ck_render)
+            write_mode({"model": os.path.basename(preview_checkpoint), "steps": ck_steps, "cfg": ck_cfg,
+                        "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0})
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
@@ -1605,9 +1618,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.warning(f"[sample] preview checkpoint {preview_checkpoint} not found - previews use the training "
                            f"model")
         else:
+            from fizgig.families.base_check import checkpoint_takes_speed
+            ck_speed = speed_lora if (speed_lora and speed_desc and
+                                      checkpoint_takes_speed(desc, preview_checkpoint)) else None
             ckpt_previews = _CheckpointPreviews(
                 driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
-                context=(context_lora_path, context_lora_strength) if context_lora_path else None)
+                context=(context_lora_path, context_lora_strength) if context_lora_path else None,
+                speed=(ck_speed, speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
+                if ck_speed else None)
+            if ck_speed:
+                logger.info(f"[sample] {os.path.basename(preview_checkpoint)} takes the {speed_desc.name}: previews "
+                            f"on it use it while its strength is above 0")
     def write_mode(mode):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows."""
@@ -1624,6 +1645,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
                     "steps": asked_steps or (ck.steps if ck else sample_steps),
                     "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None else asked_cfg}
+            if ckpt_previews.speed is not None:
+                mode.update(turbo=speed_desc.name, strength=ckpt_previews.speed[1], steps=sample_steps,
+                            cfg=sample_cfg_scale)
         else:
             mode = {"model": "", "steps": sample_steps, "cfg": sample_cfg_scale,
                     "turbo": speed_desc.name if (speed_lora and speed_desc) else "",

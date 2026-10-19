@@ -19,12 +19,12 @@ NEWS = [
         "date": "19 Oct 2026",
         "title": "Kromoss and its 8-step Turbo LoRA",
         "body": (
-            "Kromoss, lodestones' sharper fine-tune of MOSS-Image Base, can now be trained on as an option; Base stays "
-            "the default, and time will tell which is wiser to train on. To try it, pick Kromoss beside Download models "
-            "for me in Preferences. The new Turbo LoRA (Download on the Turbo LoRA row) works with either; on Base, "
-            "untick Use the SFT model for samples to use it.\n\n"
-            "Training is unchanged. Previews then render on Kromoss itself, the model you'll use the LoRA on, instead "
-            "of on SFT; with the Turbo LoRA at strength 1 on the Samples tab, they render in 12 steps. The Turbo LoRA is very good compared with the earlier MOSS-Image speed LoRAs; we suggest 12 steps rather than its card's 8."
+            "Kromoss, lodestones' sharper fine-tune of MOSS-Image Base made for generating, can now be your preview "
+            "model in place of SFT: pick it beside Download models for me in Preferences. You still train on Base (in "
+            "our test a LoRA trained on Kromoss overbaked sooner), and your previews show the LoRA on Kromoss.\n\n"
+            "Its Turbo LoRA (Download on the Turbo LoRA row) works on Kromoss previews: set Turbo LoRA strength to 1 on "
+            "the Samples tab for 12-step previews. It's very good compared with the earlier MOSS-Image speed LoRAs; we "
+            "suggest 12 steps rather than its card's 8."
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#19-oct-2026-kromoss-and-its-8-step-turbo-lora"}],
     },

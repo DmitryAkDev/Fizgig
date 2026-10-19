@@ -19,23 +19,28 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 ## Kromoss and its 8-step Turbo LoRA
 
-**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a full fine-tune of MOSS-Image Base made to fix Base's blurriness, and Fizgig can now train on it as an option. MOSS-Image Base stays the default. Training on Kromoss is new: lodestones presents it as a drop-in replacement for SFT, not as a training base, so time will tell whether it's wiser to train on Kromoss or on Base. The Turbo LoRA below works with either. In **Preferences → MOSS-Image**:
+**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a fine-tune of MOSS-Image Base made to fix Base's blurriness, presented as a drop-in replacement for SFT. Fizgig now offers it as your **preview model** in place of SFT: you train on Base as before, and your previews show the LoRA on Kromoss. Its 8-step Turbo LoRA works on Kromoss previews too.
 
-1. **Kromoss (optional):** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads it (10.2 GB) and sets it as your Base DiT. (The Base DiT row also has a **Download Kromoss** link.)
-2. **Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. This is lodestones' 8-step Turbo LoRA from Kromoss; it's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good compared with the earlier MOSS-Image speed LoRAs. We suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it. It replaces the earlier SFT Turbo LoRA in that row.
+We recommend training on MOSS-Image Base, not on Kromoss: in our test, a LoRA trained on Kromoss overbaked sooner.
 
-What happens then:
+**Set it up.** In **Preferences → MOSS-Image**:
 
-- **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, at the same memory.
-- **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself; tick it back on for SFT previews. The same happens with any Base DiT that isn't MOSS-Image Base (a fine-tune of Base, or SFT itself). Switch back to MOSS-Image Base and SFT previews come back on.
-- **The Turbo LoRA stays off unless you turn it on.** Previews on Kromoss render at full quality, 30 steps and CFG 4, and they're still quicker than SFT previews because there's no switch to a second model.
-- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. **On MOSS-Image Base, untick Use the SFT model for samples first** to use it: previews then render on Base with the Turbo LoRA (on Kromoss the tick is already off). Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
+1. **Kromoss as the preview model (optional):** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (int8, 5.4 GB) into the **Preview model (SFT or Kromoss)** row, which used to hold only SFT. The row also has a **Download Kromoss** link.
+2. **Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. This is lodestones' 8-step Turbo LoRA from Kromoss, distilled from MOSS-Image Base. **It's very good compared with the earlier MOSS-Image speed LoRAs. We suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it. It replaces the earlier SFT Turbo LoRA in that row.
+
+**What happens then.**
+
+- **Training is unchanged:** your LoRAs train on Base.
+- **Previews render on Kromoss** with your LoRA on top, while **Use the preview model for samples** is ticked on the Samples tab (it is by default). Repair Studio and LoRA Royale render on it too.
+- **The Turbo LoRA stays off unless you turn it on.** For fast previews, set **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. It works on Kromoss previews and on previews of your Base, but never on SFT: with SFT as the preview model the strength box is greyed out, and you untick **Use the preview model for samples** to use it on Base.
+
+**In ComfyUI:** use Kromoss in place of SFT with your Base-trained LoRA. With its Turbo LoRA at strength 1: 12 steps (its card says 8; 12 looked much better in our tests), CFG 1, euler / simple. Without it, its model card recommends Euler, 50 steps, CFG 3, shift 5.
 
 ## Also
 
 - **Samples tab:** the Steps and CFG you type stay put. They used to jump back to a default when the tab refreshed.
 - **Change previews mid-run, steps included.** **Change the previews of the run going now** on the Samples tab now carries **Steps, CFG and Turbo LoRA strength** as well as the prompts, seed and size, and they apply from the next preview with no pause. The tick is now on by default: only what you change is sent, so a run keeps its own preview settings until you change one. Turbo strength 0 renders a round without the Turbo LoRA; a Turbo strength needs a run that started with a Turbo LoRA set.
-- **Resume takes your preview settings.** Pause → Resume now picks up the Samples tab's prompts, seed, size, steps, CFG, Turbo strength and the **Use the SFT model for samples** tick as they are now, so a pause is how to switch previews to or from SFT mid-run. The run trains on with its own training settings.
+- **Resume takes your preview settings.** Pause → Resume now picks up the Samples tab's prompts, seed, size, steps, CFG, Turbo strength and the **Use the preview model for samples** tick as they are now, so a pause is how to switch previews to or from the preview model mid-run. The run trains on with its own training settings.
 - **Previews so far says what the previews render with:** a line between the likeness chart and the thumbnails shows the model, steps and CFG, or, in amber, that a Turbo LoRA is in use, since Turbo previews can look softer than the finished LoRA.
 - **Fizgig opens on the Start tab**, with a News card at the top for what's new. The full articles are in [NEWS.md](https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md).
 
@@ -44,8 +49,8 @@ What happens then:
 - **Clean-end share moves to 30 by itself.** If your MOSS-Image Training tab still had 8.7.0's 60, it changes to 30 the first time you open it after updating. Any other value you set stays, and you can change it again afterwards.
 - **Turbo preview steps move from 8 to 12 by itself** if your MOSS-Image Samples tab had 8 with the Turbo LoRA on, the first time you open it after updating.
 - **Turbo LoRA:** if you had the earlier SFT Turbo LoRA set, it stays until you change it. Use **Download** on the Turbo LoRA row and point the row at the new file.
-- **Kromoss via Download models for me** fetches only Kromoss; files you already have are skipped. Your MOSS-Image Base file stays on disk, so you can switch back.
-- **Already training on SFT or a fine-tune?** The first time you open the Samples tab after updating, **Use the SFT model for samples** turns off, so previews render on your own Base. Tick it back on if you prefer SFT.
+- **Kromoss via Download models for me** fetches only Kromoss; files you already have are skipped. Your SFT file stays on disk, so you can switch the preview model back.
+- **Already training on SFT or a fine-tune?** The first time you open the Samples tab after updating, **Use the preview model for samples** turns off, so previews render on your own Base. Tick it back on if you prefer the preview model.
 - **On a RunPod pod:** restart the pod to update.
 
 ---

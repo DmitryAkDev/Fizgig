@@ -25,19 +25,19 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 
 ## 19 Oct 2026: Kromoss and its 8-step Turbo LoRA
 
-**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a full fine-tune of MOSS-Image Base made to fix Base's blurriness. Fizgig can now train on it as an option, and its 8-step Turbo LoRA gives fast previews on Base or Kromoss. MOSS-Image Base stays the default. Training on Kromoss is new: lodestones presents it as a drop-in replacement for SFT, not as a training base, so time will tell whether it's wiser to train on Kromoss or on Base. The Turbo LoRA below works with either.
+**[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a fine-tune of MOSS-Image Base made to fix Base's blurriness, presented as a drop-in replacement for SFT. Fizgig now offers it as your **preview model** in place of SFT: you train on Base as before, and your previews show the LoRA on Kromoss. Its 8-step Turbo LoRA works on Kromoss previews too.
 
-**Get it.** In **Preferences → MOSS-Image**:
+We recommend training on MOSS-Image Base, not on Kromoss: in our test, a LoRA trained on Kromoss overbaked sooner.
 
-1. **Kromoss (optional):** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (10.2 GB) and sets it as your Base DiT. (Or use **Download Kromoss** on the Base DiT row and point the row at the file.)
-2. **Its Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. It's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good compared with the earlier MOSS-Image speed LoRAs. We suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it.
+**Set it up.** In **Preferences → MOSS-Image**:
+
+1. **Kromoss as the preview model (optional):** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads Kromoss (int8, 5.4 GB) into the **Preview model (SFT or Kromoss)** row, which used to hold only SFT. The row also has a **Download Kromoss** link.
+2. **Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. This is lodestones' 8-step Turbo LoRA from Kromoss, distilled from MOSS-Image Base. **It's very good compared with the earlier MOSS-Image speed LoRAs. We suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it. It replaces the earlier SFT Turbo LoRA in that row.
 
 **What happens then.**
 
-- **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, with the same settings and memory.
-- **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself when you set Kromoss; tick it back on if you want SFT previews.
-- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab. Steps move to 12 and CFG to 1. **On MOSS-Image Base, untick Use the SFT model for samples first**: previews on SFT never use a Turbo LoRA, so with it unticked they render on Base with the Turbo LoRA (on Kromoss the tick is already off).
-- Switch back to MOSS-Image Base and SFT previews come back on.
-- **The Turbo LoRA stays off unless you turn it on.** Previews on Kromoss render at full quality, 30 steps and CFG 4, and they're still quicker than SFT previews because there's no switch to a second model.
+- **Training is unchanged:** your LoRAs train on Base.
+- **Previews render on Kromoss** with your LoRA on top, while **Use the preview model for samples** is ticked on the Samples tab (it is by default). Repair Studio and LoRA Royale render on it too.
+- **The Turbo LoRA stays off unless you turn it on.** For fast previews, set **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. It works on Kromoss previews and on previews of your Base, but never on SFT: with SFT as the preview model the strength box is greyed out, and you untick **Use the preview model for samples** to use it on Base.
 
-**In ComfyUI:** load Kromoss in place of MOSS-Image Base. With its Turbo LoRA at strength 1: CFG 1, euler / simple, and 12 steps (its card says 8; 12 looked much better in our tests). Without it, its model card recommends Euler, 50 steps, CFG 3, shift 5.
+**In ComfyUI:** use Kromoss in place of SFT with your Base-trained LoRA. With its Turbo LoRA at strength 1: 12 steps (its card says 8; 12 looked much better in our tests), CFG 1, euler / simple. Without it, its model card recommends Euler, 50 steps, CFG 3, shift 5.

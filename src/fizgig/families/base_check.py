@@ -21,6 +21,26 @@ def _check(path, mtime, size, key, want):
         return abs(float(f.get_tensor(hit).double().sum()) - want) < 1e-6
 
 
+def matches(path, fingerprint):
+    """True = the file carries this (tensor name, sum) fingerprint, False = it doesn't, None = unknown."""
+    if not fingerprint or not path or not os.path.isfile(path):
+        return None
+    try:
+        st = os.stat(path)
+        r = _check(os.path.abspath(path), st.st_mtime, st.st_size, *fingerprint)
+        return r
+    except Exception:
+        return None
+
+
+def checkpoint_takes_speed(desc, path):
+    """Whether previews on this preview checkpoint can take the family's speed LoRA (checkpoint_speed_except): any
+    checkpoint but the one with that fingerprint (MOSS-Image: Kromoss yes, SFT no). Unset = none do."""
+    if not desc.checkpoint_speed_except or not path:
+        return False
+    return matches(path, desc.checkpoint_speed_except) is False
+
+
 def is_standard_base(desc, path):
     """True = the released Base, False = another model, None = unknown (no fingerprint, no file, unreadable)."""
     if not desc.standard_base or not path or not os.path.isfile(path):

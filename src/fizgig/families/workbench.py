@@ -185,7 +185,8 @@ class WorkbenchEngine:
 
     # ---- models -------------------------------------------------------------------------------------
     def ensure_pipeline(self, dit_path, vae_path, text_encoder_path, speed_lora_path="", device="cuda",
-                        lowmem=None, precision="auto", blocks_to_swap=0, preview_sampling=None, **_ignored):
+                        lowmem=None, precision="auto", blocks_to_swap=0, preview_sampling=None,
+                        speed_on_checkpoint=False, **_ignored):
         """Load the DiT (resident) and the VAE once; the text encoder loads per new prompt. speed_lora_path: the
         family's speed LoRA file, attached unmerged and used for every preview ("" = default sampling).
         precision: "auto" = bf16 when the model file fits the free VRAM with 6 GB to spare (Qwen 2.1's 14 GB: 20 GB
@@ -195,7 +196,8 @@ class WorkbenchEngine:
         if self.pipeline is not None:
             return
         self.checkpoint_sampling = preview_sampling
-        if preview_sampling is not None:
+        self.speed_on_checkpoint = bool(speed_on_checkpoint and preview_sampling is not None)
+        if preview_sampling is not None and not self.speed_on_checkpoint:
             speed_lora_path = ""
         from fizgig.families.train import _small_card_previews
         self.device = device
@@ -629,9 +631,11 @@ class WorkbenchEngine:
     def sampling(self):
         """(steps, cfg, sigmas, options) previews use."""
         ps = self.preview_settings
-        if ps is not None and getattr(self, "checkpoint_sampling", None) is None:
+        if ps is not None and (getattr(self, "checkpoint_sampling", None) is None
+                               or getattr(self, "speed_on_checkpoint", False)):
             self._follow_speed()
-            s = self.speed.settings if self.speed is not None else self.desc.default_sampling()
+            s = self.speed.settings if self.speed is not None else (
+                getattr(self, "checkpoint_sampling", None) or self.desc.default_sampling())
             try:
                 steps = int(ps.get("steps")) or s.steps
             except (TypeError, ValueError):

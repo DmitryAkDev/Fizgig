@@ -257,6 +257,10 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
         c = desc.preview_checkpoint()
         if c is not None and have(c[0].pref_key):
             dit, use_ck, ck = look(c[0].pref_key), True, c[1]
+            from fizgig.families.base_check import checkpoint_takes_speed
+            sp0 = desc.preview_speed()
+            if sp0 is not None and have(sp0.pref_key) and checkpoint_takes_speed(desc, dit):
+                speed = look(sp0.pref_key)          # Kromoss as the preview model: the Turbo LoRA can join it
         else:
             sp = desc.preview_speed()
             if sp is not None and have(sp.pref_key):
@@ -274,7 +278,8 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
         steps = settings["steps"]
     swap = str(prefs.get("inference_blocks_to_swap") or "Auto").strip()
     kw = {"dit_path": dit, "vae_path": paths["vae"], "text_encoder_path": paths["text_encoder"],
-          "speed_lora_path": speed, "use_checkpoint_sampling": use_ck, "device": "cuda",
+          "speed_lora_path": speed, "use_checkpoint_sampling": use_ck, "speed_on_checkpoint": bool(use_ck and speed),
+          "device": "cuda",
           "precision": "int8" if str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true") else "auto",
           "blocks_to_swap": "auto" if swap.lower().startswith("auto") else int(
               "".join(ch for ch in swap.split(" ")[0] if ch.isdigit()) or 0)}
