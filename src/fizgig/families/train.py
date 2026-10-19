@@ -1561,6 +1561,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     if preview_checkpoint and encoded is not None:
         if not desc.train_preview_checkpoint:
             logger.warning(f"[sample] {desc.display_name} has no checkpoint previews - ignoring --preview_checkpoint")
+        elif finetune:      # the checkpoint carries a LoRA; a fine-tune changes the model itself, so it previews on that
+            logger.info("[sample] a fine-tune previews on the model it trains, not the preview checkpoint")
         elif not os.path.isfile(preview_checkpoint):
             logger.warning(f"[sample] preview checkpoint {preview_checkpoint} not found - previews use the training "
                            f"model")

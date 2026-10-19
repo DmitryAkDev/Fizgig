@@ -177,10 +177,14 @@ class MOSSImageDriver(FamilyDriver):
         # the down projection 0.047 in bf16). ComfyUI's file fuses q / k / v into one proj.qkv = [q; k; v] tensor; the
         # diffusers shards keep them apart. The text adapter, embedders, modulations and the final layer stay frozen,
         # as for a LoRA; on SFT or a fine-tune of it (lora_sft) only attention trains, as for a LoRA.
-        # Memory figures are not measured yet (no GPU in the driver's session): the cautious defaults apply.
+        # Memory: measured 19 Oct on an H100 at 1 MP, the whole model in one window: all six parts peaked 12.6 GB,
+        # attention only 8.3 GB. overhead_gb is fitted to each in the planner's frame (4.5 = 0.6 GB above the full
+        # run's fit; 6.0 attention only, whose window is credited the whole 4-bit trunk though the FFN stays in it).
+        # act_gb_per_mp is not measured yet (2.0, as Anima and Flux 3).
         from fizgig.families.ft import FTSpec
         sft = str(self.options.get("lora_sft", "")) == "1"
         return FTSpec(blocks="layers", components=ATTN_MODULES if sft else BLOCK_MODULES,
+                      overhead_gb=6.0 if sft else 4.5, calib_mp=1.0, act_gb_per_mp=2.0,
                       file_layout=(("proj.q.weight", "proj.qkv.weight", 0, 3),
                                    ("proj.k.weight", "proj.qkv.weight", 1, 3),
                                    ("proj.v.weight", "proj.qkv.weight", 2, 3)))

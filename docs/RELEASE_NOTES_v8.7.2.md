@@ -21,15 +21,15 @@ The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epo
 
 **Clean-end share applies to fine-tunes too.** A MOSS-Image fine-tune uses the same 30% as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy. Fine-tuning is probably best done from Base, though: SFT has already been taken a long way in one direction.
 
-**Which cards can fine-tune MOSS-Image, at 1 MP.** Fizgig plans this for you: it trains as much of the model at once as your card holds, and rotates through the rest.
+**Which cards can fine-tune MOSS-Image, at 1 MP.** Fizgig plans this for you: it trains as much of the model at once as your card holds, and rotates through the rest. Measured on real fine-tunes:
 
-| Card | Base | SFT base (attention only) |
+| Card | Base (all parts) | Train attention only |
 |:--|:--|:--|
-| 24 GB and up | The whole model at once, nothing rotates | The whole model at once |
-| 16 GB | 7 parts per rotation | The whole model at once |
-| 12 GB | Many small parts, with blocks streamed from system RAM (works, but slow) | The same, with fewer parts |
+| 16 GB and up | The whole model at once, nothing rotates (peak 12.6 GB) | The whole model at once |
+| 12 GB | 2 parts per rotation | The whole model at once (peak 8.3 GB) |
+| 10 GB | 9 parts per rotation | Many small parts, with blocks streamed from system RAM (works, but slow) |
 
-These come from Fizgig's memory planner; MOSS-Image's own fine-tune memory figures will be refined from real runs. A fine-tune also needs plenty of system RAM; the Log says how much when it starts.
+A fine-tune also needs plenty of system RAM; the Log says how much when it starts.
 
 That opens MOSS-Image up properly for LoRA training as well as fine-tuning.
 
