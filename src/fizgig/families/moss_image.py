@@ -57,7 +57,9 @@ MOSS_IMAGE = FamilyDescription(
                   # verified 17 Oct 2026: tensor for tensor the official transformer/ shards, q / k / v fused into
                   # proj.qkv = [q; k; v]; the loader splits it back
                   hint="MOSS-Image Base - ComfyUI's single file. The official diffusers shards "
-                       "(OpenMOSS-Team/MOSS-Image-Base transformer/) and the int8_convrot file load too."),
+                       "(OpenMOSS-Team/MOSS-Image-Base transformer/) and the int8_convrot file load too. (Kromoss is "
+                       "not recommended to train on: in our test a LoRA on it began to overbake after about 750 "
+                       "steps.)"),
         ModelFile("moss_image_vae", "FLUX.2 autoencoder (small decoder)", True, _COMFY,
                   "vae/flux2-vae_small.safetensors", 0.25,
                   "The FLUX.2 autoencoder with BFL's small decoder, the decoder MOSS-Image ships with.",
