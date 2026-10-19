@@ -19,7 +19,7 @@ The result, on the same dataset, ArcFace likeness against 3 reference photos:
 | Before (model's own schedule) | 40% | 44% | 52% | 58% | 63% | 60% |
 | Now (Clean-end 30%) | 42% | 59% | 63% | 66% | 69% | 69% |
 
-The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. That opens MOSS-Image up properly for LoRA training as well as fine-tuning.
+The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. By eye the difference is bigger still: the Clean-end 30% pictures are far sharper and more accurate, with no body horror. That opens MOSS-Image up properly for LoRA training as well as fine-tuning.
 
 ---
 
