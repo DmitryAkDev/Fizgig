@@ -42,6 +42,10 @@ class ModelFile:
     alt_path: str = ""
     alt_label: str = ""
     alt_note: str = ""
+    # "Download models for me" offers a pick between this file and its alt (names for the two, e.g. ("MOSS-Image
+    # Base", "Kromoss")); the picked one is fetched and the pref moved to it. alt_size_gb: the alt's size
+    fetch_choice: tuple = ()
+    alt_size_gb: float = 0.0
     gated: bool = False               # the repo needs an accepted licence + a Hugging Face token to download
     # earlier versions of this file (names in models/): a pref still pointing at one is moved to this file by the
     # downloads (fetch_models) and the updater, where any other file there is the user's own choice and kept

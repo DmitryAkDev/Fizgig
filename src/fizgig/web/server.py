@@ -2079,7 +2079,7 @@ def _fetch_status() -> dict:
     return out
 
 
-def _start_fetch(family, token="", optional=False):
+def _start_fetch(family, token="", optional=False, choices=None):
     """The family's model files plus the helper models, into <repo>/models (a pod links that to its volume), paths
     written to Preferences by the fetcher. A token is passed to that one download only, never written to disk."""
     desc = _files_family(family)
@@ -2095,6 +2095,10 @@ def _start_fetch(family, token="", optional=False):
     cmd = [sys.executable, "-m", "fizgig.scripts.fetch_models", "--progress", "--family", "tools", "--family", family]
     if optional or not desc.fetch_optional_label:
         cmd.append("--include-optional")          # no optional tick on the family: its whole list, as the desktop
+    offered = {f.pref_key for f in desc.model_files if f.fetch_choice}
+    for key, pick in (choices or {}).items():   # the card's pick for a file offered with another build
+        if key in offered and pick in ("main", "alt"):
+            cmd += ["--choose", f"{key}={pick}"]
     env = os.environ.copy()
     env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", PYTHONPATH=os.path.join(BASE_DIR, "src"))
     if token:
@@ -3223,7 +3227,8 @@ class Handler(BaseHTTPRequestHandler):
                 append_log("\n⏸ Pause requested: the run stops cleanly at the end of this epoch.\n")
                 return self.json({"ok": True})
             if path == "/api/fetch":
-                _start_fetch(b.get("family", ""), b.get("token", ""), bool(b.get("optional")))
+                _start_fetch(b.get("family", ""), b.get("token", ""), bool(b.get("optional")),
+                             b.get("choices") if isinstance(b.get("choices"), dict) else None)
                 return self.json({"ok": True})
             if path == "/api/fetch/cancel":
                 return self.json({"ok": _cancel_fetch()})

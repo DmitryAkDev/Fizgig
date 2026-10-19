@@ -693,15 +693,25 @@ function fetchRow(f) {
   const box = el("div", {class: "fetch-row"});
   const opt = f.fetch_optional_label ? el("input", {type: "checkbox"}) : null;
   const token = gated.length ? el("input", {type: "password", class: "w-path", placeholder: "hf_…"}) : null;
+  // a file offered with another build (MOSS-Image Base or Kromoss): a pick, starting on the one its path holds now
+  const picks = files.filter((m) => m.fetch_choice && m.fetch_choice.length === 2 && m.alt_repo && m.alt_path).map((m) => {
+    const sel = el("select", {}, el("option", {value: "main", text: m.fetch_choice[0]}),
+      el("option", {value: "alt", text: m.fetch_choice[1]}));
+    const cur = String(S.prefs[m.pref_key] || "").split(/[\\/]/).pop();
+    sel.value = cur && cur === m.alt_path.split("/").pop() ? "alt" : "main";
+    return {key: m.pref_key, sel, label: m.label};
+  });
   const btn = el("button", {class: "btn btn-accent", text: "⬇ Download models for me", onclick: async () => {
     try {
-      await api("/api/fetch", {family: f.key, token: token ? token.value.trim() : "", optional: opt ? opt.checked : false});
+      await api("/api/fetch", {family: f.key, token: token ? token.value.trim() : "", optional: opt ? opt.checked : false,
+        choices: Object.fromEntries(picks.map((p) => [p.key, p.sel.value]))});
       if (token) token.value = "";
       S.fetchError = null;
       watchFetch();
     } catch (e) { S.fetchError = {family: f.key, text: e.message}; paintFetch(); }
   }});
   const line = el("div", {class: "field-row"}, btn);
+  for (const p of picks) line.append(el("label", {class: "fetch-opt"}, p.label + ": ", p.sel));
   if (opt) line.append(el("label", {class: "fetch-opt"}, opt, " " + f.fetch_optional_label));
   box.append(line);
   if (token) {
