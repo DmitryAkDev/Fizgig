@@ -9,8 +9,9 @@ NEWS = [
         "title": "Kromoss out as a preview model",
         "body": (
             "Kromoss is no longer offered as the MOSS-Image preview model: it's too different from MOSS-Image Base for "
-            "reliable previews of a LoRA trained on Base. Previews render on SFT again. If you picked Kromoss, press "
-            "Download models for me in Preferences to move the row back to SFT.\n\n"
+            "reliable previews of a LoRA trained on Base, and as a base to train on it overcooks. If you set Kromoss on "
+            "the preview model or Base DiT row, press Download models for me in Preferences: it points both back to "
+            "SFT and MOSS-Image Base.\n\n"
             "The 8-step Turbo LoRA stays, for fast previews of your Base: untick Use the SFT model for samples and set "
             "Turbo LoRA strength to 1 (12 steps)."
         ),

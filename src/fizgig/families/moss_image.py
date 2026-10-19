@@ -59,7 +59,9 @@ MOSS_IMAGE = FamilyDescription(
                   hint="MOSS-Image Base - ComfyUI's single file. The official diffusers shards "
                        "(OpenMOSS-Team/MOSS-Image-Base transformer/) and the int8_convrot file load too. (Kromoss is "
                        "not recommended to train on: in our test a LoRA on it began to overbake after about 750 "
-                       "steps.)"),
+                       "steps.)",
+                  # Kromoss was briefly offered on this row (19 Oct 2026): Download models for me moves it back
+                  replaces=("kromoss_bf16.safetensors", "kromoss_int8_convrot.safetensors")),
         ModelFile("moss_image_vae", "FLUX.2 autoencoder (small decoder)", True, _COMFY,
                   "vae/flux2-vae_small.safetensors", 0.25,
                   "The FLUX.2 autoencoder with BFL's small decoder, the decoder MOSS-Image ships with.",
