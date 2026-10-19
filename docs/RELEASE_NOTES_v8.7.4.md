@@ -41,6 +41,7 @@ What happens then:
 ## Updating from an earlier version
 
 - **Clean-end share moves to 30 by itself.** If your MOSS-Image Training tab still had 8.7.0's 60, it changes to 30 the first time you open it after updating. Any other value you set stays, and you can change it again afterwards.
+- **Turbo preview steps move from 8 to 12 by itself** if your MOSS-Image Samples tab had 8, the first time you open it after updating.
 - **Turbo LoRA:** if you had the earlier SFT Turbo LoRA set, it stays until you change it. Use **Download** on the Turbo LoRA row and point the row at the new file.
 - **Kromoss via Download models for me** fetches only Kromoss; files you already have are skipped. Your MOSS-Image Base file stays on disk, so you can switch back.
 - **Already training on SFT or a fine-tune?** The first time you open the Samples tab after updating, **Use the SFT model for samples** turns off, so previews render on your own Base. Tick it back on if you prefer SFT.
