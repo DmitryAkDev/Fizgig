@@ -249,8 +249,9 @@ def _record_prompts(sample_dir, output_name, epoch, prompts):
 
 def _read_sample_override(output_dir):
     """The live sample override (<output_dir>/.sample_override.json, written by the desktop's status-bar panel or the
-    web UI's Samples tab): {prompts, prompt (the first), seed, width, height} while a prompt is set, else None. A
-    "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field is ignored."""
+    web UI's Samples tab): {prompts, prompt (the first), seed, width, height, steps, cfg, turbo} while a prompt is
+    set, else None. A "prompts" list (the web's, every line of its box) or a single "prompt"; the reference image field
+    is ignored. steps / cfg / turbo (the Turbo LoRA's strength) are None when the override doesn't set them."""
     path = os.path.join(output_dir, ".sample_override.json")
     try:
         with open(path, encoding="utf-8") as f:
@@ -258,8 +259,16 @@ def _read_sample_override(output_dir):
         prompts = d.get("prompts") if isinstance(d.get("prompts"), list) else [d.get("prompt", "")]
         prompts = [str(p).strip() for p in prompts if str(p or "").strip() and not str(p).strip().startswith("#")]
         if prompts:
+            def num(k, kind):            # one bad value drops only itself, never the prompts
+                try:
+                    return kind(float(d[k])) if d.get(k) not in (None, "") else None
+                except (TypeError, ValueError):
+                    return None
+            steps, cfg, turbo = num("steps", int), num("cfg", float), num("turbo", float)
             return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
-                    "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024))}
+                    "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
+                    "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
+                    "turbo": turbo if turbo is not None and turbo >= 0 else None}
     except (OSError, ValueError, TypeError):
         pass
     return None
@@ -1517,6 +1526,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
+        steps_now, cfg_now, ask_steps, ask_cfg = sample_steps, sample_cfg_scale, asked_steps, asked_cfg
+        speed_now = speed_desc.settings if (speed_lora and speed_desc) else None
+        base_strength = (speed_desc.strength if speed_lora_strength is None else speed_lora_strength) \
+            if speed_now is not None else 0
+        strength_now = base_strength
         ov = _read_sample_override(output_dir)
         if ov and slider:       # a slider preview is its own prompt across strengths: an override never applies
             logger.info("[sample override] ignored - slider previews always show the slider's own prompt")
@@ -1530,6 +1544,16 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                                                          parkable=not swapped, references=ref_imgs)]
                 conds = ov_cache[1]
                 sd, prompts = ov["seed"], list(ov["prompts"])
+                if ov.get("steps"):
+                    steps_now = ask_steps = ov["steps"]
+                if ov.get("cfg") is not None:
+                    cfg_now = ask_cfg = ov["cfg"]
+                if ov.get("turbo") is not None:
+                    if speed_now is None and ov["turbo"] > 0:
+                        logger.info("[sample override] Turbo strength ignored - this run started without a Turbo "
+                                    "LoRA (set one, then start the run again)")
+                    elif speed_now is not None:
+                        strength_now = ov["turbo"]
                 if not ref_imgs:        # an edit keeps the reference's canvas: its latents are already encoded
                     w, h = ov["width"], ov["height"]
                     if lowmem and max(w, h) > 768:
@@ -1539,23 +1563,32 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 conds = encoded
         if not sd:          # seed 0 = a fresh random seed every preview round, as on the other trainers
             sd = random.randint(1, 2 ** 31 - 1)
+        if speed_now is not None:       # the Turbo LoRA at this round's strength; 0 = this round without it
+            if strength_now > 0:
+                net.set_strength(SPEED, strength_now)
+            else:
+                speed_now = None
         if ckpt_previews is not None and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
             ckpt_previews.render(dit, net, ema, lambda m, fl, swp: _render_previews(
                 driver, m, fl, vae, conds, sample_dir, epoch, output_name=output_name,
-                steps=asked_steps or ck.steps, cfg=ck.cfg if asked_cfg is None else asked_cfg,
-                neg=neg if (ck.cfg if asked_cfg is None else asked_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
+                steps=ask_steps or ck.steps, cfg=ck.cfg if ask_cfg is None else ask_cfg,
+                neg=neg if (ck.cfg if ask_cfg is None else ask_cfg) > 1.0 else None, width=w, height=h, seed=sd, speed=ck, swapped=bool(swp), refs=ref_latents))
+            write_mode({"model": os.path.basename(preview_checkpoint), "turbo": "", "steps": ask_steps or ck.steps,
+                        "cfg": ck.cfg if ask_cfg is None else ask_cfg})
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
         _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,
-                         steps=sample_steps, cfg=sample_cfg_scale, neg=neg, width=w, height=h,
+                         steps=steps_now, cfg=cfg_now, neg=neg, width=w, height=h,
                          seed=sd, ema=ema,
-                         speed=speed_desc.settings if (speed_lora and speed_desc) else None, lowmem=lowmem,
+                         speed=speed_now, lowmem=lowmem,
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
                          strengths=sample_strengths if epoch > 0 else ())   # before training the LoRA is all zero
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
+        write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
+                    "strength": strength_now if speed_now else 0})
 
     ckpt_previews = None
     if preview_checkpoint and encoded is not None:
@@ -1570,7 +1603,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ckpt_previews = _CheckpointPreviews(
                 driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
                 context=(context_lora_path, context_lora_strength) if context_lora_path else None)
-    if encoded is not None:         # what this run's previews render with, for the gallery (.previews_<name>.json)
+    def write_mode(mode):
+        """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
+        the start and after each preview round, so a live change of steps, CFG or Turbo strength shows."""
+        try:
+            os.makedirs(sample_dir, exist_ok=True)
+            with open(os.path.join(sample_dir, f".previews_{output_name}.json"), "w", encoding="utf-8") as f:
+                json.dump(mode, f)
+        except OSError as e:
+            logger.warning(f"[sample] could not record the preview settings ({e})")
+
+    if encoded is not None:         # what this run's previews render with, at the start
         if ckpt_previews is not None and not slider:
             ck = desc.preview_checkpoint_sampling
             mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
@@ -1581,12 +1624,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     "turbo": speed_desc.name if (speed_lora and speed_desc) else "",
                     "strength": (speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
                     if (speed_lora and speed_desc) else 0}
-        try:
-            os.makedirs(sample_dir, exist_ok=True)
-            with open(os.path.join(sample_dir, f".previews_{output_name}.json"), "w", encoding="utf-8") as f:
-                json.dump(mode, f)
-        except OSError as e:
-            logger.warning(f"[sample] could not record the preview settings ({e})")
+        write_mode(mode)
 
     def state(epoch, required=False):
         """Save the resume state. A failed write (a full disk, or a sync / antivirus program holding the file) is

@@ -872,6 +872,9 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None):
 
 
 _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
+# the Samples tab settings a Resume takes from the form as it is now (the run trains on as it was)
+_RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
+                       "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH")
 
 
 # a prompt slider's live prompts: the request the web UI writes, and what the trainer took (fizgig.families.train's
@@ -3147,6 +3150,10 @@ class Handler(BaseHTTPRequestHandler):
                 for k in _SIZE_KEYS:                     # Resume at the size the form has now: caches again first
                     if str(b.get(k) or "").strip():
                         last["values"][k] = str(b[k]).strip()
+                samples = b.get("samples") if isinstance(b.get("samples"), dict) else {}
+                for k in _RESUME_SAMPLE_KEYS:            # the previews as the Samples tab has them now
+                    if k in samples and samples[k] is not None and str(samples[k]).strip() != "":
+                        last["values"][k] = samples[k]
                 if last["resume_mode"] == "ft":
                     if not os.path.isfile(last["resume"]):
                         return self.json({"error": "The paused fine-tune's checkpoint isn't there any more: "
@@ -3204,8 +3211,15 @@ class Handler(BaseHTTPRequestHandler):
                     except OSError:
                         pass
                     return self.json({"ok": True, "on": False})
-                _write_json(side, {"prompts": prompts, "seed": _seed(b.get("seed"), 1234),
-                                   "width": _seed(b.get("width"), 1024), "height": _seed(b.get("height"), 1024)})
+                live = {"prompts": prompts, "seed": _seed(b.get("seed"), 1234),
+                        "width": _seed(b.get("width"), 1024), "height": _seed(b.get("height"), 1024)}
+                for k in ("steps", "cfg", "turbo"):   # the Samples tab's Steps, CFG and Turbo strength, when given
+                    try:
+                        if str(b.get(k, "")).strip() != "":
+                            live[k] = float(b[k]) if k != "steps" else int(float(b[k]))
+                    except (TypeError, ValueError):
+                        pass
+                _write_json(side, live)
                 return self.json({"ok": True, "on": True})
             if path == "/api/run/now":               # Sample now / Save now: a request the trainer takes after a step
                 what = str(b.get("what") or "")

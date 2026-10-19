@@ -397,7 +397,8 @@ function blockPicker(r, wrap) {
 function onValue(r, val) {
   S.values[r.key] = val;
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
-      ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT"].includes(r.key))) sampleLiveSoon();
+      ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
+       "FAMILY_TURBO_STRENGTH"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
@@ -527,6 +528,7 @@ function turboFollow() {
   Object.assign(S.values, flags);
   syncInputs(moved);
   saveStateSoon();
+  if (S.values.__SAMPLE_LIVE && moved.length) sampleLiveSoon();
 }
 const refreshStateSoon = debounce(refreshState, 250);
 
@@ -1089,9 +1091,9 @@ async function check() {
   } catch (e) { showProblems([e.message]); }
 }
 
-async function start(path) {
+async function start(path, body) {
   try {
-    const r = await api(path, path === "/api/start" ? runBody() : {});
+    const r = await api(path, path === "/api/start" ? runBody() : (body || {}));
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     pollRun();
   } catch (e) { showProblems([e.message]); }
@@ -1103,13 +1105,16 @@ async function start(path) {
 const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
 async function resumeClick() {
   const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
+  // the previews as the Samples tab has them now (prompts, seed, size, steps, CFG, Turbo strength) go with the resume
+  const samples = r.family === S.family ? Object.fromEntries(["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH",
+    "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH"].map((k) => [k, S.values[k]])) : {};
   const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
     String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
-  if (!diff.length) { box.style.display = "none"; return start("/api/resume"); }
+  if (!diff.length) { box.style.display = "none"; return start("/api/resume", {samples}); }
   const say = diff.map((k) => `${SIZE_KEYS[k]} ${was[k] || "?"} → ${S.values[k]}`).join(", ");
   const go = (body) => async () => {
     box.style.display = "none";
-    try { const x = await api("/api/resume", body); showProblems(x.problems || (x.error ? [x.error] : [])); }
+    try { const x = await api("/api/resume", {...body, samples}); showProblems(x.problems || (x.error ? [x.error] : [])); }
     catch (e) { showProblems([e.message]); }
     pollRun();
   };
@@ -2961,13 +2966,15 @@ async function runLossTick(training) {
   host.replaceChildren(lossGraph(d));
 }
 
-// the Samples tab's "Change the previews of the run going now": its prompts, seed and size go to the run as the
+// the Samples tab's "Change the previews of the run going now": its prompts, seed, size, steps, CFG and Turbo
+// strength go to the run as the
 // trainer's sample override while ticked (sent again on every change), and come off when it's unticked
 const sampleLiveSoon = debounce(async () => {
   const v = S.values, note = $("note___SAMPLE_LIVE");
   try {
     const r = await api("/api/run/sample_override", {on: !!v.__SAMPLE_LIVE, prompts: v.SAMPLE_PROMPT || "",
-      seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT});
+      seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
+      cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_STRENGTH});
     if (note) note.textContent = r.on ? "Sent: the run's next previews use these." : "The run is back on its own prompts.";
   } catch (e) {
     if (note) note.textContent = e.message;
