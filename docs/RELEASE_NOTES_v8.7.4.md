@@ -28,7 +28,7 @@ What happens then:
 
 - **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, at the same memory.
 - **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself; tick it back on for SFT previews. The same happens with any Base DiT that isn't MOSS-Image Base (a fine-tune of Base, or SFT itself). Switch back to MOSS-Image Base and SFT previews come back on.
-- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 8 and CFG to 1. Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
+- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1 (12 looked much better than the card's 8). Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
 
 ## Also
 

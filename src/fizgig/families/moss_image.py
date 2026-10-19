@@ -200,9 +200,10 @@ MOSS_IMAGE = FamilyDescription(
             file="8-steps-dmd-lora.safetensors",
             pairs_with="MOSS-Image Base",
             strength=1.0,             # the Kromoss card: strength 1
-            settings=SamplingSettings("Turbo 8-step", steps=8, cfg=1.0, sampler="euler", scheduler="simple",
+            # 12 steps, not the card's 8: previews looked much better at 12 (Peter, 19 Oct 2026)
+            settings=SamplingSettings("Turbo 12-step", steps=12, cfg=1.0, sampler="euler", scheduler="simple",
                                       options=(("shift", 5.0), ("uncond_skip", ()), ("sampler", "euler")),
-                                      note="8 steps, no CFG, the reference's shift-5 grid.",
+                                      note="12 steps, no CFG, the reference's shift-5 grid.",
                                       source=f"https://huggingface.co/{_TURBO} (load in ComfyUI's LoRA loader)"),
             load_unmerged=True,       # an fp32 rank-128 adapter: its delta is below bf16's rounding step
             pref_key="moss_image_turbo_lora",
@@ -214,7 +215,7 @@ MOSS_IMAGE = FamilyDescription(
     ),
     preview_speed_lora="MOSS-Image Turbo LoRA",      # used only when its Preferences row is set (empty by default)
     preview_speed_strength=0.0,       # the Samples tab's Turbo LoRA strength starts at 0 (full-quality previews);
-    #                                   raise it with the Steps / CFG boxes set for the turbo (1 at 8 steps, CFG 1)
+    #                                   raise it with the Steps / CFG boxes set for the turbo (1 at 12 steps, CFG 1)
     preview_steps=30,                 # res_multistep 30 at CFG 4: the best of the side-by-side (Peter, 18 Oct)
     preview_cfg=4.0,                  # USERGUIDE.md: 3-6 recommended; 4 won the side-by-side
     preview_negative=_NEGATIVE,
@@ -231,7 +232,8 @@ MOSS_IMAGE = FamilyDescription(
     # the released Base's last-block norm (measured 19 Oct 2026: Base 3658.7021484375, SFT bf16 and int8 3658.7646484375,
     # Kromoss 3658.6904296875); any other Base DiT previews on itself
     standard_base=("layers.41.norm2.weight", 3658.7021484375),
-    value_moves=(("MOSS_LOWNOISE_PCT", "60", "30"),),   # 8.7.0 defaulted to 60, 8.7.1 to 30 (saved forms kept 60)
+    value_moves=(("MOSS_LOWNOISE_PCT", "60", "30"),     # 8.7.0 defaulted to 60, 8.7.1 to 30 (saved forms kept 60)
+                 ("SAMPLE_STEPS", "8", "12")),           # the Turbo's 8 steps became 12 in 8.7.4
     preview_checkpoint_steps_note="Base samples only - the SFT samples use their own 30 steps, CFG 4",
     preview_checkpoint_sampling=SamplingSettings(
         "MOSS-Image SFT", steps=30, cfg=4.0, sampler="res_multistep", scheduler="simple",
