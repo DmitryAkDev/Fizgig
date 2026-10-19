@@ -22,13 +22,13 @@ The old settings peaked at 67% after 30 epochs. On the Standard preset (rank 32,
 **[Kromoss](https://huggingface.co/lodestones/Kromoss)**, from lodestones, is a full fine-tune of MOSS-Image Base made to fix Base's blurriness, and it can now be your MOSS Base. In **Preferences → MOSS-Image**:
 
 1. **Kromoss:** pick **Kromoss** beside **Download models for me** and press it. Fizgig downloads it (10.2 GB) and sets it as your Base DiT. (The Base DiT row also has a **Download Kromoss** link.)
-2. **Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. This is lodestones' 8-step Turbo LoRA from Kromoss; it's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. It replaces the earlier SFT Turbo LoRA in that row.
+2. **Turbo LoRA (optional):** **Download** on the Turbo LoRA row (1.2 GB), then point the row at the file. This is lodestones' 8-step Turbo LoRA from Kromoss; it's distilled from MOSS-Image Base, so it speeds up previews on Base as well as on Kromoss. **It's very good: we suggest 12 steps rather than its card's 8**, and 12 is Fizgig's default for it. It replaces the earlier SFT Turbo LoRA in that row.
 
 What happens then:
 
 - **Training is unchanged:** LoRAs and fine-tunes train on Kromoss exactly as on Base, at the same memory.
 - **Previews render on Kromoss itself**, the model you'll use the LoRA on, instead of on SFT. The Samples tab's **Use the SFT model for samples** tick turns off by itself; tick it back on for SFT previews. The same happens with any Base DiT that isn't MOSS-Image Base (a fine-tune of Base, or SFT itself). Switch back to MOSS-Image Base and SFT previews come back on.
-- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1 (12 looked much better than the card's 8). Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
+- **Fast previews:** with the Turbo LoRA set, put **Turbo LoRA strength** to 1 on the Samples tab: Steps move to 12 and CFG to 1. Previews on SFT never use a Turbo LoRA, so the strength box greys out while the SFT tick is on.
 
 ## Also
 

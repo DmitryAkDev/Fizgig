@@ -22,7 +22,7 @@ NEWS = [
             "Kromoss, lodestones' sharper fine-tune of MOSS-Image Base, can now be your MOSS Base. In Preferences, "
             "pick Kromoss beside Download models for me, and add the Turbo LoRA with Download on the Turbo LoRA row.\n\n"
             "Training is unchanged. Previews then render on Kromoss itself, the model you'll use the LoRA on, instead "
-            "of on SFT; with the Turbo LoRA at strength 1 on the Samples tab, they render in 12 steps."
+            "of on SFT; with the Turbo LoRA at strength 1 on the Samples tab, they render in 12 steps. The Turbo LoRA is very good: we suggest 12 steps rather than its card's 8."
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#19-oct-2026-kromoss-and-its-8-step-turbo-lora"}],
     },
