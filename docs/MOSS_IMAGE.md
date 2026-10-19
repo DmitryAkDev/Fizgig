@@ -39,7 +39,7 @@ python -m fizgig.scripts.fetch_models --family moss_image
 | **MOSS-Image Fine-tune** | — | 1e-5 | rotations | 1 MP |
 
 - **Size:** Standard trains at 1 MP, the size MOSS-Image finished its training at. **Fast** is Standard at 0.25 MP and rank 16: much quicker steps and less memory, and it performs very well on face-cropped datasets (Image Prep's face crop).
-- **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98, saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
+- **Learning rate:** every preset uses a fixed one, with AdamW and EMA 0.98 (Style has EMA off), saving every epoch. Detect problem images and per-image LR are off; both are still on the Training tab. On MOSS-Image's flat loss, Adaptive LR walks itself down to its floor. It's still on the Training tab, off by default.
 - **Slow to converge:** MOSS-Image LoRAs keep improving for longer than you might expect. Likeness often seems to level off, then still improves with more training: in our tests a 53-image dataset was still improving at 1,600 steps (epoch 30). The presets run 70 epochs so a 25-image dataset gets there too.
 - **Picking an epoch:** scrub the epochs in LoRA Royale to choose the best one, and look at the late ones before settling on an early peak.
 - **What the LoRA trains:** every Linear in all 42 blocks, block 22 included. Leaving block 22 out, as AI Toolkit does, cost likeness in side-by-side runs.
