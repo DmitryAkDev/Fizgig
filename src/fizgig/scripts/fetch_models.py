@@ -449,8 +449,8 @@ def fetch_tool(spec, log=print, dry_run=False):
 def _chosen(w, choices):
     """The build to fetch for a file with a choice: {pref_key: "main" | "alt"} picks one and lets it replace the other
     (so a pref on the other moves); without a pick, the main file as before, the user's own file kept."""
-    pick = (choices or {}).get(w.pref_key)
-    if w.alt is None or pick not in ("main", "alt"):
+    pick = (choices or {}).get(getattr(w, "pref_key", ""))
+    if getattr(w, "alt", None) is None or pick not in ("main", "alt"):     # the strangers pack has no build to pick
         return w
     use, other = (w.alt, w) if pick == "alt" else (w, w.alt)
     import copy
@@ -497,7 +497,7 @@ def fetch(families, models_dir=None, repo_dir=REPO_DIR, token=None, include_opti
             ok = False
             continue
         log(f"{fam}:")
-        for w in FAMILIES[fam]:
+        for w in (_chosen(x, choices) for x in FAMILIES[fam]):     # the download card's pick, where a file has one
             if w.optional and not include_optional:
                 log(f"  [skip] {w.filename} (~{w.gb:g} GB) — optional: {w.note}")
                 continue
