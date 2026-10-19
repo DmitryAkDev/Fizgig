@@ -301,7 +301,8 @@ def read_text_state_dict(path, dtype=torch.bfloat16, want=None) -> dict:
 def from_file_wanted(total_ram_gb=None):
     """Whether a streamed encoder reads its layers from the file at each pass instead of holding the whole file in
     RAM (about 17 GB): on computers with less than 30 GB (16 and 24 GB), where holding it crashed or leaned on the
-    paging file. FIZGIG_TE_FROM_FILE=1 / 0 forces it either way."""
+    paging file. The DiT's file is read with plain reads then too (model.read_state_dict). FIZGIG_TE_FROM_FILE=1 / 0
+    forces it either way."""
     import os
     import psutil
     force = os.environ.get("FIZGIG_TE_FROM_FILE", "").strip()
