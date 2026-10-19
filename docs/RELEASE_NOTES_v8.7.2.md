@@ -19,7 +19,7 @@ The result, on the same dataset, ArcFace likeness against 3 reference photos:
 
 The old settings peaked at 67% after 30 epochs; Clean-end 30% passed that by epoch 15. **By eye the Clean-end 30% pictures are vastly better too: far sharper and more accurate, with no body horror.** **On the model's own schedule the composition hopped massively from epoch to epoch; with Clean-end it holds steady.**
 
-**Clean-end share applies to fine-tunes too.** A MOSS-Image fine-tune uses the same 30% as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy.
+**Clean-end share applies to fine-tunes too.** A MOSS-Image fine-tune uses the same 30% as a LoRA. And with **Base is SFT or a fine-tune of it** ticked, a fine-tune now trains attention only, as a LoRA does, because training SFT's feed-forward layers breaks anatomy. Fine-tuning is probably best done from Base, though: SFT has already been taken a long way in one direction.
 
 **Which cards can fine-tune MOSS-Image, at 1 MP.** Fizgig plans this for you: it trains as much of the model at once as your card holds, and rotates through the rest.
 
