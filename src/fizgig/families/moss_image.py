@@ -248,6 +248,11 @@ MOSS_IMAGE = FamilyDescription(
                      hint="Tick when the Base DiT is MOSS-Image SFT or a model fine-tuned from it: the LoRA then trains "
                           "attention only (q, k, v, o). Training its feed-forward layers breaks anatomy.",
                      mode="lora", section="after", summary="SFT base"),
+        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="",
+                     width=8, suffix="% of steps",
+                     hint="The share of training steps on nearly-clean images (noise below half), where faces and "
+                          "fine detail are refined. Empty = the model's own schedule, about 11%.",
+                     summary="clean-end {}%"),
     ),
     workbench=("repair", "profiler", "extract", "royale"),
 

@@ -38,6 +38,26 @@ TEXT_MODULES = ("qkv", "proj", "ffn_gate", "ffn_up", "ffn_down")
 T_MU, T_S, T_CUTOFF, T_UNIFORM = -1.09, 0.95, 0.95, 0.01
 
 
+def _t_cdf(x, mu):
+    """P(S <= x) for S = 1 - sigmoid(Z), Z ~ N(mu, T_S^2)."""
+    return 1.0 - 0.5 * math.erfc(-((math.log((1 - x) / x) - mu) / T_S) / math.sqrt(2))
+
+
+def mu_for_clean_share(pct):
+    """The Z mean that puts `pct`% of training steps below sigma 0.5 (the clean end), the 1% uniform included; the
+    curve keeps the reference's shape and width. The reference's own mu -1.09 gives about 11%."""
+    want = (float(pct) / 100.0 - T_UNIFORM * 0.5) / (1.0 - T_UNIFORM)
+    want = min(max(want, 1e-4), 1.0 - 1e-4)
+    lo, hi = -12.0, 12.0
+    for _ in range(80):                       # share rises with mu: bisect
+        mid = 0.5 * (lo + hi)
+        if _t_cdf(0.5 * T_CUTOFF, mid) / _t_cdf(T_CUTOFF, mid) < want:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
 class MOSSImageDriver(FamilyDriver):
 
     # ---- models ---------------------------------------------------------------------------------
@@ -181,23 +201,33 @@ class MOSSImageDriver(FamilyDriver):
 
     # ---- training -------------------------------------------------------------------------------
     @staticmethod
-    def _sample_t(generator, min_t, max_t):
+    def _sample_t(generator, min_t, max_t, mu=T_MU):
         """The final pretraining interval's sigma (report eq. 4): with probability 0.01 uniform over the grid j / 1000,
-        else S = 1 - sigmoid(Z), Z ~ N(-1.09, 0.95^2), truncated to S <= 0.95 (inverse CDF), rescaled by 1 / 0.95 and
-        taken to the grid point whose cell holds it. Then scaled into [min_t, max_t] (the Timestep Range)."""
+        else S = 1 - sigmoid(Z), Z ~ N(mu, 0.95^2) (mu -1.09 unless a clean-end share moves it), truncated to
+        S <= 0.95 (inverse CDF), rescaled by 1 / 0.95 and taken to the grid point whose cell holds it. Then scaled into [min_t, max_t] (the Timestep Range)."""
         T = S.TRAIN_STEPS
         u = torch.rand(2, generator=generator)
         if float(u[0]) < T_UNIFORM:
             sigma = (math.floor(float(u[1]) * T) + 1) / T
         else:
-            # F(x) = P(S <= x) = 1 - Phi((log((1 - x) / x) - mu) / s); draw F(S) uniformly in (0, F(cutoff)]
-            def cdf(x):
-                return 1.0 - 0.5 * math.erfc(-((math.log((1 - x) / x) - T_MU) / T_S) / math.sqrt(2))
-            p = max(float(u[1]), 1e-12) * cdf(T_CUTOFF)
-            z = T_MU + T_S * float(torch.special.ndtri(torch.tensor(1.0 - p, dtype=torch.float64)))
+            # draw F(S) uniformly in (0, F(cutoff)], F = _t_cdf
+            p = max(float(u[1]), 1e-12) * _t_cdf(T_CUTOFF, mu)
+            z = mu + T_S * float(torch.special.ndtri(torch.tensor(1.0 - p, dtype=torch.float64)))
             s = 1.0 / (1.0 + math.exp(z))                 # S = 1 - sigmoid(Z) = sigmoid(-Z)
             sigma = min(max(math.ceil(T * s / T_CUTOFF), 1), T) / T
         return min_t + (max_t - min_t) * sigma
+
+    def _t_mu(self):
+        """lownoise_pct=P (the share of steps below sigma 0.5) moves the curve's centre; unset = the reference's."""
+        pct = str(self.options.get("lownoise_pct", "") or "").rstrip("%").strip()
+        if not pct:
+            return T_MU
+        cached = getattr(self, "_mu_cached", None)
+        if cached is None or cached[0] != pct:
+            cached = self._mu_cached = (pct, mu_for_clean_share(pct))
+            logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5), Z mean "
+                        f"{cached[1]:.2f} (reference -1.09, about 11%)")
+        return cached[1]
 
     def _forward(self, dit, xt, t, cond):
         hidden = cond["hidden_states"]
@@ -211,7 +241,7 @@ class MOSSImageDriver(FamilyDriver):
             raise RuntimeError("MOSS-Image has no edit (reference-image) conditioning")
         x0 = latents.float()
         noise = torch.randn(x0.shape, generator=generator).to(x0.device)
-        t = self._sample_t(generator, min_t, max_t)
+        t = self._sample_t(generator, min_t, max_t, self._t_mu())
         xt = (1 - t) * x0 + t * noise
         pred = self._forward(dit, xt, t, cond).float()
         target = noise - x0
@@ -232,7 +262,7 @@ class MOSSImageDriver(FamilyDriver):
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()
         noise = torch.randn(x0.shape, generator=generator).to(x0.device)
-        t = self._sample_t(generator, min_t, max_t)
+        t = self._sample_t(generator, min_t, max_t, self._t_mu())
         return {"xt": (1 - t) * x0 + t * noise, "t": t}
 
     def predict(self, dit, state, cond):
