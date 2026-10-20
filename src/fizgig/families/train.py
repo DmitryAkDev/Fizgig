@@ -280,9 +280,9 @@ def _read_sample_override(output_dir):
 
 def preview_due(done, every, until=0, after=0):
     """Whether epoch `done` previews (or saves): every `every` epochs, or with `until` and `after` both set (How often
-    to preview / save, switched on), every `every` up to and including epoch `until`, then on whole multiples of
-    `after`."""
-    if until > 0 and after > 0 and done > until:
+    to preview / save, switched on: "then from epoch `until`"), every `every` before epoch `until`, then from it on
+    whole multiples of `after`."""
+    if until > 0 and after > 0 and done >= until:
         return done % after == 0
     return every > 0 and done % every == 0
 
