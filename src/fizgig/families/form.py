@@ -70,7 +70,7 @@ DEFAULTS = {
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
     "SAMPLE_EVERY_N_EPOCHS": "1", "SAMPLE_LATER": False, "SAMPLE_UNTIL_EPOCH": "10",
-    "SAMPLE_EVERY_AFTER": "5", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
+    "SAMPLE_EVERY_AFTER": "1", "SAMPLE_AT_FIRST": True, "SAMPLE_CHECKPOINT": True, "CACHE_SAMPLE_MODEL": "auto",
 }
 
 
@@ -612,14 +612,15 @@ def form(desc):
         _row("SAMPLE_STEPS", "Steps", default=str(desc.preview_steps)),
         _row("SAMPLE_SEED", "Seed", hint="0 = random"),
         *by_section("samples"),
-        # one control: how often previews run, and (ticked) less often from an epoch on - its parts are their own
-        # values (SAMPLE_LATER / SAMPLE_UNTIL_EPOCH / SAMPLE_EVERY_AFTER), greyed and hidden one by one
+        # one control: how often previews run, and (ticked) another rate from an epoch on - its parts are their
+        # own values (SAMPLE_LATER / SAMPLE_UNTIL_EPOCH / SAMPLE_EVERY_AFTER), greyed and hidden one by one; ticking
+        # it fills in every 5, then from epoch 10 every 1 (few previews early, every epoch once it gets close)
         _row("SAMPLE_EVERY_N_EPOCHS", "How often to preview", "cadence",
-             "Ticked, previews run on whole multiples after that epoch: every 1 up to 10, then every 5, previews "
-             "1-10, then 15, 20, 25, so a long run stops less often once you've seen how it's going.",
-             default=str(getattr(desc, "preview_every", 1) or 1),
+             "Ticked: every N epochs up to that epoch, then the second rate (whole multiples). Every 5, then from "
+             "epoch 10 every 1, previews epochs 5, 10, 11, 12, 13 and on.",
+             default=str(getattr(desc, "preview_every", 1) or 1), tick_fills={"SAMPLE_EVERY_N_EPOCHS": "5"},
              parts=[{"key": "SAMPLE_LATER", "default": False}, {"key": "SAMPLE_UNTIL_EPOCH", "default": "10"},
-                    {"key": "SAMPLE_EVERY_AFTER", "default": "5"}]),
+                    {"key": "SAMPLE_EVERY_AFTER", "default": "1"}]),
         _row("CACHE_SAMPLE_MODEL", "Cache sample model in RAM", "choice", choices=["auto", "on", "off"],
              default="auto") if desc.train_preview_checkpoint else None,
     ])

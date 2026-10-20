@@ -376,8 +376,9 @@ function renderRow(r) {
   return wrap;
 }
 
-// How often to preview: one sentence of boxes - "Every [1] epochs", then (ticked) "less often: after epoch [10],
-// every [5] epochs" - each box its own value, greyed one by one (refreshState reads data-field / data-part)
+// How often to preview: one sentence of boxes - "Every [N] epochs", then (ticked) "then from epoch [10], every
+// [1] epochs" - each box its own value, greyed one by one (refreshState reads data-field / data-part). Ticking it
+// fills in the row's tick_fills (every 5) while the first box is still at its default, and unticking puts that back
 function cadenceRow(r, wrap) {
   const [later, until, after] = r.parts.map((p) => p.key);
   const num = (key) => {
@@ -386,14 +387,24 @@ function cadenceRow(r, wrap) {
     i.value = S.values[key] ?? "";
     return i;
   };
-  const tick = el("input", {type: "checkbox", id: "f_" + later, "data-field": later,
-    onchange: (e) => onValue({key: later}, e.target.checked)});
+  const tick = el("input", {type: "checkbox", id: "f_" + later, "data-field": later, onchange: (e) => {
+    S._cadFilled = S._cadFilled || {};            // what the tick filled in, so unticking undoes only that
+    for (const [k, v] of Object.entries(r.tick_fills || {})) {
+      if (e.target.checked && String(S.values[k] ?? "") === String(r.default)) {
+        S.values[k] = v; S._cadFilled[k] = v; syncInputs([k]);
+      } else if (!e.target.checked && S._cadFilled[k] !== undefined && String(S.values[k]) === String(v)) {
+        S.values[k] = r.default; syncInputs([k]);
+      }
+      if (!e.target.checked) delete S._cadFilled[k];
+    }
+    onValue({key: later}, e.target.checked);
+  }});
   tick.checked = !!S.values[later];
   wrap.append(el("div", {class: "cad-title", text: r.label}),
     el("div", {class: "cad-line"}, el("span", {text: "Every"}), num(r.key), el("span", {text: "epochs"})),
     el("div", {class: "cad-line", "data-part": later},
-      el("label", {class: "cad-tick"}, tick, el("span", {text: "then less often:"})),
-      el("span", {class: "cad-pair"}, el("span", {text: "after epoch"}), num(until)),
+      el("label", {class: "cad-tick"}, tick, el("span", {text: "then from epoch"})),
+      el("span", {class: "cad-pair"}, num(until)),
       el("span", {class: "cad-pair"}, el("span", {text: "every"}), num(after), el("span", {text: "epochs"}))),
     el("div", {class: "field-hint row-note", id: "note_" + r.key}),
     el("div", {class: "field-hint", "data-part": later, text: r.hint}));
