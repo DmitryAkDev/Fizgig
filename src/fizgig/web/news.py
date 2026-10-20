@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "20 Oct 2026",
+        "title": "MOSS-Image Turbo previews: fast, but don't judge likeness on them",
+        "body": (
+            "The MOSS-Image Turbo LoRAs aren't mature yet: they can reduce likeness a lot in previews. Use them to "
+            "check a run is on track quickly, then judge likeness on full-quality previews: set Turbo LoRA strength to "
+            "0 on the Samples tab (Steps and CFG go back with it). The gallery's Turbo line now says this too.\n\n"
+            "New for every model: How often to preview and How often to save. Preview every 5 epochs, say, then from "
+            "epoch 10 every epoch."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#20-oct-2026-moss-image-turbo-previews-fast-but-dont-judge-likeness-on-them"}],
+    },
+    {
+        "date": "20 Oct 2026",
         "title": "Kromoss out as a preview model",
         "body": (
             "Kromoss is no longer offered as the MOSS-Image preview model: it's too different from MOSS-Image Base for "
