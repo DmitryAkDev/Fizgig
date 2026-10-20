@@ -454,8 +454,14 @@ def _studio_samples(desc):
     neg = v.get("SAMPLE_NEGATIVE")
     if neg is None:                     # never saved: the Samples tab's own default, as its box shows it
         neg = desc.preview_negative or ""
+    # the Samples tab's preview-checkpoint tick (MOSS-Image's Use the SFT model for samples): the workbench renders
+    # where training previews do - on the checkpoint while it's ticked, on the training model when it isn't
+    ck = v.get("SAMPLE_CHECKPOINT")
+    if blank(ck):
+        ck = desc.preview_checkpoint_on
+    ck = ck if isinstance(ck, bool) else str(ck).strip().lower() in ("1", "true", "yes", "on")
     return {"steps": str(steps), "cfg": str(cfg), "turbo": str(turbo), "negative": neg,
-            "turbo_live": live, "turbo_name": sp.name if sp is not None else ""}
+            "turbo_live": live, "turbo_name": sp.name if sp is not None else "", "checkpoint": ck}
 
 
 def _gpu_training():
