@@ -449,7 +449,7 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, rest, el("span", {text: unit})));
   const lineSlide = el("div", {class: "cad-line"},
     el("span", {class: "cad-pair"}, sFirst, el("span", {text: unit + " until epoch"})),
-    el("span", {class: "cad-pair"}, sHold, el("span", {text: ", then down to"})),
+    el("span", {class: "cad-pair"}, sHold, el("span", {text: "then down to"})),
     el("span", {class: "cad-pair"}, sRest, el("span", {text: unit + " by epoch"})),
     el("span", {class: "cad-pair"}, sBy));
   const hintOne = el("div", {class: "field-hint", text: r.hint});
