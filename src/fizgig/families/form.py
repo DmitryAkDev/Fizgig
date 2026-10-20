@@ -320,9 +320,9 @@ def form(desc):
     # who the LoRA is of and how it treats other people: the Subjects card (after Training Parameters)
     mc = dict(desc.multi_concept_defaults or {})
     subjects = [
-        _row("_subjects_intro", "1 subject with Off is ordinary LoRA training. Every other setting here is new: "
-             "Fizgig's own techniques combined with DOP (Differential Output Preservation, from @ostris's "
-             "AI-Toolkit), for a new level of separation between your subjects and everyone else.", "note"),
+        _row("_subjects_intro", "With 1 subject and Off, this is ordinary LoRA training. The other choices keep your "
+             "subjects apart from everyone else, using Fizgig's own techniques together with DOP (Differential "
+             "Output Preservation) from @ostris's AI-Toolkit.", "note"),
         _row("FAMILY_SUBJECTS", "Who is this LoRA of?", "radio",
              " ".join(t for t in (SUBJECTS_HINT, desc.multi_concept_hint) if t), SUBJECT_COUNTS,
              default=SUBJECT_COUNTS[0],
@@ -803,6 +803,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             values = {**values, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP": True}
             notes["FAMILY_PEOPLE_MODE"] = (f"Moved to {PEOPLE_MODES[1]}: {PEOPLE_MODES[2]} needs two or more "
                                            "subjects.")
+        else:                           # the greyed pill's reason, where it's seen (no hover on a phone)
+            notes["FAMILY_PEOPLE_MODE"] = (f"{PEOPLE_MODES[2]} is greyed out because it needs two or more "
+                                           "subjects. Pick 2 subjects above to use it.")
     if kind != "standard":                            # multi-person mode: a LoRA (its LR boost is per step)
         hidden.add("FAMILY_MULTI_PERSON")
     elif values.get("FAMILY_MULTI_PERSON"):           # it runs on DOP
