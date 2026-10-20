@@ -42,6 +42,7 @@ FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
 DEFAULTS = {
     "LORA_NAME": "", "LEARNING_RATE": "4e-4", "LORA_LR_RATIO": "1", "NETWORK_DIM": "4", "NETWORK_ALPHA": "4",
     "NETWORK_TYPE": "LoRA (standard)", "LOKR_FACTOR": "8", "MAX_TRAIN_EPOCHS": "12", "SAVE_EVERY_N_EPOCHS": "1",
+    "SAVE_LATER": False, "SAVE_UNTIL_EPOCH": "10", "SAVE_EVERY_AFTER": "1",
     "SEED": "42", "BLOCKS_SWAP": "Auto (detect from GPU)", "RESUME_TRAINING": "", "OPTIMIZER_TYPE": "adamw8bit",
     "OPTIMIZER_ARGS": "", "GRADIENT_ACCUMULATION": "1", "MAX_GRAD_NORM": "1.0", "LR_SCHEDULER": "constant",
     "LR_WARMUP_STEPS": "", "ADAPTIVE_LR": False, "ADAPTIVE_LR_MIN": "1e-5", "ADAPTIVE_LR_MAX": "4e-4",
@@ -261,7 +262,14 @@ def form(desc):
         _row("NETWORK_DIM", "Network Dim (Rank)"),
         _row("NETWORK_ALPHA", "Network Alpha"),
         _row("MAX_TRAIN_EPOCHS", "Max Epochs"),
-        _row("SAVE_EVERY_N_EPOCHS", "Save Every N Epochs"),
+        # the same control as How often to preview (a cadence row): every N epochs, switched on another rate from
+        # an epoch on; ticking fills in every 5, then from epoch 10 every 1
+        _row("SAVE_EVERY_N_EPOCHS", "How often to save", "cadence",
+             "Ticked: every N epochs up to that epoch, then the second rate (whole multiples). Every 5, then from "
+             "epoch 10 every 1, saves epochs 5, 10, 11, 12, 13 and on. The last epoch is always saved.",
+             tick_fills={"SAVE_EVERY_N_EPOCHS": "5"},
+             parts=[{"key": "SAVE_LATER", "default": False}, {"key": "SAVE_UNTIL_EPOCH", "default": "10"},
+                    {"key": "SAVE_EVERY_AFTER", "default": "1"}]),
         _row("SEED", "Seed"),
         _row("CONTEXT_LORA_PATH", "Context LoRA", "path",
              "Trains with an existing LoRA active on the base. Use the same LoRA and strength at inference.",
@@ -864,8 +872,11 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         notes["MAX_TIMESTEP"] = ts
     if not values.get("SAMPLE_LATER"):        # Then preview less often: its two boxes wait for the tick
         disabled |= {"SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER"}
-    if kind == "finetune":                     # a fine-tune previews at whole rotations
-        hidden |= {"SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER"}
+    if not values.get("SAVE_LATER"):
+        disabled |= {"SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER"}
+    if kind == "finetune":                     # a fine-tune previews and saves at whole rotations
+        hidden |= {"SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER", "SAVE_LATER", "SAVE_UNTIL_EPOCH",
+                   "SAVE_EVERY_AFTER"}
     if kind in ("edit", "slider"):
         hidden.add("_prompts_note")     # the family's advice on writing prompts: these runs don't use them
     if kind == "edit":

@@ -278,8 +278,9 @@ def _read_sample_override(output_dir):
 
 
 def preview_due(done, every, until=0, after=0):
-    """Whether epoch `done` previews: every `every` epochs, or with `until` and `after` both set (the Samples tab's
-    "Then preview less often"), every `every` up to and including epoch `until`, then on whole multiples of `after`."""
+    """Whether epoch `done` previews (or saves): every `every` epochs, or with `until` and `after` both set (How often
+    to preview / save, switched on), every `every` up to and including epoch `until`, then on whole multiples of
+    `after`."""
     if until > 0 and after > 0 and done > until:
         return done % after == 0
     return every > 0 and done % every == 0
@@ -864,7 +865,8 @@ class _FineTune:
 
 
 def train_family(family, dit_path, dataset_config, output_dir, output_name, *, network_dim=32, network_alpha=32,
-                 learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_state=False,
+                 learning_rate=1e-4, max_train_epochs=16, save_every_n_epochs=1, save_until_epoch=0,
+                 save_every_n_epochs_after=0, save_state=False,
                  save_state_on_train_end=False, keep_last_n_states=2, seed=42, precision="bf16",
                  training_adapter=None, training_adapter_strength=1.0,
                  context_lora_path=None, context_lora_strength=1.0, min_timestep=0.0, max_timestep=1.0,
@@ -1941,7 +1943,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         watch.boundary(epoch + 1, dit, device, parkable=not swapped)
 
         done = epoch + 1
-        cadence = bool(save_every_n_epochs) and done % save_every_n_epochs == 0 and done < max_train_epochs
+        # the save schedule (the Training tab's How often to save; a fine-tune saves at whole rotations)
+        cadence = done < max_train_epochs and preview_due(
+            done, save_every_n_epochs, *((0, 0) if ftr is not None else (save_until_epoch, save_every_n_epochs_after)))
         if ftr is not None:
             # a fine-tune saves and previews at whole rotations only, and the preview renders the checkpoint just
             # saved: the window goes back to NF4 (the master holds every trained weight) and its optimizer is
@@ -2045,6 +2049,9 @@ def setup_parser():
     p.add_argument("--learning_rate", type=float, default=1e-4)
     p.add_argument("--max_train_epochs", type=int, default=16)
     p.add_argument("--save_every_n_epochs", type=int, default=1)
+    p.add_argument("--save_until_epoch", type=int, default=0,
+                   help="With --save_every_n_epochs_after: saves every --save_every_n_epochs up to this epoch")
+    p.add_argument("--save_every_n_epochs_after", type=int, default=0, help="...then on whole multiples of this")
     p.add_argument("--save_state", action="store_true")
     p.add_argument("--save_state_on_train_end", action="store_true")
     p.add_argument("--keep_last_n_states", type=int, default=2)
@@ -2172,7 +2179,8 @@ def main():
         recaption_instruction=a.recaption_instruction,
         recaption_instruction_detailed=a.recaption_instruction_detailed, captioner=a.captioner,
         network_dim=a.network_dim, network_alpha=a.network_alpha, learning_rate=a.learning_rate,
-        max_train_epochs=a.max_train_epochs, save_every_n_epochs=a.save_every_n_epochs, save_state=a.save_state,
+        max_train_epochs=a.max_train_epochs, save_every_n_epochs=a.save_every_n_epochs,
+        save_until_epoch=a.save_until_epoch, save_every_n_epochs_after=a.save_every_n_epochs_after, save_state=a.save_state,
         save_state_on_train_end=a.save_state_on_train_end, keep_last_n_states=a.keep_last_n_states, seed=a.seed,
         training_adapter=a.training_adapter, training_adapter_strength=a.training_adapter_strength,
         context_lora_path=a.context_lora_path, context_lora_strength=a.context_lora_strength,

@@ -639,6 +639,11 @@ def train_command(desc, inputs, plan):
            "--network_dim", str(st["NETWORK_DIM"]), "--network_alpha", str(st["NETWORK_ALPHA"]),
            "--learning_rate", str(st["LEARNING_RATE"]), "--max_train_epochs", str(st["MAX_TRAIN_EPOCHS"]),
            "--save_every_n_epochs", str(st["SAVE_EVERY_N_EPOCHS"]), "--seed", str(st["SEED"])]
+    # How often to save, switched on (a fine-tune saves at whole rotations)
+    later = [_s(st.get(k)) for k in ("SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER")] \
+        if st.get("SAVE_LATER") and not ft_on(desc, st) else []
+    if later and all(x.isdigit() and int(x) > 0 for x in later):     # How often to save, switched on
+        cmd += ["--save_until_epoch", later[0], "--save_every_n_epochs_after", later[1]]
     cmd += _state_flags(st)
     if _s(st.get("RESUME_TRAINING")) and not ft_on(desc, st):
         cmd += ["--resume", _s(st["RESUME_TRAINING"])]
