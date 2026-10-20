@@ -604,6 +604,9 @@ def form(desc):
                                "off": {"SAMPLE_STEPS": str(desc.preview_steps),
                                        "SAMPLE_CFG_SCALE": f"{desc.preview_cfg:g}"}}}
                    if desc.preview_checkpoint_sampling else {}))] if desc.train_preview_checkpoint else []),
+        _row("FAMILY_PREVIEW_LOOK", desc.preview_look_tick, "check", desc.preview_look_hint, default=False,
+             **({"bold": desc.preview_look_bold} if desc.preview_look_bold else {}))
+        if desc.preview_look() is not None else None,
         _row("SAMPLE_STRENGTHS", "Also preview at strength " + ", ".join(f"{x:g}" for x in desc.preview_strengths),
              "check", "Each preview is rendered again at that strength (same prompt and seed), beside the "
              "full-strength one: how the LoRA will look or sound the way you'll use it.", default=True)
@@ -646,6 +649,7 @@ def form(desc):
 # what a preset never carries (the desktop's): the Samples tab and the Turbo boxes are the model's own, a resume path
 # is one run's
 NOT_IN_PRESETS = ("FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE", "CACHE_SAMPLE_MODEL",
+                  "FAMILY_PREVIEW_LOOK",
                   "RESUME_TRAINING", "CAPTION_TRIGGER_WORD")     # the trigger word is the training folder's
 # boxes a preset can't put an unknown value in (the desktop's _STRICT_COMBO_KEYS): the current choice stays
 STRICT_CHOICES = ("OPTIMIZER_TYPE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "LR_SCHEDULER", "NETWORK_TYPE")
@@ -742,7 +746,7 @@ def _kind(desc, values):
 
 
 def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file="",
-          checkpoint_path=""):
+          checkpoint_path="", look_file=False, look_fetch=""):
     """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
     (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
@@ -989,6 +993,20 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                 "preview model in Preferences to use it." if desc.checkpoint_speed_except else
                 f"The {desc.preview_speed().name} applies to previews on the training model: untick "
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
+    if desc.preview_look() is not None:
+        # the SFT look LoRA: on previews of the training model only; its file comes down the first time it's ticked
+        # (look_fetch: that download's state)
+        if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
+            disabled.add("FAMILY_PREVIEW_LOOK")
+            notes["FAMILY_PREVIEW_LOOK"] = (
+                f"Greyed out: previews render on the preview model, which has its own look. Untick "
+                f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to preview on your Base with this LoRA.")
+        elif values.get("FAMILY_PREVIEW_LOOK") and not look_file:
+            notes["FAMILY_PREVIEW_LOOK"] = {
+                "running": "Downloading it now (about 2.1 GB). A run that's going picks it up at its next preview.",
+                "failed": "The download failed: check you're online, then tick this again, or download it from "
+                          "Preferences.",
+            }.get(look_fetch, "")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,
@@ -1123,7 +1141,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
            if desc.train_areas else {}),
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
-        FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"),
+        FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",

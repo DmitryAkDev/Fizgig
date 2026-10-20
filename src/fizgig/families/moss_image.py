@@ -14,6 +14,7 @@ _COMFY = "Comfy-Org/MOSS-Image"
 _GUIDE = f"{_REPO} USERGUIDE.md"
 _REPORT = f"{_REPO} paper/MOSS_Image_Technical_Report.pdf"
 _PIPE = f"{_CARD} pipeline_moss_image.py"
+_LOOK = "ShootTheSound/Fizgig-MOSS-Image-SFT-Look-LoRA"    # SFT - Base, rank weighted to blocks 21-41
 _TURBO = "lodestones/Kromoss"         # its 8-step DMD LoRA, distilled from Base: previews on Base
 _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ffn_down")   # model.py _Block Linears
 # USERGUIDE.md Prompt Guidelines: "we recommend the following effective negative tags"
@@ -105,6 +106,16 @@ MOSS_IMAGE = FamilyDescription(
                   replaces=("kromoss_int8_convrot.safetensors", "kromoss_bf16.safetensors"),
                   alt_repo=_COMFY, alt_path="diffusion_models/moss_image_sft_bf16.safetensors",
                   alt_label="bf16 file", alt_note="~10.2 GB"),
+        # SFT minus Base, extracted at rank 128 for blocks 0-20 and 896 for blocks 21-41 (where the refinement lives):
+        # about 32% of the difference overall, 51-61% of the late blocks. At 1.5 on Base it gave previews much of
+        # SFT's look (Peter, 20 Oct 2026). Downloaded the first time the Samples tick is on (fetch_on_use), not by
+        # Download models for me
+        ModelFile("moss_image_sft_look_lora", "SFT look LoRA (optional)", False, _LOOK,
+                  "moss_image_sft_look_lora.safetensors", 2.07, role="look_lora", bulk_fetch=False, fetch_on_use=True,
+                  hint="Optional. Fizgig's SFT look LoRA: previews on your Base get much of SFT's look without "
+                       "loading SFT, so they're much quicker. Downloaded for you the first time you tick \"Give "
+                       "Base previews the SFT look\" on the Samples tab. Previews only, never training.",
+                  download_note="~2.1 GB - Apache-2.0"),
     ),
     text_encoder_label="Qwen3.5-9B",
     vae_label="FLUX.2 autoencoder",
@@ -238,6 +249,13 @@ MOSS_IMAGE = FamilyDescription(
     small_dataset_hint=(50, "a small dataset. With {n} images, MOSS-Image can take longer to converge than other "
                             "models, so allow more epochs before judging it."),
     preview_checkpoint_tick="Use the SFT model for samples (set it in Preferences)",
+    preview_look_tick="Give Base previews the SFT look (SFT look LoRA)",
+    preview_look_hint="For previews on your Base (the SFT tick above off): the SFT look LoRA gives them much of SFT's "
+                      "look. Not as good as SFT itself, but a really good indicator, and previews are much quicker "
+                      "with no model swap. Previews only, never training. Downloaded for you the first time (about "
+                      "2.1 GB).",
+    preview_look_bold="We still recommend not using the Turbo LoRA for previews.",
+    preview_look_strength=1.5,        # Peter's test, 20 Oct 2026, as a context LoRA: 1.5 worked very well
     preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
     # the released Base's last-block norm (measured 19 Oct 2026: Base 3658.7021484375, SFT bf16 and int8 3658.7646484375,
     # Kromoss 3658.6904296875); any other Base DiT previews on itself

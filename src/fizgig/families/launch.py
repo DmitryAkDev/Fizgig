@@ -935,7 +935,21 @@ def _preview_flags(desc, st, plan, cmd):
                         "--preview_checkpoint_cache", _s(sm.get("checkpoint_cache")) or "auto"]
                 if sm.get("int8"):
                     out.append("--preview_int8")
+        look = desc.preview_look()
+        if look is not None and st.get("FAMILY_PREVIEW_LOOK") and "--preview_checkpoint" not in out:
+            # on the training model's previews only; a file still downloading is picked up at a later preview
+            out += ["--preview_lora", look_path(desc, st), "--preview_lora_strength", f"{desc.preview_look_strength:g}"]
     return out
+
+
+def look_path(desc, st):
+    """Where the preview look LoRA is: its Preferences path when set, else where its download puts it."""
+    look = desc.preview_look()
+    p = _s((st.get("models") or {}).get(look.pref_key))
+    if p:
+        return p
+    from fizgig.user_data import MODELS_DIR
+    return os.path.join(MODELS_DIR, look.local_name or os.path.basename(look.path))
 
 
 def _sample_image(desc, sm):

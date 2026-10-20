@@ -56,6 +56,9 @@ class ModelFile:
     # False: left out of "Download models for me" altogether - the row's own Download link only (a file nobody needs
     # by default, kept so a user can add it: MOSS-Image's Turbo LoRA)
     bulk_fetch: bool = True
+    # downloaded by the feature that uses it, the first time it is used (MOSS-Image's SFT look LoRA: its Samples
+    # tick), into the models folder with its Preferences row set; not by "Download models for me" (bulk_fetch False)
+    fetch_on_use: bool = False
     # a file added after most users set the family up: its line in the one-time "new model files" popup (shown when
     # the family's DiT is set but this file is not; description.announce_intro opens it). "" = never announced
     announce: str = ""
@@ -430,6 +433,14 @@ class FamilyDescription:
     # memory handoff (park_for_preview / load_preview_checkpoint / unpark_after_preview)
     train_preview_checkpoint: bool = False
     # its Samples tab tick: the label, whether it starts ticked (each family's choice is then kept), and the Steps note
+    # a LoRA for previews of the training model only (MOSS-Image's SFT look LoRA: on the Base, previews look more like
+    # SFT, without loading it): the Samples tab tick with this label, its hint, the strength it renders at. Its file
+    # is the model file with role "look_lora", downloaded the first time the tick is used. Never in training, never
+    # on a preview checkpoint; on CPU between previews
+    preview_look_tick: str = ""
+    preview_look_hint: str = ""
+    preview_look_bold: str = ""       # a bold line under that hint
+    preview_look_strength: float = 1.0
     preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
     preview_checkpoint_on: bool = True
     # (tensor name, sum) that identifies the model's own released Base (families/base_check.py): with any other Base
@@ -665,6 +676,13 @@ class FamilyDescription:
 
     def block_ids(self) -> list:
         return [f"{self.block_prefix}_{i}" for i in range(self.n_blocks)]
+
+    def preview_look(self):
+        """The Preferences row (ModelFile, role "look_lora") of the LoRA the Samples tab's preview_look_tick puts on
+        previews of the training model, or None."""
+        if not self.preview_look_tick:
+            return None
+        return next((m for m in self.model_files if m.role == "look_lora"), None)
 
     def preview_speed(self):
         """The SpeedLoRA used for in-training previews, or None."""

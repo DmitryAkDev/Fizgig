@@ -2124,6 +2124,48 @@ def _start_fetch(family, token="", optional=False, choices=None):
     threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
 
 
+_on_use = {}          # pref key -> {"state": "running" | "failed", "at": time}: files fetched on first use
+
+
+def _fetch_on_use(f):
+    """One model file declared fetch_on_use, downloaded the first time its feature is used: into the models folder
+    on a worker thread, its Preferences row set once it is complete (hf_hub_download writes the final name only
+    then). A failed download is tried again 30 s on, not on every form change. Returns "running" / "failed" / ""."""
+    with _lock:
+        st = _on_use.get(f.pref_key)
+        if st and (st["state"] == "running" or time.time() - st["at"] < 30):
+            return st["state"]
+        _on_use[f.pref_key] = {"state": "running", "at": time.time()}
+
+    def work():
+        try:
+            from huggingface_hub import hf_hub_download
+            got = hf_hub_download(repo_id=f.repo, filename=f.path, local_dir=user_data.MODELS_DIR)
+            dest = os.path.join(user_data.MODELS_DIR, f.local_name or os.path.basename(f.path))
+            if os.path.normcase(os.path.abspath(got)) != os.path.normcase(os.path.abspath(dest)):
+                os.replace(got, dest)             # a file in a repo subfolder: to the models folder itself
+            update_prefs({f.pref_key: dest})
+            with _lock:
+                _on_use.pop(f.pref_key, None)
+            logger.info(f"Downloaded {os.path.basename(dest)} on first use")
+        except Exception as e:
+            with _lock:
+                _on_use[f.pref_key] = {"state": "failed", "at": time.time()}
+            logger.warning(f"Couldn't download {f.path} from {f.repo}: {e}")
+
+    threading.Thread(target=work, daemon=True).start()
+    return "running"
+
+
+def _look_fetch(desc, values, path):
+    """The preview look LoRA (MOSS-Image's SFT look LoRA), ticked on the Samples tab but not on disk: its own
+    download (_fetch_on_use). Returns that download's state."""
+    look = desc.preview_look()
+    if look is None or not look.fetch_on_use or not values.get("FAMILY_PREVIEW_LOOK") or (path and os.path.isfile(path)):
+        return ""
+    return _fetch_on_use(look)
+
+
 def _fetch_watch(proc):
     for line in proc.stdout:
         line = line.rstrip()
@@ -3006,13 +3048,16 @@ class Handler(BaseHTTPRequestHandler):
                 ck = desc.preview_checkpoint()
                 ckf = pref_path(prefs, ck[0].pref_key) if ck else ""
                 vals = b.get("values") or {}
+                lk = desc.preview_look()
+                lkf = launch.look_path(desc, {"models": {lk.pref_key: pref_path(prefs, lk.pref_key)}}) if lk else ""
                 dit = next((f.pref_key for f in desc.model_files if f.role == "dit"), "")
                 st = form.state(desc, vals, b.get("image_folder") or "",
                                 captioner=cap if cap and os.path.isfile(cap) else "",
                                 speed_file=bool(spf and os.path.isfile(spf)),
                                 checkpoint_file=bool(ckf and os.path.isfile(ckf)),
                                 base_file=pref_path(prefs, dit) if dit else "",
-                                checkpoint_path=ckf if ckf and os.path.isfile(ckf) else "")
+                                checkpoint_path=ckf if ckf and os.path.isfile(ckf) else "",
+                                look_file=bool(lkf and os.path.isfile(lkf)), look_fetch=_look_fetch(desc, vals, lkf))
                 if st["kind"] in ("standard", "finetune"):     # the Subjects card: what each folder trains as
                     mpn = _multi_person_notes(vals, b.get("image_folder") or "",
                                               multi_person=st["kind"] == "standard" and

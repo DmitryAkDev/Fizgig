@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 ADAPTER = "training_adapter"
 CONTEXT = "context"
 SPEED = "speed_lora"
+LOOK = "preview_look"         # a LoRA for previews only (MOSS-Image's SFT look LoRA), on CPU between previews
 TRAINABLE_PREVIEW = "epoch_lora"         # the epoch's LoRA, frozen on a preview checkpoint
 
 
@@ -555,7 +556,7 @@ def _dop_ft_loss(driver, dit, rows, cond, device):
 
 def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_name, steps, cfg, neg, width,
                      height, seed, ema=None, speed=None, lowmem=False, swapped=False, refs=None, slider=False,
-                     strengths=()):
+                     strengths=(), look=False):
     """Previews on the RESIDENT training model: training adapter OFF (the deployment setup), the family's speed
     LoRA ON if one is loaded (it lives on CPU between previews). On small cards the DiT parks on CPU for the
     decode. File names match the other trainers so the GUI gallery reads them:
@@ -576,6 +577,10 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
             done.add("speed")              # before the move: a move that runs out of memory still gets put back
             net.move_adapter(SPEED, device)
             net.set_enabled(SPEED, True)
+        if look:
+            done.add("look")
+            net.move_adapter(LOOK, device)
+            net.set_enabled(LOOK, True)
         if ema is not None:
             ema.swap_in()
             done.add("ema")
@@ -645,6 +650,9 @@ def _render_previews(driver, dit, net, vae, encoded, out_dir, epoch, *, output_n
         if "speed" in done:
             net.set_enabled(SPEED, False)
             net.move_adapter(SPEED, "cpu")
+        if "look" in done:
+            net.set_enabled(LOOK, False)
+            net.move_adapter(LOOK, "cpu")
         if "adapter" in done:
             net.set_enabled(ADAPTER, True)
         dit.train(was_training)
@@ -870,7 +878,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  save_state_on_train_end=False, keep_last_n_states=2, seed=42, precision="bf16",
                  training_adapter=None, training_adapter_strength=1.0,
                  context_lora_path=None, context_lora_strength=1.0, min_timestep=0.0, max_timestep=1.0,
-                 speed_lora=None, speed_lora_strength=None,
+                 speed_lora=None, speed_lora_strength=None, preview_lora=None, preview_lora_strength=1.0,
                  vae_path=None, te_path=None, sample_prompts=None, sample_every_n_epochs=0, sample_until_epoch=0,
                  sample_every_n_epochs_after=0, sample_width=None,
                  sample_height=None, sample_steps=None, sample_cfg_scale=None, sample_negative=None,
@@ -1240,6 +1248,35 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         net.move_adapter(SPEED, "cpu")
         logger.info(f"[sample] {speed_desc.name}: {n} Linears, on CPU between previews, on only while they render "
                     f"(strength {strength:g})")
+        return True
+
+    look_said = [False]
+
+    def _look_ready():
+        """The preview look LoRA on the training model (added the first time its file is there: it may still be
+        downloading), off and on CPU between previews. False = previews without it."""
+        if not preview_lora or look_said[0] == "bad":
+            return False
+        if net.has(LOOK):
+            return True
+        if not os.path.isfile(preview_lora):
+            if not look_said[0]:
+                logger.info(f"[sample] {os.path.basename(preview_lora)} isn't downloaded yet - previews render without "
+                            "it until it is")
+                look_said[0] = True
+            return False
+        n = net.add_file(preview_lora, LOOK, preview_lora_strength)
+        driver.frozen_file_added(dit, preview_lora, preview_lora_strength, "speed")
+        if n == 0:
+            net.remove(LOOK)
+            logger.warning(f"[sample] {os.path.basename(preview_lora)} matched no {desc.display_name} layers - "
+                           "previews render without it")
+            look_said[0] = "bad"
+            return False
+        net.set_enabled(LOOK, False)
+        net.move_adapter(LOOK, "cpu")
+        logger.info(f"[sample] {os.path.basename(preview_lora)}: {n} Linears at {preview_lora_strength:g}, on previews "
+                    "only (on CPU between them)")
         return True
 
     if speed_lora and encoded is not None and not speed_idle:
@@ -1637,7 +1674,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          seed=sd, ema=ema,
                          speed=speed_now, lowmem=lowmem,
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
-                         strengths=sample_strengths if epoch > 0 else ())   # before training the LoRA is all zero
+                         strengths=sample_strengths if epoch > 0 else (),   # before training the LoRA is all zero
+                         look=_look_ready())
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
@@ -2036,6 +2074,10 @@ def setup_parser():
                    help="blocks streamed between CPU and GPU (not with nf4); -1 = as few as fit free VRAM")
     p.add_argument("--network_dim", type=int, default=32)
     p.add_argument("--network_type", default="lora", choices=("lora", "lokr"))
+    p.add_argument("--preview_lora", default=None,
+                   help="a LoRA on previews of the training model only, never in training (MOSS-Image's SFT look "
+                        "LoRA); a file not there yet is picked up at a later preview")
+    p.add_argument("--preview_lora_strength", type=float, default=1.0)
     p.add_argument("--speed_lora_strength", type=float, default=None,
                    help="the preview speed LoRA's strength (default: the family's recommended value)")
     p.add_argument("--log_per_image_loss", action="store_true", help="detect problem images (Problem Images window)")
@@ -2187,7 +2229,8 @@ def main():
         save_state_on_train_end=a.save_state_on_train_end, keep_last_n_states=a.keep_last_n_states, seed=a.seed,
         training_adapter=a.training_adapter, training_adapter_strength=a.training_adapter_strength,
         context_lora_path=a.context_lora_path, context_lora_strength=a.context_lora_strength,
-        min_timestep=a.min_timestep, max_timestep=a.max_timestep, speed_lora=a.speed_lora,
+        min_timestep=a.min_timestep, max_timestep=a.max_timestep, speed_lora=a.speed_lora, preview_lora=a.preview_lora,
+        preview_lora_strength=a.preview_lora_strength,
         vae_path=a.vae, te_path=a.text_encoder,
         sample_prompts=prompts, sample_every_n_epochs=a.sample_every_n_epochs,
         sample_until_epoch=a.sample_until_epoch, sample_every_n_epochs_after=a.sample_every_n_epochs_after,
