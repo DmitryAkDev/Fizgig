@@ -277,6 +277,9 @@ MOSS_IMAGE = FamilyDescription(
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
                           "fine detail are refined. Empty = the model's own schedule, about 11%.",
+                     split=("75", "5", "40"),
+                     split_hint="Split: a high share for the first epochs, then a lower one for the rest. Useful "
+                                "for datasets that have trouble converging on MOSS-Image.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),

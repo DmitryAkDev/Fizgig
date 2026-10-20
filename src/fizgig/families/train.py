@@ -1791,6 +1791,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     warmup_note = [0.0]
     for epoch in range(start_epoch, max_train_epochs):
         shared_epoch.value = epoch + 1
+        driver.begin_epoch(epoch + 1)
         if ftr is not None and ftr.needs_window(epoch):
             optimizer = params = None       # let go of the outgoing window before the swap, or both sit in VRAM
             params, optimizer = ftr.enter(epoch)                 # the epoch's window, and a fresh optimizer for it

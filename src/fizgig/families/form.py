@@ -105,7 +105,8 @@ def _block_groups(desc):
 
 def _option_row(opt):
     """A family's own control (FamilyOption) as a row: its declared label, kind, choices, default and hint."""
-    kind = {"choice": "choice", "check": "check"}.get(opt.kind, "combo" if opt.suggestions else "entry")
+    kind = {"choice": "choice", "check": "check"}.get(opt.kind, "combo" if opt.suggestions else
+                                                      "split" if opt.split else "entry")
     labels = opt.choice_labels() if opt.kind == "choice" else []
     default = ((opt.default if opt.default in labels else labels[0]) if labels else
                opt.default == "1" if opt.kind == "check" else opt.default)
@@ -113,7 +114,8 @@ def _option_row(opt):
                 [s.split(" · ")[0] for s in opt.suggestions], default, option=True, suffix=opt.suffix,
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
-                **({"featured": True} if opt.featured else {}))
+                **({"featured": True} if opt.featured else {}),
+                **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" else {}))
 
 
 def model_keys(desc):

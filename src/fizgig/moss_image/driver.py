@@ -226,15 +226,23 @@ class MOSSImageDriver(FamilyDriver):
         return min_t + (max_t - min_t) * sigma
 
     def _t_mu(self):
-        """lownoise_pct=P (the share of steps below sigma 0.5) moves the curve's centre; unset = the reference's."""
-        pct = str(self.options.get("lownoise_pct", "") or "").rstrip("%").strip()
+        """lownoise_pct=P (the share of steps below sigma 0.5) moves the curve's centre; unset = the reference's.
+        Split, "A:N:B": A% for the first N epochs, then B%."""
+        pct = str(self.options.get("lownoise_pct", "") or "").replace("%", "").strip()
         if not pct:
             return T_MU
+        if ":" in pct:
+            try:
+                first, until, rest = (float(x) for x in pct.split(":"))
+            except ValueError:
+                raise RuntimeError(f"Clean-end share split '{pct}': give three numbers, share:epochs:share "
+                                   "(75:5:40 = 75% for the first 5 epochs, then 40%)") from None
+            pct = f"{first if self.epoch <= until else rest:g}"
         cached = getattr(self, "_mu_cached", None)
         if cached is None or cached[0] != pct:
             cached = self._mu_cached = (pct, mu_for_clean_share(pct))
-            logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5), Z mean "
-                        f"{cached[1]:.2f} (reference -1.09, about 11%)")
+            logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5) from epoch {self.epoch}, "
+                        f"Z mean {cached[1]:.2f} (reference -1.09, about 11%)")
         return cached[1]
 
     def _forward(self, dit, xt, t, cond):

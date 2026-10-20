@@ -237,6 +237,11 @@ class FamilyOption:
     # a queued run's one-line summary shows this while the option is away from its default ("{}" = its value;
     # a check shows it while ticked); "" = never shown
     summary: str = ""
+    # entry: a Split mode beside the single value - (first value, epochs, value after) to start it with; the value
+    # is then "first:epochs:after" (one text, so presets, Last Train and the queue carry it as any entry), and
+    # `split_hint` replaces the hint while Split is picked
+    split: tuple = ()
+    split_hint: str = ""
 
     def choice_labels(self):
         return [c[0] for c in self.choices]

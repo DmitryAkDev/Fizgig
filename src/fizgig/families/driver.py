@@ -133,6 +133,11 @@ class FamilyDriver:
 
     # ---- family training options (optional) ------------------------------------------------------
     options = {}
+    epoch = 1                         # the 1-based epoch being trained (begin_epoch), for an option that changes by epoch
+
+    def begin_epoch(self, epoch: int) -> None:
+        """Called at the start of each training epoch (1-based, a resume's first epoch included)."""
+        self.epoch = epoch
 
     def set_options(self, options: dict) -> None:
         """The run's --family_option KEY=VALUE pairs, before the dataset is built (an option may shape it)."""
