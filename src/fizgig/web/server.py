@@ -1588,6 +1588,23 @@ def _audio_seconds(path):
 _SAMPLE_NAME = re.compile(r"^(?P<run>.+)_e(?P<epoch>\d{6})_(?P<idx>\d{2})_\d+_\d+(?:_s(?P<s>\d{3}))?\.\w+$")
 
 
+def preview_labels(mode) -> dict:
+    """{epoch: the line over that epoch's enlarged previews} from the run's record (rounds) and its family's words
+    (description preview_labels); {} for a family that declares none or a run from before the record."""
+    desc = get_family(mode.get("family", "")) if isinstance(mode, dict) else None
+    words = dict(getattr(desc, "preview_labels", ()) or ())
+    if not words:
+        return {}
+    out = {}
+    for ep, r in (mode.get("rounds") or {}).items():
+        line = words.get("checkpoint" if r.get("checkpoint") else "look" if r.get("look") else "base", "")
+        if r.get("turbo") and words.get("turbo"):
+            line = (words["turbo"] + " " + line).strip()
+        if line:
+            out[str(ep)] = line
+    return out
+
+
 def sample_info(name) -> dict:
     """What a preview's name says: its run, epoch, prompt number and strength (None = full)."""
     m = _SAMPLE_NAME.match(name)
@@ -2921,6 +2938,7 @@ class Handler(BaseHTTPRequestHandler):
         newest = by_epoch[max(by_epoch, key=int)] if by_epoch else None
         return self.json({"items": out[:1000] if run else out[:300], "runs": runs, "epoch_prompts": by_epoch,
                           "preview_mode": mode if isinstance(mode, dict) else None,
+                          "preview_labels": preview_labels(mode),
                           "prompts": newest or (run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else [])})
 
     def _checkpoints(self, folder):

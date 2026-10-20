@@ -255,7 +255,13 @@ MOSS_IMAGE = FamilyDescription(
                       "with no model swap. Previews only, never training. Downloaded for you the first time (about "
                       "2.1 GB).",
     preview_look_bold="We still recommend not using the Turbo LoRA for previews.",
-    preview_look_strength=1.5,        # Peter's test, 20 Oct 2026, as a context LoRA: 1.5 worked very well
+    preview_look_strength=1.5,
+    # over an enlarged preview in the gallery: how it was made, and what gives a better read of quality (Peter, 20 Oct)
+    preview_labels=(("checkpoint", "Previewed on MOSS-Image SFT."),
+                    ("look", "Previewed on the Base with the SFT look LoRA. For maximum quality, look at it in ComfyUI."),
+                    ("base", "Previewed on the Base model. For a better read of quality, tick Give Base previews the "
+                             "SFT look, or preview on SFT (slower)."),
+                    ("turbo", "⚡ Turbo LoRA in use: not full quality. We recommend leaving it off.")),        # Peter's test, 20 Oct 2026, as a context LoRA: 1.5 worked very well
     preview_checkpoint_on=True,       # samples on the SFT model by default: where most people use a MOSS LoRA (Peter)
     # the released Base's last-block norm (measured 19 Oct 2026: Base 3658.7021484375, SFT bf16 and int8 3658.7646484375,
     # Kromoss 3658.6904296875); any other Base DiT previews on itself

@@ -1665,7 +1665,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     swapped=bool(swp), refs=ref_latents)
             ckpt_previews.render(dit, net, ema, _ck_render)
             write_mode({"model": os.path.basename(preview_checkpoint), "steps": ck_steps, "cfg": ck_cfg,
-                        "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0})
+                        "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0},
+                       epoch)
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
@@ -1675,11 +1676,11 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          speed=speed_now, lowmem=lowmem,
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
                          strengths=sample_strengths if epoch > 0 else (),   # before training the LoRA is all zero
-                         look=_look_ready())
+                         look=(look_now := _look_ready()))
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
-                    "strength": strength_now if speed_now else 0})
+                    "strength": strength_now if speed_now else 0}, epoch, look_now)
 
     ckpt_previews = None
     if preview_checkpoint and encoded is not None:
@@ -1702,14 +1703,25 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if ck_speed:
                 logger.info(f"[sample] {os.path.basename(preview_checkpoint)} takes the {speed_desc.name}: previews "
                             f"on it use it while its strength is above 0")
-    def write_mode(mode):
+    def write_mode(mode, epoch=None, look=False):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
-        the start and after each preview round, so a live change of steps, CFG or Turbo strength shows."""
+        the start and after each preview round, so a live change of steps, CFG or Turbo strength shows. After a round
+        (`epoch`) its setup joins `rounds` (epoch -> checkpoint / look / turbo), so each picture keeps its own."""
         if mode.get("turbo") and speed_desc is not None and speed_desc.gallery_note:
             mode = {**mode, "turbo_note": speed_desc.gallery_note}     # the family's word on its Turbo previews
+        path = os.path.join(sample_dir, f".previews_{output_name}.json")
+        try:
+            with open(path, encoding="utf-8") as f:
+                rounds = json.load(f).get("rounds") or {}               # this run's earlier rounds (a resume's too)
+        except (OSError, ValueError, AttributeError):
+            rounds = {}
+        if epoch is not None:
+            rounds[str(epoch)] = {"checkpoint": bool(mode.get("model")), "look": bool(look),
+                                  "turbo": bool(mode.get("turbo"))}
+        mode = {**mode, "family": desc.key, "rounds": rounds}
         try:
             os.makedirs(sample_dir, exist_ok=True)
-            with open(os.path.join(sample_dir, f".previews_{output_name}.json"), "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(mode, f)
         except OSError as e:
             logger.warning(f"[sample] could not record the preview settings ({e})")

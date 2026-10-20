@@ -1645,6 +1645,9 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   align-items: center; justify-content: center; gap: 12px; padding: 16px; box-sizing: border-box; }
 .lightbox-figure { margin: 0; display: flex; flex-direction: column; align-items: center; min-width: 0; }
 /* the window's size whatever the picture's (a 414 px dataset crop fills it too), its shape kept */
+/* how the enlarged preview was made (the family's words): one line over it */
+.lightbox-mode { color: var(--text-primary); background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; margin-bottom: 8px; font-size: 10pt; max-width: calc(100vw - 140px); }
 .lightbox-figure img { width: calc(100vw - 140px); height: calc(100vh - 80px); object-fit: contain; cursor: zoom-out; }
 .lightbox-figure figcaption { color: var(--text-secondary); font-size: 9pt; margin-top: 8px; overflow-wrap: anywhere;
   text-align: center; }

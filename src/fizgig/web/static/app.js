@@ -1467,9 +1467,15 @@ function previewFigure(it, prompts, eager, byEpoch) {
   // its own epoch's prompt (recorded by the trainer, so a mid-run change shows), else the run's
   const own = byEpoch && it.epoch != null && byEpoch[String(it.epoch)];
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
-  return el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+  return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt}) : null,
-      el("span", {class: "preview-file", text: it.name})));
+      el("span", {class: "preview-file", text: it.name}))), it);
+}
+// the family's line on how this preview was made (the run's record), shown over it in the lightbox
+function withMode(fig, it) {
+  const L = S.galleryLabels;
+  if (L && it.epoch != null && (!it.run || it.run === L.run)) fig._mode = L.labels[String(it.epoch)] || "";
+  return fig;
 }
 
 // prompts as rows, epochs as columns (full-strength pictures; a slider's strip is its own picture)
@@ -1485,9 +1491,9 @@ function previewGrid(items, prompts, eager) {
       el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
         prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i]}) : null),
       ...epochs.map((e) => { const it = at.get(e + ":" + i);
-        return el("td", {}, it ? el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
+        return el("td", {}, it ? withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
-            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)) : null); })));
+            prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it) : null); })));
   }
   return el("div", {class: "gallery prompt-grid-wrap"}, table);
 }
@@ -1508,6 +1514,7 @@ async function loadGallery() {
   let run = want;
   if (!g.items.length && g.runs.length && !g.runs.includes(want)) { run = g.runs[0]; g = await get(run); }
   previewMode(g.preview_mode);
+  S.galleryLabels = {run, labels: g.preview_labels || {}};        // the lightbox's line per epoch (previewFigure)
   const sel = $("galleryRun");
   sel.innerHTML = "";
   // "this run" while it trains; once it has ended it is the last run
@@ -6844,6 +6851,8 @@ function lightboxShow(i) {
   }
   $("lightboxImg").src = pic.src;
   $("lightboxName").textContent = pic.name;
+  $("lightboxMode").textContent = pic.mode || "";
+  $("lightboxMode").style.display = pic.mode ? "" : "none";
   $("lightboxPrev").style.visibility = i > 0 ? "" : "hidden";
   $("lightboxNext").style.visibility = i < S.lb.list.length - 1 ? "" : "hidden";
   $("lightbox").style.display = "";
@@ -6874,7 +6883,8 @@ function wireLightbox() {
       const fig = i.closest(".gallery-item, .caption-card");
       const cap = fig && fig.querySelector("figcaption, .caption-card-title");
       const label = cap ? [...cap.childNodes].map((n) => n.textContent).filter(Boolean).join(" · ") : "";
-      return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt, cap: fig && fig._cap};
+      return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt, cap: fig && fig._cap,
+              mode: (fig && fig._mode) || ""};
     });
     lightboxShow(imgs.indexOf(img));
   });

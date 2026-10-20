@@ -440,6 +440,11 @@ class FamilyDescription:
     preview_look_tick: str = ""
     preview_look_hint: str = ""
     preview_look_bold: str = ""       # a bold line under that hint
+    # the gallery's lightbox: a line over an enlarged preview saying how it was made, from the run's record of each
+    # preview round - (setup, text) pairs for "checkpoint" (the preview checkpoint), "look" (the training model with
+    # the preview look LoRA), "base" (the training model alone) and "turbo" (put before the others' when the Turbo
+    # LoRA was on). Empty = no line (a family opts in)
+    preview_labels: tuple = ()
     preview_look_strength: float = 1.0
     preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
     preview_checkpoint_on: bool = True
