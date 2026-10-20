@@ -882,6 +882,7 @@ _SIZE_KEYS = ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS")
 # are the same) and the save schedule (when checkpoints are written); the run trains on as it was
 _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS",
                        "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT",   # + previews on the checkpoint
+                       "FAMILY_PREVIEW_LOOK",                                              # + the SFT look tick
                        "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
                        "BLOCKS_SWAP", "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER")
 
@@ -3292,6 +3293,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/run/sample_override":   # the Samples tab's live previews: the run going now's override
                 with _lock:
                     out = _run["output_dir"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+                    fam = _run["family"]
                 if not out:
                     return self.json({"error": "Nothing is training right now."}, 400)
                 side = os.path.join(out, ".sample_override.json")
@@ -3311,6 +3313,13 @@ class Handler(BaseHTTPRequestHandler):
                             live[k] = float(b[k]) if k in ("cfg", "turbo") else int(float(b[k]))
                     except (TypeError, ValueError):
                         pass
+                desc = get_family(fam or "")
+                lk = desc.preview_look() if desc is not None and "look" in b else None
+                if lk is not None:      # the SFT look tick: its file's path when ticked ("" = off), at its strength
+                    live["look"] = launch.look_path(desc, {"models": {lk.pref_key: pref_path(load_prefs(),
+                                                                                            lk.pref_key)}}) \
+                        if b.get("look") else ""
+                    live["look_strength"] = desc.preview_look_strength
                 _write_json(side, live)
                 return self.json({"ok": True, "on": True})
             if path == "/api/run/now":               # Sample now / Save now: a request the trainer takes after a step

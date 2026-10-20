@@ -267,10 +267,12 @@ def _read_sample_override(output_dir):
                 except (TypeError, ValueError):
                     return None
             steps, cfg, turbo = num("steps", int), num("cfg", float), num("turbo", float)
+            look = d.get("look") if isinstance(d.get("look"), str) else None   # the look LoRA's path, "" = off
             return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
                     "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
                     "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
                     "turbo": turbo if turbo is not None and turbo >= 0 else None,
+                    "look": look, "look_strength": num("look_strength", float),
                     **{k: (lambda v: v if v is not None and v >= 0 else None)(num(k, int))
                        for k in ("every", "until", "after")}}
     except (OSError, ValueError, TypeError):
@@ -1252,30 +1254,32 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
 
     look_said = [False]
 
-    def _look_ready():
+    def _look_ready(path=None, strength=None):
         """The preview look LoRA on the training model (added the first time its file is there: it may still be
-        downloading), off and on CPU between previews. False = previews without it."""
-        if not preview_lora or look_said[0] == "bad":
+        downloading), off and on CPU between previews. False = previews without it. path / strength: the live
+        override's, when the Samples tab's tick turned it on after the run started."""
+        path, strength = path or preview_lora, strength or preview_lora_strength
+        if not path or look_said[0] == "bad":
             return False
         if net.has(LOOK):
             return True
-        if not os.path.isfile(preview_lora):
+        if not os.path.isfile(path):
             if not look_said[0]:
-                logger.info(f"[sample] {os.path.basename(preview_lora)} isn't downloaded yet - previews render without "
+                logger.info(f"[sample] {os.path.basename(path)} isn't downloaded yet - previews render without "
                             "it until it is")
                 look_said[0] = True
             return False
-        n = net.add_file(preview_lora, LOOK, preview_lora_strength)
-        driver.frozen_file_added(dit, preview_lora, preview_lora_strength, "speed")
+        n = net.add_file(path, LOOK, strength)
+        driver.frozen_file_added(dit, path, strength, "speed")
         if n == 0:
             net.remove(LOOK)
-            logger.warning(f"[sample] {os.path.basename(preview_lora)} matched no {desc.display_name} layers - "
+            logger.warning(f"[sample] {os.path.basename(path)} matched no {desc.display_name} layers - "
                            "previews render without it")
             look_said[0] = "bad"
             return False
         net.set_enabled(LOOK, False)
         net.move_adapter(LOOK, "cpu")
-        logger.info(f"[sample] {os.path.basename(preview_lora)}: {n} Linears at {preview_lora_strength:g}, on previews "
+        logger.info(f"[sample] {os.path.basename(path)}: {n} Linears at {strength:g}, on previews "
                     "only (on CPU between them)")
         return True
 
@@ -1676,7 +1680,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          speed=speed_now, lowmem=lowmem,
                          swapped=bool(swapped), refs=ref_latents, slider=slider,
                          strengths=sample_strengths if epoch > 0 else (),   # before training the LoRA is all zero
-                         look=(look_now := _look_ready()))
+                         look=(look_now := (_look_ready() if not ov or ov.get("look") is None   # as launched
+                                            else ov["look"] != "" and _look_ready(ov["look"], ov.get("look_strength")))))
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
@@ -1841,7 +1846,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     warmup_note = [0.0]
     for epoch in range(start_epoch, max_train_epochs):
         shared_epoch.value = epoch + 1
-        driver.begin_epoch(epoch + 1)
+        driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
         if ftr is not None and ftr.needs_window(epoch):
             optimizer = params = None       # let go of the outgoing window before the swap, or both sit in VRAM
             params, optimizer = ftr.enter(epoch)                 # the epoch's window, and a fresh optimizer for it
