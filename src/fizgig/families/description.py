@@ -245,6 +245,10 @@ class FamilyOption:
     # `split_hint` replaces the hint while Split is picked
     split: tuple = ()
     split_hint: str = ""
+    # entry: a Slide mode as well - (first value, hold to epoch, value after, reached by epoch); the value is then
+    # "first:hold:after:by", a straight line from the hold epoch to the last; `slide_hint` replaces the hint
+    slide: tuple = ()
+    slide_hint: str = ""
 
     def choice_labels(self):
         return [c[0] for c in self.choices]

@@ -305,6 +305,10 @@ MOSS_IMAGE = FamilyDescription(
                      split=("75", "5", "40"),
                      split_hint="Split: a high share for the first epochs, then a lower one for the rest. Useful "
                                 "for datasets that have trouble converging on MOSS-Image.",
+                     # likeness dipped two epochs after Split's drop on a hard dataset (Peter, 20 Oct 2026)
+                     slide=("75", "6", "40", "10"),
+                     slide_hint="Slide: a high share until an epoch, then easing down to a lower one, a few points "
+                                "an epoch. Useful for datasets that have trouble converging on MOSS-Image.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),

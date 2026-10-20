@@ -115,7 +115,8 @@ def _option_row(opt):
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
                 **({"featured": True} if opt.featured else {}),
-                **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" else {}))
+                **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" else {}),
+                **({"slide": list(opt.slide), "slide_hint": opt.slide_hint} if kind == "split" and opt.slide else {}))
 
 
 def model_keys(desc):
