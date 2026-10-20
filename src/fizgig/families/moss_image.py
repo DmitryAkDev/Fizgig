@@ -211,6 +211,9 @@ MOSS_IMAGE = FamilyDescription(
             # replaced lodestones' SFT 8-step DMD (lodestones/MOSS-Image-SFT-8-steps-dmd) 19 Oct 2026: distilled from
             # SFT and soft on Base, while Fizgig's Turbo previews only ever run on the training model (Base)
             caveats=("Distilled from MOSS-Image Base (Kromoss card: Base 27.19 -> 27.53 CLIP with it, Kromoss 27.82).",),
+            # people judged likeness on Turbo previews and found it lacking (Peter, 20 Oct 2026)
+            gallery_note="MOSS-Image Turbo LoRAs aren't mature yet: they can reduce likeness a lot in previews, so "
+                         "judge likeness on full-quality previews.",
             source=f"https://huggingface.co/{_TURBO}",
         ),
     ),

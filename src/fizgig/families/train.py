@@ -1667,6 +1667,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     def write_mode(mode):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows."""
+        if mode.get("turbo") and speed_desc is not None and speed_desc.gallery_note:
+            mode = {**mode, "turbo_note": speed_desc.gallery_note}     # the family's word on its Turbo previews
         try:
             os.makedirs(sample_dir, exist_ok=True)
             with open(os.path.join(sample_dir, f".previews_{output_name}.json"), "w", encoding="utf-8") as f:

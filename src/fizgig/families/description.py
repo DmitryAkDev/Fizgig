@@ -102,6 +102,7 @@ class SpeedLoRA:
     community_settings: tuple = ()    # (description, source) pairs: how people actually use it
     caveats: tuple = ()
     source: str = ""
+    gallery_note: str = ""            # shown in the samples gallery's Turbo line while it renders the previews
 
 
 @dataclass(frozen=True)
