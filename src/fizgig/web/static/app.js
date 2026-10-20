@@ -252,8 +252,15 @@ function renderRow(r) {
   const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : "") +
     (r.boxed ? " row-boxed" : ""), "data-key": r.key});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
-    wrap.append(el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
-      el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1})));
+    const shownRow = el("div", {class: "field-row"}, el("span", {class: "field-label", text: r.label + ":"}),
+      el("input", {type: "text", class: "w-path", id: "note_" + r.key, readonly: true, tabindex: -1}));
+    if (r.sets_training_folder) {                 // the training folder itself (an edit's Edited folder, #217): choosing
+      shownRow.append(el("button", {class: "btn", text: "Choose…",          // it here sets the Start tab's
+        title: "Pick from what is on the machine running Fizgig - it becomes the training folder on the Start tab",
+        onclick: () => pick(S.imageFolder, true, (p) => {
+          $("imageFolder").value = p; $("imageFolder").dispatchEvent(new Event("change")); })}));
+    }
+    wrap.append(shownRow);
     if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
     return wrap;
   }
@@ -2315,6 +2322,7 @@ async function rySheet(confirm) {
     }
     if (r.family !== $("ryFamily").value) await royaleFamily(r.family);
     $("ryCSheet").style.display = "none";
+    $("ryCStatus").textContent = "Starting…";    // the Render it button goes, so the poll's progress shows (#215)
     ryRemember(); ryTravelPoll();
   } catch (e) { $("ryCStatus").textContent = e.message; }
 }
@@ -2328,7 +2336,8 @@ async function ryTravelPoll() {
     running = running || t.state === "rendering";
     if (mode === "sheet") {
       $("ryCGo").disabled = t.state === "rendering";
-      if (t.status) $("ryCStatus").textContent = t.status;
+      // not over the big sheet's Render it button (#215, @Nessa2026691)
+      if (t.status && !$("ryCStatus").querySelector("button")) $("ryCStatus").textContent = t.status;
       if (t.state === "done" && t.sheet && S.ry.tr.sheet !== t.gen) {
         S.ry.tr.sheet = t.gen;
         $("ryCImg").src = `/api/royale/travel/image?mode=sheet&g=${t.gen}&t=${encodeURIComponent(TOKEN)}`;

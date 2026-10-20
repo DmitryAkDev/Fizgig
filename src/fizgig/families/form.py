@@ -333,7 +333,8 @@ def form(desc):
              sets={SUBJECT_COUNTS[0]: {"FAMILY_MULTICONCEPT": False},
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
-        _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
+        _row("_subject1_folder", "Subject 1", "shown", "The training folder: choosing it here changes it on the "
+             "Start tab too.", sets_training_folder=True),
         _row("FAMILY_SUBJECT_KIND", "Subject 1 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0],
              hint_labels=True),                 # one spaced line per choice, its name in bold (said once, here)
         *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"),
@@ -405,8 +406,8 @@ def form(desc):
             if desc.edit_references > 1 else None,
             _row("_edit_extras_found", "", "note") if desc.edit_references > 1 else None,
             _row("_edit_edited_dir", "2. Edited folder (after editing)", "shown", "The same photos after your edit, "
-                 "with the same file names as the originals. It is the training folder on the Start tab - change it "
-                 "there."),
+                 "with the same file names as the originals. It is the training folder on the Start tab: choosing it "
+                 "here changes it there too.", sets_training_folder=True),
             _row("FAMILY_EDIT_CAPTION", "3. Edit instruction", hint="What the edit is, e.g. \"Apply my concert grade.\" "
                  "Write captions saves it as the caption of every photo in the Edited folder.",
                  action="write_captions"),
@@ -431,7 +432,7 @@ def form(desc):
                  default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
             _row("_slider_plus_dir", "1. +1 end folder", "shown", "Photos showing the +1 end of the dial (e.g. the "
                  "person smiling). The captions go in this folder (step 3). It is the training folder on the Start "
-                 "tab - change it there."),
+                 "tab: choosing it here changes it there too.", sets_training_folder=True),
             _row("FAMILY_SLIDER_DIR", "2. -1 end folder", "folder",
                  "The same shots showing the -1 end (e.g. not smiling), each with the same file name as its +1 photo. "
                  "No captions in this folder.", upload=True, start="data"),
