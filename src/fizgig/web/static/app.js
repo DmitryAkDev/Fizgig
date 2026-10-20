@@ -1328,6 +1328,10 @@ async function pollRun() {
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
   runLossTick(live);
+  // Per-image loss on the run card while a run with the per-image loss tick trains (Runs & outputs has it after)
+  const ilOn = live && r.history_id && (r.values || {}).KREA2_LOSS_WATCH;
+  $("btnImageLoss").style.display = ilOn ? "" : "none";
+  if (!ilOn) $("runImageLoss").style.display = "none";
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
   const ftRun = r.values && r.values.FAMILY_KIND && /fine-tune/i.test(String(r.values.FAMILY_KIND));
@@ -2110,7 +2114,7 @@ function imageLossPanel(box, d, run) {
   const sort = el("select", {class: "w-combo"}, ...[["hard", "Hardest now first"], ["easy", "Easiest now first"],
     ["verdict", "By verdict"], ["name", "By name"]].map(([v, t]) => el("option", {value: v, text: t})));
   const show = el("select", {class: "w-combo"}, el("option", {value: "all", text: "All images"}),
-    el("option", {value: "problems", text: "Problems only (excluded, stuck, suspect, watch)"}));
+    el("option", {value: "problems", text: "Worth a look (excluded, stuck, suspect, watching)"}));
   const grid = el("div", {class: "il-grid"}), pager = el("div", {class: "field-row"});
   let page = 0;
   const draw = () => {
@@ -2122,7 +2126,7 @@ function imageLossPanel(box, d, run) {
     const pages = Math.max(1, Math.ceil(list.length / IL_PAGE));
     page = Math.min(page, pages - 1);
     grid.replaceChildren(...list.slice(page * IL_PAGE, (page + 1) * IL_PAGE).map((im) => imageLossTile(im, ymax, run, d.live)));
-    if (!list.length) grid.append(el("div", {class: "field-hint", text: "No image has a problem verdict."}));
+    if (!list.length) grid.append(el("div", {class: "field-hint", text: "No image needs a look right now."}));
     pager.replaceChildren(...(pages > 1 ? [
       el("button", {class: "btn btn-sm", text: "‹ Prev", disabled: page === 0, onclick: () => { page--; draw(); }}),
       el("span", {class: "field-hint", text: `page ${page + 1} of ${pages}`}),
@@ -7020,6 +7024,14 @@ function wire() {
   wireStudio();
   wirePrep();
   $("presetSave").addEventListener("click", presetSaveOpen);
+  $("btnImageLoss").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
+    const box = $("runImageLoss"), id = S.run && S.run.history_id;
+    if (!id) return;
+    if (box.style.display !== "none") { box.style.display = "none"; return; }
+    box.style.display = ""; box.textContent = "Loading…";
+    try { imageLossPanel(box, await api("/api/runs/image_loss?id=" + encodeURIComponent(id)), {...S.run, id}); }
+    catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); }
+  });
   document.querySelectorAll(".tab-item").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
   document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.goto)));
   // the sidebar's run opens the run card itself (it sits under the Training form)

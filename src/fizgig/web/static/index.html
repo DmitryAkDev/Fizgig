@@ -501,6 +501,7 @@
               <div class="run-bar run-bar-lg"><span id="runBar"></span></div>
               <div class="run-tiles" id="runTiles"></div>
               <div id="runLoss"></div>
+              <div class="il-box" id="runImageLoss" style="display:none"></div>
               <div class="field-row">
                 <button class="btn" id="btnCheck" title="Runs Start's checks without starting: lists anything missing or wrong, else the stages a run would go through">Check settings</button>
                 <button class="btn btn-primary" id="btnStart">Start Training</button>
@@ -508,6 +509,7 @@
                 <button class="btn btn-sm" id="btnQueueCancel" style="display:none">Cancel edit</button>
                 <button class="btn btn-warning" id="btnPause">Pause</button>
                 <button class="btn" id="btnSampleNow" style="display:none" title="Make the previews now, after the current training step, without waiting for the epoch to end">Sample now</button>
+                <button class="btn" id="btnImageLoss" style="display:none" title="Each training image's loss by epoch, against the rest of the dataset: which images are still being learned, which are done, and what the loss watch decided about each">Per-image loss</button>
                 <button class="btn" id="btnSaveNow" style="display:none" title="Save the LoRA as it is now, after the current training step (as name-stepNNNNNNN.safetensors)">Save now</button>
                 <button class="btn btn-primary" id="btnResume">Resume</button>
                 <button class="btn btn-danger" id="btnStop">Stop</button>
