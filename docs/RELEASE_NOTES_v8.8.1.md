@@ -5,6 +5,7 @@
 - **Each enlarged preview says how it was made.** Click a MOSS-Image preview in the gallery and a line above it says what it was rendered with: SFT, the Base with the SFT look LoRA, or the Base alone, and whether the Turbo LoRA was on, with what gives a better read of quality.
 - **Update ComfyUI.** Many people tell us their Fizgig LoRAs work better since ComfyUI's update this week.
 - **Fixed:** with two Fizgig web servers running at once, starting the second one marked a run on the first as stopped in Runs & outputs. The training itself carried on.
+- **Krea 2 on 16 GB cards: Auto no longer picks a slow setup.** **Base precision: Auto** now takes NF4 with no block swap whenever it fits, instead of INT8 with a lot of block swapping, which used far more CPU and can be much slower. At 1 MP, Krea 2 training on NF4 sits close to the limit of a 16 GB card that also runs your display, and going over makes it slower and uneven: set **Weight averaging (EMA)** to Off (about 0.5 GB less) or train at 0.75 MP. Thanks @mikehdt for the detailed report (#216).
 
 ## Updating from an earlier version
 
