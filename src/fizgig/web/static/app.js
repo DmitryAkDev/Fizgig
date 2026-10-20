@@ -436,6 +436,8 @@ function splitRow(r, wrap) {
     else if (m === "Slide") {          // the refresh tick adds its "every N" as a fifth number
       mem.slide = [sFirst, sHold, sRest, sBy].map((i) => i.value.trim());
       mem.every = sEvery.value.trim() || mem.every || "3";
+      sFirstEcho.textContent = sFirst.value;     // "one epoch at 75%" follows the first box
+      sEvery.disabled = !sTick.checked;
       onValue(r, [...mem.slide, ...(sTick.checked ? [mem.every] : [])].join(":"));
     }
     else { mem.single = one.value.trim(); onValue(r, mem.single); }
