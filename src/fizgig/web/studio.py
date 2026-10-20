@@ -255,7 +255,8 @@ def plan(desc, prefs, pref_path, fast=True, samples=None, negative=None):
     have = lambda k: bool(k and look(k) and os.path.exists(look(k)))
     # a workbench that follows its Samples tab renders where training previews do: the preview checkpoint only while
     # the Samples tab's tick for it is on (every workbench tab plans through here, so they all agree)
-    ck_wanted = not (follow and samples is not None and samples.get("checkpoint") is False)
+    ck_wanted = not (follow and desc.workbench_checkpoint_follows_tick and samples is not None
+                     and samples.get("checkpoint") is False)
     if fast:
         c = desc.preview_checkpoint()
         if ck_wanted and c is not None and have(c[0].pref_key):
@@ -810,9 +811,10 @@ def layout(desc, prefs, pref_path, samples=None):
             # a preview checkpoint in use (set in Preferences, its Samples-tab tick on): where Studio renders
             "follow_ck": (f"Previews on the {ck[0].label.split(' (')[0]} - {ck[1].steps} steps, CFG {ck[1].cfg:g}. "
                           + (f"Untick \"{desc.preview_checkpoint_tick.split(' (')[0]}\" on the Samples tab to preview on "
-                             "the model you train on." if desc.train_preview_checkpoint and desc.preview_checkpoint_tick
+                             "the model you train on." if desc.workbench_checkpoint_follows_tick
                              else "Clear it in Preferences to preview with the Samples tab's settings instead."))
-            if ck is not None and have(ck[0].pref_key) and (samples or {}).get("checkpoint", True) is not False
+            if ck is not None and have(ck[0].pref_key) and not (desc.workbench_checkpoint_follows_tick and
+                                                                 (samples or {}).get("checkpoint", True) is False)
             else ""}
 
 

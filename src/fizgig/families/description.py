@@ -509,6 +509,10 @@ class FamilyDescription:
     activation_cache: bool = False
     workbench_follows_samples: bool = False   # Repair Studio / Royale previews take the Samples tab's steps,
     #                                   CFG, negative prompt and turbo strength (else the family's fixed preview recipe)
+    # with workbench_follows_samples: the workbench renders on the preview checkpoint only while the Samples tab's tick
+    # for it is on, as training previews do - for a checkpoint that's another model to see the LoRA on (MOSS-Image's
+    # SFT). Off: a set checkpoint is always used (a speed checkpoint: Qwen's Turbo DiT, Flux 3's distilled)
+    workbench_checkpoint_follows_tick: bool = False
     preview_cfg: float = 1.0
     preview_width: int = 1024
     preview_height: int = 1024

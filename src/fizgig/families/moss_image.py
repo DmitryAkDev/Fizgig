@@ -164,7 +164,8 @@ MOSS_IMAGE = FamilyDescription(
     # edit_training stays off: the released checkpoints don't condition on reference images (report section 8: "does
     # not directly condition on reference images or support image editing"; pipeline docstring: defaults are "not
     # ... reference-image variants"). The RoPE keeps a reference-index axis for a later release.
-    workbench_follows_samples=True,   # CFG 3 needs the Samples tab's negative (empty = the reference's default)
+    workbench_follows_samples=True,
+    workbench_checkpoint_follows_tick=True,   # Repair Studio / Royale render on SFT only while the Samples tick is on   # CFG 3 needs the Samples tab's negative (empty = the reference's default)
     activation_cache=True,            # Turbo Preview: step-1 replay; generate calls on_step before every step
     repair_size=1024,                 # a 1 MP model (CHECKLIST.md Workbench)
 
