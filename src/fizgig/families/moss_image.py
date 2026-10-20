@@ -312,7 +312,8 @@ MOSS_IMAGE = FamilyDescription(
                      slide_hint="Slide: a high share until an epoch, then easing down to a lower one, a few points "
                                 "an epoch. 75 until epoch 8, down to 30 by epoch 12, works well with datasets of up "
                                 "to about 55 images; with many more, start dropping below 75 earlier. Ticked: after "
-                                "the slide, every few epochs one epoch goes back to the first share.",
+                                "the slide, every few epochs one epoch goes back to the first share, which keeps "
+                                "likeness from fading on a small dataset at the lower share.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),
