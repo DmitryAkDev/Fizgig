@@ -333,8 +333,7 @@ def form(desc):
              sets={SUBJECT_COUNTS[0]: {"FAMILY_MULTICONCEPT": False},
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
         if desc.multi_concept else None,
-        _row("_subject1_folder", "Subject 1", "shown", "The training folder: choosing it here changes it on the "
-             "Start tab too.", sets_training_folder=True),
+        _row("_subject1_folder", "Subject 1", "shown", "The training folder - change it on the Start tab."),
         _row("FAMILY_SUBJECT_KIND", "Subject 1 is", "choice", KIND_HINT, SUBJECT_KINDS, default=SUBJECT_KINDS[0],
              hint_labels=True),                 # one spaced line per choice, its name in bold (said once, here)
         *([_row("FAMILY_CONCEPT_DIR", "Subject 2", "folder", upload=True, start="data"),
