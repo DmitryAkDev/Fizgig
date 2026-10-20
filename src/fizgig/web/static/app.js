@@ -138,7 +138,10 @@ const saveTriggerSoon = debounce((word) => api("/api/trigger", {folder: S.imageF
 
 function defaults() {
   const v = {};
-  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") v[r.key] = r.default;
+  for (const s of S.fam.form.sections) for (const r of s.rows) if (r.kind !== "note" && r.kind !== "shown") {
+    v[r.key] = r.default;
+    for (const p of r.parts || []) v[p.key] = p.default;   // a control of several values (the preview cadence)
+  }
   return v;
 }
 
@@ -244,7 +247,8 @@ function renderSections(tab, host) {
 function renderRow(r) {
   // its kind sets its layout (style.css): boxes in the grid, switches as tiles, a choice of pills, files and notes
   // across the card - from the schema's row kind, so every model's form lays out the same way
-  const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide"}[r.kind] || "field";
+  const kind = {check: "check", radio: "radio", note: "note", text: "wide", path: "wide", folder: "wide", shown: "wide",
+    cadence: "cadence"}[r.kind] || "field";
   const wrap = el("div", {class: "form-row kind-" + kind + (r.featured ? " row-featured" : "") +
     (r.boxed ? " row-boxed" : ""), "data-key": r.key});
   if (r.kind === "shown") {                       // a value from elsewhere (the Start tab's folder), read-only here
@@ -263,6 +267,7 @@ function renderRow(r) {
   let input;
   const set = (val) => onValue(r, val);
   if (r.kind === "blocks") return blockPicker(r, wrap);
+  if (r.kind === "cadence") return cadenceRow(r, wrap);
   if (r.kind === "check") {
     input = el("input", {type: "checkbox", id: "f_" + r.key, onchange: (e) => set(e.target.checked)});
     input.checked = !!v;
@@ -371,6 +376,30 @@ function renderRow(r) {
   return wrap;
 }
 
+// How often to preview: one sentence of boxes - "Every [1] epochs", then (ticked) "less often: after epoch [10],
+// every [5] epochs" - each box its own value, greyed one by one (refreshState reads data-field / data-part)
+function cadenceRow(r, wrap) {
+  const [later, until, after] = r.parts.map((p) => p.key);
+  const num = (key) => {
+    const i = el("input", {type: "text", inputmode: "numeric", class: "cad-num", id: "f_" + key, "data-field": key,
+      oninput: (e) => onValue({key}, e.target.value)});
+    i.value = S.values[key] ?? "";
+    return i;
+  };
+  const tick = el("input", {type: "checkbox", id: "f_" + later, "data-field": later,
+    onchange: (e) => onValue({key: later}, e.target.checked)});
+  tick.checked = !!S.values[later];
+  wrap.append(el("div", {class: "cad-title", text: r.label}),
+    el("div", {class: "cad-line"}, el("span", {text: "Every"}), num(r.key), el("span", {text: "epochs"})),
+    el("div", {class: "cad-line", "data-part": later},
+      el("label", {class: "cad-tick"}, tick, el("span", {text: "then less often:"})),
+      el("span", {class: "cad-pair"}, el("span", {text: "after epoch"}), num(until)),
+      el("span", {class: "cad-pair"}, el("span", {text: "every"}), num(after), el("span", {text: "epochs"}))),
+    el("div", {class: "field-hint row-note", id: "note_" + r.key}),
+    el("div", {class: "field-hint", "data-part": later, text: r.hint}));
+  return wrap;
+}
+
 // Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's
 function blockPicker(r, wrap) {
   const sel = () => ({...(S.values[r.key] || {})});
@@ -457,7 +486,9 @@ async function refreshState() {
     const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
       .find((r) => r && r.key === k));
     if (lab && rowDef) lab.textContent = ((S.state.labels || {})[k] || rowDef.label) + ":";
-    row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(k); });
+    // a control of several values greys and hides each of its parts by its own key
+    row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(i.dataset.field || k); });
+    row.querySelectorAll("[data-part]").forEach((p) => { p.style.display = hidden.has(p.dataset.part) ? "none" : ""; });
     // a greyed box shows what that run will really use (the Distilled's steps / CFG), the form's own value kept
     const shown = (S.state.shown || {})[k], box = $("f_" + k);
     if (box && shown !== undefined && disabled.has(k)) { box.value = shown; box.dataset.shown = "1"; }

@@ -2144,3 +2144,14 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .note-lines { color: var(--text-explain); }   /* the Subjects card's caption preview: an explanation, not a warning */
 /* Studio (H3): the Clip row's ticks after Steps / Turbo - a gap before each, so every box reads with its own word */
 #stVideoRows .st-inline .checkbox-label { margin-left: 14px; }
+
+/* How often to preview: one panel, a sentence of small boxes that wraps on a phone */
+.section-card[id^="sec-"] .form-row.kind-cadence { grid-column: 1 / -1; padding: 10px 12px; border-radius: 8px;
+  border: 1px solid var(--border); }
+.kind-cadence .cad-title { font-weight: 600; margin-bottom: 6px; }
+.kind-cadence .cad-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 4px 0; }
+.kind-cadence .cad-pair { display: inline-flex; align-items: center; gap: 6px; }
+.kind-cadence .cad-tick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.section-card[id^="sec-"] .form-row.kind-cadence input.cad-num { width: 64px; min-width: 0; max-width: 64px; flex: 0 0 64px; text-align: center; }
+.kind-cadence .cad-num:disabled { opacity: 0.45; }
+.kind-cadence .field-hint { margin-top: 6px; }
