@@ -206,6 +206,7 @@ class MOSSImageDiT(nn.Module):
 
     # ---- forward ------------------------------------------------------------------------------------------------
     def _io_dtype(self, lin):
+        lin = getattr(lin, "base", lin)                 # a LoRA-wrapped Linear (a full-model difference wraps this one)
         dt = lin.weight.dtype
         return dt if dt.is_floating_point else torch.bfloat16
 
