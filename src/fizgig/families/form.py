@@ -116,7 +116,8 @@ def _option_row(opt):
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
                 **({"featured": True} if opt.featured else {}),
                 **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" and opt.split else {}),
-                **({"slide": list(opt.slide), "slide_hint": opt.slide_hint} if kind == "split" and opt.slide else {}))
+                **({"slide": list(opt.slide), "slide_hint": opt.slide_hint} if kind == "split" and opt.slide else {}),
+                **({"single": opt.single} if kind == "split" and opt.single else {}))
 
 
 def model_keys(desc):

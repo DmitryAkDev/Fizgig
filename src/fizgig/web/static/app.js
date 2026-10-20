@@ -426,7 +426,7 @@ function splitRow(r, wrap) {
   S._split = S._split || {};
   const m0 = modeOf();
   const mem = S._split[r.key] = S._split[r.key] || {
-    single: m0 === "Single" ? String(S.values[r.key] ?? "") : String(r.default ?? ""),
+    single: m0 === "Single" ? String(S.values[r.key] ?? "") : String(r.single ?? (String(r.default ?? "").includes(":") ? "" : r.default ?? "")),
     split: m0 === "Split" ? partsOf() : (r.split || []).slice(), slide: m0 === "Slide" ? partsOf() : (r.slide || []).slice()};
   if (mem.slide.length === 5) { mem.every = mem.slide[4]; mem.slide = mem.slide.slice(0, 4); }   // the tick's number apart
   const unit = (r.suffix || "").split(" ")[0];

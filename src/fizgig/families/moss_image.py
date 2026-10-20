@@ -308,6 +308,7 @@ MOSS_IMAGE = FamilyDescription(
                      # to 40, and 75 until epoch 8 easing to 30 by epoch 12 beat both (Peter, 20 Oct 2026)
                      # and (the tick, on by default) every 3rd epoch after the slide back at 75 (Peter, 20 Oct 2026)
                      slide=("75", "8", "30", "12", "3"),
+                     single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
                      slide_hint="Slide: a high share until an epoch, then easing down to a lower one, a few points "
                                 "an epoch. 75 until epoch 8, down to 30 by epoch 12, works well with datasets of up "
                                 "to about 55 images; with many more, start dropping below 75 earlier. Ticked: after "

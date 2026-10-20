@@ -250,6 +250,7 @@ class FamilyOption:
     # with the tick ":N", every N epochs after it one epoch at the first value; `slide_hint` replaces the hint
     slide: tuple = ()
     slide_hint: str = ""
+    single: str = ""                  # Single's value to start with when the default is a Split or Slide value
 
     def choice_labels(self):
         return [c[0] for c in self.choices]
