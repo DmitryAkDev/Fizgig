@@ -2124,7 +2124,7 @@ def _start_fetch(family, token="", optional=False, choices=None):
     threading.Thread(target=_fetch_watch, args=(proc,), daemon=True).start()
 
 
-_on_use = {}          # pref key -> {"state": "running" | "failed", "at": time}: files fetched on first use
+_on_use = {}          # pref key -> {"state": "running" | "failed" | "done", "at": time}: files fetched on first use
 
 
 def _fetch_on_use(f):
@@ -2133,7 +2133,7 @@ def _fetch_on_use(f):
     then). A failed download is tried again 30 s on, not on every form change. Returns "running" / "failed" / ""."""
     with _lock:
         st = _on_use.get(f.pref_key)
-        if st and (st["state"] == "running" or time.time() - st["at"] < 30):
+        if st and (st["state"] == "running" or (st["state"] == "failed" and time.time() - st["at"] < 30)):
             return st["state"]
         _on_use[f.pref_key] = {"state": "running", "at": time.time()}
 
@@ -2146,7 +2146,7 @@ def _fetch_on_use(f):
                 os.replace(got, dest)             # a file in a repo subfolder: to the models folder itself
             update_prefs({f.pref_key: dest})
             with _lock:
-                _on_use.pop(f.pref_key, None)
+                _on_use[f.pref_key] = {"state": "done", "at": time.time()}
             logger.info(f"Downloaded {os.path.basename(dest)} on first use")
         except Exception as e:
             with _lock:
@@ -2157,13 +2157,31 @@ def _fetch_on_use(f):
     return "running"
 
 
+def _on_use_gb(f):
+    """How much of a first-use download has arrived, in GB: hf_hub_download's part file in the models folder's
+    .cache (named <file>.<etag>.incomplete) until it is complete."""
+    d = os.path.join(user_data.MODELS_DIR, ".cache", "huggingface", "download", os.path.dirname(f.path))
+    name = os.path.basename(f.path)
+    try:
+        return max((os.path.getsize(os.path.join(d, n)) for n in os.listdir(d)
+                    if n.startswith(name) and n.endswith(".incomplete")), default=0) / 2 ** 30
+    except OSError:
+        return 0.0
+
+
 def _look_fetch(desc, values, path):
-    """The preview look LoRA (MOSS-Image's SFT look LoRA), ticked on the Samples tab but not on disk: its own
-    download (_fetch_on_use). Returns that download's state."""
+    """The preview look LoRA (MOSS-Image's SFT look LoRA), ticked on the Samples tab: its own download
+    (_fetch_on_use) when it is not on disk. Returns (state, GB arrived of GB): state "running" / "failed" / "done"
+    (just finished: the note says so) / "" (nothing to say)."""
     look = desc.preview_look()
-    if look is None or not look.fetch_on_use or not values.get("FAMILY_PREVIEW_LOOK") or (path and os.path.isfile(path)):
-        return ""
-    return _fetch_on_use(look)
+    if look is None or not look.fetch_on_use or not values.get("FAMILY_PREVIEW_LOOK"):
+        return "", None
+    if path and os.path.isfile(path):
+        with _lock:
+            st = _on_use.get(look.pref_key) or {}
+        return ("done" if st.get("state") == "done" and time.time() - st["at"] < 120 else ""), None
+    state = _fetch_on_use(look)
+    return state, ((_on_use_gb(look), look.size_gb) if state == "running" else None)
 
 
 def _fetch_watch(proc):

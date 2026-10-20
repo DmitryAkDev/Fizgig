@@ -746,13 +746,14 @@ def _kind(desc, values):
 
 
 def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file="",
-          checkpoint_path="", look_file=False, look_fetch=""):
+          checkpoint_path="", look_file=False, look_fetch=("", None)):
     """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
     (as the desktop unticks what automagic3 owns). captioner: the shared captioner's file when it is set and on disk
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
     checkpoint (Klein's Distilled) is."""
     hidden, disabled, notes, force, actions = set(), set(), {}, {}, {}
     disabled_choices = {}                         # {key: {choice: why}}: single choices greyed in a row of pills
+    poll = False                                  # something is under way (a download): the page asks again soon
     ck_turbo = False                              # previews on a preview checkpoint that takes the Turbo LoRA
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
@@ -1001,16 +1002,23 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             notes["FAMILY_PREVIEW_LOOK"] = (
                 f"Greyed out: previews render on the preview model, which has its own look. Untick "
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to preview on your Base with this LoRA.")
-        elif values.get("FAMILY_PREVIEW_LOOK") and not look_file:
-            notes["FAMILY_PREVIEW_LOOK"] = {
-                "running": "Downloading it now (about 2.1 GB). A run that's going picks it up at its next preview.",
-                "failed": "The download failed: check you're online, then tick this again, or download it from "
-                          "Preferences.",
-            }.get(look_fetch, "")
+        elif values.get("FAMILY_PREVIEW_LOOK"):
+            state, gb = look_fetch
+            if state == "running":
+                got = f"{gb[0] * 1024:.0f} MB" if gb and gb[0] < 1 else f"{gb[0]:.1f} GB" if gb else ""
+                notes["FAMILY_PREVIEW_LOOK"] = (f"Downloading the SFT look LoRA: {got} of {gb[1]:.1f} GB. "
+                                                if gb else "Downloading the SFT look LoRA. ") + \
+                    "A run that's going picks it up at its next preview."
+                poll = True
+            elif state == "failed" and not look_file:
+                notes["FAMILY_PREVIEW_LOOK"] = ("The download failed: check you're online, then tick this again, "
+                                                "or download it from Preferences.")
+            elif state == "done":
+                notes["FAMILY_PREVIEW_LOOK"] = "Downloaded: previews use it from the next one."
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
             "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,
-            "disabled_choices": disabled_choices}
+            "disabled_choices": disabled_choices, "poll": poll}
 
 
 def _extras_found(desc, values, image_folder):

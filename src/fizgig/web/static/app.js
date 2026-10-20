@@ -532,6 +532,7 @@ function syncInputs(keys) {
 
 async function refreshState() {
   S.state = await api("/api/form/state", {family: S.family, values: S.values, image_folder: S.imageFolder});
+  if (S.state.poll) setTimeout(refreshStateSoon, 2000);     // a download under way: its note moves on
   const force = Object.keys(S.state.force || {});      // what a setting turns off (automagic3: Adaptive LR...)
   if (force.length) { Object.assign(S.values, S.state.force); syncInputs(force); saveStateSoon(); }
   const hidden = new Set(S.state.hidden), disabled = new Set(S.state.disabled);
