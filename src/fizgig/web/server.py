@@ -2159,12 +2159,12 @@ def _fetch_on_use(f):
 
 def _on_use_gb(f):
     """How much of a first-use download has arrived, in GB: hf_hub_download's part file in the models folder's
-    .cache (named <file>.<etag>.incomplete) until it is complete."""
+    .cache (a hashed name ending .incomplete) until it is complete - the largest there, as a resumed one may sit
+    beside an older leftover."""
     d = os.path.join(user_data.MODELS_DIR, ".cache", "huggingface", "download", os.path.dirname(f.path))
-    name = os.path.basename(f.path)
     try:
-        return max((os.path.getsize(os.path.join(d, n)) for n in os.listdir(d)
-                    if n.startswith(name) and n.endswith(".incomplete")), default=0) / 2 ** 30
+        return max((os.path.getsize(os.path.join(d, n)) for n in os.listdir(d) if n.endswith(".incomplete")),
+                   default=0) / 2 ** 30
     except OSError:
         return 0.0
 
