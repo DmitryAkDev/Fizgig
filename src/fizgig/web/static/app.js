@@ -1445,19 +1445,29 @@ function renderWebQueue(q) {
 function followLog() {
   const src = S.logSrc = new EventSource(`/api/log?since=${S.logSince}&t=${encodeURIComponent(TOKEN)}`);
   const out = $("console");
+  // the console as finished lines (body) and the line still being written (tail: a progress bar's latest state),
+  // drawn at most every 50 ms. A new tab replays the run's backlog (up to 5000 lines) at once, and rewriting the
+  // whole console and laying it out again for every line froze the page on a long run
+  const t0 = out.textContent, nl = t0.lastIndexOf("\n");
+  let body = t0.slice(0, nl + 1), tail = t0.slice(nl + 1), done = [], queued = false;
+  const flush = () => {
+    queued = false;
+    const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+    if (done.length) { body = (body + done.join("")).slice(-200000); done = []; }
+    out.textContent = body + tail;
+    if (atEnd) out.scrollTop = out.scrollHeight;
+  };
   src.onmessage = (e) => {
     S.logSince = Number(e.lastEventId) || S.logSince;
     const line = JSON.parse(e.data);
-    if (line === "\u0000clear\n") { out.textContent = ""; return; }   // a new run: its own log from here
-    const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
-    // a progress bar redraws itself with \r: keep only its latest state
-    const text = out.textContent;
-    if (line.includes("\r") && !line.endsWith("\n")) {
-      out.textContent = text.slice(0, text.lastIndexOf("\n") + 1) + line.split("\r").pop();
-    } else {
-      out.textContent = (text + line.split("\r").pop()).slice(-200000);
+    if (line === "\u0000clear\n") { body = tail = ""; done = []; }   // a new run: its own log from here
+    else if (line.includes("\r") && !line.endsWith("\n")) tail = line.split("\r").pop();   // a progress bar redraws
+    else {
+      const all = tail + line.split("\r").pop(), cut = all.lastIndexOf("\n") + 1;
+      if (cut) done.push(all.slice(0, cut));
+      tail = all.slice(cut);
     }
-    if (atEnd) out.scrollTop = out.scrollHeight;
+    if (!queued) { queued = true; setTimeout(flush, 50); }
   };
   src.onerror = () => { src.close(); if (S.logSrc === src) setTimeout(followLog, 3000); };
 }
