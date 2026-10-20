@@ -11,9 +11,7 @@ NEWS = [
             "A new Clean-end share default for MOSS-Image, Slide: 60% of steps on nearly clean images until epoch 7, "
             "easing to 30% by epoch 15, with every 2nd epoch back at 60%. Likeness comes in early and stays: on our "
             "most difficult dataset it was the best of eight settings we tried. Every MOSS-Image preset uses it; with "
-            "a much larger dataset, a steady 40% (Single) may suit better.
-
-"
+            "a much larger dataset, a steady 40% (Single) may suit better.\n\n"
             "On the Samples tab, Give Base previews the SFT look gives your Base previews much of SFT's look with no "
             "model swap. It downloads itself the first time. We still recommend leaving the Turbo LoRA off for "
             "previews. And update ComfyUI: many people tell us their Fizgig LoRAs work better since its latest update."
