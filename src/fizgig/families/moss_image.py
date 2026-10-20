@@ -36,7 +36,9 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        "MOSS_LOWNOISE_PCT": "40",    # the Clean-end share: 40 beat 30 (Peter, 20 Oct 2026); every preset sets it
+        # the Clean-end share: Slide, 75% until epoch 6, then down to 40% by epoch 10 - on the dataset that struggled
+        # it held likeness through the step-down where Split dipped (Peter, 20 Oct 2026); every preset sets it
+        "MOSS_LOWNOISE_PCT": "75:6:40:10",
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
 
@@ -298,7 +300,7 @@ MOSS_IMAGE = FamilyDescription(
                           "layers breaks anatomy. Uses less VRAM, so a fine-tune fits a smaller card, but on Base "
                           "it may cost quality or slow convergence.",
                      section="after", summary="attention only"),
-        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="40",
+        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="75:6:40:10",
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
                           "fine detail are refined. Empty = the model's own schedule, about 11%.",
@@ -317,7 +319,7 @@ MOSS_IMAGE = FamilyDescription(
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
          "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
-         "Clean-end share moves the curve's centre, 40% of steps below sigma 0.5 by default; the reference is about 11%); the "
+         "Clean-end share moves the curve's centre: by default 75% of steps below sigma 0.5 until epoch 6, then down to 40% by epoch 10; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "
