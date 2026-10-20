@@ -420,7 +420,7 @@ function cadenceRow(r, wrap) {
 function splitRow(r, wrap) {
   // a row without Split shows a split value (75:5:40) as a Slide that drops at once (75:5:40:5)
   const modeOf = () => { const n = String(S.values[r.key] ?? "").split(":").length;
-    return n === 4 && r.slide ? "Slide" : n === 3 ? (r.split ? "Split" : "Slide") : "Single"; };
+    return (n === 4 || n === 5) && r.slide ? "Slide" : n === 3 ? (r.split ? "Split" : "Slide") : "Single"; };
   const partsOf = () => { const p = String(S.values[r.key] ?? "").split(":");
     return p.length === 3 && !r.split ? [...p, p[1]] : p; };
   S._split = S._split || {};
@@ -428,20 +428,28 @@ function splitRow(r, wrap) {
   const mem = S._split[r.key] = S._split[r.key] || {
     single: m0 === "Single" ? String(S.values[r.key] ?? "") : String(r.default ?? ""),
     split: m0 === "Split" ? partsOf() : (r.split || []).slice(), slide: m0 === "Slide" ? partsOf() : (r.slide || []).slice()};
+  if (mem.slide.length === 5) { mem.every = mem.slide[4]; mem.slide = mem.slide.slice(0, 4); }   // the tick's number apart
   const unit = (r.suffix || "").split(" ")[0];
   const write = () => {
     const m = modeOf();
     if (m === "Split") { mem.split = [first, until, rest].map((i) => i.value.trim()); onValue(r, mem.split.join(":")); }
-    else if (m === "Slide") { mem.slide = [sFirst, sHold, sRest, sBy].map((i) => i.value.trim()); onValue(r, mem.slide.join(":")); }
+    else if (m === "Slide") {          // the refresh tick adds its "every N" as a fifth number
+      mem.slide = [sFirst, sHold, sRest, sBy].map((i) => i.value.trim());
+      mem.every = sEvery.value.trim() || mem.every || "3";
+      onValue(r, [...mem.slide, ...(sTick.checked ? [mem.every] : [])].join(":"));
+    }
     else { mem.single = one.value.trim(); onValue(r, mem.single); }
   };
   const box = () => el("input", {type: "text", inputmode: "numeric", class: "cad-num", oninput: write});
   const one = box(), first = box(), until = box(), rest = box();
-  const sFirst = box(), sHold = box(), sRest = box(), sBy = box();
+  const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
+  const sTick = el("input", {type: "checkbox", onchange: write});
+  const sFirstEcho = el("span");                   // "one epoch at 75%": the first share, as typed
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,
-      onchange: () => { onValue(r, c === "Split" ? mem.split.join(":") : c === "Slide" ? mem.slide.join(":") : mem.single);
+      onchange: () => { onValue(r, c === "Split" ? mem.split.join(":") : c === "Slide" ? [...mem.slide,
+          ...(mem.every && mem.slideTick !== false ? [mem.every] : [])].join(":") : mem.single);
         show(); }}), " " + c));
   }
   const lineOne = el("div", {class: "cad-line"}, one, el("span", {text: r.suffix || ""}));
@@ -454,6 +462,9 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, sHold, el("span", {text: "then down to"})),
     el("span", {class: "cad-pair"}, sRest, el("span", {text: unit + " by epoch"})),
     el("span", {class: "cad-pair"}, sBy));
+  const lineRefresh = (r.slide || []).length > 4 ? el("div", {class: "cad-line"},
+    el("label", {class: "cad-tick"}, sTick, el("span", {text: "then every"})),
+    el("span", {class: "cad-pair"}, sEvery, el("span", {}, "epochs, one epoch at ", sFirstEcho, unit))) : null;
   const hintOne = el("div", {class: "field-hint", text: r.hint});
   const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
   const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
@@ -461,16 +472,27 @@ function splitRow(r, wrap) {
     const m = modeOf();
     pills.querySelectorAll("input").forEach((rb) => { rb.checked = rb.value === m; });
     if (m === "Split") { mem.split = partsOf(); [first.value, until.value, rest.value] = mem.split; }
-    else if (m === "Slide") { mem.slide = partsOf(); [sFirst.value, sHold.value, sRest.value, sBy.value] = mem.slide; }
+    else if (m === "Slide") {
+      const p = partsOf();
+      mem.slide = p.slice(0, 4); [sFirst.value, sHold.value, sRest.value, sBy.value] = mem.slide;
+      sTick.checked = p.length === 5;
+      if (p.length === 5) mem.every = p[4];
+      sEvery.value = mem.every || (r.slide || [])[4] || "3";
+      sEvery.disabled = !sTick.checked;
+      sFirstEcho.textContent = sFirst.value;
+    }
     else { one.value = S.values[r.key] ?? ""; mem.single = one.value; }
     for (const [node, on] of [[lineOne, m === "Single"], [hintOne, m === "Single"], [lineSplit, m === "Split"],
-                              [hintSplit, m === "Split"], [lineSlide, m === "Slide"], [hintSlide, m === "Slide"]]) {
-      node.style.display = on ? "" : "none";
+                              [hintSplit, m === "Split"], [lineSlide, m === "Slide"], [lineRefresh, m === "Slide"],
+                              [hintSlide, m === "Slide"]]) {
+      if (node) node.style.display = on ? "" : "none";
     }
   }
   const sync = el("input", {type: "hidden", id: "f_" + r.key});    // syncInputs (a preset, Last Train) redraws it
   sync._sync = show;
-  wrap.append(el("div", {class: "cad-title", text: r.label}), pills, lineOne, lineSplit, lineSlide, hintOne, hintSplit,
+  sTick.addEventListener("change", () => { mem.slideTick = sTick.checked; });
+  wrap.append(el("div", {class: "cad-title", text: r.label}), pills, lineOne, lineSplit, lineSlide, ...(lineRefresh ? [lineRefresh] : []),
+    hintOne, hintSplit,
     hintSlide, sync,
     el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",

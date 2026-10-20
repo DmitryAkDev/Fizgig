@@ -245,9 +245,9 @@ class FamilyOption:
     # `split_hint` replaces the hint while Split is picked
     split: tuple = ()
     split_hint: str = ""
-    # entry: a Slide mode (with or without Split) - (first value, hold to epoch, value after, reached by epoch); the
-    # value is then "first:hold:after:by", a straight line from the hold epoch to the last; `slide_hint` replaces the
-    # hint
+    # entry: a Slide mode (with or without Split) - (first value, hold to epoch, value after, reached by epoch[, every
+    # N epochs after]); the value is then "first:hold:after:by", a straight line from the hold epoch to the last, and
+    # with the tick ":N", every N epochs after it one epoch at the first value; `slide_hint` replaces the hint
     slide: tuple = ()
     slide_hint: str = ""
 
