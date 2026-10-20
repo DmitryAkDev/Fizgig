@@ -2155,3 +2155,6 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card[id^="sec-"] .form-row.kind-cadence input.cad-num { width: 64px; min-width: 0; max-width: 64px; flex: 0 0 64px; text-align: center; }
 .kind-cadence .cad-num:disabled { opacity: 0.45; }
 .kind-cadence .field-hint { margin-top: 6px; }
+
+/* a single choice greyed in a row of pills */
+.checkbox-label.choice-off { opacity: 0.4; cursor: not-allowed; }

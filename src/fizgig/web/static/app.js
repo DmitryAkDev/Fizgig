@@ -500,6 +500,14 @@ async function refreshState() {
     // a control of several values greys and hides each of its parts by its own key
     row.querySelectorAll("input,select,textarea,button").forEach((i) => { i.disabled = disabled.has(i.dataset.field || k); });
     row.querySelectorAll("[data-part]").forEach((p) => { p.style.display = hidden.has(p.dataset.part) ? "none" : ""; });
+    // single choices greyed in a row of pills (Fizgig LoRA Isolation with one subject)
+    const off = ((S.state.disabled_choices || {})[k]) || {};       // {choice: why}, the why on hover
+    row.querySelectorAll(`input[type="radio"][name="f_${k}"]`).forEach((rb) => {
+      if (rb.value in off) rb.disabled = true;
+      const lab = rb.closest("label");
+      lab.classList.toggle("choice-off", rb.disabled);
+      lab.title = off[rb.value] || "";
+    });
     // a greyed box shows what that run will really use (the Distilled's steps / CFG), the form's own value kept
     const shown = (S.state.shown || {})[k], box = $("f_" + k);
     if (box && shown !== undefined && disabled.has(k)) { box.value = shown; box.dataset.shown = "1"; }

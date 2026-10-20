@@ -180,10 +180,11 @@ PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in pro
                "word.\n"
                "Leave the rest of the model alone: ask for \"a man at a party\" without the trigger word and you get "
                "a stranger, just as the model made before you trained. Your subject only appears when you call for "
-               "them. Not ideal with just one person: for a one-person LoRA, use Off.\n"
+               "them. With one person, use it when your subject must stay out of prompts without the trigger "
+               "word; otherwise use Off.\n"
                "Fizgig LoRA Isolation: your subjects can stand together in one picture, or next to "
-               "a person the model already knows well, and every face stays right. Best for people, and best with two "
-               "or more people in the LoRA. "
+               "a person the model already knows well, and every face stays right. Best for people, and needs two or "
+               "more subjects in the LoRA. "
                "Training takes about 1.5x as long. Prompt with the word shown at the bottom of this card for "
                "each subject, e.g. zwxemwoman.")
 VIDEO = "https://youtu.be/8uW5NdL5b20"          # the Subjects card video: setting up Fizgig LoRA Isolation
@@ -745,6 +746,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     (auto-recaption needs it); speed_file: the preview Turbo LoRA is set and on disk; checkpoint_file: the preview
     checkpoint (Klein's Distilled) is."""
     hidden, disabled, notes, force, actions = set(), set(), {}, {}, {}
+    disabled_choices = {}                         # {key: {choice: why}}: single choices greyed in a row of pills
     ck_turbo = False                              # previews on a preview checkpoint that takes the Turbo LoRA
     hidden |= ({"TURBO_MISSING"} if speed_file else
                {"FAMILY_TURBO_STRENGTH", "FAMILY_TURBO_STEPS", "FAMILY_TURBO_PACE"})
@@ -789,6 +791,18 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         values = {**values, "FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False}
     if kind not in ("standard", "finetune"):          # DOP keeps a subject apart: a LoRA's or a fine-tune's job
         hidden.add("FAMILY_DOP")
+    # Fizgig LoRA Isolation needs two or more subjects (its recipe teaches a face to belong to one trigger, against
+    # a second one): with one, Off and Leave the rest of the model alone stay, Isolation is greyed, and a saved
+    # one-subject form on Isolation moves to Leave the rest of the model alone (the nearest: it keeps the DOP pass)
+    one_sub = kind == "standard" and (concept_count(values) if values.get("FAMILY_MULTICONCEPT") else 1) == 1
+    if one_sub:
+        disabled_choices["FAMILY_PEOPLE_MODE"] = {PEOPLE_MODES[2]: "Needs two or more subjects: add one under Who is "
+                                                                   "this LoRA of?"}
+        if values.get("FAMILY_MULTI_PERSON"):
+            force.update(FAMILY_MULTI_PERSON=False, FAMILY_DOP=True)
+            values = {**values, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP": True}
+            notes["FAMILY_PEOPLE_MODE"] = (f"Moved to {PEOPLE_MODES[1]}: {PEOPLE_MODES[2]} needs two or more "
+                                           "subjects.")
     if kind != "standard":                            # multi-person mode: a LoRA (its LR boost is per step)
         hidden.add("FAMILY_MULTI_PERSON")
     elif values.get("FAMILY_MULTI_PERSON"):           # it runs on DOP
@@ -972,7 +986,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     return {"hidden": sorted(hidden), "disabled": sorted(disabled), "notes": notes, "kind": kind,
             "media": sorted(media), "turbo_file": bool(speed_file), "force": force, "actions": actions,
-            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo}
+            "shown": shown, "checkpoint_file": bool(checkpoint_file), "labels": labels, "checkpoint_turbo": ck_turbo,
+            "disabled_choices": disabled_choices}
 
 
 def _extras_found(desc, values, image_folder):
