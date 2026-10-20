@@ -8,13 +8,11 @@ NEWS = [
         "date": "20 Oct 2026",
         "title": "MOSS-Image likeness sooner, and Base previews with the SFT look",
         "body": (
-            "A new Clean-end share default for MOSS-Image, Slide: 60% of steps on nearly clean images until epoch 7, "
-            "easing to 30% by epoch 15, with every 2nd epoch back at 60%. Likeness comes in early and stays: on our "
-            "most difficult dataset it was the best of eight settings we tried. Every MOSS-Image preset uses it; with "
-            "a much larger dataset, a steady 40% (Single) may suit better.\n\n"
-            "On the Samples tab, Give Base previews the SFT look gives your Base previews much of SFT's look with no "
-            "model swap. It downloads itself the first time. We still recommend leaving the Turbo LoRA off for "
-            "previews. And update ComfyUI: many people tell us their Fizgig LoRAs work better since its latest update."
+            "A new Clean-end share default for MOSS-Image, Slide, brings likeness in early and keeps it: on our most "
+            "difficult dataset it was the best of eight settings we tried.\n\n"
+            "Give Base previews the SFT look (Samples tab) gives your Base previews much of SFT's look with no model "
+            "swap. We still recommend leaving the Turbo LoRA off for previews. And update ComfyUI: many people's "
+            "Fizgig LoRAs work better since its latest update."
         ),
         "links": [{"text": "Read more", "href": _ARTICLE + "#20-oct-2026-moss-image-likeness-sooner-and-base-previews-with-the-sft-look"},
                   {"text": "Watch the video", "href": "https://www.youtube.com/watch?v=UCoCtM8yrBk"}],
