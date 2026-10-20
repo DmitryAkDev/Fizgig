@@ -106,7 +106,7 @@ def _block_groups(desc):
 def _option_row(opt):
     """A family's own control (FamilyOption) as a row: its declared label, kind, choices, default and hint."""
     kind = {"choice": "choice", "check": "check"}.get(opt.kind, "combo" if opt.suggestions else
-                                                      "split" if opt.split else "entry")
+                                                      "split" if opt.split or opt.slide else "entry")
     labels = opt.choice_labels() if opt.kind == "choice" else []
     default = ((opt.default if opt.default in labels else labels[0]) if labels else
                opt.default == "1" if opt.kind == "check" else opt.default)
@@ -115,7 +115,7 @@ def _option_row(opt):
                 **({"labels": list(opt.suggestions)} if kind == "combo" else {}),
                 **({"warn": opt.warn, "warn_link": opt.warn_link} if opt.warn else {}),
                 **({"featured": True} if opt.featured else {}),
-                **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" else {}),
+                **({"split": list(opt.split), "split_hint": opt.split_hint} if kind == "split" and opt.split else {}),
                 **({"slide": list(opt.slide), "slide_hint": opt.slide_hint} if kind == "split" and opt.slide else {}))
 
 

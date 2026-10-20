@@ -418,14 +418,16 @@ function cadenceRow(r, wrap) {
 // by a later epoch. It stays one text - "30", "75:5:40" or "75:6:40:10" - so presets, Last Train and the queue carry
 // it as any entry; each mode remembers its own numbers while you switch between them
 function splitRow(r, wrap) {
+  // a row without Split shows a split value (75:5:40) as a Slide that drops at once (75:5:40:5)
   const modeOf = () => { const n = String(S.values[r.key] ?? "").split(":").length;
-    return n === 4 && r.slide ? "Slide" : n === 3 ? "Split" : "Single"; };
-  const partsOf = () => String(S.values[r.key] ?? "").split(":");
+    return n === 4 && r.slide ? "Slide" : n === 3 ? (r.split ? "Split" : "Slide") : "Single"; };
+  const partsOf = () => { const p = String(S.values[r.key] ?? "").split(":");
+    return p.length === 3 && !r.split ? [...p, p[1]] : p; };
   S._split = S._split || {};
   const m0 = modeOf();
   const mem = S._split[r.key] = S._split[r.key] || {
     single: m0 === "Single" ? String(S.values[r.key] ?? "") : String(r.default ?? ""),
-    split: m0 === "Split" ? partsOf() : r.split.slice(), slide: m0 === "Slide" ? partsOf() : (r.slide || []).slice()};
+    split: m0 === "Split" ? partsOf() : (r.split || []).slice(), slide: m0 === "Slide" ? partsOf() : (r.slide || []).slice()};
   const unit = (r.suffix || "").split(" ")[0];
   const write = () => {
     const m = modeOf();
@@ -437,7 +439,7 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box();
   const pills = el("div", {class: "radio-row"});
-  for (const c of ["Single", "Split", ...(r.slide ? ["Slide"] : [])]) {
+  for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,
       onchange: () => { onValue(r, c === "Split" ? mem.split.join(":") : c === "Slide" ? mem.slide.join(":") : mem.single);
         show(); }}), " " + c));

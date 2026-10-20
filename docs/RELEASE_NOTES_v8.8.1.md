@@ -1,0 +1,12 @@
+# Fizgig v8.8.1: better MOSS-Image likeness, quicker previews that look like SFT
+
+- **MOSS-Image learns likeness sooner and holds it.** Clean-end share now starts high and eases down: **Slide**, 75% of training steps on nearly-clean images until epoch 8, then a few points less each epoch to 30% by epoch 12. Likeness comes in early, then composition. On the dataset that had given us the most trouble, likeness reached 67% by epoch 11; dropping straight from 75% to 40% at epoch 5 took until epoch 22 to get there. It works well with datasets of up to about 55 images; with many more, start dropping below 75 earlier. Every MOSS-Image preset uses it. The Clean-end share control (Training tab) has two modes: **Slide** and **Single** (one value for the whole run).
+- **Give Base previews the SFT look** (Samples tab): with **Use the SFT model for samples** off, Fizgig's SFT look LoRA renders your Base previews with much of MOSS-Image SFT's look. It's not as good as SFT itself, but a really good indicator, and previews are much quicker, with no model swap. It's used for previews only, never in training. The first time you tick it, Fizgig downloads it for you (about 2.1 GB), with progress under the tick. **We still recommend not using the Turbo LoRA for previews.**
+- **Each enlarged preview says how it was made.** Click a MOSS-Image preview in the gallery and a line above it says what it was rendered with: SFT, the Base with the SFT look LoRA, or the Base alone, and whether the Turbo LoRA was on, with what gives a better read of quality.
+- **Update ComfyUI.** Many people tell us their Fizgig LoRAs work better since ComfyUI's update this week.
+- **Fixed:** with two Fizgig web servers running at once, starting the second one marked a run on the first as stopped in Runs & outputs. The training itself carried on.
+
+## Updating from an earlier version
+
+- **Your saved MOSS-Image form keeps its Clean-end value.** To use Slide, pick a MOSS-Image preset, or pick **Slide** on the Clean-end share control.
+- **On a RunPod pod:** restart the pod to update.
