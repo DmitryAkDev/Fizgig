@@ -245,12 +245,12 @@ def timestep_flags(inputs):
 def uncached_pictures(toml_text):
     """How many pictures in the dataset TOML's folders have no latent or no text cache in their cache folder (a
     resume skips caching, so a cache deleted by hand would leave it nothing to train on)."""
-    import tomllib
+    import toml   # not tomllib: that's Python 3.11+, and 3.10 installs are supported
     from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
     exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
     try:
-        sets = tomllib.loads(toml_text or "").get("datasets") or []
-    except tomllib.TOMLDecodeError:
+        sets = toml.loads(toml_text or "").get("datasets") or []
+    except toml.TomlDecodeError:
         return 0
     n = 0
     for ds in sets:
