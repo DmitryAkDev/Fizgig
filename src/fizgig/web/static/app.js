@@ -3199,7 +3199,11 @@ async function loadIntoForm(s) {
   // a run recorded before it had a Turbo value: its steps and CFG follow the Turbo on now (refreshState)
   if (!("FAMILY_TURBO_STRENGTH" in kept)) delete S.values.__turbo_live;
   S.all[S.family] = S.values;
-  if (s.image_folder) { $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; await loadTrigger(); }
+  if (s.image_folder) {
+    const was = S.imageFolder;
+    $("imageFolder").value = s.image_folder; S.imageFolder = s.image_folder; await loadTrigger();
+    if (S.imageFolder !== was) lookForget();
+  }
   renderSections("samples", $("samplesForm"));
   renderSections("training", $("trainingForm"));
   await refreshState();
@@ -3418,6 +3422,14 @@ function prepTest() {
 }
 
 // ---- the Look Filter ----
+function lookForget() {
+  // a new training folder starts with no baselines or marks (#218); its own last scan, if any, comes back with the poll
+  Object.assign(S.prep, {bases: [], marked: new Set(), page: 0, picking: false});
+  $("lookPicker").style.display = "none";
+  lookBasesShow();
+  lookPoll();
+}
+
 async function lookPickOpen() {
   const host = $("lookPicker");
   if (S.prep.picking) { S.prep.picking = false; host.style.display = "none"; return; }
@@ -3456,14 +3468,17 @@ async function lookScan() {
 
 async function lookPoll() {
   clearTimeout(S.prep.lookTimer);
+  if (S.prep.intro == null) S.prep.intro = $("lookStatus").textContent;    // the card's own words, for a new folder
   const r = await api("/api/look/status").catch(() => null);
   if (!r) return;
   S.prep.look = r;
+  const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
       "Loading the face model (the first time downloads about 300 MB)…";
     S.prep.lookTimer = setTimeout(lookPoll, 1000);
   } else if (r.state === "failed") $("lookStatus").textContent = r.error;
+  else if (r.state === "done" && r.rows.length && !mine) $("lookStatus").textContent = S.prep.intro;
   else if (r.state === "done" && r.rows.length) {
     if (!S.prep.bases.length) { S.prep.bases = r.baselines; lookBasesShow(); }
     const faces = r.rows.filter((x) => x.score != null).length;
@@ -7042,7 +7057,11 @@ function wire() {
   for (const sel of document.querySelectorAll(".family-pick"))
     sel.addEventListener("change", (e) => chooseFamily(e.target.value));
   const folder = $("imageFolder");
-  const setFolder = () => { S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon(); };
+  const setFolder = () => {
+    const was = S.imageFolder;
+    S.imageFolder = folder.value.trim(); loadTrigger(); refreshStateSoon(); saveStateSoon();
+    if (S.imageFolder !== was) lookForget();
+  };
   folder.addEventListener("change", setFolder);
   $("uploadFiles").addEventListener("change", (e) => { uploadFiles([...e.target.files]); e.target.value = ""; });
   $("uploadDir").addEventListener("change", (e) => {
