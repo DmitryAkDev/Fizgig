@@ -29,6 +29,7 @@ A helper is any other computer running Fizgig: a second PC or laptop, a second G
 - **Slider runs preview when you asked them to**, following the Samples tab instead of the save interval, and every model's **Slider preset** previews every 5 epochs.
 - **Captions in any encoding.** A caption saved as Windows-1252 or UTF-16 by an older tool no longer empties its folder on the Captions tab (#225, thanks @mart-hill).
 - **The Start tab says how its two folder cards differ** (#224).
+- **On Linux, the app window closes without hanging, and Ctrl+= / Ctrl+- / Ctrl+0 zoom it** (#197, #198, thanks @DmitryAkDev).
 - **Prompt boxes no longer spellcheck**, so trigger words aren't underlined red (#222, thanks @CognitiveDiffusion).
 
 **Updating:** update Fizgig on your computers (helpers need the same version), and restart your pods. On Vast.ai, restart the instance.
