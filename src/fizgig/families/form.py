@@ -661,6 +661,9 @@ LEGACY_AREAS = {"All Layers": "Full Model", "Identity Blocks": "Identity",
                 "Style+Composition Blocks": "Style+Composition", "Details Blocks": "Details"}
 
 
+SLIDER_PREVIEW_EVERY = "5"           # a Slider preset's preview cadence (apply_preset)
+
+
 def _not_in_preset(k):
     return k.startswith("SAMPLE_") or k in NOT_IN_PRESETS
 
@@ -684,6 +687,10 @@ def apply_preset(desc, values, preset, whole=False):
         p.setdefault("FAMILY_CONCEPT_COUNT", CONCEPT_COUNTS[min(max(len(dirs), 1), len(CONCEPT_COUNTS)) - 1])
     if not whole:
         p = {k: v for k, v in p.items() if not _not_in_preset(k)}
+        # the one Samples box a preset sets: a Slider preset previews its dial every 5 epochs, whatever the model's
+        # own preview default (every epoch is too often for a slider, ACE-Step's 40 too rare)
+        if str(p.get("FAMILY_SLIDER")).lower() in ("true", "1"):
+            p["SAMPLE_EVERY_N_EPOCHS"] = SLIDER_PREVIEW_EVERY
     rows = {r["key"]: r for sec in form(desc)["sections"] for r in sec["rows"] if r}
     for k in STRICT_CHOICES:
         if k in p and k in rows and rows[k].get("choices"):
