@@ -260,7 +260,7 @@ def listing(prefs, key, save=None, mine=""):
     the Fizgigs that answer on this network."""
     from fizgig.web import lan
     finding = concurrent.futures.ThreadPoolExecutor(max_workers=1).submit(lan.discover, 1.0)
-    rows, err = {}, ""
+    rows, err, listed = {}, "", False
     for r in saved(prefs):
         rows[r["url"]] = {**r, "saved": True, "account": False}
     if key:
@@ -269,6 +269,7 @@ def listing(prefs, key, save=None, mine=""):
                 hit = rows.get(a["url"])
                 rows[a["url"]] = {**(hit or {"last": 0, "saved": False}), **a,
                                   "name": (hit or {}).get("name") or a["name"], "account": True}
+            listed = True
         except ValueError as e:
             err = str(e)
     try:
@@ -277,17 +278,23 @@ def listing(prefs, key, save=None, mine=""):
     except Exception:
         pass
     items = list(rows.values())
-    live = [r for r in items if not r.get("account") or r.get("running")]
+    # a saved pod the account no longer has was deleted (RunPod's proxy still answers its address, which read as
+    # starting): said so, never probed
+    for r in items:
+        if listed and not r.get("account") and PROXY.match(r["url"]):
+            r["gone"] = True
+    live = [r for r in items if not r.get("gone") and (not r.get("account") or r.get("running"))]
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         states = dict(zip([r["url"] for r in live],
                           ex.map(lambda r: probe(r["url"], 3.0 if r.get("lan") else 6.0), live)))
     for r in items:
-        st = states.get(r["url"], "stopped" if r.get("account") and not r.get("running") else "off")
+        st = "gone" if r.get("gone") else states.get(r["url"], "stopped" if r.get("account") and not r.get("running")
+                                                      else "off")
         # found on the network but its page doesn't answer: its firewall lets the question in, not the web UI
         r["state"] = ("ready" if st == "ready" else "blocked") if r.get("lan") else st
         if r["state"] == "off" and r.get("lan_id"):  # a computer of yours that didn't answer: off, asleep or Fizgig closed
             r["state"] = "away"
-    rank = {"ready": 0, "blocked": 1, "waiting": 1, "stopped": 2, "away": 3, "off": 3}
+    rank = {"ready": 0, "blocked": 1, "waiting": 1, "stopped": 2, "away": 3, "off": 3, "gone": 4}
     items.sort(key=lambda r: (rank.get(r["state"], 3), -(r.get("last") or 0), (r.get("name") or "").lower()))
     return {"pods": items, "error": err, "deploy": DEPLOY}
 
