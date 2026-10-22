@@ -300,7 +300,7 @@ function renderRow(r) {
       for (const c of opts) input.append(el("option", {value: c, text: c}));
       input.value = String(val ?? "");
     } else if (r.kind === "text") {
-      input = el("textarea", {id: "f_" + r.key, rows: 4, oninput: (e) => set(e.target.value)});
+      input = el("textarea", {id: "f_" + r.key, rows: 4, spellcheck: "false", oninput: (e) => set(e.target.value)});
       input.value = v ?? "";
     } else if (r.kind === "combo") {
       // a dropdown of the usual values, as the desktop's, with Other… for a value of your own (a browser's
@@ -1893,8 +1893,9 @@ function newsCard() {
 // ---- Start tab: your training data (the folders in the training data folder) ---------------------------------
 async function loadDatasets() {
   try { S.datasets = await api("/api/datasets"); } catch (e) { return; }
-  $("datasetsDesc").textContent = `The folders in ${S.datasets.root}, and the ones you've picked from anywhere ` +
-    "else (outlined). Click one to train on it; upload a new one below, or pick any folder with Choose… above.";
+  $("datasetsDesc").textContent = `A shortcut: the folders in ${S.datasets.root}, and the ones you've picked from ` +
+    "anywhere else (outlined). Click one to make it the training folder above. For a folder that isn't listed " +
+    "(another drive, or a subfolder), press Choose… above; to add a new one, upload it below.";
   $("datasetsSearchRow").style.display = S.datasets.total > 8 ? "" : "none";
   renderDatasets();
 }

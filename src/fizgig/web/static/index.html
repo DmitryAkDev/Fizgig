@@ -118,8 +118,10 @@
           </div>
           <div class="section-card accent-card">
             <div class="card-title">Training folder</div>
-            <div class="card-desc">The pictures (or clips, or songs) to train on, each with a caption file beside it.
-              Captions and Training read from here.</div>
+            <div class="card-desc">The one folder this run trains on: pictures (or clips, or songs), each with a
+              caption file beside it. Captions and Training read from here. Click a folder under <b>Your training
+              data</b> to fill it in, or press <b>Choose…</b> for a folder anywhere else (another drive, or a
+              subfolder of one of yours).</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Folder:</span>
                 <input type="text" id="imageFolder" class="w-path" placeholder="/workspace/datasets/my_subject">
@@ -131,7 +133,7 @@
           <div class="section-card" id="datasetsCard">
             <div class="card-title"><span>Your training data</span>
               <button class="btn btn-sm" id="datasetsReload">Reload</button></div>
-            <div class="card-desc" id="datasetsDesc">The folders in your training data folder. Click one to train on it.</div>
+            <div class="card-desc" id="datasetsDesc">A shortcut: the folders in your training data folder. Click one to make it the training folder above.</div>
             <div class="card-content">
               <div class="field-row" id="datasetsSearchRow" style="display:none"><span class="field-label">Search:</span>
                 <input type="text" id="datasetsSearch" class="w-path" placeholder="folder name"></div>
@@ -611,7 +613,7 @@
                 <div class="field-row"><span class="field-label"></span><span class="field-hint" id="stDmixInfo"></span></div>
               </div>
               <div class="field-row"><span class="field-label">Prompt:</span>
-                <textarea id="stPrompt" rows="2" placeholder="Include the LoRA's trigger word"></textarea></div>
+                <textarea id="stPrompt" rows="2" spellcheck="false" placeholder="Include the LoRA's trigger word"></textarea></div>
               <div id="stAudioRows" style="display:none">
                 <div class="field-row"><span class="field-label"></span>
                   <label class="checkbox-label"><input type="checkbox" id="stPbOn"> Blend in a Prompt B</label>
@@ -619,7 +621,7 @@
                   <label class="checkbox-label" title="The model hears a recording (30 s of it: a piece from the start, middle and end) and makes the song sound like it - the voice, the instruments, the mix. Works with or without a song to start from."><input type="checkbox" id="stSndOn"> Sound like a recording (reference)</label></div>
                 <div id="stPbRows" style="display:none">
                   <div class="field-row"><span class="field-label">Prompt B:</span>
-                    <textarea id="stPromptB" rows="2" placeholder="e.g. jazz trio, upright bass, brushed drums, warm"></textarea></div>
+                    <textarea id="stPromptB" rows="2" spellcheck="false" placeholder="e.g. jazz trio, upright bass, brushed drums, warm"></textarea></div>
                   <div class="field-row"><span class="field-label"></span>
                     <span class="st-inline" title="Every step runs the model with both prompts and mixes the two: 0 = Prompt A alone, 1 = Prompt B alone. Baseline gets the same blend, so Baseline vs Tweaked still shows only the sliders. Keep Prompt A's lyrics: Prompt B changes the style while A's words are sung.">
                       <span class="field-hint">A</span><input type="range" id="stPbBlend" min="0" max="1" step="0.05" value="0.5">
@@ -671,7 +673,7 @@
                     <label class="checkbox-label" title="Put up the pass-2 estimate in the Tweaked pane while the remaining passes run"><input type="checkbox" id="stH3Early" checked> Show early</label></span></div>
               </div>
               <div class="field-row" id="stNegRow"><span class="field-label">Negative:</span>
-                <textarea id="stNeg" rows="2"></textarea></div>
+                <textarea id="stNeg" rows="2" spellcheck="false"></textarea></div>
               <div class="field-row" id="stRefRow"><span class="field-label">Reference:</span>
                 <input type="text" id="stRef" class="w-path" placeholder="optional: a reference picture">
                 <button class="btn" id="stRefPick">Choose…</button><button class="btn" id="stRefClear">Clear</button>
@@ -1103,7 +1105,7 @@
                 crossfade) - fill in Trigger so the no-LoRA column drops it. Every epoch: one column per epoch of the render at the
                 top (render it first); Epochs keeps it readable - blank = all, "every 4", or "4,8,12". Every cell is a fresh render, so 3
                 prompts across 5 epochs is 15 renders: keep the prompt list short the first time.</div>
-              <div class="field-row"><span class="field-label">Prompts:</span><textarea id="ryCPrompts" rows="4"
+              <div class="field-row"><span class="field-label">Prompts:</span><textarea id="ryCPrompts" rows="4" spellcheck="false"
                 placeholder="one per line - each becomes a row"></textarea></div>
               <div class="field-row"><span class="field-label">Columns:</span><select id="ryCMode" class="w-combo">
                 <option>Without / with LoRA</option><option>Every epoch</option></select>
@@ -1219,7 +1221,7 @@
             <div class="card-desc">The left picture is your setup; the right is the same seed without it (rendered once and
               kept while its settings hold). Click a still to see it full size.</div>
             <div class="card-content">
-              <div class="field-row rm-top"><span class="field-label">Prompt:</span><textarea id="rmPrompt" rows="3" class="w-path rm-prompt"></textarea>
+              <div class="field-row rm-top"><span class="field-label">Prompt:</span><textarea id="rmPrompt" rows="3" spellcheck="false" class="w-path rm-prompt"></textarea>
                 <button class="btn btn-sm" id="rmHints" title="Append every active mod's 'concept_type: description' - the Loader node's prompt_hint output">+ mod hints</button></div>
               <div class="field-row"><span class="field-label"></span>
                 <label class="checkbox-label" title="Each active mod is shown to the text encoder as a numbered picture or video, the way the pack's H3 RefMod Text Encode node does, so the prompt can say 'the woman in <Picture 1>'. Costs a decode per mod."><input type="checkbox" id="rmNumbered"> Numbered references (Text Encode node)</label>
