@@ -2977,8 +2977,7 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             cap = os.path.join(folder, stem + ext)
             try:
-                with open(cap, encoding="utf-8") as f:
-                    text = f.read()
+                text = captions.read_text(cap)          # any encoding: one odd file never empties the list (#225)
             except OSError:
                 text = None
             p = os.path.join(folder, n)
