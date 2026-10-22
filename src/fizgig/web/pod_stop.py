@@ -27,15 +27,19 @@ def file_manager():
     entrypoint writes which; an older image wrote nothing and padded any password under 12 characters."""
     if not on_pod() or not shutil.which("filebrowser"):
         return None
+    vast = os.environ.get("VAST_TCP_PORT_8080") and os.environ.get("PUBLIC_IPADDR")
     pid = pod_id()
-    if not pid:
+    if not (pid or vast):
         return None
     try:
         with open("/tmp/fizgig_filebrowser_login", encoding="utf-8") as f:
             login = f.read().strip()
     except OSError:
         login = "padded" if len(os.environ.get("VNC_PASSWORD", "")) < 12 else "exact"
-    return {"url": f"https://{pid}-8080.proxy.runpod.net/", "login": login if login in ("exact", "padded", "none") else "exact"}
+    # a Vast.ai instance: its public address and the port Vast mapped 8080 to (plain http, as Vast serves ports)
+    url = (f"http://{os.environ['PUBLIC_IPADDR']}:{os.environ['VAST_TCP_PORT_8080']}/" if vast and not
+           os.environ.get("RUNPOD_POD_ID") else f"https://{pid}-8080.proxy.runpod.net/")
+    return {"url": url, "login": login if login in ("exact", "padded", "none") else "exact"}
 
 
 def pod_id() -> str:
@@ -68,8 +72,9 @@ def cancel(log):
 
 
 def maybe_start(prefs, log):
-    """After a run that finished on its own with nothing queued: the countdown, when the switch is on."""
-    if not on_pod() or str(prefs.get("runpod_stop_when_done") or "0").strip() != "1":
+    """After a run that finished on its own with nothing queued: the countdown, when the switch is on (a RunPod pod
+    only: it stops through RunPod's API)."""
+    if not os.environ.get("RUNPOD_POD_ID") or str(prefs.get("runpod_stop_when_done") or "0").strip() != "1":
         return
     with _lock:
         _s["gen"] += 1

@@ -38,7 +38,7 @@ from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
 from fizgig.web import studio
-from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, saved_port
+from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, saved_port
 from fizgig.web.schema import get_schema
 
 logger = logging.getLogger("fizgig.web")
@@ -2376,9 +2376,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _cookie(self, remember=False):
         """The login cookie: for 30 days on this device with Keep me logged in, else until the browser closes.
-        Secure through a pod's HTTPS proxy."""
+        Secure through a RunPod pod's HTTPS proxy (a Vast.ai instance's ports are plain http: a Secure cookie would
+        never be kept there)."""
         return ("Set-Cookie", f"fizgig_session={self._session()}; Path=/; HttpOnly; SameSite=Strict"
-                              + ("; Max-Age=2592000" if remember else "") + ("; Secure" if on_pod() else ""))
+                              + ("; Max-Age=2592000" if remember else "") + ("; Secure" if on_runpod() else ""))
 
     def _logged_in(self):
         if not self.password:
@@ -2463,7 +2464,7 @@ class Handler(BaseHTTPRequestHandler):
                                       "key_env": bool((os.environ.get("RUNPOD_STOP_API_KEY") or "").strip()),
                                       "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id(),
                                       "storage": pod_storage()}
-                              if on_pod() else None,
+                              if on_pod() and os.environ.get("RUNPOD_POD_ID") else None,     # RunPod's own card
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
             st = load_state()
@@ -3030,7 +3031,7 @@ class Handler(BaseHTTPRequestHandler):
                 # on a pod everyone arrives through RunPod's proxy (one address), so the visitor is the address the
                 # proxy adds - the LAST in X-Forwarded-For (earlier ones are whatever the visitor sent). Off a pod the
                 # header could be forged outright, so the connection's own address counts.
-                fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip() if on_pod() else ""
+                fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip() if on_runpod() else ""
                 ip, now = fwd or self.client_address[0], time.time()
                 with _login_lock:
                     n, until, last = _login_fails.get(ip, (0, 0.0, 0.0))
@@ -3436,9 +3437,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "Set a password first (Preferences > Web UI)."}, 400)
                 from fizgig.web import pod_stop
                 from fizgig.web.port import lan_ip
-                if on_pod():
+                if on_runpod():
                     pid = pod_stop.pod_id()
                     base = f"https://{pid}-8081.proxy.runpod.net/" if pid else ""
+                elif on_pod():                      # a Vast.ai instance: its public address and 8081's port there
+                    ip, vp = os.environ.get("PUBLIC_IPADDR"), os.environ.get("VAST_TCP_PORT_8081")
+                    base = f"http://{ip}:{vp}/" if ip and vp else ""
                 else:
                     ip = lan_ip()
                     base = f"http://{ip}:{self.server.server_address[1]}/" if ip else ""

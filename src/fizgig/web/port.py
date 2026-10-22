@@ -13,6 +13,13 @@ PORT_WALK = 100                         # how far above a taken port to look for
 
 
 def on_pod() -> bool:
+    """A rented GPU running Fizgig's pod image: a RunPod pod (its id), or the image anywhere else (a Vast.ai
+    instance: the image's own FIZGIG_POD)."""
+    return bool(os.environ.get("RUNPOD_POD_ID")) or os.environ.get("FIZGIG_POD", "0") not in ("0", "")
+
+
+def on_runpod() -> bool:
+    """A RunPod pod: its proxy addresses, its API (stopping it) and its template's settings."""
     return bool(os.environ.get("RUNPOD_POD_ID"))
 
 
