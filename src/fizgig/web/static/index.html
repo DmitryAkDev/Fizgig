@@ -1453,7 +1453,8 @@
           <div class="tab-banner">
             <h1>Pods</h1>
             <p>Train on a rented GPU from here. A pod runs Fizgig in the cloud; open it and it's this same app, on a
-              bigger card, while your own computer stays free. Closing it doesn't stop a run.</p>
+              bigger card, while your own computer stays free. Closing it doesn't stop a run. (Rented GPUs: RunPod and
+              Vast.ai supported, see the bottom of this tab)</p>
           </div>
           <div class="section-card">
             <div class="card-title"><span>Your pods</span><button class="btn btn-sm" id="podsReload">Reload</button></div>
@@ -1507,14 +1508,16 @@
                   <select id="pickVol"></select></label>
               </div>
               <div class="pods-list" id="pickList"></div>
-              <div class="field-hint" id="pickNote"></div>
-              <div class="field-hint">Every Deploy link here is a referral one: it supports Fizgig's development at no
-                extra cost to you. <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md"
-                target="_blank" rel="noopener">The pod guide</a></div>
-              <div class="field-hint">Prefer Vast.ai? Fizgig has a template there too:
-                <a href="https://cloud.vast.ai/?ref_id=757773&amp;creator_id=757773&amp;name=Fizgig%20LoRa%20Training%20and%20Fine-tuning" target="_blank" rel="noopener">Fizgig on Vast.ai ↗</a> (a referral link as well: signing
-                up through it supports Fizgig at no cost to you) · <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/VAST.md" target="_blank" rel="noopener">The
-                Vast.ai guide</a>. Start it on Vast's site, then open it by its address.</div>
+              <div class="pick-info" id="pickNote"></div>
+              <div class="pick-links">
+                <span class="pick-pill pick-pill-note">⚡ Every Deploy link is a referral one: it supports Fizgig at no
+                  cost to you</span>
+                <a class="pick-pill" href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md" target="_blank" rel="noopener">RunPod pod guide</a>
+                <a class="pick-pill pick-pill-vast" href="https://cloud.vast.ai/?ref_id=757773&amp;creator_id=757773&amp;name=Fizgig%20LoRa%20Training%20and%20Fine-tuning" target="_blank" rel="noopener">Fizgig on Vast.ai ↗</a>
+                <a class="pick-pill" href="https://github.com/shootthesound/Fizgig/blob/master/docs/VAST.md" target="_blank" rel="noopener">Vast.ai guide</a>
+              </div>
+              <div class="pick-vast-note">Vast.ai: start Fizgig's template on Vast's site (its link is a referral one
+                too), then open it by its address.</div>
             </div>
           </div>
         </section>
