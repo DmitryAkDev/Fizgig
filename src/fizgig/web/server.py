@@ -38,7 +38,7 @@ from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
 from fizgig.families import refmod
 from fizgig.web import studio
-from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, saved_port
+from fizgig.web.port import PORT_DEFAULT, PORT_WALK, listening, on_pod, on_runpod, on_vast, saved_port
 from fizgig.web.schema import get_schema
 
 logger = logging.getLogger("fizgig.web")
@@ -1390,6 +1390,8 @@ def pod_storage():
     except OSError:
         return ["Storage: unavailable", False]
     free, total = u.free / 1024 ** 3, u.total / 1024 ** 3
+    if on_vast() and not on_runpod():  # Vast's container disk: kept through a stop, gone when the instance is destroyed
+        return [f"Storage: {free:.0f} GB free of {total:.0f} GB on /workspace", free < 40]
     if total > 10000:                # a network volume shows the host's whole pool, not its quota
         return ["Storage: /workspace is a network volume. Its size is set in RunPod and isn't visible from in "
                 "here - check usage in the RunPod dashboard.", False]
@@ -2464,8 +2466,9 @@ class Handler(BaseHTTPRequestHandler):
                                       "key_saved": bool(str(p.get("runpod_api_key") or "").strip()),
                                       "key_env": bool((os.environ.get("RUNPOD_STOP_API_KEY") or "").strip()),
                                       "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id(),
-                                      "storage": pod_storage()}
-                              if on_pod() and os.environ.get("RUNPOD_POD_ID") else None,     # RunPod's own card
+                                      "storage": pod_storage(), "provider": "vast" if on_vast() and not on_runpod()
+                                      else "runpod"}
+                              if on_runpod() or on_vast() else None,     # the rented GPU's own card
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
             st = load_state()

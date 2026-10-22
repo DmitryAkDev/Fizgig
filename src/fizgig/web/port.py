@@ -18,6 +18,11 @@ def on_pod() -> bool:
     return bool(os.environ.get("RUNPOD_POD_ID")) or os.environ.get("FIZGIG_POD", "0") not in ("0", "")
 
 
+def on_vast() -> bool:
+    """A Vast.ai instance running the pod image: its own id and API key (which may stop it) come in its environment."""
+    return on_pod() and bool(os.environ.get("CONTAINER_API_KEY") and os.environ.get("CONTAINER_ID"))
+
+
 def on_runpod() -> bool:
     """A RunPod pod: its proxy addresses, its API (stopping it) and its template's settings."""
     return bool(os.environ.get("RUNPOD_POD_ID"))

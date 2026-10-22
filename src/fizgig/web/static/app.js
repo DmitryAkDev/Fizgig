@@ -1045,6 +1045,25 @@ function podCard() {
   const saveKey = async (v) => { await api("/api/prefs", {changes: {runpod_api_key: v}}); P.key_saved = !!v; key.value = ""; sayKey(); };
   key.addEventListener("change", () => key.value.trim() && saveKey(key.value.trim()));
   sayKey();
+  const vast = P.provider === "vast";
+  const midRun = el("div", {class: "field-hint warn", text: "Stopping the " + (vast ? "instance" : "pod") +
+    " yourself while a run trains loses what it trained since its last save: press Pause first (it saves and stops " +
+    "at the end of the epoch), then stop it."});
+  if (vast) return el("div", {class: "section-card"},
+    el("div", {class: "card-title"}, el("span", {text: "Vast.ai"})),
+    el("div", {class: "card-desc", text: "Fizgig is running on a rented GPU (a Vast.ai instance). These settings only appear here."}),
+    el("div", {class: "card-content"},
+      el("label", {class: "checkbox-label"}, on, " Stop this instance when a training run finishes"),
+      el("div", {class: "field-hint", text: "Only after a run completes on its own - never after a pause, a stop or a " +
+        "failure, and with a queue only after its last run. A two-minute countdown you can cancel comes first, on any " +
+        "page. It stops the GPU billing; the instance's disk still bills until you destroy it on Vast's site, so bring " +
+        "your LoRAs home and destroy it when you're done. No key needed: the instance stops itself."}),
+      midRun,
+      P.storage ? el("div", {class: "field-hint" + (P.storage[1] ? " warn" : ""), text: P.storage[0]}) : null,
+      el("div", {class: "field-hint prefs-note", text: "Your files: datasets in /workspace/datasets, models in " +
+        "/workspace/models, finished LoRAs in /workspace/output_loras. They survive stopping and starting the " +
+        "instance, and go when you destroy it. A stopped instance may not start again while someone else rents its GPU."}),
+      el("div", {class: "field-hint", text: "Closing this browser tab doesn't stop training: Fizgig runs on the instance, not in your browser."})));
   return el("div", {class: "section-card"},
     el("div", {class: "card-title"}, el("span", {text: "RunPod"})),
     el("div", {class: "card-desc", text: "Fizgig is running on a rented GPU" + (P.pod_id ? ` (pod ${P.pod_id})` : "") + ". These settings only appear here."}),
@@ -1053,6 +1072,7 @@ function podCard() {
       el("div", {class: "field-hint", text: "Only after a run completes on its own - never after a pause, a stop or a failure, " +
         "and with a queue only after its last run. A two-minute countdown you can cancel comes first, on any page. It stops " +
         "the pod, never terminates it, so your files are still here when you start it again."}),
+      midRun,
       el("div", {class: "field-row"}, el("span", {class: "field-label", text: "RunPod API key:"}), key,
         el("button", {class: "btn btn-sm", text: "Clear", onclick: () => saveKey("")}), keySay),
       el("div", {class: "field-hint", text: "Make one at RunPod > Settings > API Keys. The key RunPod gives a pod by itself " +

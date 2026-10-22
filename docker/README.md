@@ -150,6 +150,10 @@ It needs an API key, pasted into that same panel. Make one at **RunPod → Setti
 key RunPod gives a pod automatically is pod-scoped and cannot stop pods, which is a RunPod
 limitation rather than a Fizgig one. It's stored on your volume, not in any template.
 
+**Stopping a pod yourself mid-run** loses what the run trained since its last save: the pod gets a few seconds'
+notice, not the minutes an epoch can take. Press **Pause** first (it saves and stops at the end of the epoch), then
+stop the pod.
+
 ## Settings
 
 Environment variables, set on the deploy screen under **Edit Template**:

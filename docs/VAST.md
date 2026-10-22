@@ -52,6 +52,7 @@ Destroy the instance on Vast.ai once your LoRAs are home. A destroyed one costs 
 - **Disk.** The template asks for 300 GB, as RunPod's does: one model family's files are 20 to 40 GB, and an instance's disk can't grow after it's made. Vast bills the disk until the instance is destroyed, stopped or not. Destroying the instance deletes everything on it.
 - **Coming back to the same machine often?** Add a volume at `/workspace` when you rent: it keeps your models and files between instances on that machine. A Vast volume works only on the machine it was made on, and it bills until you delete it yourself, even after the instance is destroyed.
 - **CUDA.** The image needs a host whose driver supports CUDA 12.8 or newer; the template's filter asks for that.
-- **Stop when done** (Preferences > RunPod) is RunPod's only: on Vast, destroy the instance yourself when you've finished.
+- **Stop when done.** **Preferences > Vast.ai > Stop this instance when a training run finishes** stops it after a run finishes, with a two-minute countdown you can cancel. No key needed: the instance stops itself. That ends the GPU billing; its disk bills until you destroy the instance, so bring your LoRAs home and destroy it when you're done.
+- **Stopping it mid-run** loses what the run trained since its last save. Press **Pause** first (it saves and stops at the end of the epoch), then stop the instance.
 
 Measured on a Vast RTX 4090 (22 Oct 2026): MOSS-Image trained at about 1.75 it/s, the same as a RunPod 4090.

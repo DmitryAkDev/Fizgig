@@ -71,10 +71,15 @@ def cancel(log):
     return was
 
 
+def _vast() -> bool:
+    """A Vast.ai instance: it stops itself with its own key (CONTAINER_API_KEY), no key of the renter's needed."""
+    return on_pod() and bool(os.environ.get("CONTAINER_API_KEY") and os.environ.get("CONTAINER_ID"))
+
+
 def maybe_start(prefs, log):
-    """After a run that finished on its own with nothing queued: the countdown, when the switch is on (a RunPod pod
-    only: it stops through RunPod's API)."""
-    if not os.environ.get("RUNPOD_POD_ID") or str(prefs.get("runpod_stop_when_done") or "0").strip() != "1":
+    """After a run that finished on its own with nothing queued: the countdown, when the switch is on (a RunPod pod,
+    through RunPod's API with the renter's key, or a Vast.ai instance, with its own)."""
+    if not (os.environ.get("RUNPOD_POD_ID") or _vast()) or str(prefs.get("runpod_stop_when_done") or "0").strip() != "1":
         return
     with _lock:
         _s["gen"] += 1
@@ -99,7 +104,29 @@ def maybe_start(prefs, log):
     threading.Thread(target=wait, daemon=True).start()
 
 
+def _stop_vast(log):
+    """Vast's API, as the instance itself: PUT instances/<its id> {state: stopped}. The GPU stops billing; its disk
+    bills until the instance is destroyed on Vast's site."""
+    iid, key = os.environ.get("CONTAINER_ID", ""), os.environ.get("CONTAINER_API_KEY", "")
+    log(f"[pod] stopping Vast.ai instance {iid}…\n")
+    try:
+        req = urllib.request.Request(f"https://console.vast.ai/api/v0/instances/{iid}/",
+                                     data=json.dumps({"state": "stopped"}).encode(), method="PUT",
+                                     headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            ok = json.loads(resp.read().decode() or "{}").get("success")
+        msg = ("Stop requested - this instance is stopping. Its disk still bills until you destroy it on Vast's site "
+               "(bring your LoRAs home first)." if ok else "Vast didn't confirm the stop: stop it on Vast's site.")
+    except Exception as e:
+        msg = f"Auto-stop failed ({type(e).__name__}: {e}). Stop it on Vast's site to stop billing."
+    log("[pod] " + msg + "\n")
+    with _lock:
+        _s["note"] = msg
+
+
 def _stop(prefs, log):
+    if _vast() and not os.environ.get("RUNPOD_POD_ID"):
+        return _stop_vast(log)
     key, pid = api_key(prefs), pod_id()
     if not key:
         msg = ("Auto-stop is on but no RunPod API key is set, so the pod is still running. Add one in Preferences > "
