@@ -10,9 +10,10 @@ Vast.ai rents GPUs from a marketplace of hosts, often for less than RunPod. Fizg
 
 ### …start Fizgig on Vast.ai?
 
-1. Open [Fizgig's template](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning) and press **Rent** on a card with 24 GB or more (32 GB trains Krea 2 with no block swap).
-2. To choose your own password, add **FIZGIG_PASSWORD** to the template's environment before you rent. Otherwise the instance makes one up at its first start and keeps it: open the instance's log and look for `password:`.
-3. Wait until the instance is running (the first start downloads the image, a few minutes).
+1. Sign up (through the link above, if you're new) and add credit under **Billing**: Vast is prepaid, so it won't rent until you have some.
+2. Open [Fizgig's template](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning). Pick **On-demand**, not Interruptible (an interruptible instance can be taken back mid-run), and press **Rent** on a card with 24 GB or more (32 GB trains Krea 2 with no block swap).
+3. To choose your own password, add **FIZGIG_PASSWORD** to the template's environment before you rent: 8 characters or more, and one you don't use anywhere else. Otherwise the instance makes one up at its first start and keeps it.
+4. Wait until the instance is running (the first start downloads the image, a few minutes). Its password, if it made one up, is in its log: the instance card's log icon, the line `password: …`.
 
 ### …open it?
 
@@ -26,15 +27,28 @@ In Fizgig, **Preferences** > **Download models for me**. Vast's hosts download f
 
 Start tab > **Upload a training folder**, or drag them into the file manager: the port mapped to **8080**, user `admin`, the same password.
 
+### …train?
+
+As on your own computer: pick the folder on the Start tab, then **Training** > **Start**. Closing the browser tab doesn't stop a run; Fizgig runs on the instance.
+
+### …get my LoRAs home?
+
+**Runs & outputs** downloads them, or the file manager (`/workspace/output_loras`). Do it before you stop or destroy the instance.
+
+### …update Fizgig there?
+
+Restart the instance: Fizgig updates itself every time it starts.
+
 ### …stop paying for it?
 
-Destroy the instance on Vast.ai once your LoRAs are home (Runs & outputs downloads them). A stopped instance still costs a little for its disk; a destroyed one costs nothing, and its files are gone.
+Destroy the instance on Vast.ai once your LoRAs are home. A destroyed one costs nothing, and its files are gone. A stopped one still bills for its disk (Vast's disk rates vary by host: check the instance's price), and may not start again while someone else is renting its GPU, so don't leave files you need on a stopped instance.
 
 ---
 
 ## Good to know
 
-- **Plain http.** Vast serves an instance's ports as plain http at its public address, not through an HTTPS proxy as RunPod does. Use a password you don't use anywhere else.
+- **Plain http.** Vast serves an instance's ports as plain http at its public address, not through an HTTPS proxy as RunPod does. Use a strong password you don't use anywhere else, and remember that the host's owner can reach the container, as with any rented machine.
+- **A new address after a restart.** A stopped and started instance can come back with a new IP or port. Paste the new address into **Add a pod** on the Pods tab.
 - **Disk.** The template asks for 300 GB, as RunPod's does: one model family's files are 20 to 40 GB, and an instance's disk can't grow after it's made. Vast bills the disk until the instance is destroyed, stopped or not. Destroying the instance deletes everything on it.
 - **Coming back to the same machine often?** Add a volume at `/workspace` when you rent: it keeps your models and files between instances on that machine. A Vast volume works only on the machine it was made on, and it bills until you delete it yourself, even after the instance is destroyed.
 - **CUDA.** The image needs a host whose driver supports CUDA 12.8 or newer; the template's filter asks for that.

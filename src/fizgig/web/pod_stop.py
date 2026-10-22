@@ -28,7 +28,7 @@ def file_manager():
     if not on_pod() or not shutil.which("filebrowser"):
         return None
     vast = os.environ.get("VAST_TCP_PORT_8080") and os.environ.get("PUBLIC_IPADDR")
-    pid = pod_id()
+    pid = os.environ.get("RUNPOD_POD_ID", "")    # not pod_id(): its HOSTNAME fallback would make up a RunPod address
     if not (pid or vast):
         return None
     try:

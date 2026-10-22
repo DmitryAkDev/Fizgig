@@ -1846,7 +1846,8 @@ def about_info() -> dict:
             v = rel[0] if rel[1] == git("rev-parse", "HEAD") else f"{rel[0]} + later changes ({v})"
     rocm = os.environ.get("FIZGIG_GPU_BACKEND", "").lower() == "rocm"
     if on_pod():
-        how = "On RunPod, Fizgig updates itself every time you restart the pod - just stop and start it to get the latest."
+        how = ("Fizgig updates itself every time this rented GPU starts again - stop and start the pod (RunPod) or "
+               "restart the instance (Vast.ai) to get the latest.")
     elif os.name == "nt":
         how = f"To update: close Fizgig and run {'update_fizgig_rocm.bat' if rocm else 'update_fizgig.bat'}."
     else:
@@ -4032,9 +4033,11 @@ def main(argv=None):
     saved = str(load_prefs().get("web_password") or "").strip()
     pwd = (a.password or os.environ.get("FIZGIG_PASSWORD")
            or ((os.environ.get("VNC_PASSWORD") or saved) if on_pod() else saved))
-    pod_pwd = on_pod() and not a.password and not os.environ.get("FIZGIG_PASSWORD") and pwd == os.environ.get(
+    # a RunPod pod's own VNC password is taken at any length (it opens its remote desktop too); anywhere else the
+    # image runs (Vast.ai: plain http on a public address) a password is 8 characters or more, as at home
+    pod_pwd = on_runpod() and not a.password and not os.environ.get("FIZGIG_PASSWORD") and pwd == os.environ.get(
         "VNC_PASSWORD")
-    if pwd and len(pwd) < 8 and not pod_pwd:          # a pod's own VNC password is taken at any length
+    if pwd and len(pwd) < 8 and not pod_pwd:
         sys.exit("The web UI password needs at least 8 characters (Preferences > Web UI, web_password in "
                  "prefs.json, FIZGIG_PASSWORD or --password).")
     host = a.host or ("0.0.0.0" if pwd else "127.0.0.1")

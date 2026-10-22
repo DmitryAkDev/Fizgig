@@ -6,6 +6,8 @@ Fizgig in your browser: the pod runs the app and you open it as a web page, from
 
 *That link is a referral one — it supports Fizgig's development at no extra cost to you.*
 
+Prefer Vast.ai? The same image runs there too: [Fizgig on Vast.ai](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning) (also a referral link) · [the Vast.ai guide](../docs/VAST.md).
+
 ## Quick start: nothing installed on your computer
 
 You don't need Fizgig on your own computer for this. You need a RunPod account and a web browser.
