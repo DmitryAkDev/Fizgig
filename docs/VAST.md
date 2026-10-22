@@ -17,7 +17,9 @@ Vast.ai rents GPUs from a marketplace of hosts, often for less than RunPod. Fizg
 
 ### …open it?
 
-Press **Open** on the instance, or open its **IP & port info**: Fizgig is the port mapped to **8081**, at `http://<its IP>:<that port>`. Log in with your password.
+Open its **https address**: the instance's log shows it a minute or so after it starts, as `Open Fizgig (https): https://<name>.trycloudflare.com`, and Fizgig shows it too (Preferences > Vast.ai). Log in with your password. It's a new address each time the instance starts.
+
+The plain address works too: press **Open** on the instance, or open its **IP & port info** (Fizgig is the port mapped to **8081**, at `http://<its IP>:<that port>`). Prefer the https one: your password travels encrypted there.
 
 ### …get the models?
 
@@ -25,7 +27,7 @@ In Fizgig, **Preferences** > **Download models for me**. Vast's hosts download f
 
 ### …get my training pictures there?
 
-Start tab > **Upload a training folder**, or drag them into the file manager: the port mapped to **8080**, user `admin`, the same password.
+Start tab > **Upload a training folder**, or drag them into the file manager (Fizgig's **File manager** button opens its https address; or the port mapped to **8080**), user `admin`, the same password.
 
 ### …train?
 
@@ -47,7 +49,7 @@ Destroy the instance on Vast.ai once your LoRAs are home. A destroyed one costs 
 
 ## Good to know
 
-- **Plain http.** Vast serves an instance's ports as plain http at its public address, not through an HTTPS proxy as RunPod does. Use a strong password you don't use anywhere else, and remember that the host's owner can reach the container, as with any rented machine.
+- **https and plain http.** Vast serves an instance's ports as plain http at its public address. Fizgig's Vast image adds an https address for Fizgig and one for the file manager (free Cloudflare tunnels, new each time it starts): use those. The plain ports stay open too, so use a strong password you don't use anywhere else, and remember that the host's owner can reach the container, as with any rented machine.
 - **A new address after a restart.** A stopped and started instance can come back with a new IP or port. Paste the new address into **Add a pod** on the Pods tab.
 - **Disk.** The template asks for 300 GB, as RunPod's does: one model family's files are 20 to 40 GB, and an instance's disk can't grow after it's made. Vast bills the disk until the instance is destroyed, stopped or not. Destroying the instance deletes everything on it.
 - **Coming back to the same machine often?** Add a volume at `/workspace` when you rent: it keeps your models and files between instances on that machine. A Vast volume works only on the machine it was made on, and it bills until you delete it yourself, even after the instance is destroyed.
