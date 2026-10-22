@@ -1,4 +1,4 @@
-# Fizgig vX.Y.Z: your other GPUs, at home or in the cloud, speeding up your run
+# Fizgig v8.9.0: your other GPUs, at home or in the cloud, speeding up your run
 
 **▶ [Watch the 2-minute video](https://www.youtube.com/watch?v=7Ao0gE2b2qw)**
 
