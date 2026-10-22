@@ -874,10 +874,12 @@ def _preview_flags(desc, st, plan, cmd):
             plan.files.append((prompts, "\n".join(lines) + "\n"))
     every = str(sm.get("every") or "").strip()
     if every.isdigit() and int(every) > 0 and slider_on(desc, st):
-        # a slider's preview is the dial itself: one at least with every checkpoint (a family's long-run preview
-        # cadence - ACE-Step's 40 - would leave a 20-epoch slider with only its epoch-0 preview)
+        # a slider previews as set; only a cadence longer than the run (a family's long-run default - ACE-Step's 40 -
+        # on a 20-epoch slider) would leave it with nothing after its epoch-0 preview: then once per saved checkpoint
         try:
-            every = str(min(int(every), max(1, int(float(st.get("SAVE_EVERY_N_EPOCHS"))))))
+            total = int(float(st.get("MAX_TRAIN_EPOCHS")))
+            if int(every) > total:
+                every = str(max(1, min(total, int(float(st.get("SAVE_EVERY_N_EPOCHS"))))))
         except (TypeError, ValueError):
             pass
     if prompts and every.isdigit() and int(every) > 0:
