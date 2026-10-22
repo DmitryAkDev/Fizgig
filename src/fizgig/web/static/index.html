@@ -251,6 +251,28 @@
                   <input type="text" id="prepPadding" class="w-num" value="20">
                   <span class="field-hint">% around the face</span>
                 </div>
+                <details class="tc-box prep-chars" id="prepChars">
+                  <summary>Anime/furry/drawn characters</summary>
+                  <div class="field-hint">Face close-ups, the Look Filter and likeness scores are made for people's
+                    faces. For anime, furry or drawn characters (fursuits too), pick Anime/furry/drawn for both
+                    choices here. People's sets need nothing changed. More in docs/FACE_BACKENDS.md.</div>
+                  <div class="field-row prep-opts">
+                    <span class="field-label">Face finder:</span><select id="prepDetector" class="w-combo-lg"></select>
+                  </div>
+                  <div class="field-hint" id="prepDetectorHint"></div>
+                  <div class="field-row prep-opts">
+                    <span class="field-label">Look match:</span><select id="prepIdentity" class="w-combo-lg"></select>
+                  </div>
+                  <div class="field-hint" id="prepIdentityHint"></div>
+                  <div id="prepYoloRow">
+                    <div class="field-row prep-opts" id="prepYoloPick">
+                      <span class="field-label">YOLO face model:</span>
+                      <input type="text" id="prepYolo" class="w-path" placeholder="Blank: the built-in choice (below)">
+                    </div>
+                    <div class="field-hint" id="prepYoloHint"></div>
+                  </div>
+                  <div class="field-hint" id="prepFaceMsg"></div>
+                </details>
                 <div class="field-hint" id="prepNoFaces" style="display:none">Face detection isn't installed on the
                   Fizgig computer: run install_fizgig.py there to add it. Resize only still works.</div>
                 <div class="field-hint">Sizing is by target area (megapixels), not longest side: this matches how
@@ -292,7 +314,8 @@
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>
             <div class="card-desc">Run this last, after every other prep stage: it scores the finished training
               folder. Pick three baseline pictures that nail the look you want; every picture's face is scored against
-              all three and averaged (ArcFace similarity), so no one photo's angle, expression or light sets the bar.
+              all three and averaged (face similarity; for anime, furry or drawn characters see "Anime/furry/drawn
+              characters" in step 1), so no one photo's angle, expression or light sets the bar.
               It finds pictures that drifted off-look, the near-misses a loss curve can't see. Click pictures to mark
               them, or let Auto-Suggest flag the outliers, then move the marked ones out in one go (to an
               excluded_by_look subfolder; nothing is deleted). The scores are saved with the dataset, so low scorers
@@ -306,6 +329,7 @@
               <div class="field-hint" id="lookStatus">Each score is the average similarity to your 3 baselines. The
                 same person typically lands at 30–70%, the baselines included (each is scored against the other two
                 as well as itself).</div>
+              <div class="field-hint" id="lookDecision"></div>
               <div id="lookPicker" class="look-grid" style="display:none"></div>
               <div class="field-row" id="lookTools" style="display:none">
                 <button class="btn" id="lookSuggest">Auto-Suggest drift</button>

@@ -1666,7 +1666,8 @@ async function likenessShow(dir, items, run, view) {
     const it = pics.find((p) => p.name === fig.title);
     if (!on || !it) continue;
     const s = d.scores[it.name];
-    const cls = s === undefined || s === null ? "na" : s >= 0.45 ? "good" : s >= 0.30 ? "mid" : "bad";
+    const t = d.thresholds || {match: 0.45, borderline: 0.30};     // the embedder's own bands (ArcFace / DINOv2 / CLIP)
+    const cls = s === undefined || s === null ? "na" : s >= t.match ? "good" : s >= t.borderline ? "mid" : "bad";
     fig.append(el("span", {class: `lik-badge ${cls}${it.epoch === bestEpoch && bestEpoch != null ? " best" : ""}`,
       text: s === undefined ? "…" : s === null ? "no face" : `${Math.round(s * 100)}%`}));
   }
@@ -1678,11 +1679,12 @@ async function likenessShow(dir, items, run, view) {
   if (cv.width !== w) cv.width = w;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height, L = 42, R = 12, T = 12, B = 22;
   g.clearRect(0, 0, W, H);
-  const ymax = Math.max(0.7, Math.max(...avgs) + 0.05);
+  const ymax = Math.min(1, Math.max(0.7, (d.thresholds || {}).match + 0.15 || 0, Math.max(...avgs) + 0.05));
   const x = (i) => epochs.length === 1 ? L + (W - L - R) / 2 : L + (W - L - R) * i / (epochs.length - 1);
   const y = (v) => T + (H - T - B) * (1 - v / ymax);
   g.font = "11px sans-serif"; g.lineWidth = 1;
-  for (const band of [0.30, 0.45]) {         // the badge colour bands, for orientation
+  const bands = d.thresholds || {match: 0.45, borderline: 0.30};
+  for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
     g.strokeStyle = "#34495E"; g.fillStyle = "#7F8C8D";
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
     g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
@@ -2583,7 +2585,8 @@ async function royaleScore() {
     if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject image."; $("ryBest").disabled = true; return; }
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
-      (r.no_face ? `  (${r.no_face} no-face)` : "");
+      (r.no_face ? `  (${r.no_face} no-face)` : "") +
+      (r.embedder && !r.embedder.startsWith("ArcFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
 }
@@ -3378,6 +3381,7 @@ async function loadPrep() {
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
     $("prepNoFaces").style.display = o.face_tools ? "none" : "";
+    faceSettingsShow(o.face_settings);
   }
   $("prepFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
     "Choose the training folder on the Start tab first.";
@@ -3430,6 +3434,68 @@ async function prepRun() {
   } catch (e) { $("prepState").textContent = e.message; }
 }
 
+// Image Prep's "Anime/furry/drawn characters" (fizgig/face_utils.py, prefs.json face_*): saved as soon as they
+// change. InsightFace + ArcFace are the defaults; the section opens by itself when something else is chosen.
+const FACE_HINTS = {
+  insightface: "For people. It can tell men from women, for Largest Male / Female Face. It doesn't see anime, furry " +
+    "or drawn faces.",
+  yolo: "For anime, furry or drawn characters, and fursuits, pick this. It can't tell men from women, so Largest " +
+    "Male / Female Face use the largest face.",
+  auto: "For a set with both people and characters in it. Both finders look at every picture, so it's a little slower."};
+const LOOK_HINTS = {
+  arcface: "For people's faces. For anime, furry or drawn characters, pick Anime/furry/drawn.",
+  dinov2: "For anime, furry or drawn characters, and fursuits; it works on people too. Its scores run higher than the people setting's, and " +
+    "the colours follow.",
+  auto: "Fizgig looks at some of the pictures each time it scores: People (the default) for a set of people, " +
+    "Anime/furry/drawn for anything else."};
+function faceSettingsShow(f, msg) {
+  if (!f) return;
+  S.prep.face = f;
+  for (const [id, list, v] of [["prepDetector", f.detectors, f.detector], ["prepIdentity", f.identities, f.identity]]) {
+    $(id).innerHTML = "";
+    for (const [k, label] of list) $(id).append(el("option", {value: k, text: label}));
+    $(id).value = v;
+  }
+  if (document.activeElement !== $("prepYolo")) $("prepYolo").value = f.yolo_model;
+  $("prepYoloRow").style.display = f.detector === "insightface" ? "none" : "";
+  $("prepDetectorHint").textContent = FACE_HINTS[f.detector] || "";
+  $("prepIdentityHint").textContent = f.identity === "auto" && f.detector !== "auto" ?
+    `With this face finder that means ${f.detector === "yolo" ? "Anime/furry/drawn" : "People (the default)"}.` :
+    LOOK_HINTS[f.identity] || "";
+  $("prepYoloHint").textContent = `Blank: Fdetailer if it's saved as ${f.local_model}, otherwise a free anime head ` +
+    "finder that downloads the first time it's used. docs/FACE_BACKENDS.md explains how to get Fdetailer.";
+  $("prepFaceMsg").textContent = msg || "";
+  const custom = f.defaults && (f.detector !== f.defaults.detector || f.identity !== f.defaults.identity);
+  if (custom) $("prepChars").open = true;              // never hide a choice that is changing what you get
+}
+async function faceSettingsSave(changes, msg) {
+  try { faceSettingsShow(await api("/api/prep/face_settings", changes), msg); }
+  catch (e) { $("prepFaceMsg").textContent = e.message; }
+}
+function faceSettingsWire() {
+  $("prepDetector").addEventListener("change", () => {
+    const det = $("prepDetector").value, f = S.prep.face || {};
+    // a YOLO face finder with the people-only look match would score nothing: the look match follows, said aloud
+    if (det !== "insightface" && f.identity === "arcface") {
+      const ident = det === "yolo" ? "dinov2" : "auto";
+      return faceSettingsSave({detector: det, identity: ident}, `Look match changed to ${ident === "dinov2" ?
+        "Anime/furry/drawn" : "Auto (Decide for each set)"}, so characters' faces get scored too.`);
+    }
+    faceSettingsSave({detector: det});
+  });
+  $("prepIdentity").addEventListener("change", () => faceSettingsSave({identity: $("prepIdentity").value}));
+  // the YOLO face model: the standard path row (type, Choose… on the Fizgig machine, or Upload… from this device)
+  const input = $("prepYolo"), set = (p) => faceSettingsSave({yolo_model: p});
+  input.addEventListener("change", () => set(input.value.trim()));
+  const row = $("prepYoloPick");
+  row.append(el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig",
+    onclick: () => pick(input.value || ((S.prep.face || {}).local_model || "").replace(/[\\/][^\\/]*$/, ""), false,
+      (p) => { input.value = p; set(p); })}));
+  const up = uploadButton({kind: "path", key: "FACE_YOLO_MODEL", accept: ".onnx"}, input, set);
+  row.append(up.btn);
+  $("prepYoloRow").append(up.status);
+}
+
 function prepTest() {
   pick(S.imageFolder, false, async (path) => {
     const host = $("prepTestResult");
@@ -3438,7 +3504,7 @@ function prepTest() {
       const r = await api("/api/prep/test", {path, face: $("prepFace").value});
       if (!r.faces.length) { host.replaceChildren(el("div", {class: "field-hint", text: "No faces found in that photo."})); return; }
       host.replaceChildren(
-        el("div", {class: "field-hint", text: `${r.faces.length} face${r.faces.length === 1 ? "" : "s"} found: ` +
+        el("div", {class: "field-hint", text: `${r.faces.length} face${r.faces.length === 1 ? "" : "s"} found (${r.finder}): ` +
           r.faces.map((f, i) => `face ${i + 1}, ${f.gender === "unknown" ? "?" : f.gender}, ${f.area.toLocaleString()} px` +
             (f.selected ? " (chosen for the crop)" : "")).join("; ") + ". Green = chosen, yellow = the others."}),
         el("img", {class: "prep-test-img", src: r.image, alt: "faces found"}));
@@ -3497,10 +3563,11 @@ async function lookPoll() {
   const r = await api("/api/look/status").catch(() => null);
   if (!r) return;
   S.prep.look = r;
+  $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
-      "Loading the face model (the first time downloads about 300 MB)…";
+      "Loading the face model and choosing the look match (the first time downloads about 300 MB)…";
     S.prep.lookTimer = setTimeout(lookPoll, 1000);
   } else if (r.state === "failed") $("lookStatus").textContent = r.error;
   else if (r.state === "done" && r.rows.length && !mine) $("lookStatus").textContent = S.prep.intro;
@@ -3607,6 +3674,7 @@ function wirePrep() {
   for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("prepTest").addEventListener("click", prepTest);
+  faceSettingsWire();
   $("lookPick").addEventListener("click", lookPickOpen);
   $("lookScan").addEventListener("click", lookScan);
   $("lookSuggest").addEventListener("click", lookSuggest);
@@ -4510,6 +4578,7 @@ async function studioMetrics() {
     const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
     put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
   }
+  $(chips.like).title = m.embedder ? `Look match: ${m.embedder} (scores are on its own scale)` : "";
   put("grid", `Grid ${m.grid_base.toFixed(2)} → ${m.grid_tweak.toFixed(2)}`, m.grid_delta > 0.05 ? "bad" : m.grid_delta < -0.05 ? "good" : "");
   const td = (m.texture_tweak - m.texture_base) / Math.max(m.texture_base, 1e-6);
   put("tex", `Detail ${m.texture_base.toFixed(0)} → ${m.texture_tweak.toFixed(0)}`, Math.abs(td) > 0.10 ? "warm" : "");
@@ -6902,7 +6971,7 @@ function uploadButton(r, input, set) {
   const status = el("div", {class: "field-hint upload-status"});
   const say = (t, bad) => { status.textContent = t; status.classList.toggle("bad", !!bad); };
   const picker = r.kind === "folder" ? el("input", {type: "file", webkitdirectory: true, hidden: true}) :
-    el("input", {type: "file", hidden: true, accept: ".safetensors,image/*,.mp4,audio/*,.m4a"});
+    el("input", {type: "file", hidden: true, accept: r.accept || ".safetensors,image/*,.mp4,audio/*,.m4a"});
   picker.addEventListener("change", async () => {
     const files = [...picker.files];
     picker.value = "";

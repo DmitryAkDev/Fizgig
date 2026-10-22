@@ -1532,7 +1532,7 @@ def _stop():
 UPLOAD_EXTS = (MEDIA - {".gif", ".webm"}) | {".txt", ".caption", ".json", ".zip"}
 UPLOAD_DEFAULT = os.path.join(BASE_DIR, "training_data")     # when Preferences has no input folder set
 UPLOAD_FILES = os.path.join(BASE_DIR, "uploads")              # single files: a context LoRA, a test photo
-UPLOAD_FILE_EXTS = (UPLOAD_EXTS - {".zip"}) | {".safetensors"}
+UPLOAD_FILE_EXTS = (UPLOAD_EXTS - {".zip"}) | {".safetensors", ".onnx"}      # .onnx: a YOLO face model (Image Prep)
 
 
 def uploads_root() -> str:
@@ -1983,7 +1983,7 @@ def _upload_target(folder, name, single):
     ext = os.path.splitext(name)[1].lower()
     if single:
         if ext not in UPLOAD_FILE_EXTS:
-            raise ValueError(f"{name}: not a LoRA (.safetensors), picture, clip or song.")
+            raise ValueError(f"{name}: not a LoRA (.safetensors), face model (.onnx), picture, clip or song.")
         dest = UPLOAD_FILES
     else:
         folder = _upload_name(folder, "Folder name")
@@ -2660,7 +2660,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/prep/options":            # Image Prep: its choices, and whether face tools are here
             from fizgig.dataset import prep as _prep
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
-                              "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available()})
+                              "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available(),
+                              "face_settings": prep_jobs.face_settings()})
         if path == "/api/prep/summary":            # the What will happen card
             from fizgig.dataset import prep as _prep
             g = lambda k, d="": (qs.get(k) or [d])[0]
@@ -3535,6 +3536,12 @@ class Handler(BaseHTTPRequestHandler):
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
                     return self.json(prep_jobs.look_move(folder, b.get("paths") or [],
                                                          captions.caption_ext(b.get("ext"))))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+            if path == "/api/prep/face_settings":     # the face finder / YOLO model / look match (prefs.json face_*)
+                try:
+                    update_prefs(prep_jobs.save_face_settings(b))
+                    return self.json(prep_jobs.face_settings())
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
             if path == "/api/prep/test":              # Test face detection on one photo (writes nothing)
