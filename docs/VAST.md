@@ -33,6 +33,10 @@ Start tab > **Upload a training folder**, or drag them into the file manager (Fi
 
 As on your own computer: pick the folder on the Start tab, then **Training** > **Start**. Closing the browser tab doesn't stop a run; Fizgig runs on the instance.
 
+### …use it as a helper from my own computer?
+
+On your computer, add the instance on the **Pods** tab (paste `http://<its IP>:<the 8081 port>` into **Add a pod**), then **Helpers** > **Add a helper** lists it: give its password once. It can then render your previews, train a share of each epoch, or take a run with **Move to…** ([Helpers](HELPERS.md)), and **Help another Fizgig with this GPU** lets your home GPU help it, or bring its checkpoints home as they're saved.
+
 ### …get my LoRAs home?
 
 **Runs & outputs** downloads them, or the file manager (`/workspace/output_loras`). Do it before you stop or destroy the instance.
@@ -50,7 +54,7 @@ Destroy the instance on Vast.ai once your LoRAs are home. A destroyed one costs 
 ## Good to know
 
 - **https and plain http.** Vast serves an instance's ports as plain http at its public address. Fizgig's Vast image adds an https address for Fizgig and one for the file manager (free Cloudflare tunnels, new each time it starts): use those. The plain ports stay open too, so use a strong password you don't use anywhere else, and remember that the host's owner can reach the container, as with any rented machine.
-- **A new address after a restart.** A stopped and started instance can come back with a new IP or port. Paste the new address into **Add a pod** on the Pods tab.
+- **A new address after a restart.** A stopped and started instance can come back with a new IP or port. Paste the new address into **Add a pod** and add it as a helper again: Fizgig recognises it and moves its login, its bring-home setting and a run you moved there across to the new address.
 - **Disk.** The template asks for 300 GB, as RunPod's does: one model family's files are 20 to 40 GB, and an instance's disk can't grow after it's made. Vast bills the disk until the instance is destroyed, stopped or not. Destroying the instance deletes everything on it.
 - **Coming back to the same machine often?** Add a volume at `/workspace` when you rent: it keeps your models and files between instances on that machine. A Vast volume works only on the machine it was made on, and it bills until you delete it yourself, even after the instance is destroyed.
 - **CUDA.** The image needs a host whose driver supports CUDA 12.8 or newer; the template's filter asks for that.

@@ -15,14 +15,17 @@ import argparse
 import dataclasses
 import datetime
 import gc
+import glob
 import json
 import logging
 import math
 import os
 import random
 import re
+import shutil
 import sys
 import time
+import uuid
 from multiprocessing import Value
 
 import torch
@@ -279,6 +282,87 @@ def _read_sample_override(output_dir):
     except (OSError, ValueError, TypeError):
         pass
     return None
+
+
+HELPER_PREVIEWS = ".helper_previews.json"   # written by the web UI while a helper renders this run's previews
+HELPER_ROUNDS = ".helper_rounds"             # <output_dir>/.helper_rounds/<epoch>/: a round handed to the helper
+
+
+HELPER_SHARE = ".helper_share.json"   # written by the web UI while a helper trains a share of each epoch's images
+SHARE_DIR = ".helper_share"           # <output_dir>/.helper_share/: setup.json, <epoch>/start, job, theirs, lead
+
+
+def _helper_share(output_dir, output_name=""):
+    """The helper that trains a share of each epoch ({name, frac}), while the web UI says it's there for this run
+    (a note left by the run before, in the same folder, names that run)."""
+    try:
+        with open(os.path.join(output_dir, HELPER_SHARE), encoding="utf-8") as f:
+            d = json.load(f)
+        ok = (d.get("on") and time.time() - float(d.get("at", 0)) < 60 and 0 < float(d.get("frac", 0)) < 1
+              and (not output_name or d.get("run") == output_name))
+        return d if ok else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+HELPER_SHARE_WAIT = ".helper_share_wait.json"   # the web UI's: this launch's helper is getting ready
+
+
+def _share_wait_note(output_dir, output_name, launch):
+    """The web UI's hold on this launch's first epoch while its helper gets ready ({name, text}), while it keeps it
+    fresh, else None."""
+    try:
+        with open(os.path.join(output_dir, HELPER_SHARE_WAIT), encoding="utf-8") as f:
+            d = json.load(f)
+        ok = (d.get("run") == output_name and d.get("launch") == launch and time.time() - float(d.get("at", 0)) < 20)
+        return d if ok else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def _share_split(seed, epoch, keys, frac):
+    """The helper's images this epoch: ordered by a hash of the seed, the epoch and each file's name (the same on
+    both sides, so nothing is listed or sent), and drawn separately from the face crops (any file with "face" in
+    its name) and the rest - each GPU gets its share of each, and with two or more face crops neither gets them
+    all. Over the run every image trains on both GPUs."""
+    import hashlib
+    name = lambda k: os.path.basename(str(k))
+    out = set()
+    for part in ([k for k in keys if "face" in name(k).lower()], [k for k in keys if "face" not in name(k).lower()]):
+        order = sorted(part, key=lambda k: hashlib.md5(f"{seed}:{epoch}:{name(k)}".encode()).hexdigest())
+        n = round(len(order) * float(frac))
+        if len(order) >= 2:
+            n = min(max(n, 1), len(order) - 1)
+        out.update(order[:n])
+    return out
+
+
+def _write_json(path, data):
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    for n in range(20):          # Windows refuses the replace while the web UI has the file open for a moment
+        try:
+            os.replace(path + ".tmp", path)
+            return
+        except PermissionError:
+            if n == 19:
+                raise
+            time.sleep(0.05)
+
+
+class _Compare(Exception):
+    """The round handed to the helper also renders here (Check picture)."""
+
+
+def _helper_previews(output_dir):
+    """The helper that renders this run's previews ({name, ...}), while the web UI says it's there (its note is
+    refreshed every few seconds; an old one means the helper or the web UI went away and this GPU renders)."""
+    try:
+        with open(os.path.join(output_dir, HELPER_PREVIEWS), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if d.get("on") and time.time() - float(d.get("at", 0)) < 60 else None
+    except (OSError, ValueError, TypeError):
+        return None
 
 
 def preview_due(done, every, until=0, after=0):
@@ -903,7 +987,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None):
+                 lr_boost=None, share_worker=None):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1034,6 +1118,26 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     steps_per_epoch = len(loader)
     logger.info(f"{desc.display_name} training: {group.num_train_items} items, {max_train_epochs} epochs, "
                 f"{steps_per_epoch} steps/epoch")
+    _launch = uuid.uuid4().hex[:12]      # this launch: a re-run of the same name is a new training share
+    # what keeps this run on one GPU (the share's half would train without it), for the Helpers tab to say so
+    _share_off = ("a fine-tune" if finetune else
+                  "Your subject and other people" if dop else
+                  "Track how each image trains and the per-image options" if (
+                      log_per_image_loss or per_image_lr or auto_recaption or warmup_look_outliers) else "")
+    if share_worker is None and not slider_prompts:
+        try:                     # for a helper's training share (web/helpers.py): this run's command and its cache
+            os.makedirs(os.path.join(output_dir, SHARE_DIR), exist_ok=True)
+            for _old in glob.glob(os.path.join(output_dir, SHARE_DIR, "[0-9]" * 6)):
+                shutil.rmtree(_old, ignore_errors=True)     # an earlier run's rounds: never this run's to combine
+            with open(dataset_config, encoding="utf-8") as f:
+                _ds_text = f.read()
+            _write_json(os.path.join(output_dir, SHARE_DIR, "setup.json"), {
+                "launch": _launch, "off": _share_off,
+                "family": desc.key, "args": sys.argv[1:], "dataset_config": _ds_text, "output_name": output_name,
+                "cache_dirs": sorted({ds.cache_directory for ds in getattr(group, "datasets", [])
+                                      if getattr(ds, "cache_directory", None)}), "max_train_epochs": max_train_epochs})
+        except Exception as e:
+            logger.info(f"[share] no training share for this run ({e})")
     # A fine-tune's regularisation set: a dataset block marked is_reg, trained at a fixed reduced LR so it tethers
     # the model's prior rather than teaching a subject (a full fine-tune has no rank bound on its drift). A LoRA's
     # update is rank-bounded, so there the block is trained as ordinary images, with a warning.
@@ -1362,6 +1466,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                      f"LoRA rank {network_dim} alpha {network_alpha:g}") +
                     f": {len(net.trainable_modules())} modules, {sum(p.numel() for p in params) / 1e6:.1f}M "
                     f"trainable params")
+        if share_worker is None:         # a round's LoRA in bf16, for a training share's estimate before its first round
+            try:
+                with open(os.path.join(output_dir, SHARE_DIR, "setup.json"), encoding="utf-8") as f:
+                    _s = json.load(f)
+                _s["lora_bytes"] = 2 * sum(p.numel() for p in params)
+                _s["precision"] = precision      # Auto's pick here: the helper trains on the same base numbers
+                _write_json(os.path.join(output_dir, SHARE_DIR, "setup.json"), _s)
+            except (OSError, ValueError):
+                pass
         opt_params = params
         if str(optimizer_type or "").lower() == "automagic3":
             groups = _optimizer_family_groups(desc, net, learning_rate)
@@ -1600,6 +1713,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             after = ov["after"] if ov.get("after") is not None else after
         return preview_due(done, every, until, after)
     speed_bad = [False]                      # the speed LoRA matched no layers: not tried again
+    compared = [0]                           # the helper's last Check picture request this run answered
 
     def _previews(epoch):
         conds, w, h, sd, prompts = encoded, sample_width, sample_height, sample_seed, sample_prompts
@@ -1679,7 +1793,68 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             last_prompt[0] = prompts[-1] if prompts else None
             _record_prompts(sample_dir, output_name, epoch, prompts)
             return
-        _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,
+        hp = _helper_previews(output_dir) if not (slider or ref_latents or finetune) else None
+        compare = None  # Check picture: this round renders here too, and the helper's is compared with it
+        if hp and hp.get("compare") and hp["compare"] == compared[0]:
+            hp = {**hp, "compare": 0}                   # that request was this run's already
+        if hp:          # a helper renders this round from the epoch's LoRA, with the same setup: training goes on
+            lp, ls = ((ov["look"], ov.get("look_strength")) if ov and ov.get("look") is not None
+                      else (preview_lora, preview_lora_strength))
+            look_on = bool(lp) and look_said[0] != "bad"   # ticked: the helper fetches its own copy if need be
+            if hp.get("compare"):                           # Check picture: exactly as this GPU renders it now
+                look_on = bool(_look_ready(lp, ls)) if lp else False
+            rd = os.path.join(output_dir, HELPER_ROUNDS, f"{epoch:06d}")
+            try:
+                os.makedirs(rd, exist_ok=True)
+                if ema is not None:
+                    ema.swap_in()
+                try:
+                    # exactly what trains; half the size (bf16) for a helper on a slow link (the lead measures it)
+                    net.save(os.path.join(rd, "lora.safetensors"),
+                             dtype=torch.bfloat16 if hp.get("dtype") == "bf16" else torch.float32)
+                finally:
+                    if ema is not None:
+                        ema.swap_out()
+                # the encoded prompts too: the helper needs no text encoder, and conditions exactly as here
+                cpu = lambda x: ({k: cpu(v) for k, v in x.items()} if isinstance(x, dict) else
+                                 [cpu(v) for v in x] if isinstance(x, (list, tuple)) else
+                                 x.detach().cpu() if torch.is_tensor(x) else x)
+                torch.save({"conds": cpu(conds), "neg": cpu(neg)}, os.path.join(rd, "conds.pt"))
+                job = {"family": desc.key, "epoch": epoch, "output_name": output_name, "prompts": list(prompts),
+                       "conds": "conds.pt",
+                       "negative": (sample_negative or "") if neg is not None else None, "seed": sd,
+                       "width": w, "height": h, "steps": steps_now, "cfg": cfg_now,
+                       "turbo": strength_now if speed_now is not None else 0.0,
+                       "look": (ls or preview_lora_strength) if look_on else 0.0,
+                       "strengths": list(sample_strengths) if epoch > 0 else [],
+                       "network": {"dim": network_dim, "alpha": network_alpha, "type": network_type,
+                                   "factor": lokr_factor, "blocks": sorted(train_blocks) if train_blocks else None},
+                       "options": dict(family_options or {}),
+                       "precision": precision, "context": [context_lora_path, context_lora_strength]
+                       if context_lora_path else None, "lowmem": bool(lowmem)}
+                if hp.get("compare"):
+                    compared[0] = hp["compare"]
+                    compare = (rd, job)
+                    raise _Compare
+                with open(os.path.join(rd, "round.json.tmp"), "w", encoding="utf-8") as f:
+                    json.dump(job, f)
+                os.replace(os.path.join(rd, "round.json.tmp"), os.path.join(rd, "round.json"))
+                logger.info(f"[sample] epoch {epoch}: previews handed to {hp.get('name') or 'the helper'} "
+                            "- training carries on")
+                last_prompt[0] = prompts[-1] if prompts else None
+                _record_prompts(sample_dir, output_name, epoch, prompts)
+                write_mode({"model": "", "steps": steps_now, "cfg": cfg_now,
+                            "turbo": speed_desc.name if speed_now else "",
+                            "strength": strength_now if speed_now else 0}, epoch, look_on, hp.get("name") or "helper")
+                return
+            except _Compare:
+                logger.info(f"[sample] epoch {epoch}: Check picture - rendered here and on "
+                            f"{hp.get('name') or 'the helper'}, to compare")
+            except Exception:
+                logger.warning("[sample] could not hand the previews to the helper - rendering them here",
+                               exc_info=True)
+                shutil.rmtree(rd, ignore_errors=True)
+        local = _render_previews(driver, dit, net, vae, conds, sample_dir, epoch, output_name=output_name,
                          steps=steps_now, cfg=cfg_now, neg=neg, width=w, height=h,
                          seed=sd, ema=ema,
                          speed=speed_now, lowmem=lowmem,
@@ -1687,6 +1862,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                          strengths=sample_strengths if epoch > 0 else (),   # before training the LoRA is all zero
                          look=(look_now := (_look_ready() if not ov or ov.get("look") is None   # as launched
                                             else ov["look"] != "" and _look_ready(ov["look"], ov.get("look_strength")))))
+        if compare is not None:     # the helper's copy of this round, for Check picture (not for the gallery)
+            rd, job = compare
+            job["compare"] = [os.path.abspath(p) for p in local]
+            with open(os.path.join(rd, "round.json.tmp"), "w", encoding="utf-8") as f:
+                json.dump(job, f)
+            os.replace(os.path.join(rd, "round.json.tmp"), os.path.join(rd, "round.json"))
         last_prompt[0] = prompts[-1] if prompts else None
         _record_prompts(sample_dir, output_name, epoch, prompts)
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
@@ -1713,7 +1894,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if ck_speed:
                 logger.info(f"[sample] {os.path.basename(preview_checkpoint)} takes the {speed_desc.name}: previews "
                             f"on it use it while its strength is above 0")
-    def write_mode(mode, epoch=None, look=False):
+    def write_mode(mode, epoch=None, look=False, helper=""):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows. After a round
         (`epoch`) its setup joins `rounds` (epoch -> checkpoint / look / turbo), so each picture keeps its own."""
@@ -1727,7 +1908,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             rounds = {}
         if epoch is not None:
             rounds[str(epoch)] = {"checkpoint": bool(mode.get("model")), "look": bool(look),
-                                  "turbo": bool(mode.get("turbo"))}
+                                  "turbo": bool(mode.get("turbo")), **({"helper": helper} if helper else {})}
         mode = {**mode, "family": desc.key, "rounds": rounds}
         try:
             os.makedirs(sample_dir, exist_ok=True)
@@ -1770,7 +1951,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     logger.warning(f"[state] saving the epoch {epoch} resume state failed ({e}) - trying again")
                     time.sleep(5)
                 else:
-                    import shutil       # a half-written state must not count as the newest when states are pruned
+                    # a half-written state must not count as the newest when states are pruned
                     shutil.rmtree(os.path.join(output_dir, f"{output_name}-{epoch:06d}-state"), ignore_errors=True)
                     logger.warning(f"[state] the epoch {epoch} resume state could not be saved ({e}). Training "
                                    f"carries on and the epoch's LoRA is saved; only resuming from this epoch is "
@@ -1817,6 +1998,61 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             p.requires_grad_(False)
         return out
 
+    def _share_combine(sn):
+        """The helper's share back: start + this GPU's change + the helper's (what one GPU would have moved over the
+        whole epoch, give or take both halves starting from the same point). If it doesn't come back in time, the
+        round's epochs it held are returned: this GPU then trains those images itself, so every image still trains
+        every epoch."""
+        from safetensors.torch import load_file, save_file
+        took = time.time() - sn["t0"]
+        _write_json(os.path.join(sn["dir"], "lead.json"), {"steps": sn["steps"], "seconds": round(took, 1)})
+        theirs = os.path.join(sn["dir"], "theirs.safetensors")
+        deadline, cap = time.time() + max(120.0, 3 * took), time.time() + 900
+        if not os.path.exists(theirs):
+            logger.info(f"[share] epoch {sn['epoch']}: waiting for {sn['name']}'s share")
+        while not os.path.exists(theirs) and time.time() < min(deadline, cap):
+            if os.path.exists(os.path.join(sn["dir"], "failed.json")):
+                break
+            _f = _helper_share(output_dir)              # still sending, training or handing it back: wait on
+            if _f and int(_f.get("busy") or 0) == sn["epoch"]:
+                deadline = max(deadline, time.time() + 60)
+            time.sleep(0.5)
+        # closed: whatever arrives for this round from now on is too late (the helper's side drops it)
+        _write_json(os.path.join(sn["dir"], "closed.json"), {"at": time.time()})
+        try:
+            if not os.path.exists(theirs):
+                logger.warning(f"[share] epoch {sn['epoch']}: {sn['name']}'s share didn't come back - this GPU "
+                               "trains its images too")
+                return list(range(sn["epoch"], sn["last"] + 1))
+            mine = net.state_dict(torch.float32)
+            try:
+                th = load_file(theirs)                  # the helper's change over the round
+                bad = next((k for k, v in th.items() if k not in mine or v.shape != mine[k].shape
+                            or not torch.isfinite(v).all()), None)
+            except Exception as e:
+                th, bad = None, f"unreadable ({e})"
+            if th is None or bad is not None:
+                logger.warning(f"[share] epoch {sn['epoch']}: {sn['name']}'s share came back wrong ({bad}) - this "
+                               "GPU trains its images too")
+                return list(range(sn["epoch"], sn["last"] + 1))
+            comb = {k: (v + th[k].float()) if k in th else v for k, v in mine.items()}
+            save_file(comb, os.path.join(sn["dir"], "combined.safetensors"))
+            before = [p.detach().float().clone() for p in ema.params] if ema is not None else None
+            net.load_trainable(os.path.join(sn["dir"], "combined.safetensors"))
+            if ema is not None:          # the average moves by the helper's change too, or saves and previews (made
+                with torch.no_grad():    # from it) would hold only this GPU's half of the round
+                    for sh, p, b in zip(ema.shadow, ema.params, before):
+                        sh.add_(p.detach().float().to(sh.device) - b.to(sh.device))
+            logger.info(f"[share] epoch {sn['epoch']}: combined - {sn['steps']} images here, the rest on {sn['name']} "
+                        f"(waited {max(0.0, time.time() - sn['t0'] - took):.0f} s for it)")
+            return []
+        finally:
+            for n in ("start.safetensors", "combined.safetensors", "theirs.safetensors"):
+                try:
+                    os.remove(os.path.join(sn["dir"], n))
+                except OSError:
+                    pass
+
     def _update():
         nonlocal pending
         if ftr is not None and ftr.fused is not None:
@@ -1840,7 +2076,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             for g, lr in zip(optimizer.param_groups, held):
                 g["lr"] = lr
         driver.after_optimizer_step()
-        if scheduler is not None:
+        if scheduler is not None and not catching[0]:
             scheduler.step()
         if ema is not None:
             ema.update()                   # after the clipped step, so the average tracks what was applied
@@ -1850,9 +2086,142 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # allocator and cache warm-up, and on a compiled run the blocks compiling for each new shape) - a crawling bar
     # looks like a hang, so a gentle note repeats every ~30 s while it lasts.
     warmup_note = [0.0]
-    for epoch in range(start_epoch, max_train_epochs):
+    share_now = [None]       # this epoch's training share: {frac, epoch, ...} or None (this GPU trains every image)
+    _share_keys = sorted({str(it.item_key) for ds in getattr(group, "datasets", [])
+                          for b in getattr(getattr(ds, "batch_manager", None), "buckets", {}).values() for it in b})
+    share_skip = [0]
+    catching = [False]       # training a round's images the helper didn't bring back (counted once already)
+
+    def _epoch_batches(epoch):
+        """This epoch's batches as (i, batch, only): its own pass (only None), then - when it closes a round whose
+        share didn't come back - the helper's images of each of the round's epochs again (only: those keys), so
+        both sides stay in step: every image trains every epoch whatever happens to the helper."""
+        nonlocal global_step
+        for i, batch in enumerate(loader):
+            yield i, batch, None
+        sn = share_now[0]
+        if share_worker is not None or sn is None or epoch + 1 != sn["last"]:
+            return
+        if pending:                        # a partial group: settle the optimizer before the combine
+            _update()
+        _wn = adaptive._weight_norm(net.trainable_modules()) if adaptive and adaptive.prev_weight_norm else None
+        missed = _share_combine(sn)
+        _k = sn["last"] - sn["epoch"] + 1
+        if _wn is not None and _k > 1:
+            # the helper's change covers the round's k epochs: Adaptive LR's weight-growth check counts one
+            # epoch's worth of it here, not k (or a multi-epoch round would read as a jump and roll back)
+            adaptive.prev_weight_norm += (adaptive._weight_norm(net.trainable_modules()) - _wn) * (1 - 1 / _k)
+        if not missed:
+            return
+        gs0, n0 = global_step, progress.n
+        catching[0] = True
+        try:
+            for ep in missed:
+                only = _share_split(seed, ep, _share_keys, sn["frac"])
+                logger.info(f"[share] epoch {ep}: training {sn['name']}'s {len(only)} images here")
+                for i, batch in enumerate(loader):
+                    if str((batch.get("item_keys") or [""])[0]) in only:
+                        yield i, batch, only
+                        global_step, progress.n = gs0, n0      # the bar and the epoch shown stay where they are
+            if pending:
+                _update()
+        finally:
+            catching[0] = False
+            global_step = gs0              # those steps were counted when they were skipped
+            progress.n = n0
+            progress.refresh()
+
+    def _share_ok():
+        return not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
+
+    def _worker_epochs():
+        """--share_worker: each epoch the lead hands over (its job file: the start LoRA, the share, the LR), in turn;
+        a stop file, or no job for 30 minutes, ends it."""
+        _write_json(os.path.join(share_worker, "ready.json"), {"at": time.time(), "steps_per_epoch": steps_per_epoch})
+        idle = time.time()
+        while True:
+            jobs = sorted(glob.glob(os.path.join(share_worker, "*.job.json")))
+            if os.path.exists(os.path.join(share_worker, "stop")) or (not jobs and time.time() - idle > 1800):
+                return
+            if not jobs:
+                time.sleep(0.5)
+                continue
+            work = jobs[0][:-len(".job.json")] + ".working"
+            os.replace(jobs[0], work)
+            with open(work, encoding="utf-8") as f:
+                job = json.load(f)
+            job["work"] = work
+            share_now[0] = job
+            for ep in job.get("epochs") or [job["epoch"]]:
+                yield int(ep) - 1
+            idle = time.time()
+
+    if share_worker is None and _share_ok():
+        # Start together (the Helpers tab's tick): while the web UI is getting this run's helper ready, the first
+        # epoch waits for it, so both sides train from the start. Unticked, the helper leaving or its start giving
+        # up lets go of the wait (as does a web UI that stopped refreshing it)
+        _noted = 0.0
+        while _helper_share(output_dir, output_name) is None and not os.path.exists(pause_flag):
+            _w = _share_wait_note(output_dir, output_name, _launch)
+            if _w is None:
+                break
+            if time.time() - _noted > 30:
+                logger.info(f"[share] waiting for {_w.get('name') or 'the helper'} to get ready before the first "
+                            f"epoch, so both train from the start" + (f": {_w['text']}" if _w.get("text") else "")
+                            + " (untick Start together on the Helpers tab to start now)")
+                _noted = time.time()
+            time.sleep(2)
+    for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
+        if share_worker and epoch + 1 == int(share_now[0]["epoch"]):   # a round's first epoch: the lead's LoRA
+            _sj = share_now[0]
+            if net.load_trainable(_sj["start"]) == 0:
+                raise RuntimeError("[share] the lead's LoRA matched none of this model's layers")
+            # the lead's rate: its scheduler's place (this run's own schedule, stepped to it), or none - Adaptive LR
+            # or a constant rate, held for the round as the lead holds it through an epoch
+            scheduler = None
+            if _sj.get("sched") is not None:
+                scheduler = _step_scheduler(optimizer, lr_scheduler, lr_warmup_steps,
+                                            updates_per_epoch * max_train_epochs, lr_scheduler_num_cycles,
+                                            lr_scheduler_power)
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=r"Detected call of `lr_scheduler\.step\(\)` before")
+                    for _ in range(int(_sj["sched"])):
+                        scheduler.step()
+            else:
+                for g, lr in zip(optimizer.param_groups, _sj.get("lrs") or []):
+                    g["lr"] = lr
+            logger.info(f"[share] epoch {epoch + 1}: from the lead's LoRA, LR {optimizer.param_groups[0]['lr']:.3g}"
+                        + (" (its schedule, at the lead's step)" if scheduler is not None else ""))
+            _sj.update(steps=0, t0=time.time())
+        elif share_worker is None:
+            if share_now[0] is not None and epoch + 1 > share_now[0]["last"]:
+                share_now[0] = None
+            _hs = _helper_share(output_dir, output_name) if share_now[0] is None and _share_ok() else None
+            if _hs:                  # a helper trains its share of this round's epochs, from the same start
+                # the round: up to `every` epochs, ending early at any epoch that previews or saves (so the pictures
+                # and files hold both halves), at a pause, and at the run's end
+                _last = epoch + 1
+                while (_last < epoch + max(1, int(_hs.get("every") or 1)) and _last < max_train_epochs
+                       and not (sample_every_n_epochs and _preview_due(_last))
+                       and not preview_due(_last, save_every_n_epochs, save_until_epoch, save_every_n_epochs_after)
+                       and not os.path.exists(pause_flag)):
+                    _last += 1
+                _sd = os.path.join(output_dir, SHARE_DIR, f"{epoch + 1:06d}")
+                shutil.rmtree(_sd, ignore_errors=True)    # a resumed run's earlier go at this epoch: not this round
+                os.makedirs(_sd, exist_ok=True)
+                net.save(os.path.join(_sd, "start.safetensors"), dtype=torch.bfloat16)
+                _write_json(os.path.join(_sd, "job.json"), {
+                    "epoch": epoch + 1, "epochs": list(range(epoch + 1, _last + 1)), "frac": float(_hs["frac"]),
+                    "seed": seed, "lrs": [g["lr"] for g in optimizer.param_groups],
+                    "sched": scheduler.last_epoch if scheduler is not None else None, "launch": _launch})
+                share_now[0] = {"epoch": epoch + 1, "last": _last, "frac": float(_hs["frac"]), "dir": _sd,
+                                "steps": 0, "t0": time.time(), "name": _hs.get("name") or "the helper"}
+                logger.info(f"[share] epoch{'s' if _last > epoch + 1 else ''} {epoch + 1}"
+                            + (f"-{_last}" if _last > epoch + 1 else "") + f": {share_now[0]['name']} trains about "
+                            f"{float(_hs['frac']) * 100:.0f}% of the images, combined at the end")
         if ftr is not None and ftr.needs_window(epoch):
             optimizer = params = None       # let go of the outgoing window before the swap, or both sit in VRAM
             params, optimizer = ftr.enter(epoch)                 # the epoch's window, and a fresh optimizer for it
@@ -1878,12 +2247,29 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                             f"the model to one of them. Saved for a continued run: {os.path.basename(dop_ft_file)}")
         torch.cuda.reset_peak_memory_stats()
         t0 = time.time()
-        for i, batch in enumerate(loader):
+        _theirs = (_share_split(seed, epoch + 1, _share_keys, share_now[0]["frac"]) if share_now[0] is not None
+                   else None)                       # the helper's images this epoch (both sides draw the same)
+        for i, batch, _only in _epoch_batches(epoch):
             if epoch - start_epoch < 2 and time.time() - warmup_note[0] > 30.0:
                 warmup_note[0] = time.time()
                 logger.info("[warm-up] Warm-up phase — the first two epochs start slowly while the GPU plans kernels"
                             + (", compiles the blocks" if do_compile else "")
                             + " and fills its caches. Nothing is stuck; full speed arrives from epoch 3.")
+            if _only is not None:              # a catch-up: the helper's images this GPU trains after all
+                pass
+            elif share_now[0] is not None:
+                _mine = (str((batch.get("item_keys") or [""])[0]) in _theirs) == bool(share_worker)
+                if _mine and share_worker and os.path.exists(share_now[0]["work"][:-len(".working")] + ".cancel"):
+                    _mine = False              # the lead went on without this round: the rest of it is skipped
+                if not _mine:                  # the other GPU trains this one this epoch
+                    recorder.drop(step=i)
+                    global_step += 1
+                    progress.update(1)
+                    share_skip[0] += 1
+                    if scheduler is not None and share_skip[0] % accum == 0:
+                        scheduler.step()       # the schedule stays where one GPU's would be
+                    continue
+                share_now[0]["steps"] += 1
             if watch.excluded(batch):          # two failed AI recaptions and still stuck: no forward, no loss
                 recorder.drop(step=i)
                 global_step += 1
@@ -1997,6 +2383,22 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     + (f"({group_rates(optimizer)})  " if optimizer is not None and group_rates(optimizer) else "") +
                     f"peak VRAM {torch.cuda.max_memory_reserved() / 1024 ** 3:.1f} GB")
         steplog.flush()
+        if share_worker and epoch + 1 < int((share_now[0].get("epochs") or [share_now[0]["epoch"]])[-1]):
+            continue                         # a round of several epochs: the LoRA goes back after its last
+        if share_now[0] is not None and share_worker:
+            _sj = share_now[0]
+            # its change over the round, against the start it was handed (small numbers: bf16 keeps them)
+            from safetensors.torch import load_file, save_file
+            _st = load_file(_sj["start"])
+            _now = net.state_dict(torch.float32)
+            save_file({k: (v - _st[k].float()).to(torch.bfloat16).contiguous() for k, v in _now.items() if k in _st},
+                      _sj["out"] + ".part")
+            os.replace(_sj["out"] + ".part", _sj["out"])
+            _write_json(_sj["work"][:-len(".working")] + ".done.json",
+                        {"ok": True, "steps": _sj["steps"], "seconds": round(time.time() - _sj["t0"], 1)})
+            os.remove(_sj["work"])
+            logger.info(f"[share] epoch {epoch + 1}: {_sj['steps']} images trained here, handed back")
+            continue
         if dop_sum[1]:
             logger.info(f"[dop] epoch {epoch + 1}: preservation loss {dop_sum[0] / dop_sum[1]:.5f} over {dop_sum[1]} "
                         "step(s) - how far the LoRA moves the class prompt from the base model")
@@ -2048,7 +2450,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 own = sample_for_epoch(output_dir, output_name, done)
                 if own:
                     refresh_checkpoint_thumbnail(os.path.join(output_dir, f"{output_name}-{done:06d}.safetensors"), own)
-        if os.path.exists(pause_flag) and done < max_train_epochs:
+        if (os.path.exists(pause_flag) and done < max_train_epochs
+                and not (share_now[0] is not None and done < share_now[0]["last"])):   # a share round ends first
             if state_saved:
                 logger.info(f"[pause] requested - state for epoch {done} already saved; exiting cleanly")
             else:
@@ -2061,8 +2464,18 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             slider_live(done)
             progress.start_t += time.time() - _tp       # the bar's s/it is training speed
 
+    if share_worker:                     # a helper's share: the lead keeps the LoRA
+        progress.close()
+        logger.info("[share] the lead's run is done here")
+        return None
     progress.close()
     steplog.flush()
+    for _old in glob.glob(os.path.join(output_dir, SHARE_DIR, "*")):   # the share's rounds and bundles: done with
+        if os.path.basename(_old) != "setup.json":
+            try:                         # a file the web UI has open stays (Windows): never the run's final save
+                shutil.rmtree(_old, ignore_errors=True) if os.path.isdir(_old) else os.remove(_old)
+            except OSError:
+                pass
     final = os.path.join(output_dir, f"{output_name}.safetensors")
     if ftr is not None:
         optimizer = params = None
@@ -2076,7 +2489,6 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     save_lora(final, max_train_epochs)
     # the last epoch under its number too (#176): a resumed run that extends this one ends on the same plain name, and
     # without a numbered copy that epoch would be overwritten and lost
-    import shutil
     shutil.copyfile(final, os.path.join(output_dir, f"{output_name}-{max_train_epochs:06d}.safetensors"))
     if save_state_on_train_end:
         state(max_train_epochs)
@@ -2176,6 +2588,8 @@ def setup_parser():
         p.add_argument(f"--metadata_{k}", default=None)
     p.add_argument("--trigger_word", default=None, help="Recorded as the trigger phrase when none is given")
     p.add_argument("--resume", default=None)
+    p.add_argument("--share_worker", default=None, help="a helper's training share: take each epoch's start LoRA "
+                   "and share from this folder's job files, train this computer's images, write the result back")
     p.add_argument("--adaptive_lr", action="store_true")
     p.add_argument("--adaptive_lr_min", type=float, default=1e-4)
     p.add_argument("--adaptive_lr_max", type=float, default=2e-4)
@@ -2282,7 +2696,8 @@ def main():
         family_options=dict(o.split("=", 1) for o in a.family_option if "=" in o),
         dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every,
         dop_ft_samples=a.dop_ft_samples,
-        lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None)
+        lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
+        share_worker=a.share_worker)
 
 
 if __name__ == "__main__":

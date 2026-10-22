@@ -6,7 +6,8 @@ the model cards and pipeline_moss_image.py (huggingface.co/OpenMOSS-Team/MOSS-Im
 (huggingface.co/Comfy-Org/MOSS-Image) and ComfyUI's core support (Comfy-Org/ComfyUI PR #17095, merge e087d8f6cb).
 
 """
-from fizgig.families.description import FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings, SpeedLoRA
+from fizgig.families.description import (FamilyDescription, FamilyOption, LoRAFormat, ModelFile, SamplingSettings,
+                                         SpeedLoRA, TextEncoderBuild)
 
 _REPO = "https://github.com/OpenMOSS/MOSS-Image"
 _CARD = "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base"
@@ -93,7 +94,8 @@ MOSS_IMAGE = FamilyDescription(
                   # stock Qwen3.5-9B: MOSS-Image's text_encoder/ shards are these tensors (24 of 24 sampled equal
                   # after the reference's bf16 cast); MOSS keeps it frozen (USERGUIDE.md Post-Training)
                   alt_repo=_COMFY, alt_path="text_encoders/qwen3.5_9b_int8_convrot.safetensors", alt_label="int8",
-                  alt_note="~9.7 GB int8 ConvRot, the file ComfyUI's MOSS-Image workflow uses; decoded at load"),
+                  alt_note="~9.7 GB int8 ConvRot, the file ComfyUI's MOSS-Image workflow uses; decoded at load",
+                  alt_size_gb=9.7),
         # MOSS-Image SFT (OpenMOSS's aesthetics-tuned checkpoint, same architecture; @Murf-Code, PR #195): Repair
         # Studio and LoRA Royale render on it once set, and training samples do (the Samples tab tick, on by
         # default - a Base LoRA carries over to the SFT only partly). Never trained: Fizgig trains on the Base
@@ -119,6 +121,12 @@ MOSS_IMAGE = FamilyDescription(
                        "loading SFT, so they're much quicker. Downloaded for you the first time you tick \"Give "
                        "Base previews the SFT look\" on the Samples tab. Previews only, never training.",
                   download_note="~2.1 GB - Apache-2.0"),
+    ),
+    # measured 21 Oct 2026 with scripts/check_te_builds.py against qwen3.5_9b_bf16; the w4a8 (GPTQ) build doesn't
+    # load (its asym_w4a8_int8 layers)
+    text_encoder_builds=(
+        TextEncoderBuild("int8 (convrot)", _COMFY, "text_encoders/qwen3.5_9b_int8_convrot.safetensors", 9.75,
+                         "32e3787472f708fa5f83624acbf5ef23f7fc89c439e05065ea57cfe5a97f025a", 0.99953),
     ),
     text_encoder_label="Qwen3.5-9B",
     vae_label="FLUX.2 autoencoder",

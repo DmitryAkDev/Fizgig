@@ -63,6 +63,7 @@
           <button class="tab-item" data-tab="metadata"><i></i><span>Metadata</span></button>
           <button class="tab-item" data-tab="prefs"><i></i><span>Preferences</span></button>
           <button class="tab-item" data-tab="pods" id="podsTabBtn" style="display:none"><i></i><span>Pods</span></button>
+          <button class="tab-item" data-tab="helpers"><i></i><span>Helpers</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
           <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>
@@ -78,7 +79,7 @@
         </div>
         <div class="gpu-monitor" id="statusBar"></div>
         <a class="runpod-btn" id="sideDeploy" href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=bdrdew7hxw&amp;ref=vkb387ep"
-          target="_blank" rel="noopener" title="Run Fizgig on a rented GPU: RunPod's Fizgig template, ready to train"><i></i><span>Deploy on RunPod</span></a>
+          target="_blank" rel="noopener" title="Run Fizgig on a rented GPU: the Pods tab's Rent a pod (pick a card, then add a 300 GB Volume disk on RunPod's page)"><i></i><span>Deploy on RunPod</span></a>
         <a class="runpod-btn files-btn" id="sideFiles" target="_blank" rel="noopener" style="display:none"><i></i><span>File manager</span></a>
         <button class="about-btn" id="aboutBtn" title="About Fizgig"><i></i><span>About</span></button>
         <a class="coffee-btn" href="https://buymeacoffee.com/lorasandlenses" target="_blank" rel="noopener"
@@ -472,6 +473,7 @@
               <select class="w-combo-lg family-pick"></select>
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div></div>
           </div>
+          <div class="helper-strip" id="samplesHelper" style="display:none"></div>
           <div id="samplesForm"></div>
           <div class="section-card" id="galleryCard">
             <div class="card-title">Previews so far</div>
@@ -507,6 +509,7 @@
               <span class="field-hint">The same choice as the Start tab's: change it here or there.</span></div>
               <div class="family-status" style="display:none"></div></div>
           </div>
+          <div class="helper-strip" id="trainHelper" style="display:none"></div>
           <div class="section-card">
             <div class="card-title">Presets</div>
             <div class="card-content"><div class="field-row preset-row">
@@ -525,6 +528,10 @@
                 <span class="field-hint" id="runWhen"></span></div>
               <div class="run-bar run-bar-lg"><span id="runBar"></span></div>
               <div class="run-tiles" id="runTiles"></div>
+              <div class="run-helper" id="runHelper" style="display:none"></div>
+              <div class="field-hint" id="runPodNote" style="display:none">This run trains on the pod: close this
+                window or switch off your computer and it keeps going. Open the pod again to see it. Stopping the pod
+                itself mid-run loses what it trained since its last save: press Pause first.</div>
               <div id="runLoss"></div>
               <div class="il-box" id="runImageLoss" style="display:none"></div>
               <div class="field-row">
@@ -537,10 +544,12 @@
                 <button class="btn" id="btnImageLoss" style="display:none" title="Each training image's loss by epoch, against the rest of the dataset: which images are still being learned, which are done, and what the loss watch decided about each">Per-image loss</button>
                 <button class="btn" id="btnSaveNow" style="display:none" title="Save the LoRA as it is now, after the current training step (as name-stepNNNNNNN.safetensors)">Save now</button>
                 <button class="btn btn-primary" id="btnResume">Resume</button>
+                <button class="btn" id="btnMove" style="display:none" title="Carry on training this run on another computer running Fizgig (a pod, a laptop) while you use this one: it pauses here and resumes there, and comes back the same way">Move to…</button>
                 <button class="btn btn-danger" id="btnStop">Stop</button>
                 <span class="field-hint" id="runStatus"></span>
               </div>
               <div class="field-row resume-choice" id="resumeChoice" style="display:none"></div>
+              <div class="run-move" id="runMove" style="display:none"></div>
               <div class="field-hint" id="runNowSay"></div>
               <div class="slider-live" id="sliderLive" style="display:none">
                 <div class="slider-live-head"><b>Slider prompts</b><span class="field-hint">Steer the slider while it
@@ -1515,10 +1524,22 @@
             <div class="card-title">Rent a pod</div>
             <div class="card-desc">Fizgig's RunPod template is ready to train, with nothing to install. With your API key,
               this lists the cards RunPod has free right now, their price, and roughly what a run costs on each. Deploy
-              opens RunPod's page with that card and the template chosen: give it a 100 GB+ volume and press Deploy
-              there. Once it has started it shows above by itself (with your key), or paste its ID.</div>
+              opens RunPod's page with that card and the template chosen. Once it has started it shows above by itself
+              (with your key), or paste its ID.</div>
             <div class="card-content">
+              <div class="pick-disk"><b>On RunPod's page, add a disk before you deploy</b> (it isn't added for you):
+                <ol>
+                  <li>On the right of RunPod's page, in the box called <b>Nothing mounted at the template's
+                    path</b>, press <b>Add volume</b>.</li>
+                  <li>Click <b>Volume disk</b> (marked Legacy). The dialog opens on <b>Global volume</b>: that one
+                    doesn't work for Fizgig.</li>
+                  <li>Leave <b>Size</b> at <b>300 GB</b>, press <b>Add volume disk</b>, then <b>Deploy Pod</b>.</li>
+                </ol>
+                Without it, your models and LoRAs are on the pod's small container disk and are lost when it stops.
+                <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md#give-it-a-disk-on-runpods-deploy-page" target="_blank" rel="noopener">See an explanation with screenshots</a></div>
               <div class="pick-row">
+                <label title="Two cards in one pod: on the pod, Helpers &gt; Add a helper &gt; Use it as a helper beside its other GPU, then Training share">GPUs
+                  <select id="pickCount"><option value="1" selected>1</option><option value="2">2</option></select></label>
                 <label>Memory <select id="pickVram" title="32 GB trains Krea 2 with no block swap; a smaller card swaps blocks and runs slower">
                   <option value="24">24 GB+</option><option value="32" selected>32 GB+</option>
                   <option value="48">48 GB+</option><option value="80">80 GB+</option></select></label>
@@ -1542,6 +1563,74 @@
               </div>
               <div class="pick-vast-note">Vast.ai: start Fizgig's template on Vast's site (its link is a referral one
                 too), then paste its address into <b>Add a pod</b> above.</div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-helpers" class="tab-panel">
+          <div class="tab-banner">
+            <h1>Helpers</h1>
+            <p>Other Fizgigs that take work off this one's GPU: another computer on your network, a pod, or a computer on
+              Tailscale. A helper renders this computer's previews, so training never stops for them, or trains a share
+              of the images alongside it, or takes over a run while you need this computer (Move to… on the run card).
+              (The Pods tab is for using another computer instead of this one.)
+              <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/HELPERS.md"
+              target="_blank" rel="noopener">The helpers guide</a></p>
+          </div>
+          <div class="helper-here" id="helpHere" style="display:none"></div>
+          <div class="section-card">
+            <div class="card-title"><span>Your helpers</span><button class="btn btn-sm" id="helpReload">Reload</button></div>
+            <div class="card-content">
+              <div id="helpList" class="helper-list"></div>
+              <div class="field-hint" id="helpNote"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Add a helper</div>
+            <div class="card-desc">Computers running Fizgig on your network, and your pods from the Pods tab, are
+              listed below; add any other by its address. A helper needs a web password (its Preferences &gt; Web UI)
+              and the same Fizgig version as this one.</div>
+            <div class="card-content">
+              <div id="helpLocal" class="pods-list"></div>
+              <div id="helpFound" class="pods-list"></div>
+              <div class="helper-add">
+                <input type="text" id="helpAddUrl" class="w-path" placeholder="or its address: 192.168.0.20, 100.101.12.7 on Tailscale, or a pod's (port 8081 unless you changed it)" spellcheck="false">
+                <input type="password" id="helpAddPw" class="w-combo-md" placeholder="its password" autocomplete="off">
+                <button class="btn btn-primary" id="helpAdd">Add</button>
+              </div>
+              <div class="field-hint" id="helpAddNote"></div>
+              <div class="pick-vast-note">A Vast.ai instance: paste its address (<code>http://its-IP:its-port</code>, the
+                port Vast mapped 8081 to) and its password above; one added on the Pods tab is listed already.
+                <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/VAST.md" target="_blank" rel="noopener">The Vast.ai guide</a></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">Help another Fizgig with this GPU</div>
+            <div class="card-desc">For a run training on a pod: your GPU renders its previews or trains a share of
+              each epoch, so the pod's time goes on training. A pod can't reach your computer, so this computer
+              connects to it. Starting a run here stops the helping. <b>Its checkpoints</b> brings the run's epochs
+              here to try your own prompts on them in LoRA Royale, and <b>Bring its checkpoints home</b> brings each
+              one here as it's saved (deleting the pod once they're all home, if you tick that).</div>
+            <div class="card-content">
+              <div id="helpOut" class="pods-list"></div>
+              <div class="field-hint" id="helpOutNote"></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="card-title">What goes where</div>
+            <div class="card-content helper-where">
+              <div><b>Models</b>: a helper that doesn't have a model a job needs downloads it itself, from Hugging
+                Face, before it starts the job. No model goes from this computer.</div>
+              <div><b>Previews</b>: each preview round, the epoch's LoRA (about 300 MB for MOSS-Image: the exact
+                weights that train), its encoded prompts and its preview settings go to the helper; the pictures come
+                back into the run's samples folder, labelled with where they were made. The helper needs no text
+                encoder.</div>
+              <div><b>Training share</b>: the training folder (pictures and captions) goes to the helper once and it
+                makes the run's cache itself, with this run's own model, VAE and text encoder (the same files, checked
+                by hash, fetched if it hasn't got them). Where it can't get the same text encoder, or with <b>Send this
+                computer's cache instead</b> ticked, the cache goes instead of the pictures. Then only the LoRA goes back
+                and forth, once a round (Combine every, on its tile). After each round the tile says whether it's
+                paying.</div>
             </div>
           </div>
         </section>
@@ -1697,6 +1786,7 @@
           <p class="field-hint">Coming from Fizgig 7? Your folders, settings, presets and queued runs came across.</p>
           <p class="welcome-guides">Guides:
             <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md#your-other-computers-use-ones-gpu-from-another" target="_blank" rel="noopener">Your other computers</a> ·
+            <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/HELPERS.md" target="_blank" rel="noopener">Helpers</a> ·
             <a href="https://github.com/shootthesound/Fizgig/blob/master/docker/README.md" target="_blank" rel="noopener">Pods on RunPod</a> ·
             <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md#on-your-phones-home-screen" target="_blank" rel="noopener">Your phone</a> ·
             <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/WEB_UI.md" target="_blank" rel="noopener">Everything else</a></p>

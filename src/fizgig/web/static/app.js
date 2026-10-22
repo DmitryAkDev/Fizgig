@@ -87,6 +87,11 @@ async function boot() {
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
   $("sideDeploy").style.display = S.onPod ? "none" : "";      // ...nor a pod to deploy
+  $("sideDeploy").addEventListener("click", (e) => {          // to Rent a pod: its disk steps come before Deploy
+    e.preventDefault();
+    showTab("pods");
+    setTimeout(() => { const c = document.querySelector(".pods-rent"); if (c) c.scrollIntoView({behavior: "smooth"}); }, 50);
+  });
   fileManagerLinks(pr.file_manager);
   phoneCard();
   podLocalInit();                                             // in the app window on a pod: this computer's folders
@@ -897,7 +902,7 @@ function fetchRow(f) {
   }
   box.append(el("div", {class: "field-hint", text: f.fetch_note ||
     `Fetches every file above (~${Math.round(total)} GB) and fills in these paths, plus the Qwen3-VL captioner ` +
-    "the Captions tab uses and the small helper models. Interrupted downloads resume where they left off."}));
+    "the Captions tab uses and the small face and captioning models. Interrupted downloads resume where they left off."}));
   const status = el("div", {class: "fetch-status"});
   box.append(status);
   S.fetchRows[f.key] = {status, btn};
@@ -1325,7 +1330,7 @@ async function resumeClick() {
 }
 
 const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", pausing: "Pausing", paused: "Paused",
-                    completed: "Finished", failed: "Failed", stopped: "Stopped"};
+                    completed: "Finished", failed: "Failed", stopped: "Stopped", moved: "Moved"};
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
@@ -1335,6 +1340,7 @@ async function pollRun() {
   $("podStopText").textContent = ps.counting ? `Stopping this pod in ${ps.left} s so it stops billing.` : ps.note || "";
   const r = S.run, live = r.running || r.state === "starting";
   liveNote(live);
+  $("runPodNote").style.display = S.onPod && live ? "" : "none";     // a pod's run doesn't need this page open
   const label = RUN_LABELS[r.state] || r.state;
   $("runStatus").textContent = r.lora ? `${label}: ${r.lora}${r.stage ? " · " + r.stage : ""}` : label;
   $("runBadge").textContent = label;
@@ -1342,13 +1348,14 @@ async function pollRun() {
   $("runCardBadge").textContent = label;
   $("runCardBadge").dataset.state = r.state;
   showProgress(r.progress, r.state, r.lora, r.stage);
-  $("btnStart").disabled = live;
+  const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
+  $("btnStart").disabled = live || moveBusy;
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
   $("btnPause").style.display = runFam.no_pause ? "none" : "";
   $("btnStop").disabled = !live;
-  $("btnResume").style.display = !live && r.resume ? "" : "none";
+  $("btnResume").style.display = !live && r.resume && !moveBusy ? "" : "none";
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
   runLossTick(live);
@@ -1362,7 +1369,96 @@ async function pollRun() {
   const nowOk = !!(r.running && r.stage === "Training" && runDesc && !runDesc.no_pause && !ftRun);
   for (const id of ["btnSampleNow", "btnSaveNow"]) $(id).style.display = nowOk ? "" : "none";
   if (!nowOk) $("runNowSay").textContent = "";
+  // Move to…: a LoRA run training or paused here goes on on another computer, and comes back the same way
+  const mv = r.move || null, moving = mv && ["moving", "back", "moved"].includes(mv.state);
+  const moveOk = !!(runDesc && !runDesc.no_pause && !ftRun && !moving &&
+                    (r.running && r.stage === "Training" || r.state === "paused"));
+  $("btnMove").style.display = moveOk ? "" : "none";
+  if (!moveOk) S.moveOpen = false;
+  moveDraw(mv);
   sliderLiveDraw(r.slider_live);
+}
+
+// ---- moving a run to another computer (web/helpers.py move_*): the chooser, then the move's own line
+function moveDraw(mv) {
+  const box = $("runMove");
+  if (S.moveOpen) return;                          // the chooser is up: left alone until it's used or closed
+  if (!mv) { box.style.display = "none"; box.replaceChildren(); return; }
+  box.style.display = "";
+  const go = (path, body) => async () => {
+    try { await api(path, body || {}); } catch (e) { showProblems([e.message]); }
+    pollRun();
+  };
+  const rm = mv.remote || {}, kids = [];
+  let say = mv.text || "";
+  if (mv.state === "moved") {
+    say = rm.state === "completed" ? `Finished on ${mv.to}.` :
+      rm.state === "paused" ? `Paused on ${mv.to}.` :
+      rm.state === "failed" || rm.state === "stopped" ? `It ${rm.state === "failed" ? "failed" : "was stopped"} on ${mv.to} ` +
+        "(its log there says why). Bring it back to carry on here from its last save." :
+      rm.state === "away" ? `Training on ${mv.to} (it isn't answering just now).` :
+      rm.state === "login" ? `On ${mv.to}: its login ran out, so this computer can't see it. Add it again on the Helpers tab.` :
+      rm.state === "running" || rm.state === "starting" ?
+        `Training on ${mv.to}` + (rm.epoch ? `: epoch ${rm.epoch} of ${rm.epochs}` : rm.stage ? `: ${rm.stage}` : "") +
+        (rm.eta ? ` · ${rm.eta} left` : "") : `On ${mv.to}.`;
+    if (mv.error) say += ` (${mv.error})`;
+    kids.push(el("button", {class: "btn btn-sm btn-primary", text: rm.state === "completed" ? "Bring its LoRAs here" : "Bring it back",
+      title: "Paused there at the end of its epoch, its new checkpoints, previews and saved state brought here, and it carries on here",
+      onclick: go("/api/helpers/move_back", {now: false})}));
+    if (rm.state === "running") kids.push(el("button", {class: "btn btn-sm", text: "Bring it back now",
+      title: "Stopped there now and brought back from its last save (the epochs since it are trained again here)",
+      onclick: go("/api/helpers/move_back", {now: true})}));
+    if (mv.url) kids.push(el("a", {class: "btn btn-sm", href: mv.url, target: "_blank", rel: "noopener", text: `Open ${mv.to}`}));
+    if (["away", "login", "gone", "failed", "stopped"].includes(rm.state) || mv.error)
+      kids.push(el("button", {class: "btn btn-sm", text: "Carry on here",
+        title: `For a ${mv.to} that won't come back (a pod deleted): carries on here from this computer's last save - ` +
+               "the epochs it trained there are lost. It's stopped there if it still answers",
+        onclick: go("/api/helpers/move_clear", {here: true})}));
+  } else if (mv.state === "failed") {
+    kids.push(el("button", {class: "btn btn-sm", text: "OK", onclick: go("/api/helpers/move_clear")}));
+  }
+  const bar = mv.progress != null ? el("div", {class: "run-bar"}, el("span", {style: `width:${Math.round(100 * mv.progress)}%`})) : null;
+  box.replaceChildren(el("div", {class: "field-hint", text: say}), ...(bar ? [bar] : []),
+    ...(kids.length ? [el("div", {class: "field-row"}, ...kids)] : []));
+}
+
+async function moveOpen() {
+  const box = $("runMove");
+  S.moveOpen = true;
+  box.style.display = "";
+  box.replaceChildren(el("div", {class: "field-hint", text: "Finding the computers it could move to…"}));
+  let hs = [];
+  try { hs = (await api("/api/helpers")).helpers || []; } catch (e) { /* none listed */ }
+  const ready = hs.filter((h) => !h.inbound && h.state === "ready" && (h.build === "same" || !h.build));
+  const close = () => { S.moveOpen = false; pollRun(); };
+  if (!ready.length) {
+    box.replaceChildren(el("div", {class: "field-hint", text: hs.length ?
+      "None of your helpers can take it now: each needs to be on, not training, and on the same Fizgig version (Helpers tab)." :
+      "Add the computer to move it to on the Helpers tab first: another computer running Fizgig, or a pod."}),
+      el("div", {class: "field-row"}, el("button", {class: "btn btn-sm", text: "OK", onclick: close})));
+    return;
+  }
+  const pick = el("select", {class: "w-combo"}, ...ready.map((h) => el("option", {value: h.id,
+    text: `${h.name}${h.gpu ? ` (${h.gpu}${h.vram ? `, ${h.vram} GB` : ""})` : ""}`})));
+  const send = (now) => async () => {
+    try {
+      await api("/api/helpers/move", {id: pick.value, now});
+      S.moveOpen = false;
+    } catch (e) { showProblems([e.message]); }
+    pollRun();
+  };
+  const running = S.run && S.run.running;
+  box.replaceChildren(
+    el("div", {class: "field-hint", text: "It pauses here, its saved state and training folder go to the other computer, " +
+      "and it carries on there on the same model files (it downloads any it's missing and makes its own cache). " +
+      "Bring it back from here when you want it."}),
+    el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Move it to"}), pick,
+      el("button", {class: "btn btn-sm btn-primary", text: running ? "At the end of this epoch" : "Move it",
+        onclick: send(false)}),
+      ...(running ? [el("button", {class: "btn btn-sm", text: "Now",
+        title: "Stopped now and moved from its last save (the epochs since it are trained again there)",
+        onclick: send(true)})] : []),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})));
 }
 
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
@@ -6458,7 +6554,7 @@ S.pods = {list: [], timer: 0, waitFor: ""};
 const inApp = () => !!window.pywebview;
 const POD_STATE = {ready: ["Ready", "ok"], waiting: ["Starting - a pod can take a few minutes. If it isn't ready after that, check it on RunPod", "warn"],
   stopped: ["Stopped", "muted"], off: ["Not answering", "muted"], starting: ["Starting...", "warn"],
-  gone: ["Deleted on RunPod: it isn't on your account any more. Forget takes it off this list", "muted"],
+  gone: ["Not on your RunPod account (another account's pod, or deleted there). Forget takes it off this list", "muted"],
   away: ["Not on your network now: is it on, awake and running Fizgig?", "muted"],
   blocked: ["Found, but it doesn't let this computer in yet: on it, Preferences > Web UI > Allow on my network", "warn"]};
 
@@ -6546,8 +6642,16 @@ async function podStop(p) {
 S.pick = {data: null, dc: ""};
 async function pickLoad() {
   $("pickNote").textContent = "Asking RunPod what's free...";
-  try { S.pick.data = await api("/api/pods/gpus" + (S.pick.dc ? "?dc=" + encodeURIComponent(S.pick.dc) : "")); }
-  catch (e) { $("pickNote").textContent = e.message; return; }
+  const q = new URLSearchParams({count: $("pickCount").value, ...(S.pick.dc ? {dc: S.pick.dc} : {})});
+  const ask = S.pick.ask = (S.pick.ask || 0) + 1;     // only the newest answer draws (1 and 2 GPUs switched fast)
+  let d;
+  try { d = await api("/api/pods/gpus?" + q); }
+  catch (e) {
+    if (ask !== S.pick.ask) return;
+    S.pick.data = null; $("pickList").replaceChildren(); $("pickNote").textContent = e.message; return;
+  }
+  if (ask !== S.pick.ask) return;
+  S.pick.data = d;
   const vols = S.pick.data.volumes || [];
   document.querySelectorAll(".pick-live").forEach((e) => { e.hidden = !S.pick.data.key; });
   $("pickVolWrap").hidden = !vols.length;
@@ -6561,13 +6665,17 @@ function pickDraw() {
   if (!d) return;
   const min = +$("pickVram").value, cloud = $("pickCloud").value, hours = parseFloat($("pickHours").value) || 2;
   const max = parseFloat($("pickMax").value) || Infinity;
-  const speedText = (g) => g.gpu === "RTX 5090" ? "the card these speeds are measured against" : g.speed ? `about ${g.speed.toFixed(g.speed < 1 ? 2 : 1)}× a 5090's speed` : "";
+  // two cards in one pod, the second as a helper training a share: about 1.6x one card's speed (two RTX 4090s,
+  // MOSS-Image, measured 22 Oct); the price RunPod gives is the whole pod's
+  const n = d.count === 2 ? 2 : 1, both = n === 2 ? 1.6 : 1, card = (g) => `${n === 2 ? "2× " : ""}${g.gpu}`;
+  const speedText = (g) => (g.gpu === "RTX 5090" ? "the card these speeds are measured against" : g.speed ?
+    `about ${g.speed.toFixed(g.speed < 1 ? 2 : 1)}× a 5090's speed` : "") + (n === 2 && g.speed ? " (each card)" : "");
   const deploy = (g) => el("a", {class: "btn btn-primary btn-sm", href: g.url, target: "_blank", rel: "noopener",
-    text: "Deploy ↗", title: `RunPod's deploy page with the ${g.gpu} and Fizgig's template chosen`});
+    text: "Deploy ↗", title: `RunPod's deploy page with ${n === 2 ? "two " + g.gpu + "s" : "the " + g.gpu} and Fizgig's template chosen`});
   const fits = d.gpus.filter((g) => g.vram >= min);
   if (!d.key) {
     $("pickList").replaceChildren(...fits.map((g) => el("div", {class: "pod-row"}, el("span", {class: "pod-dot"}),
-      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: `${g.gpu} · ${g.vram} GB`}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: `${card(g)} · ${g.vram} GB${n === 2 ? " each" : ""}`}),
         el("div", {class: "field-hint", text: speedText(g)})), el("div", {class: "pod-btns"}, deploy(g)))));
     $("pickNote").textContent = "Add your RunPod API key above to see which cards are free right now, their prices and what a run costs on each.";
     return;
@@ -6579,7 +6687,7 @@ function pickDraw() {
     if (!offers.length) { gone++; continue; }
     const o = offers.sort((a, b) => a.price - b.price)[0];
     if (o.price > max) { dear++; continue; }
-    rows.push({g, o, run: g.speed ? o.price * hours / g.speed : null});
+    rows.push({g, o, run: g.speed ? o.price * hours / (g.speed * both) : null});
   }
   rows.sort((a, b) => (a.run === null) - (b.run === null) || (a.run ?? a.o.price) - (b.run ?? b.o.price));
   const shown = S.pick.all ? rows : rows.slice(0, 5);
@@ -6588,7 +6696,7 @@ function pickDraw() {
       o.stock && o.stock !== "Low" ? `${o.stock.toLowerCase()} stock` : "", speedText(g),
       run !== null ? `≈ $${run.toFixed(2)} a run` : ""].filter(Boolean).join(" · ");
     return el("div", {class: "pod-row"}, el("span", {class: "pod-dot ok"}),
-      el("div", {class: "pod-main"}, el("div", {class: "pod-name"}, `${g.gpu} · ${g.vram} GB`,
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name"}, `${card(g)} · ${g.vram} GB${n === 2 ? " each" : ""}`,
         ...(i === 0 && run !== null ? [el("span", {class: "pick-best", text: "Best value"})] : [])),
         el("div", {class: "field-hint", text: sub})), el("div", {class: "pod-btns"}, deploy(g)));
   }), ...(rows.length > 5 ? [el("button", {class: "btn btn-sm pick-more", text: S.pick.all ? "Show the best 5" :
@@ -6597,7 +6705,358 @@ function pickDraw() {
   $("pickNote").textContent = (rows.length ? "" : "Nothing fits those choices right now. ") +
     [gone ? `${gone} more card${gone === 1 ? " has" : "s have"} none free right now` : "",
      dear ? `${dear} cost more than your limit` : ""].filter(Boolean).join("; ") + (gone || dear ? ". " : "") +
-    "Speeds are a rough guide from public benchmarks; prices and stock are RunPod's, from the last minute." + vol;
+    "Speeds are a rough guide from public benchmarks; prices and stock are RunPod's, from the last minute, on hosts " +
+    "that run Fizgig." + vol + (n === 2 ? " Two cards: on the pod, open Helpers > Add a helper and press Use it as a " +
+    "helper beside its other GPU, then switch Training share on (about 40% off each epoch on two RTX 4090s in " +
+    "testing; run costs here count that)." : "");
+}
+
+// ---- Helpers: other Fizgigs that render this one's previews (training never stops for them) or train a share of
+// its images. /api/helpers: {helpers, found, out, helping}; each helper's jobs are switched on its card
+S.help = {data: null, timer: 0};
+const HELP_WHERE = {lan: ["On your network", "lan"], pod: ["Pod", "pod"], tailscale: ["Tailscale", "ts"],
+  address: ["By address", ""], local: ["This computer", "lan"]};
+const HELP_ICON = {
+  previews: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11"/><path d="m12 4 3 3-3 3"/><path d="M20 17H9"/><path d="m12 14-3 3 3 3"/></svg>'};
+const svgEl = (s) => { const t = document.createElement("template"); t.innerHTML = s; return t.content.firstChild; };
+
+async function helpLoad(quiet) {
+  if (!quiet) $("helpNote").textContent = "Checking your helpers...";
+  try { S.help.data = await api("/api/helpers"); } catch (e) { $("helpNote").textContent = e.message; return; }
+  const open = $("tab-helpers").classList.contains("active");
+  if (!open) helpStrips();                // off the tab only its strips and the run card's line show
+  else if (!S.help.typing) helpDraw();    // not while speeds are being typed: a redraw would empty the boxes
+  clearTimeout(S.help.timer);           // every 3 s while one works, else every 15 s on the tab and 30 s off it
+  const busy = (S.help.data.helpers || []).some((h) => h.activity) || S.help.data.helping;
+  S.help.timer = setTimeout(() => helpLoad(true), busy ? 3000 : open ? 15000 : 30000);
+}
+
+// one line for what a helper is doing now, and how far along it is (0-1, or null for no bar)
+function helpActivity(h) {
+  const a = h.activity;
+  if (h.state === "login") return ["Its password changed or its login ran out: add it again with its password", "warn", null];
+  if (h.state === "away") return ["Not answering: is it on, awake and running Fizgig?", "muted", null];
+  if (h.build && h.build !== "same") return [{mine: "Newer Fizgig there: update this computer to use it",
+    theirs: "Older Fizgig there: update it when it's free", other: "Different Fizgig versions: update both"}[h.build] ||
+    "Different Fizgig version", "warn", null];
+  if (h.state === "elsewhere") return [`Busy helping ${h.elsewhere || "another Fizgig"}`, "muted", null];
+  if (h.state === "busy") return [`Training its own run (${h.training}): it helps again when that finishes`, "muted", null];
+  const running = (S.help.data || {}).running;
+  if (!a && (h.where === "pod" || h.where === "address") && !running && (h.previews || h.share))
+    return [h.where === "pod" ? "Idle, and billed while it runs: stop the pod on the Pods tab when you're done" :
+      "Idle, and billed while it runs if it's rented (Vast.ai): stop it on Vast's site when you're done", "warn", null];
+  if (!a) return [!(h.previews || h.share) ? "Ready" : running ? `Ready: it takes this run's next ${h.share ?
+    "round" : "preview round"}` : "Ready: it starts with this computer's next run", "", null];
+  if (a.kind === "models") return [`Getting ${a.what ? a.what + " " : "models "}${a.for ? `for ${a.for} ` : ""}` +
+    `(${a.got.toFixed(1)} of ${a.total.toFixed(1)} GB): the job starts when it has them`, "", a.got / a.total];
+  if (a.kind === "previews") return [`Rendering ${a.run ? a.run + "'s " : ""}previews for epoch ${a.epoch}` +
+    (a.queued ? ` · ${a.queued} more queued` : ""), "", a.progress];
+  if (a.kind === "share") return [a.text || `Training its share of epoch ${a.epoch}` +
+    (a.images ? ` (${a.images} images)` : ""), "", a.progress];
+  if (a.kind === "check") return ["Rendering a check picture", "", a.progress];
+  return [a.text || "Working", "", a.progress ?? null];
+}
+
+function helpJob(h, kind) {
+  const on = !!h[kind], usable = ["ready", "busy"].includes(h.state) && (!h.build || h.build === "same") &&
+    (kind !== "share" || h.share_ready !== false);
+  const title = kind === "previews" ? "Previews" : "Training share";
+  const what = kind === "previews" ? "Renders this computer's previews, so training doesn't stop for them." :
+    "Trains its share of each epoch's images alongside this GPU, then the two combine.";
+  const stat = kind === "previews" ? h.previews_stat : h.share_stat;
+  const box = el("input", {type: "checkbox", class: "switch", ...(on ? {checked: true} : {}), ...(usable ? {} : {disabled: true})});
+  const job = el("label", {class: `helper-job${on ? " on" : ""}${usable ? "" : " off-limits"}`},
+    el("span", {class: "helper-job-icon"}, svgEl(HELP_ICON[kind])),
+    el("div", {class: "helper-job-main"},
+      el("div", {class: "helper-job-title"}, title,
+        ...(kind === "share" ? [el("span", {class: "helper-exp", text: "EXPERIMENTAL"})] : []), box),
+      el("div", {class: "field-hint", text: what}),
+      ...(stat ? [el("div", {class: "helper-job-stat", text: stat})] : []),
+      ...(kind === "share" && h.share_how ? [el("div", {class: "helper-job-stat", text: h.share_how})] : []),
+      ...(kind === "share" && h.share_plan ? [(() => {
+        const good = /^(Expected[^:]*: )?worth it/i.test(h.share_plan), waiting = /^Expected: an estimate/.test(h.share_plan);
+        return el("div", {class: `helper-job-stat helper-plan${good ? " good" : waiting ? "" : " warn"}`,
+          text: h.share_plan + (on && !good && !waiting ? ". Switch Training share off: this run is faster on this " +
+            "GPU alone." : "")});
+      })()] : []),
+      // a helper that connected in follows its own Combine setting: nothing here to set for it
+      ...(kind === "share" && on && !h.inbound ? [helpEvery()] : []),
+      ...(kind === "previews" && h.check_stat ? [el("div", {class: "helper-job-stat", text: h.check_stat})] : [])));
+  box.addEventListener("change", async () => {
+    try { await api("/api/helpers/set", {id: h.id, [kind]: box.checked}); }
+    catch (e) { box.checked = !box.checked; $("helpNote").textContent = e.message; }
+    helpLoad(true);
+  });
+  return job;
+}
+
+// Training share: how many epochs each side trains before the two are combined (the trainer also combines before
+// any epoch that previews or saves, so those always hold both halves)
+function helpEvery(onlyEvery) {
+  const now = (S.help.data || {}).share_every || 3;
+  const sel = el("select", {class: "w-combo-sm", title: "Fewer combines send the LoRA back and forth less often (each " +
+    "costs two transfers); more often keeps the two sides closer together"},
+    ...[1, 2, 3, 5].map((n) => el("option", {value: n, text: n === 1 ? "every epoch" : `every ${n} epochs`,
+      ...(n === now ? {selected: true} : {})})));
+  sel.addEventListener("click", (e) => e.preventDefault());
+  sel.addEventListener("change", () => helpCall("/api/helpers/set", {id: "", every: Number(sel.value)}));
+  const send = el("input", {type: "checkbox", ...((S.help.data || {}).share_send_cache ? {checked: true} : {})});
+  send.addEventListener("change", () => helpCall("/api/helpers/set", {id: "", send_cache: send.checked}));
+  const every = el("div", {class: "helper-job-stat helper-every"}, "Combine ", sel,
+    el("span", {text: " and before every preview and save"}));
+  if (onlyEvery) return every;         // helping another's run: its cache tick is that computer's to set
+  return el("div", {}, every,
+    // inside the tile's own label: the words tick this box, not the tile's switch
+    el("div", {class: "helper-job-stat helper-send", title: "Off: the helper gets the training folder and makes " +
+      "the cache itself (with this run's own VAE and text encoder), much less to send. On: this computer's cache " +
+      "goes over instead - for a fast link", onclick: (e) => { if (e.target !== send) { e.preventDefault(); send.click(); } }},
+      send, " Send this computer's cache instead (a fast link)"),
+    helpTick("share_wait", "wait", " Start together (the run waits for the helper before its first epoch)",
+      "On: this run's first epoch waits until the helper is ready (its model loaded, its cache made or sent), so " +
+      "both sides train from the start. Off: this computer starts at once and the helper joins at the first " +
+      "round once it's ready"));
+}
+
+// a tick on the share tile, inside its label (the words tick this box, not the tile's switch)
+function helpTick(key, field, text, title) {
+  const box = el("input", {type: "checkbox", ...((S.help.data || {})[key] ? {checked: true} : {})});
+  box.addEventListener("change", () => helpCall("/api/helpers/set", {id: "", [field]: box.checked}));
+  return el("div", {class: "helper-job-stat helper-send", title,
+    onclick: (e) => { if (e.target !== box) { e.preventDefault(); box.click(); } }}, box, text);
+}
+
+function helpCard(h) {
+  const [where, cls] = HELP_WHERE[h.where] || [h.where || "", ""];
+  const [line, tone, frac] = helpActivity(h);
+  const dot = h.state === "away" || h.state === "login" ? "" : h.build && h.build !== "same" ? "warn" :
+    h.activity ? "busy" : "ok";
+  const sub = [h.gpu, h.vram ? `${h.vram} GB` : "", h.ping_ms != null ? `${h.ping_ms} ms away` : "",
+    h.url ? h.url.replace(/^https?:\/\/|\/$/g, "") : ""].filter(Boolean).join(" · ");
+  const m = h.models;
+  return el("div", {class: `helper-card${h.previews || h.share ? " on" : ""}`},
+    el("div", {class: "helper-head"},
+      el("span", {class: `pod-dot ${dot}`}),
+      el("div", {class: "pod-main"},
+        el("div", {class: "helper-name"}, h.name,
+          ...(where ? [el("span", {class: `helper-tag ${cls}`, text: where})] : []),
+          ...(h.inbound ? [el("span", {class: "helper-tag in", text: "Connected from its side",
+            title: "It connected to this Fizgig (a pod can't reach a home computer, so the home computer does the connecting)"})] : [])),
+        el("div", {class: "field-hint", text: sub})),
+      el("div", {class: "pod-btns"},
+        el("button", {class: "btn btn-sm", text: "Check picture", title: "With Previews on: this run's next preview round " +
+          "renders here and on the helper, and the two are compared (the same setup gives the same picture)",
+          ...(h.state === "ready" ? {} : {disabled: true}), onclick: () => helpCall("/api/helpers/check", {id: h.id})}),
+        el("button", {class: "btn btn-sm", text: "Remove", title: "Stop using it as a helper (the computer itself is untouched)",
+          onclick: () => helpCall("/api/helpers/remove", {id: h.id})}))),
+    el("div", {class: `helper-status ${tone}`}, el("span", {text: line}),
+      ...(frac != null ? [el("div", {class: "meter-bar"}, el("span", {style: `width:${Math.round(frac * 100)}%`}))] : [])),
+    ...(h.inbound ? (h.link ? [el("div", {class: "helper-link field-hint", text: h.link})] : [])
+      : [helpLink(h.url, h.link, h.link_mbps)]),
+    el("div", {class: "helper-jobs"}, helpJob(h, "previews"), helpJob(h, "share")),
+    ...(m ? [el("div", {class: "helper-models"}, el("span", {text: `Models for ${m.family}:`}),
+      ...m.have.map((n) => el("span", {class: "helper-model have", text: n})),
+      ...m.missing.map((n) => el("span", {class: "helper-model miss", text: n})),
+      ...(m.missing.length ? [el("span", {class: "helper-model-note", text: "fetched by itself when a job needs them"}),
+        el("button", {class: "btn btn-sm", text: "Get them now", title: "The helper downloads them now, from Hugging " +
+          "Face, so the first job doesn't wait for them", onclick: () => helpCall("/api/helpers/fetch", {id: h.id})})] : []))] : []));
+}
+
+// a helper's link: its speeds (measured, or typed in as broadband is sold, in Mb/s), Measure again, or type them
+function helpLink(url, line, mbps) {
+  const open = S.help.typing === url;
+  const up = el("input", {type: "number", class: "w-combo-sm", min: "1", step: "1", placeholder: "up",
+    value: (mbps || {}).up || ""});
+  const down = el("input", {type: "number", class: "w-combo-sm", min: "1", step: "1", placeholder: "down",
+    value: (mbps || {}).down || ""});
+  return el("div", {class: "helper-link"},
+    el("span", {class: "field-hint", text: line || "Link: not measured yet"}),
+    el("button", {class: "btn btn-sm", text: "Measure", title: "Time a few pieces each way, as a training share " +
+      "sends them", onclick: () => { $("helpNote").textContent = "Measuring the link..."; helpCall("/api/helpers/link", {url}); }}),
+    el("button", {class: "btn btn-sm", text: open ? "Cancel" : "Type speeds", title: "Your broadband's upload and " +
+      "download in Mb/s, if the measure fails or looks wrong", onclick: () => { S.help.typing = open ? "" : url; helpDraw(); }}),
+    ...(open ? [el("span", {class: "helper-link-type"}, up, el("span", {class: "field-hint", text: "up"}), down,
+      el("span", {class: "field-hint", text: "down Mb/s"}), el("button", {class: "btn btn-primary btn-sm", text: "Save",
+        onclick: () => { S.help.typing = ""; helpCall("/api/helpers/link", {url, up: up.value, down: down.value}); }}))] : []));
+}
+
+async function helpCall(path, body) {
+  try { const r = await api(path, body); if (r && r.say) $("helpNote").textContent = r.say; }
+  catch (e) { $("helpNote").textContent = e.message; }
+  helpLoad(true);
+}
+
+function helpDraw() {
+  const d = S.help.data || {};
+  const hs = d.helpers || [];
+  $("helpList").replaceChildren(...hs.map(helpCard));
+  $("helpNote").textContent = hs.length ? "" : "No helpers yet. Add one below: another computer with Fizgig, or a pod.";
+  $("helpFound").replaceChildren(...(d.found || []).map((f) => {
+    const [where] = HELP_WHERE[f.where] || [""];
+    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    return el("div", {class: "pod-row"}, el("span", {class: "pod-dot ok"}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: f.name}),
+        el("div", {class: "field-hint", text: [where, f.gpu, f.vram ? `${f.vram} GB` : ""].filter(Boolean).join(" · ")})),
+      // a pod whose password RunPod's settings give, or that this computer is logged in to: no box to fill
+      el("div", {class: "pod-btns"}, ...(f.logged_in || f.auto_login ? [] : [pw]), el("button", {class: "btn btn-primary btn-sm",
+        text: "Add as a helper", onclick: () => helpAdd(f.url, pw.value)})));
+  }));
+  // this computer's other GPU: a second Fizgig on it, as a helper
+  const lc = d.local || {gpus: []};
+  $("helpLocal").replaceChildren(...(lc.gpus || []).map((g) => {
+    const on = lc.on === g.index;
+    return el("div", {class: "pod-row"}, el("span", {class: `pod-dot ${on ? "ok" : ""}`}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: `This computer's other GPU: ${g.name}`}),
+        el("div", {class: "field-hint", text: lc.text || (on ? "In use as a helper " +
+          "(below, under Your helpers)" : `GPU ${g.index}${g.vram ? ` · ${g.vram} GB` : ""}: a second Fizgig ` +
+          "runs on it and joins as a helper, for previews, a training share or a moved run")})),
+      el("div", {class: "pod-btns"}, on ? el("button", {class: "btn btn-sm", text: "Stop using it",
+        onclick: () => helpCall("/api/helpers/local", {on: false})}) : el("button", {class: "btn btn-primary btn-sm",
+        text: "Use it as a helper", ...(lc.on != null ? {disabled: true} : {}),
+        onclick: () => helpCall("/api/helpers/local", {on: true, index: g.index})})));
+  }));
+  const out = d.out || [];
+  $("helpOut").replaceChildren(...out.flatMap((o) => {
+    const mine = d.helping && d.helping.url === o.url;
+    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    // its checkpoints list stays as it is across redraws (the ticks too); asked again only when it's opened
+    const kept = S.help.remote === o.url && S.help.panel && S.help.panel.url === o.url;
+    const panel = kept ? S.help.panel.box : el("div", {class: "helper-remote", style: S.help.remote === o.url ? "" : "display:none"});
+    if (S.help.remote === o.url && !kept) { S.help.panel = {url: o.url, box: panel}; helpRemote(o, panel); }
+    const linkRow = o.logged_in || mine ? [helpLink(o.url, o.link, o.link_mbps)] : [];
+    if (mine && d.helping.mode === "share") linkRow.push(el("div", {class: "helper-link"}, helpEvery(true)));
+    linkRow.push(helpHome(o, pw));
+    return [el("div", {class: "pod-row"}, el("span", {class: `pod-dot ${mine ? "busy" : ""}`}),
+      el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: o.name}),
+        el("div", {class: "field-hint", text: mine ? d.helping.text : o.url.replace(/^https?:\/\/|\/$/g, "")})),
+      el("div", {class: "pod-btns"}, ...(mine || o.logged_in ? [] : [pw]), mine ?
+        el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpCall("/api/helpers/help", {url: o.url, on: false})}) :
+        el("button", {class: "btn btn-primary btn-sm", text: "Help it with previews",
+          ...(d.helping ? {disabled: true} : {}), onclick: () => helpCall("/api/helpers/help",
+            {url: o.url, on: true, password: pw.value})}),
+        el("button", {class: "btn btn-sm", text: "Help it train", title: "EXPERIMENTAL: train a share of each epoch's " +
+          "images of its run on this GPU (its training folder comes here, and this computer makes the run's cache)", ...(d.helping ? {disabled: true} : {}),
+          onclick: () => helpCall("/api/helpers/help", {url: o.url, on: true, password: pw.value, mode: "share"})}),
+        el("button", {class: "btn btn-sm", text: "Its checkpoints…", title: "Its run's checkpoints: fetch the ones you " +
+          "pick and try your own prompts on them in LoRA Royale, on this GPU (type its password first if asked)",
+          onclick: () => { S.help.remotePw = pw.value; S.help.remote = S.help.remote === o.url ? "" : o.url;
+            S.help.panel = null; helpDraw(); }}))),
+      ...linkRow, panel];
+  }));
+  $("helpOutNote").textContent = [...(d.home_done || []),
+    out.length ? "" : "Your pods show here (the Pods tab), once one is running Fizgig."].filter(Boolean).join(". ");
+  helpStrips();
+  // this Fizgig is a helper right now: say so at the top, whatever it's doing
+  const here = d.helping;
+  $("helpHere").style.display = here ? "" : "none";
+  if (here) $("helpHere").replaceChildren(el("span", {class: "pod-dot warn"}),
+    el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: `This GPU is helping ${here.name}`}),
+      el("div", {class: "field-hint", text: here.text})),
+    el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpCall("/api/helpers/help", {url: here.url, on: false})}));
+}
+
+// a pod's run brought home as it saves (its previews too), and the pod deleted once that's all here and checked
+function helpHome(o, pw) {
+  const hm = o.home || {};
+  const tick = (text, on, body, title) => {
+    const box = el("input", {type: "checkbox", ...(on ? {checked: true} : {})});
+    box.addEventListener("change", () => helpCall("/api/helpers/home", {url: o.url, password: pw.value,
+      ...body(box.checked)}));
+    return el("label", {class: "helper-job-stat helper-send", title}, box, " " + text);
+  };
+  return el("div", {class: "helper-link helper-home"},
+    tick("Bring its checkpoints home as they're saved", hm.on, (v) => ({on: v}), "Each checkpoint its run saves " +
+      "comes to this computer's LoRA output folder (From pods), for LoRA Royale and Runs & outputs here"),
+    ...(hm.on ? [tick("its previews too", hm.previews, (v) => ({previews: v}), "The run's preview pictures, into " +
+      "the same folder's sample folder")] : []),
+    ...(o.pod ? [tick("Delete the pod once its run has finished and they're all home", hm.delete, (v) => ({delete: v}),
+      "Deletes the pod (its disk too) once the run has finished with nothing queued, and only once every " +
+      "checkpoint here matches the pod's copy. If that hasn't happened 15 minutes after the run finished, the pod " +
+      "is stopped instead, with its files still on it. Needs your RunPod API key (Pods tab)")] : []),
+    ...(hm.on && hm.text ? [el("span", {class: "field-hint", text: hm.text})] : []));
+}
+
+// where helpers show outside their tab: a strip on Samples (previews) and Training (training share), and a line on
+// the run card while a run uses them
+function helpStrips() {
+  const hs = ((S.help.data || {}).helpers || []).filter((h) => h.state === "ready" && (!h.build || h.build === "same"));
+  const names = (l) => l.map((h) => h.name).join(" and ");
+  const pv = hs.filter((h) => h.previews), sh = hs.filter((h) => h.share);
+  const strip = (id, list, icon, text) => {
+    $(id).style.display = list.length ? "" : "none";
+    if (list.length) $(id).replaceChildren(el("span", {class: "helper-job-icon"}, svgEl(HELP_ICON[icon])),
+      el("div", {class: "pod-main"}, ...text), el("button", {class: "btn btn-sm", text: "Helpers", onclick: () => showTab("helpers")}));
+  };
+  strip("samplesHelper", pv, "previews", [el("b", {text: names(pv)}), ` render${pv.length === 1 ? "s" : ""} this ` +
+    "computer's previews, so training doesn't stop for them. Everything below applies there as it does here."]);
+  const off = (S.help.data || {}).share_off;
+  strip("trainHelper", sh, "share", off ? [off] : [el("b", {text: names(sh)}), ` train${sh.length === 1 ? "s" : ""} ` +
+    "a share of each epoch's images alongside this GPU. ", el("span", {class: "helper-exp", text: "EXPERIMENTAL"})]);
+  const live = hs.filter((h) => h.activity && (h.activity.kind === "previews" || h.activity.kind === "share"));
+  $("runHelper").style.display = live.length ? "" : "none";
+  if (live.length) $("runHelper").replaceChildren(...live.map((h) => el("span", {},
+    el("span", {class: "pod-dot busy"}), " ", el("b", {text: h.name}), " " + helpActivity(h)[0].replace(/^R/, "r"))));
+}
+
+// another computer's run: its checkpoints, the ones you tick fetched here and opened in LoRA Royale (this GPU)
+async function helpRemote(o, box) {
+  box.replaceChildren(el("div", {class: "field-hint", text: "Asking it for its run's checkpoints..."}));
+  let r;
+  try { r = await api("/api/helpers/remote", {url: o.url, password: S.help.remotePw || ""}); S.help.remotePw = ""; }
+  catch (e) { box.replaceChildren(el("div", {class: "field-hint", text: e.message})); return; }
+  if (!r.items.length) { box.replaceChildren(el("div", {class: "field-hint", text: r.run ?
+    `${r.run} hasn't saved a checkpoint yet.` : "Nothing training there."})); return; }
+  const mb = (n) => n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : `${Math.round(n / 1e6)} MB`;
+  const epoch = (n) => (n.match(/-(\d{6})\.safetensors$/) || [])[1];
+  const ticks = r.items.map((it, i) => el("input", {type: "checkbox", ...(i < 4 ? {checked: true} : {})}));
+  const note = el("div", {class: "field-hint"});
+  const go = el("button", {class: "btn btn-primary btn-sm", text: "Get them and open LoRA Royale", onclick: async () => {
+    const items = r.items.filter((_it, i) => ticks[i].checked);
+    if (!items.length) { note.textContent = "Tick at least one."; return; }
+    go.disabled = true;
+    try {
+      const g = await api("/api/helpers/remote_get", {url: o.url, items, run: r.run, family: r.family});
+      const poll = async () => {
+        const st = await api("/api/helpers/remote_status").catch(() => ({}));
+        if (st.state === "running") {
+          note.textContent = `Fetching ${st.name || ""}: ${mb(st.done)} of ${mb(st.total)}`;
+          return setTimeout(poll, 1000);
+        }
+        go.disabled = false;
+        if (st.state !== "done") { note.textContent = st.error || "The fetch stopped."; return; }
+        note.textContent = `Here: ${g.folder}` + (st.te_note ? `. ${st.te_note}.` : "");
+        showTab("royale");
+        await royaleOpen();
+        $("ryFolder").value = g.folder;
+        if (r.family && $("ryFamily").value !== r.family) await royaleFamily(r.family);
+        royaleScan();
+      };
+      poll();
+    } catch (e) { note.textContent = e.message; go.disabled = false; }
+  }});
+  box.replaceChildren(el("div", {class: "field-hint", text: `${r.run}'s checkpoints, newest first. The ones you tick ` +
+    "come to this computer, and LoRA Royale renders them here on your prompts (with this computer's own text encoder)."}),
+    el("div", {class: "helper-remote-list"}, ...r.items.map((it, i) => el("label", {class: "checkbox-label"}, ticks[i],
+      el("span", {text: (epoch(it.name) ? `Epoch ${Number(epoch(it.name))}` : it.name === `${r.run}.safetensors` ?
+        "Final LoRA" : it.name) + ` · ${mb(it.size)}`})))),
+    el("div", {class: "field-row"}, go), note);
+}
+
+async function helpAdd(url, password) {
+  $("helpAddNote").textContent = "Connecting...";
+  try {
+    const r = await api("/api/helpers/add", {url, password});
+    $("helpAddUrl").value = ""; $("helpAddPw").value = "";
+    $("helpAddNote").textContent = r.say || "Added.";
+  } catch (e) { $("helpAddNote").textContent = e.message; }
+  helpLoad(true);
+}
+
+function wireHelpers() {
+  $("helpReload").addEventListener("click", () => helpLoad());
+  $("helpAdd").addEventListener("click", () => helpAdd($("helpAddUrl").value, $("helpAddPw").value));
+  $("helpAddUrl").addEventListener("keydown", (e) => { if (e.key === "Enter") $("helpAddPw").focus(); });
+  $("helpAddPw").addEventListener("keydown", (e) => { if (e.key === "Enter") helpAdd($("helpAddUrl").value, $("helpAddPw").value); });
 }
 
 $("tabsToggle").addEventListener("click", () =>
@@ -6606,6 +7065,7 @@ $("tabsToggle").addEventListener("click", () =>
 function wirePods() {
   $("podsReload").addEventListener("click", () => podsLoad());
   for (const id of ["pickVram", "pickCloud", "pickMax", "pickHours"]) $(id).addEventListener("input", pickDraw);
+  $("pickCount").addEventListener("change", pickLoad);
   $("pickVol").addEventListener("change", () => { S.pick.dc = $("pickVol").value; pickLoad(); });
   const add = async () => {
     try {
@@ -6686,6 +7146,7 @@ function showTab(name) {
   if (name === "training") loadCheckpoints();
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
   if (name === "pods") { podsLoad(); pickLoad(); }
+  if (name === "helpers") helpLoad();
   api("/api/state", {tab: name}).catch(() => {});
 }
 
@@ -7342,6 +7803,7 @@ function wire() {
   $("btnPause").addEventListener("click", () => start("/api/pause"));
   $("btnStop").addEventListener("click", () => start("/api/stop"));
   $("btnResume").addEventListener("click", resumeClick);
+  $("btnMove").addEventListener("click", () => { if (S.moveOpen) { S.moveOpen = false; pollRun(); } else moveOpen(); });
   const now = (what, say) => api("/api/run/now", {what}).then(() => { $("runNowSay").textContent = say; })
     .catch((e) => { $("runNowSay").textContent = e.message; });
   $("btnSampleNow").addEventListener("click", () => now("sample", "Previews are made after the current step - " +
@@ -7349,6 +7811,8 @@ function wire() {
   $("btnSaveNow").addEventListener("click", () => now("save", "The LoRA is saved after the current step, as " +
     "<name>-step<step>.safetensors beside its checkpoints."));
   wirePods();
+  wireHelpers();
+  helpLoad(true);
   wireSliderLive();
 }
 

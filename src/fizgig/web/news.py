@@ -5,6 +5,22 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "22 Oct 2026",
+        "title": "Your other GPUs, at home or in the cloud, speeding up your run",
+        "body": (
+            "A helper is another computer running Fizgig: a second PC or laptop, a second GPU in this computer, or a "
+            "RunPod or Vast.ai pod. Add one on the Helpers tab, and it renders your previews so training never stops "
+            "for them, takes over a run while you need your computer (Move to... on the run card), or trains a share "
+            "of each epoch alongside your GPU.\n\n"
+            "In a share, each GPU trains its own copy of the LoRA on its part of the images, and the copies' changes "
+            "are added into one LoRA at every combine: in testing its likeness matched a one-GPU run. On a fast "
+            "network, combine every epoch for the closest result. It pays most on long runs. Training on a pod? Your "
+            "home GPU can help it, and its checkpoints come home as they're saved."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#22-oct-2026-your-other-gpus-at-home-or-in-the-cloud-speeding-up-your-run"},
+                  {"text": "Watch the video", "href": "https://www.youtube.com/watch?v=7Ao0gE2b2qw"}],
+    },
+    {
         "date": "20 Oct 2026",
         "title": "MOSS-Image likeness sooner, and Base previews with the SFT look",
         "body": (

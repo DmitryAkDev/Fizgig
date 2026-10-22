@@ -1,5 +1,25 @@
 # Fizgig news
 
+## 22 Oct 2026: Your other GPUs, at home or in the cloud, speeding up your run
+
+**▶ [Watch: Your other GPUs speeding up your run](https://www.youtube.com/watch?v=7Ao0gE2b2qw)** (2 minutes)
+
+**A helper is another computer running Fizgig:** a second PC or laptop on your network, a second GPU in this computer, a RunPod pod or a Vast.ai instance. Add one on the new **Helpers** tab: the computers on your network and your running pods are listed for you.
+
+**Previews that never stop training.** Switch **Previews** on, on a helper's tile, and it renders your previews while your GPU keeps training. Click a preview to see which computer rendered it.
+
+**Move a run.** Need your computer back? **Move to…** on the run card pauses the run here and carries it on on the helper. **Bring it back** when you want it; if the other computer goes away, **Carry on here** takes the run back from your last save.
+
+**Train on two GPUs** (experimental). Switch **Training share** on and the helper trains a share of each epoch alongside your GPU. Each GPU trains its own copy of the LoRA on its part of the images, both starting from the same point; at every combine their changes are added into one LoRA, and both carry on from that. So you still get one LoRA that has learned from every image: on a Krea 2 test, combining every 3 epochs, its likeness matched a one-GPU run from the 9th epoch on. Every 3 epochs is the default; **on a fast network** (two GPUs in one computer, or your home network) **combine every epoch** for the closest result to one GPU, at very little time cost. The run waits for the helper before its first epoch so both start together, and the helper's tile says round by round whether the share is saving time. It pays most on long runs, where the time saved adds up.
+
+**A second GPU in this computer:** **Use it as a helper** beside **This computer's other GPU** starts a second Fizgig on that card.
+
+**Your home GPU helping a pod:** **Help another Fizgig with this GPU** renders a pod's previews or trains a share of its run. Tick **Bring its checkpoints home as they're saved**, and the pod can delete itself once they're all home and checked.
+
+**Renting a GPU:** the **Pods** tab lists the RunPod cards free right now, cheapest per run first, with one card or two. On RunPod's page, add a 300 GB **Volume disk** before you deploy ([how](https://github.com/shootthesound/Fizgig/blob/master/docker/README.md#give-it-a-disk-on-runpods-deploy-page)). Fizgig runs on [Vast.ai](VAST.md) too.
+
+Both computers need this version: update Fizgig on your computers, and restart your pods. [Helpers guide](HELPERS.md) · [Training share](TRAINING_SHARE.md)
+
 ## 20 Oct 2026: MOSS-Image likeness sooner, and Base previews with the SFT look
 
 **▶ [Watch: Training MOSS-Image LoRAs in Fizgig 8.8.1](https://www.youtube.com/watch?v=UCoCtM8yrBk)** (2 minutes)

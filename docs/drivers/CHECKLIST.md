@@ -33,6 +33,7 @@ Most people train on 12–24 GB cards, so a family isn't finished until it has b
 - [ ] **Fine-tune plans fit**, if the family fine-tunes: `ft_spec`'s memory figures (`overhead_gb`, `stream_base_gb`, `calib_mp`, `act_gb_per_mp`) come from measured window peaks at two resolutions, and a fine-tune finishes under `FIZGIG_SIM_VRAM_GB=16` and `=24` with the fewest windows that fit.
 - [ ] **The workbench renders on a small card:** a Repair Studio render with Auto precision and swap under `FIZGIG_SIM_VRAM_GB=12`.
 - [ ] The text encoder fits the smallest card you support on its own (it runs alone while caching); if it doesn't, give it a quantised fallback as Qwen 2.1's does.
+- [ ] **Its other builds are indexed:** every published build of the text encoder that the driver's loader takes is in `text_encoder_builds`, measured with `scripts/check_te_builds.py` ([Text encoder builds](README.md#text-encoder-builds)), so helpers can fetch the exact build a run used and a lighter one to try prompts with.
 
 ## Workbench
 

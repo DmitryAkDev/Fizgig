@@ -471,6 +471,8 @@ def fetch(families, models_dir=None, repo_dir=REPO_DIR, token=None, include_opti
         from fizgig import user_data
         user_data.migrate()
     prefs_file = os.path.join(repo_dir, "user_data", "prefs.json")
+    if os.environ.get("FIZGIG_USER_DATA") and os.path.normcase(os.path.abspath(repo_dir)) == os.path.normcase(REPO_DIR):
+        prefs_file = os.path.join(os.environ["FIZGIG_USER_DATA"], "prefs.json")    # a second Fizgig's own settings
     if not dry_run:
         os.makedirs(models_dir, exist_ok=True)
     prefs = _load_prefs(prefs_file)
