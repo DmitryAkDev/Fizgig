@@ -1053,6 +1053,10 @@ function podCard() {
     el("div", {class: "card-title"}, el("span", {text: "Vast.ai"})),
     el("div", {class: "card-desc", text: "Fizgig is running on a rented GPU (a Vast.ai instance). These settings only appear here."}),
     el("div", {class: "card-content"},
+      P.https ? el("div", {class: "field-hint"}, "Its https address (new each time the instance starts): ",
+        el("a", {href: P.https, target: "_blank", rel: "noopener", text: P.https}),
+        location.protocol === "http:" ? " - use it rather than this plain http one: your password and login travel " +
+        "encrypted there." : "") : null,
       el("label", {class: "checkbox-label"}, on, " Stop this instance when a training run finishes"),
       el("div", {class: "field-hint", text: "Only after a run completes on its own - never after a pause, a stop or a " +
         "failure, and with a queue only after its last run. A two-minute countdown you can cancel comes first, on any " +

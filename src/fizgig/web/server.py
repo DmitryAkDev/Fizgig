@@ -2467,7 +2467,8 @@ class Handler(BaseHTTPRequestHandler):
                                       "key_env": bool((os.environ.get("RUNPOD_STOP_API_KEY") or "").strip()),
                                       "pod_id": __import__("fizgig.web.pod_stop", fromlist=["x"]).pod_id(),
                                       "storage": pod_storage(), "provider": "vast" if on_vast() and not on_runpod()
-                                      else "runpod"}
+                                      else "runpod", "https": __import__("fizgig.web.pod_stop",
+                                                                         fromlist=["x"]).tunnels().get("web", "")}
                               if on_runpod() or on_vast() else None,     # the rented GPU's own card
                               "gpu_env_locked": bool(os.environ.get("CUDA_VISIBLE_DEVICES"))})
         if path == "/api/state":
@@ -3036,6 +3037,8 @@ class Handler(BaseHTTPRequestHandler):
                 # proxy adds - the LAST in X-Forwarded-For (earlier ones are whatever the visitor sent). Off a pod the
                 # header could be forged outright, so the connection's own address counts.
                 fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip() if on_runpod() else ""
+                if on_vast() and self.client_address[0] == "127.0.0.1":   # through the Vast image's https tunnel:
+                    fwd = (self.headers.get("Cf-Connecting-Ip") or "").strip()  # Cloudflare names the visitor
                 ip, now = fwd or self.client_address[0], time.time()
                 with _login_lock:
                     n, until, last = _login_fails.get(ip, (0, 0.0, 0.0))
@@ -3444,9 +3447,10 @@ class Handler(BaseHTTPRequestHandler):
                 if on_runpod():
                     pid = pod_stop.pod_id()
                     base = f"https://{pid}-8081.proxy.runpod.net/" if pid else ""
-                elif on_pod():                      # a Vast.ai instance: its public address and 8081's port there
+                elif on_pod():                      # a Vast.ai instance: its https tunnel, else its public address
                     ip, vp = os.environ.get("PUBLIC_IPADDR"), os.environ.get("VAST_TCP_PORT_8081")
-                    base = f"http://{ip}:{vp}/" if ip and vp else ""
+                    web = pod_stop.tunnels().get("web", "")
+                    base = web.rstrip("/") + "/" if web else f"http://{ip}:{vp}/" if ip and vp else ""
                 else:
                     ip = lan_ip()
                     base = f"http://{ip}:{self.server.server_address[1]}/" if ip else ""

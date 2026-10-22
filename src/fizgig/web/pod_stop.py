@@ -20,6 +20,17 @@ def on_pod() -> bool:
     return os.environ.get("FIZGIG_POD", "0") not in ("0", "") or bool(os.environ.get("RUNPOD_POD_ID"))
 
 
+def tunnels() -> dict:
+    """The Vast image's HTTPS addresses (docker/entrypoint_vast.sh: Cloudflare quick tunnels), {"web": url, "files":
+    url} - new each time the instance starts; {} without them."""
+    try:
+        with open("/tmp/fizgig_tunnels.json", encoding="utf-8") as f:
+            d = json.load(f)
+        return {k: v for k, v in d.items() if isinstance(v, str) and v.startswith("https://")}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
 def file_manager():
     """The pod's file manager (filebrowser on port 8080, started by the pod image's entrypoint) -> {url, login}, or
     None off a pod or without it. Its login is admin with the pod's password: "exact", "padded" (filebrowser
@@ -36,8 +47,10 @@ def file_manager():
             login = f.read().strip()
     except OSError:
         login = "padded" if len(os.environ.get("VNC_PASSWORD", "")) < 12 else "exact"
-    # a Vast.ai instance: its public address and the port Vast mapped 8080 to (plain http, as Vast serves ports)
-    url = (f"http://{os.environ['PUBLIC_IPADDR']}:{os.environ['VAST_TCP_PORT_8080']}/" if vast and not
+    # a Vast.ai instance: its https tunnel (the Vast image's), else its public address and the port Vast mapped 8080
+    # to (plain http, as Vast serves ports)
+    url = ((tunnels().get("files", "").rstrip("/") + "/" if tunnels().get("files") else
+            f"http://{os.environ['PUBLIC_IPADDR']}:{os.environ['VAST_TCP_PORT_8080']}/") if vast and not
            os.environ.get("RUNPOD_POD_ID") else f"https://{pid}-8080.proxy.runpod.net/")
     return {"url": url, "login": login if login in ("exact", "padded", "none") else "exact"}
 
