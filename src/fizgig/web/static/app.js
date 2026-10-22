@@ -6773,6 +6773,8 @@ function helpJob(h, kind) {
         ...(kind === "share" ? [el("span", {class: "helper-exp", text: "EXPERIMENTAL"})] : []), box),
       el("div", {class: "field-hint", text: what}),
       ...(stat ? [el("div", {class: "helper-job-stat", text: stat})] : []),
+      ...(kind === "previews" && on && (S.help.data || {}).previews_off ?
+        [el("div", {class: "helper-job-stat helper-plan warn", text: S.help.data.previews_off})] : []),
       ...(kind === "share" && h.share_how ? [el("div", {class: "helper-job-stat", text: h.share_how})] : []),
       ...(kind === "share" && h.share_plan ? [(() => {
         const good = /^(Expected[^:]*: )?worth it/i.test(h.share_plan), waiting = /^Expected: an estimate/.test(h.share_plan);
@@ -6987,7 +6989,8 @@ function helpStrips() {
     if (list.length) $(id).replaceChildren(el("span", {class: "helper-job-icon"}, svgEl(HELP_ICON[icon])),
       el("div", {class: "pod-main"}, ...text), el("button", {class: "btn btn-sm", text: "Helpers", onclick: () => showTab("helpers")}));
   };
-  strip("samplesHelper", pv, "previews", [el("b", {text: names(pv)}), ` render${pv.length === 1 ? "s" : ""} this ` +
+  const pvOff = (S.help.data || {}).previews_off;
+  strip("samplesHelper", pv, "previews", pvOff ? [pvOff] : [el("b", {text: names(pv)}), ` render${pv.length === 1 ? "s" : ""} this ` +
     "computer's previews, so training doesn't stop for them. Everything below applies there as it does here."]);
   const off = (S.help.data || {}).share_off;
   strip("trainHelper", sh, "share", off ? [off] : [el("b", {text: names(sh)}), ` train${sh.length === 1 ? "s" : ""} ` +

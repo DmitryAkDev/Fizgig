@@ -285,6 +285,7 @@ def _read_sample_override(output_dir):
 
 
 HELPER_PREVIEWS = ".helper_previews.json"   # written by the web UI while a helper renders this run's previews
+HELPER_PREVIEWS_OFF = ".helper_previews_off.json"   # the trainer's: what keeps this run's previews on this GPU
 HELPER_ROUNDS = ".helper_rounds"             # <output_dir>/.helper_rounds/<epoch>/: a round handed to the helper
 
 
@@ -2156,6 +2157,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 yield int(ep) - 1
             idle = time.time()
 
+    if share_worker is None:
+        # what keeps this run's previews on this GPU (a helper renders a normal LoRA run's only), for the web UI to say
+        _pv_off = ("a slider's previews" if slider else "an edit LoRA's previews" if ref_latents else
+                   "a fine-tune's previews" if finetune else
+                   "previews on a separate preview model (such as Klein's Distilled)" if ckpt_previews is not None else "")
+        _write_json(os.path.join(output_dir, HELPER_PREVIEWS_OFF), {"run": output_name, "launch": _launch, "why": _pv_off})
+        if _pv_off and _helper_previews(output_dir):
+            logger.info(f"[helpers] this run's previews render on this GPU: helpers don't render {_pv_off} yet")
     if share_worker is None and _share_ok():
         # Start together (the Helpers tab's tick): while the web UI is getting this run's helper ready, the first
         # epoch waits for it, so both sides train from the start. Unticked, the helper leaving or its start giving

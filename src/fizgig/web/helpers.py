@@ -643,6 +643,7 @@ def listing():
                  home=home_status(o.get("url")), pod="proxy.runpod.net" in str(o.get("url")))
     return {"helpers": rows, "found": found, "out": out, "share_every": _share_every(), "home_done": _home_done[-3:],
             "share_off": _off_line(setup) if setup and setup.get("off") else "", "running": bool(out_dir),
+            "previews_off": _previews_off(out_dir, run),
             "share_send_cache": _send_cache(), "share_wait": _share_wait(), "local": local_status(),
             "helping": {k: _out.get(k) for k in ("name", "url", "text", "mode")} if _out.get("url") else None}
 
@@ -2672,6 +2673,14 @@ def _plain(e, n=200):
     """An error's last line, short: what went wrong, not the traceback."""
     lines = [x.strip() for x in str(e).splitlines() if x.strip()]
     return (lines[-1] if lines else type(e).__name__)[:n]
+
+
+def _previews_off(out_dir, run):
+    """The line saying why the run going now keeps its previews on this GPU (the trainer's note), or ""."""
+    n = _read(os.path.join(out_dir, ".helper_previews_off.json"), {}) if out_dir else {}
+    if not (n and n.get("why") and n.get("run") == run):
+        return ""
+    return f"This run's previews render on this GPU: helpers don't render {n['why']} yet"
 
 
 def _off_line(setup):
