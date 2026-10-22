@@ -164,6 +164,10 @@ inside the app instead.
 
 Two more exist for unusual cases: `FETCH_MODELS_EXTRA` passes extra flags to the downloader, and `FIZGIG_REPO` points the pod at a fork.
 
+## On Vast.ai
+
+The same image runs on Vast.ai, with its own template: see [Fizgig on Vast.ai](../docs/VAST.md).
+
 ## The classic template (remote desktop)
 
 For a while there are two templates. The one above is the new Fizgig in a browser tab. **[Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)** is the previous pod: the classic desktop app in a remote desktop on port 6080, for anyone partway through a big job who wants to finish it on what they know.
