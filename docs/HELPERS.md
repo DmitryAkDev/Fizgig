@@ -120,6 +120,8 @@ A pod's own **Stop the pod when the run ends** waits while this computer brings 
 
 ## Not yet
 
-- Sliders, edit previews, fine-tunes, and previews on a separate preview checkpoint (Klein's Distilled) render on your own GPU.
-- One helper trains a run's share at a time, and a helper trains a share for one computer at a time.
-- A run moves only if it trains from one training folder (see [Move a run](MOVE_RUN.md#what-can-move)).
+What helpers don't do yet:
+
+- **Some previews stay on your own GPU.** A helper renders the previews of a normal LoRA run. For a slider, an edit LoRA, a full fine-tune, or a run that previews on a different model from the one it trains on (Klein previewing on Distilled while it trains on Base), the previews render on your GPU even with a helper's **Previews** on. Training is the same either way.
+- **A run shares with one helper.** A training share splits the images between your GPU and one helper, not several. And a helper trains for one computer at a time: if a second computer asks while it's busy, it's told the helper is taken.
+- **A run moves only if all its pictures are in its Training folder.** A run that also trains from other folders, such as a second subject's for **Your subject and other people** or several Multi Concept folders, can't move yet: **Move to…** says so. See [Move a run](MOVE_RUN.md#what-can-move).
