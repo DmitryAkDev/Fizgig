@@ -124,4 +124,4 @@ What helpers don't do yet:
 
 - **Some previews stay on your own GPU.** A helper renders the previews of a normal LoRA run. For a slider, an edit LoRA, a full fine-tune, or a run that previews on a different model from the one it trains on (Klein previewing on Distilled while it trains on Base), the previews render on your GPU even with a helper's **Previews** on. Training is the same either way.
 - **A run shares with one helper.** A training share splits the images between your GPU and one helper, not several. And a helper trains for one computer at a time: if a second computer asks while it's busy, it's told the helper is taken.
-- **A run moves only if all its pictures are in its Training folder.** A run that also trains from other folders, such as a second subject's for **Your subject and other people** or several Multi Concept folders, can't move yet: **Move to…** says so. See [Move a run](MOVE_RUN.md#what-can-move).
+- **A fine-tune can't move.** Every LoRA run can, with all its folders: see [Move a run](MOVE_RUN.md#what-can-move).

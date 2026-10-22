@@ -3441,9 +3441,25 @@ def _out_share_loop(c, me):
 # checkpoints, previews, logs and state brought here, and resumed here.
 # =====================================================================================================================
 MOVED_FILE = ".fizgig_moved.json"     # in the run's output folder here while it trains elsewhere: where it went
-# a run that trains from more than its training folder can't move yet
-_MOVE_OTHER = (("FAMILY_CONCEPT_DIR", "a second subject's folder"), ("FAMILY_EDIT_DIR", "an edit run's folders"),
-               ("FAMILY_SLIDER_DIR", "a slider's folders"), ("FAMILY_FT_REG_DIR", "a regularisation folder"))
+# the folders and files a run names besides its training folder: they go with it (dirs/<key>/<its name>/...,
+# files/<key>/<name>) and come back the same way, so every LoRA kind moves
+_MOVE_DIRS = ("FAMILY_CONCEPT_DIR", "FAMILY_CONCEPT_DIR3", "FAMILY_CONCEPT_DIR4", "FAMILY_EDIT_DIR",
+              "FAMILY_EDIT_EXTRAS_DIR", "FAMILY_SLIDER_DIR")
+_MOVE_FILES = ("FAMILY_EDIT_REF", "SAMPLE_REFERENCE", "METADATA_THUMBNAIL")
+
+
+def _move_extras(values):
+    """The run's other folders and files that are there: ({key: folder}, {key: file})."""
+    dirs = {k: str(values.get(k) or "").strip() for k in _MOVE_DIRS}
+    files = {k: str(values.get(k) or "").strip() for k in _MOVE_FILES}
+    return ({k: d for k, d in dirs.items() if d and os.path.isdir(d)},
+            {k: f for k, f in files.items() if f and os.path.isfile(f)})
+
+
+def _dir_name(d):
+    return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", os.path.basename(os.path.normpath(d))).strip(" .")[:80] or "images"
+
+
 _mv = {"state": ""}       # this computer's run: state (moving / moved / back / failed), text, progress, to, url, tag ...
 _mvin = {}                # tag -> a run moved here: {run, folder, output_dir, base, started, gone}
 
@@ -3552,11 +3568,13 @@ def move_start(hid, now=False):
         raise ValueError("Nothing is training here to move (a run still making its cache can move once it trains).")
     desc = s.get_family(r["family"] or "")
     v = dict(r["values"] or {})
-    if desc is None or r["family"] == s.refmod.KEY or r["resume_mode"] == "ft" or s.form._kind(desc, v) != "standard":
-        raise ValueError("Only a LoRA run can move: not a fine-tune, an edit run, a slider or a RefMod.")
-    other = next((why for k, why in _MOVE_OTHER if str(v.get(k) or "").strip()), "")
-    if other:
-        raise ValueError(f"This run trains from {other} as well as its training folder: it can't move yet.")
+    if desc is None or r["family"] == s.refmod.KEY or r["resume_mode"] == "ft" or s.form._kind(desc, v) == "finetune":
+        raise ValueError("A fine-tune or a RefMod can't move: LoRA runs move (standard, edit and slider).")
+    gone = [k for k in _MOVE_DIRS + _MOVE_FILES if str(v.get(k) or "").strip() and not (
+        os.path.isdir(str(v[k]).strip()) if k in _MOVE_DIRS else os.path.isfile(str(v[k]).strip()))]
+    if gone:
+        raise ValueError(f"It names {str(v[gone[0]]).strip()}, which isn't on this computer any more, so it can't "
+                         "go with the run.")
     if now and running and not s.launch.latest_state(r["output_dir"], r["lora"]):
         raise ValueError("It hasn't saved yet, so it can't move now: move it at the end of this epoch instead.")
     _mv.clear()
@@ -3581,8 +3599,9 @@ def _move_shas(out_dir, name, setup):
 
 
 def _move_pack(out_dir, name, state, folder, values):
-    """The run as one file: its training folder (pictures, captions, the dataset's own fizgig_*.json), its saved
-    state, loss log, loss graph and previews, and a context LoRA."""
+    """The run as one file: its training folder (pictures, captions, the dataset's own fizgig_*.json), the other
+    folders and files it names (_MOVE_DIRS, _MOVE_FILES), its saved state, loss log, loss graph and previews, and a
+    context LoRA."""
     from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
     cap = (str(values.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt").lower()
     exts = {e.lower() for e in IMAGE_EXTENSIONS} | {cap}
@@ -3594,6 +3613,15 @@ def _move_pack(out_dir, name, state, folder, values):
             if os.path.isfile(p) and (os.path.splitext(b)[1].lower() in exts or
                                       (b.startswith("fizgig_") and b.endswith(".json"))):
                 tf.add(p, arcname=f"images/{b}")
+        dirs, files = _move_extras(values)
+        for k, d in dirs.items():
+            for p in sorted(glob.glob(os.path.join(d, "*"))):
+                b = os.path.basename(p)
+                if os.path.isfile(p) and (os.path.splitext(b)[1].lower() in exts or
+                                          (b.startswith("fizgig_") and b.endswith(".json"))):
+                    tf.add(p, arcname=f"dirs/{k}/{_dir_name(d)}/{b}")
+        for k, f in files.items():
+            tf.add(f, arcname=f"files/{k}/{os.path.basename(f)}")
         tf.add(state, arcname=f"out/{os.path.basename(state)}")
         for extra in ("loss_log", "sample", f".fizgig_loss_{name}.jsonl"):
             if os.path.exists(os.path.join(out_dir, extra)):
@@ -3664,7 +3692,9 @@ def _move_work(h, now):
             f"Sending the run to {to}: {size * f / 2 ** 20:.0f} of {size / 2 ** 20:.0f} MB", f, log=False))
         body = {"tag": tag, "family": fam, "values": values, "run": name, "state": os.path.basename(state),
                 "folder": os.path.basename(os.path.normpath(folder)) or "images", "lead": socket.gethostname(),
-                "precision": setup.get("precision") or "", "files": pr.get("files") or {}}
+                "precision": setup.get("precision") or "", "files": pr.get("files") or {},
+                "dirs": {k: _dir_name(d) for k, d in _move_extras(values)[0].items()},
+                "extra_files": {k: os.path.basename(f) for k, f in _move_extras(values)[1].items()}}
         _mv_say(f"{to} is getting the run ready")
         said = ""
         while True:
@@ -3769,6 +3799,8 @@ def _unpack_move(tar, base, folder, out_dir):
                 dest = os.path.join(base, m.name)
             elif parts[0] in ("images", "out") and len(parts) > 1:
                 dest = os.path.join(folder if parts[0] == "images" else out_dir, *parts[1:])
+            elif parts[0] in ("dirs", "files") and len(parts) > 2:     # the run's other folders and files
+                dest = os.path.join(base, *parts)
             else:
                 continue
             if m.isdir():
@@ -3846,6 +3878,20 @@ def move_in(body):
     labels = {**s.launch.PRECISION_LABELS, **dict(desc.precision_labels or ())}
     if body.get("precision") in labels:          # the precision it trained at there (Auto decided there)
         v["FAMILY_PRECISION"] = labels[body["precision"]]
+    rec["dirs"] = {}
+    for k, n in (body.get("dirs") or {}).items():         # its other folders and files: where they landed here
+        if k in _MOVE_DIRS:
+            d = os.path.join(rec["base"], "dirs", k, _dir_name(str(n)))
+            if not os.path.isdir(d):
+                raise ValueError("One of the run's folders didn't arrive: move it again.")
+            v[k] = rec["dirs"][k] = d
+    for k, n in (body.get("extra_files") or {}).items():
+        if k in _MOVE_FILES:
+            f = os.path.join(rec["base"], "files", k, os.path.basename(str(n)))
+            if not os.path.isfile(f):
+                raise ValueError("One of the run's files didn't arrive: move it again.")
+            v[k] = f
+    _mvin_save()
     if str(v.get("CONTEXT_LORA_PATH") or "").strip():
         v["CONTEXT_LORA_PATH"] = os.path.join(rec["base"], "context.safetensors")
         if not os.path.isfile(v["CONTEXT_LORA_PATH"]):
@@ -3935,10 +3981,12 @@ def move_out(body):
             if re.fullmatch(re.escape(name) + r"-\d{6}-state", top) and top != keep:
                 continue                     # only the newest state: the one it carries on from
             files.append({"name": rel, "size": os.path.getsize(p)})
-    for p in sorted(glob.glob(os.path.join(rec["folder"], "*"))):      # captions and exclusions changed here
-        b = os.path.basename(p)
-        if os.path.isfile(p) and (b.lower().endswith(".txt") or (b.startswith("fizgig_") and b.endswith(".json"))):
-            files.append({"name": "images/" + b, "size": os.path.getsize(p), "folder": True})
+    # captions and exclusions changed here: the training folder's, and the run's other folders'
+    for prefix, d in [("images/", rec["folder"])] + [(f"dirs/{k}/", d) for k, d in (rec.get("dirs") or {}).items()]:
+        for p in sorted(glob.glob(os.path.join(d, "*"))):
+            b = os.path.basename(p)
+            if os.path.isfile(p) and (b.lower().endswith(".txt") or (b.startswith("fizgig_") and b.endswith(".json"))):
+                files.append({"name": prefix + b, "size": os.path.getsize(p), "folder": True})
     return {"files": files, "state": "" if finished else keep, "finished": finished}
 
 
@@ -3950,6 +3998,10 @@ def move_piece(tag, name, offset=0, n=PIECE):
     name = str(name or "")
     if name.startswith("images/"):          # a caption or the dataset's own json, from its training folder here
         p = os.path.join(rec["folder"], name[7:]) if _SAFE_FILE.match(name[7:]) else None
+    elif name.startswith("dirs/"):          # ... or from one of its other folders here
+        _d, k, b = (name.split("/", 2) + ["", ""])[:3]
+        d = (rec.get("dirs") or {}).get(k)
+        p = os.path.join(d, b) if d and _SAFE_FILE.match(b) else None
     else:
         p = _inside(rec["output_dir"], name)
     if not p or not os.path.isfile(p):
@@ -3986,8 +4038,15 @@ def _back_work(now):
                 break
             _mv_say(f"{to}: {a.get('text') or 'pausing it'}", log=False)
             time.sleep(4)
-        dest_of = lambda n: ((os.path.join(folder_here, n[7:]) if folder_here and _SAFE_FILE.match(n[7:]) else None)
-                             if n.startswith("images/") else _inside(out_dir, n))
+        dirs_here = {k: str((_mv.get("values") or {}).get(k) or "").strip() for k in _MOVE_DIRS}
+
+        def dest_of(n):
+            if n.startswith("images/"):
+                return os.path.join(folder_here, n[7:]) if folder_here and _SAFE_FILE.match(n[7:]) else None
+            if n.startswith("dirs/"):            # a caption from one of its other folders: back into that folder
+                _d, k, b = (n.split("/", 2) + ["", ""])[:3]
+                return os.path.join(dirs_here[k], b) if dirs_here.get(k) and _SAFE_FILE.match(b) else None
+            return _inside(out_dir, n)
         files = [f for f in a["files"] if dest_of(f["name"]) and not f["name"].endswith("_dop_targets.pt")]
         if a.get("state") and not re.fullmatch(re.escape(name) + r"-\d{6}-state", str(a["state"])):
             raise ValueError(f"{to} named a state that isn't this run's")
@@ -3996,7 +4055,7 @@ def _back_work(now):
             dest = dest_of(f["name"])
             size = int(f["size"])
             if (os.path.isfile(dest) and os.path.getsize(dest) == size and not f["name"].endswith(".json")
-                    and not f["name"].startswith("images/")):
+                    and not f["name"].startswith(("images/", "dirs/"))):
                 got += size
                 continue                     # a preview or checkpoint already here
             os.makedirs(os.path.dirname(dest), exist_ok=True)
