@@ -51,7 +51,7 @@ DEFAULTS = {
     "FAMILY_DOP_TRIGGER3": "", "FAMILY_DOP_CLASS3": "", "FAMILY_DOP_TRIGGER4": "", "FAMILY_DOP_CLASS4": "",
     "COMPILE_BLOCKS": "Auto", "SAVE_STATE": True,
     "FAMILY_SUBJECTS": "1 subject", "FAMILY_PEOPLE_MODE": "Off - a normal LoRA", "FAMILY_SUBJECT_FIX": False,
-    "FAMILY_MP_MANUAL": False, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
+    "FAMILY_MP_MANUAL": False, "FAMILY_MP_FACECROPS_FIRST": True, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
@@ -356,6 +356,10 @@ def form(desc):
              "No joining or guessing: Fizgig trains on your captions as they are. Write each subject's joined word "
              "(zwxemwoman) into the captions yourself. The side-by-side pictures and the training recipe stay on.",
              link={"href": GUIDE + "#captioning-it-yourself", "text": "How to caption for this"}),
+        _row("FAMILY_MP_FACECROPS_FIRST", "Side-by-side pictures: face crops first", "check",
+             "The 16 pictures of your subject beside a stranger use Image Prep's face crops (FaceCrop_ files) "
+             "first, then photos where a face is found. Untick to pick from every photo, e.g. for more body "
+             "shape. A face crop is never cropped further; other photos are framed on the face, never zoomed."),
         _row("FAMILY_SUBJECT_FIX", "Correct a trigger word, or what a subject is", "check",
              "Fizgig reads each subject's trigger word, and what they are, from their captions. Tick this only if "
              "the line under a subject shows the wrong word."),
@@ -868,7 +872,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not dop:
         hidden.add("FAMILY_SUBJECT_FIX")
     if not (kind == "standard" and values.get("FAMILY_MULTI_PERSON")):
-        hidden.add("FAMILY_MP_MANUAL")
+        hidden |= {"FAMILY_MP_MANUAL", "FAMILY_MP_FACECROPS_FIRST"}
         hidden |= set(KIND_ROWS)            # what a subject is only changes the group-picture recipe
     if not (dop and values.get("FAMILY_SUBJECT_FIX")):
         hidden |= {"FAMILY_DOP_TRIGGER", "FAMILY_DOP_CLASS"} | DOP_EXTRA_ROWS

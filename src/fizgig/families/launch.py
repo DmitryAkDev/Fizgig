@@ -1302,6 +1302,8 @@ def plan(desc, inputs):
     if people:                          # the side-by-side pictures: people only (an animal or a style has none)
         cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "multi_person.py"),
                "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        if not inputs.get("FAMILY_MP_FACECROPS_FIRST", True):
+            cmd.append("--no_face_first")
         for f, s, w in people:
             cmd += ["--subject", f, s["fused"], w]
         p.stages.append(Stage("Multi-person composites", cmd))
