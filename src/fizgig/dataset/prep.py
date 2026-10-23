@@ -17,6 +17,7 @@ import os
 import shutil
 
 from PIL import Image
+from fizgig.utils.upright import open_upright, upright_size
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif'}
 LOOK_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
@@ -82,7 +83,7 @@ def image_files(folder):
 
 
 def load_image(path):
-    img = Image.open(path)
+    img = open_upright(path)
     if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
         return img.convert('RGBA')
     return img.convert('RGB')
@@ -114,7 +115,7 @@ def source_stats(folder, max_sample=40):
     for p in files[:max_sample]:
         try:
             with Image.open(p) as im:
-                sizes.append(im.size)
+                sizes.append(upright_size(im))
         except Exception:
             pass
     if not sizes:

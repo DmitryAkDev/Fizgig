@@ -1751,7 +1751,8 @@ def _media_size(path):
             if ext in _IMAGES:
                 from PIL import Image
                 with Image.open(path) as im:
-                    wh = [int(im.width), int(im.height)]
+                    from fizgig.utils.upright import upright_size
+                    wh = list(upright_size(im))
             else:
                 import cv2
                 cap = cv2.VideoCapture(path)
@@ -1836,6 +1837,8 @@ def _thumb(path, size=320):
         with _thumb_slots:
             with Image.open(path) as im:
                 im.draft("RGB", (size * 2, size * 2))      # a JPEG decodes at a reduced size: much faster
+                from fizgig.utils.upright import upright
+                im = upright(im)
                 im.thumbnail((size, size))
                 buf = io.BytesIO()
                 im.convert("RGB").save(buf, "JPEG", quality=82)

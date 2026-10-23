@@ -18,6 +18,7 @@ import json
 import os
 import random
 import re
+from fizgig.utils.upright import open_upright
 
 REPO = "ShootTheSound/fizgig-multi-person-strangers"
 REVISION = "8aeb77502234781cb5dca524994c80efcaa51024"      # pinned: a run's composites never change underneath it
@@ -298,8 +299,8 @@ def build(subjects, ext=".txt", seed=42, log=print):
             path, desc = people[order[k % len(order)]]
             mine = rng.choice(photos)
             left = rng.random() < 0.5
-            a = _square(Image.open(os.path.join(s["folder"], mine)).convert("RGB"))
-            b = _square(Image.open(path).convert("RGB"))
+            a = _square(open_upright(os.path.join(s["folder"], mine)).convert("RGB"))
+            b = _square(open_upright(path).convert("RGB"))
             sheet = Image.new("RGB", (2 * PANEL, PANEL))
             sheet.paste(a if left else b, (0, 0))
             sheet.paste(b if left else a, (PANEL, 0))

@@ -35,7 +35,9 @@ def _wanted(name):
 def _thumb(path, side=96):
     try:
         from PIL import Image
+        from fizgig.utils.upright import upright
         with Image.open(path) as im:
+            im = upright(im)
             im.thumbnail((side, side))
             buf = io.BytesIO()
             im.convert("RGB").save(buf, "JPEG", quality=70)

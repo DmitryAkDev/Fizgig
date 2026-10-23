@@ -40,6 +40,7 @@ already at Max Train Epochs.
 import os
 import re
 from dataclasses import dataclass, field
+from fizgig.utils.upright import upright_size
 
 PRECISION_LABELS = {"auto": "Auto (fits your free VRAM)", "bf16": "bf16 (full precision)",
                     "int8": "INT8 (8-bit, fastest)", "nf4": "4-bit NF4 (smallest)",
@@ -328,7 +329,8 @@ def pair_problems(after_dir, before_dir, caption_ext=".txt", exts=PAIR_EXTS):
         if m and e.lower() in PAIR_EXTS:     # the original (the first): extra references may be any shape
             try:
                 with Image.open(os.path.join(after_dir, f)) as ia, Image.open(os.path.join(before_dir, m[0])) as ib:
-                    ra, rb = ia.width / ia.height, ib.width / ib.height
+                    (wa, ha), (wb, hb) = upright_size(ia), upright_size(ib)
+                    ra, rb = wa / ha, wb / hb
                 if abs(ra - rb) / ra > 0.02:
                     shapes.append(f)
             except OSError:
