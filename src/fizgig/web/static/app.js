@@ -1723,7 +1723,18 @@ function previewGrid(items, prompts, eager) {
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),
             prompts[i] ? el("span", {text: " · " + prompts[i]}) : null)), it) : null); })));
   }
-  return el("div", {class: "gallery prompt-grid-wrap"}, table);
+  // a second scroll bar over the grid, in step with the one under it (a long grid puts that one far down the page)
+  const wrap = el("div", {class: "gallery prompt-grid-wrap"}, table);
+  const spacer = el("div", {class: "prompt-grid-spacer"});
+  const top = el("div", {class: "prompt-grid-top"}, spacer);
+  const follow = (from, to) => from.addEventListener("scroll", () => {    // the echo finds them level and stops
+    if (to.scrollLeft !== from.scrollLeft) to.scrollLeft = from.scrollLeft; });
+  follow(top, wrap); follow(wrap, top);
+  new ResizeObserver(() => {
+    spacer.style.width = table.scrollWidth + "px";
+    top.hidden = table.scrollWidth <= wrap.clientWidth;
+  }).observe(table);
+  return el("div", {}, top, wrap);
 }
 
 async function loadGallery() {

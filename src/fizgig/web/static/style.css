@@ -1702,6 +1702,8 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .seg .btn.active { background: var(--accent); border-color: var(--accent); color: #FFFFFF; }
 .gallery.gallery-as-grid { display: block; }
 .prompt-grid-wrap { display: block; overflow-x: auto; }
+.prompt-grid-top { overflow-x: auto; overflow-y: hidden; }
+.prompt-grid-spacer { height: 1px; }
 .prompt-grid { border-collapse: separate; border-spacing: 6px; }
 .prompt-grid th { color: var(--text-secondary); font-size: 9pt; font-weight: 600; text-align: center; white-space: nowrap; }
 .prompt-grid th.prompt-head { text-align: left; white-space: normal; width: 180px; min-width: 140px; vertical-align: top; }
