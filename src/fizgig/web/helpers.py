@@ -2016,8 +2016,7 @@ def _cache_prep_work(p, out_dir, run, setup):
 def _share_folder_files(setup):
     """The training folder(s) a helper makes the cache from: [(index "m<n>", path)] - pictures and captions."""
     import toml
-    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
-    exts = {e.lower() for e in IMAGE_EXTENSIONS}
+    exts = _media_exts()
     out = []
     for n, ds in enumerate(toml.loads(setup.get("dataset_config") or "").get("datasets") or []):
         d, cap = ds.get("image_directory") or "", (ds.get("caption_extension") or ".txt").lower()
@@ -3448,10 +3447,21 @@ _MOVE_DIRS = ("FAMILY_CONCEPT_DIR", "FAMILY_CONCEPT_DIR3", "FAMILY_CONCEPT_DIR4"
 _MOVE_FILES = ("FAMILY_EDIT_REF", "SAMPLE_REFERENCE", "METADATA_THUMBNAIL")
 
 
+def _media_exts():
+    """What a training folder trains on: pictures, clips and songs (lower case)."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    return {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+
+
+def _caption_ext(values):
+    return (str(values.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt").lower()
+
+
 def _move_extras(values):
     """The run's other folders and files that are there: ({key: folder}, {key: file})."""
     dirs = {k: str(values.get(k) or "").strip() for k in _MOVE_DIRS}
     files = {k: str(values.get(k) or "").strip() for k in _MOVE_FILES}
+    files = {k: f for k, f in files.items() if f.lower() != "off"}      # Thumbnail "off": none, not a file
     return ({k: d for k, d in dirs.items() if d and os.path.isdir(d)},
             {k: f for k, f in files.items() if f and os.path.isfile(f)})
 
@@ -3570,7 +3580,7 @@ def move_start(hid, now=False):
     v = dict(r["values"] or {})
     if desc is None or r["family"] == s.refmod.KEY or r["resume_mode"] == "ft" or s.form._kind(desc, v) == "finetune":
         raise ValueError("A fine-tune or a RefMod can't move: LoRA runs move (standard, edit and slider).")
-    gone = [k for k in _MOVE_DIRS + _MOVE_FILES if str(v.get(k) or "").strip() and not (
+    gone = [k for k in _MOVE_DIRS + _MOVE_FILES if str(v.get(k) or "").strip().lower() not in ("", "off") and not (
         os.path.isdir(str(v[k]).strip()) if k in _MOVE_DIRS else os.path.isfile(str(v[k]).strip()))]
     if gone:
         raise ValueError(f"It names {str(v[gone[0]]).strip()}, which isn't on this computer any more, so it can't "
@@ -3602,9 +3612,8 @@ def _move_pack(out_dir, name, state, folder, values):
     """The run as one file: its training folder (pictures, captions, the dataset's own fizgig_*.json), the other
     folders and files it names (_MOVE_DIRS, _MOVE_FILES), its saved state, loss log, loss graph and previews, and a
     context LoRA."""
-    from fizgig.dataset.image_dataset import IMAGE_EXTENSIONS
-    cap = (str(values.get("DATASET_CAPTION_EXT") or ".txt").strip() or ".txt").lower()
-    exts = {e.lower() for e in IMAGE_EXTENSIONS} | {cap}
+    cap = _caption_ext(values)
+    exts = _media_exts() | {cap}
     path = os.path.join(out_dir, SHARE_DIR, "move.tar")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with tarfile.open(path + ".tmp", "w") as tf:
@@ -3869,7 +3878,8 @@ def move_in(body):
         os.remove(tar)
         # the run's own name (its files are named by it: a space and all); `name` is only for folders
         rec = _mvin[tag] = {"run": str(v.get("LORA_NAME") or body.get("run") or name), "folder": folder,
-                            "output_dir": out_dir, "base": base, "unpacked": True, "lead": str(body.get("lead") or "")}
+                            "output_dir": out_dir, "base": base, "unpacked": True, "lead": str(body.get("lead") or ""),
+                            "cap": _caption_ext(v)}
         _mvin_save()
     state = os.path.join(rec["output_dir"], os.path.basename(str(body.get("state") or "")))
     if not os.path.isdir(state):
@@ -3985,7 +3995,8 @@ def move_out(body):
     for prefix, d in [("images/", rec["folder"])] + [(f"dirs/{k}/", d) for k, d in (rec.get("dirs") or {}).items()]:
         for p in sorted(glob.glob(os.path.join(d, "*"))):
             b = os.path.basename(p)
-            if os.path.isfile(p) and (b.lower().endswith(".txt") or (b.startswith("fizgig_") and b.endswith(".json"))):
+            if os.path.isfile(p) and (b.lower().endswith(rec.get("cap") or ".txt")
+                                      or (b.startswith("fizgig_") and b.endswith(".json"))):
                 files.append({"name": prefix + b, "size": os.path.getsize(p), "folder": True})
     return {"files": files, "state": "" if finished else keep, "finished": finished}
 
