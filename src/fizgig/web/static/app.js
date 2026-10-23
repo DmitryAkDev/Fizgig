@@ -1379,6 +1379,47 @@ async function pollRun() {
   sliderLiveDraw(r.slider_live);
 }
 
+// ---- the workbench's render choice (description.workbench_render_choice): while the Samples tab previews on the
+// training model, Studio, LoRA Royale and the Profiler render on the preview checkpoint (the default) or follow the
+// Samples tab. One choice per model (prefs workbench_render_<key>); every tab shows the same one
+function renderChoiceDraw(id, L) {
+  const box = $(id);
+  if (!box) return;
+  const rc = L && L.render_choice;
+  box.style.display = rc ? "" : "none";
+  if (!rc) return;
+  const pick = (v) => async () => {
+    try { await api("/api/prefs", {changes: {[`workbench_render_${L.key}`]: v}}); } catch (e) { showProblems([e.message]); }
+    renderChoiceRefresh();
+  };
+  const opt = (v, text, title) => el("label", {class: "radio-label", title},
+    el("input", {type: "radio", name: id, ...(rc.value === v ? {checked: true} : {}), onchange: pick(v)}), " " + text);
+  box.replaceChildren(el("span", {class: "field-label", text: "Render with:"}),
+    opt("checkpoint", rc.checkpoint, "Renders on the model most people generate with (the default). The Samples tab's " +
+        "previews are on your Base"),
+    opt("samples", "Follow Samples tab settings", "Renders as the Samples tab's previews do: your Base" +
+        (rc.look ? ", with the SFT look LoRA" : "") + ", at the Samples tab's steps and CFG"),
+    el("span", {class: "field-hint", text: "Applies from Studio's next Load, and the next Royale or Profiler render " +
+      "(the model reloads, so that one takes longer)"}));
+}
+
+// every tab's box (and Studio's note) after a change, or a tab's model changing
+async function renderChoiceRefresh() {
+  for (const [id, sel] of [["stRender", "stFamily"], ["ryRender", "ryFamily"], ["pfRenderChoice", "pfFamily"]]) {
+    if (!$(id) || !$(sel) || !$(sel).value) continue;
+    const r = await api("/api/studio/render_choice?family=" + encodeURIComponent($(sel).value)).catch(() => null);
+    if (!r) continue;
+    renderChoiceDraw(id, r);
+    if (id === "stRender" && S.st.layout && S.st.layout.key === r.key) {
+      Object.assign(S.st.layout, r);
+      const L = S.st.layout;
+      $("stDitNote").textContent = L.follows_samples && L.follow_ck ? L.follow_ck : L.follows_samples ?
+        `Previews ${L.follow_turbo ? "on the " + L.follow_turbo + ", " : ""}${L.follow_steps} steps, CFG ${L.follow_cfg}` +
+        `${L.follow_look ? ", " + L.follow_look : ""} - from this model's Samples tab.` : $("stDitNote").textContent;
+    }
+  }
+}
+
 // ---- moving a run to another computer (web/helpers.py move_*): the chooser, then the move's own line
 function moveDraw(mv) {
   const box = $("runMove");
@@ -2592,6 +2633,7 @@ async function royaleFamily(key) {
   $("tab-royale").classList.toggle("no-ref", !r.reference_kind);
   $("tab-royale").classList.toggle("no-refstr", !r.reference_strength);
   if (!$("ryOut").value) $("ryOut").value = r.out_dir;
+  renderChoiceRefresh();
 }
 
 async function royaleScan() {
@@ -2767,6 +2809,7 @@ async function profilerOpen() {
     wireProfiler();
     pfPhotosDraw(); pfModeChanged();
   }
+  renderChoiceRefresh();
   profilerPoll();
 }
 
@@ -2785,7 +2828,7 @@ async function pfLora(p, fresh) {
   $("pfLora").value = p;
   try {
     const f = await api(`/api/studio/lorafamily?path=${encodeURIComponent(p)}`);
-    if (f.key && [...$("pfFamily").options].some((o) => o.value === f.key)) $("pfFamily").value = f.key;
+    if (f.key && [...$("pfFamily").options].some((o) => o.value === f.key)) { $("pfFamily").value = f.key; renderChoiceRefresh(); }
   } catch (e) { /* unreadable: the run says so */ }
   if (fresh) {
     const r = await api(`/api/profile/prefill?path=${encodeURIComponent(p)}`).catch(() => ({}));
@@ -2856,6 +2899,7 @@ async function profilerToStudio() {
 function wireProfiler() {
   document.querySelectorAll('input[name="pfMode"]').forEach((r) => r.addEventListener("change", pfModeChanged));
   for (const id of ["pfFamily", "pfSize", "pfPrompt", "pfClass"]) $(id).addEventListener("change", pfRemember);
+  $("pfFamily").addEventListener("change", renderChoiceRefresh);
   $("pfLora").addEventListener("change", () => pfLora($("pfLora").value.trim(), true));
   const up = uploadButton({kind: "path", key: "PROFILER_LORA"}, $("pfLora"), (p) => pfLora(p, true));
   $("pfLoraBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
@@ -3846,8 +3890,9 @@ async function studioFamily(res, w, h) {
   $("stDitRow").style.display = L.follows_samples || !L.dit_fast ? "none" : "";
   $("stDitFast").textContent = L.dit_fast; $("stDitFull").textContent = L.dit_full;
   $("stDitNote").textContent = L.follows_samples && L.follow_ck ? L.follow_ck : L.follows_samples ? `Previews ${L.follow_turbo ? "on the " + L.follow_turbo + ", " : ""}` +
-    `${L.follow_steps} steps, CFG ${L.follow_cfg} - from this model's Samples tab.` :
+    `${L.follow_steps} steps, CFG ${L.follow_cfg}${L.follow_look ? ", " + L.follow_look : ""} - from this model's Samples tab.` :
     !L.dit_fast ? L.dit_full.replace(", slow", "") : "";
+  renderChoiceDraw("stRender", L);
   studioNegRow();
   S.st.blocks = {};
   for (const g of L.groups) for (const b of g.blocks) S.st.blocks[b.id] = {pe: true, ps: 1, de: true, ds: 1};

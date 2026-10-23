@@ -267,6 +267,7 @@ MOSS_IMAGE = FamilyDescription(
                       "2.1 GB).",
     preview_look_bold="We still recommend not using the Turbo LoRA for previews.",
     preview_look_strength=1.5,
+    workbench_render_choice=True,             # Studio / Royale / Profiler: SFT, or the Samples tab's Base and look
     # over an enlarged preview in the gallery: how it was made, and what gives a better read of quality (Peter, 20 Oct)
     preview_labels=(("checkpoint", "Previewed on MOSS-Image SFT."),
                     ("look", "Previewed on the Base with the SFT look LoRA. For maximum quality, look at it in ComfyUI."),

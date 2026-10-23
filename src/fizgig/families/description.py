@@ -472,6 +472,11 @@ class FamilyDescription:
     # LoRA was on). Empty = no line (a family opts in)
     preview_labels: tuple = ()
     preview_look_strength: float = 1.0
+    # the workbench tabs' choice while the Samples tab previews on the training model (its preview-checkpoint tick
+    # off): render on the preview checkpoint (the default: what most people generate with) or follow the Samples tab,
+    # its preview look LoRA included. One choice per family, kept in prefs (workbench_render_<key>). Needs
+    # workbench_follows_samples and workbench_checkpoint_follows_tick
+    workbench_render_choice: bool = False
     preview_checkpoint_tick: str = "Use Distilled model for samples (4-step, matches ComfyUI)"
     preview_checkpoint_on: bool = True
     # (tensor name, sum) that identifies the model's own released Base (families/base_check.py): with any other Base

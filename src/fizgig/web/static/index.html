@@ -605,6 +605,7 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="stFamily" class="w-combo"></select>
                 <span class="field-hint" id="stDitNote"></span></div>
+              <div class="field-row" id="stRender" style="display:none"></div>
               <div class="field-row" id="stDitRow"><span class="field-label">Preview with:</span>
                 <label class="radio-label"><input type="radio" name="stDit" value="fast" checked> <span id="stDitFast"></span></label>
                 <label class="radio-label"><input type="radio" name="stDit" value="full"> <span id="stDitFull"></span></label></div>
@@ -857,6 +858,7 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="pfFamily" class="w-combo"></select>
                 <span class="field-hint">Choosing a LoRA switches to its model.</span></div>
+              <div class="field-row" id="pfRenderChoice" style="display:none"></div>
               <div class="field-row"><span class="field-label">LoRA:</span>
                 <input type="text" id="pfLora" class="w-path" placeholder="the LoRA to profile (.safetensors)"><span id="pfLoraBtns"></span></div>
             </div>
@@ -914,6 +916,7 @@
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="ryFamily" class="w-combo"></select>
                 <span class="field-hint">Follows the checkpoints' own model.</span></div>
+              <div class="field-row" id="ryRender" style="display:none"></div>
               <div class="field-row"><span class="field-label">Source:</span>
                 <label class="radio-label"><input type="radio" name="rySource" value="folder" checked> Training folder (compare epochs)</label>
                 <label class="radio-label"><input type="radio" name="rySource" value="single"> Single LoRA</label></div>

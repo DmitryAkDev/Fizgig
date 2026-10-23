@@ -460,8 +460,16 @@ def _studio_samples(desc):
     if blank(ck):
         ck = desc.preview_checkpoint_on
     ck = ck if isinstance(ck, bool) else str(ck).strip().lower() in ("1", "true", "yes", "on")
+    # the preview look LoRA the Samples tab puts on Base previews (its tick and file), and the workbench's render
+    # choice while that tab is on the training model (description.workbench_render_choice)
+    lk = desc.preview_look()
+    look = ""
+    if lk is not None and v.get("FAMILY_PREVIEW_LOOK"):
+        look = launch.look_path(desc, {"models": {lk.pref_key: pref_path(load_prefs(), lk.pref_key)}})
+    render = str(load_prefs().get(f"workbench_render_{desc.key}") or "checkpoint")
     return {"steps": str(steps), "cfg": str(cfg), "turbo": str(turbo), "negative": neg,
-            "turbo_live": live, "turbo_name": sp.name if sp is not None else "", "checkpoint": ck}
+            "turbo_live": live, "turbo_name": sp.name if sp is not None else "", "checkpoint": ck,
+            "look": look, "render": "samples" if render == "samples" else "checkpoint"}
 
 
 def _gpu_training():
@@ -2659,6 +2667,14 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self.json({"error": "no picture"}, 404)
             return self._stream(p, attachment=False)
+        if path == "/api/studio/render_choice":     # the workbench's render choice, and Studio's note with it
+            desc = get_family((qs.get("family") or [""])[0])
+            if desc is None:
+                return self.json({"render_choice": None})
+            sm = _studio_samples(desc) if desc.workbench_follows_samples else None
+            L = studio.layout(desc, load_prefs(), pref_path, samples=sm)
+            return self.json({k: L.get(k) for k in ("key", "render_choice", "follow_ck", "follow_look", "follow_turbo",
+                                                     "follow_steps", "follow_cfg", "follows_samples")})
         if path == "/api/profile/info":             # Profiler: the models that offer it
             from fizgig.web import tools
             return self.json({"families": [{"key": d.key, "name": d.display_name} for d in tools.families("profiler")]})
