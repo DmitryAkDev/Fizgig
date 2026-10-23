@@ -988,7 +988,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None):
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1098,10 +1098,32 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         user_config = load_user_config(dataset_config)
         blueprint = BlueprintGenerator(ConfigSanitizer()).generate(user_config, argparse.Namespace(),
                                                                    architecture=arch)
+        if masked_training:
+            if not desc.masked_training:
+                raise RuntimeError(f"{desc.display_name} has no masked training - drop --masked_training")
+            from fizgig.dataset.image_dataset import ImageDataset
+            ImageDataset.loss_masks = True      # each still with a photo-masklabel.png gets its mask (dataset/masks.py)
         group = generate_dataset_group_by_blueprint(blueprint.dataset_group, training=True,
                                                     num_timestep_buckets=None, shared_epoch=shared_epoch)
     if group.num_train_items == 0:
         raise RuntimeError("No training items - run the cache stages (families/cache.py) first.")
+    masked_images = 0
+    if masked_training and slider_prompts:
+        logger.info("[masks] a prompt-pair slider trains on pictures it makes itself: masked training is off")
+        masked_training = False
+    elif masked_training:
+        masked_images = len({str(getattr(it, "mask_path", "")) for ds in group.datasets
+                             for b in ds.batch_manager.buckets.values() for it in b if getattr(it, "mask_path", None)})
+        logger.info(f"[masks] masked training: {masked_images} picture(s) with a mask, outside the mask counts "
+                    f"x{float(mask_floor):g}")
+
+    def _loss_mask(batch):
+        """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
+        m = batch.get("loss_mask") if masked_training else None
+        if m is None:
+            return None
+        from fizgig.dataset.masks import mask_weight
+        return mask_weight(m.to(device).float(), mask_floor)
     if slider_pairs:
         shared = _pair_slider_caption(user_config)
         if shared:                           # the dial is shown on what both ends of a pair have in common
@@ -1657,6 +1679,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 md.update({"ss_slider_diff_weight": f"{float(slider_diff_weight):g}"})
         if train_blocks:
             md.update({"ss_train_blocks": ",".join(train_blocks)})
+        if masked_training:
+            md.update({"ss_masked_training": "True", "ss_mask_floor": f"{float(mask_floor):g}",
+                       "ss_masked_images": str(masked_images)})
         md.update(driver.run_metadata())
         return md
 
@@ -2311,13 +2336,15 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                         raise RuntimeError("[slider] this item has no pair image - an image-pair slider needs one in "
                                            "the second folder for every training image, matched by file name")
                     _neg = _neg.to(device)
+                    _lm = _loss_mask(batch)
                     _l = 0.0
                     try:
                         for m, a, b in ((1.0, latents, _neg), (-1.0, _neg, latents)):
                             net.set_trainable_multiplier(m)
                             _pl, _info = driver.training_loss(dit, a, cond, gen, min_t=min_timestep,
                                                               max_t=max_timestep, diff_ref=b,
-                                                              diff_weight=slider_diff_weight)
+                                                              diff_weight=slider_diff_weight,
+                                                              **({"loss_mask": _lm} if _lm is not None else {}))
                             (0.5 * _pl).backward()
                             _l += 0.5 * _pl.item()
                     finally:
@@ -2333,8 +2360,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 # per-step routing (a family's step_frozen_blocks): those blocks' trainable weights sit out this
                 # step's forward and backward, so the backward stops at the first trained block and they get no grad
                 _frozen_now = _step_freeze(driver.step_frozen_blocks(batch))
+                _lm = _loss_mask(batch)
                 loss, _info = driver.training_loss(dit, latents, cond, gen, min_t=min_timestep, max_t=max_timestep,
-                                                   **({"refs": refs} if refs else {}))
+                                                   **({"refs": refs} if refs else {}),
+                                                   **({"loss_mask": _lm} if _lm is not None else {}))
                 if "lr_mult" in _info and lr_acc:
                     lr_acc[-1] *= _info["lr_mult"]     # where the step landed (the H3 noise-band LR)
                 if pending == 0 and optimizer is not None:
@@ -2645,6 +2674,11 @@ def setup_parser():
                    help="experimental: items whose name contains PATTERN train at MULT x the LR on their step")
     p.add_argument("--dop_ft_samples", type=int, default=8,
                    help="DOP on a fine-tune: the original model's predictions made per image before the first step")
+    p.add_argument("--masked_training", action="store_true",
+                   help="weight each picture's loss by its mask (photo-masklabel.png beside photo.png): white counts "
+                        "fully, grey partly, black at --mask_floor; pictures without a mask train as normal")
+    p.add_argument("--mask_floor", type=float, default=0.1,
+                   help="masked training: how much outside the mask counts (0 = nothing, 1 = as much as inside)")
     return p
 
 
@@ -2706,7 +2740,7 @@ def main():
         dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every,
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
-        share_worker=a.share_worker)
+        share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor)
 
 
 if __name__ == "__main__":

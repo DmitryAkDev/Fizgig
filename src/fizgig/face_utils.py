@@ -967,7 +967,9 @@ IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff")
 
 def probe_sample(paths, max_n: int = AUTO_PROBE_MAX) -> List[str]:
     """Up to max_n images spread evenly over the (sorted, de-duplicated) list - deterministic for a given folder."""
-    ps = sorted({os.path.normpath(p) for p in paths if str(p).lower().endswith(IMAGE_EXTS) and os.path.isfile(p)})
+    from fizgig.dataset.masks import is_mask_file
+    ps = sorted({os.path.normpath(p) for p in paths if str(p).lower().endswith(IMAGE_EXTS) and os.path.isfile(p)
+                 and not is_mask_file(p)})
     if len(ps) <= max_n:
         return ps
     return [ps[round(i * (len(ps) - 1) / (max_n - 1))] for i in range(max_n)]

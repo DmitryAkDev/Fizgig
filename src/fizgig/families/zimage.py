@@ -33,6 +33,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False):
 
 ZIMAGE = FamilyDescription(
     key="zimage",
+    masked_training=True,
     arch_id="zimageturbo",
     display_name="Z-Image Turbo",
     gui_label="Z-Image Turbo",

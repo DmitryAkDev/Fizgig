@@ -34,6 +34,23 @@ class BlockGroup:
     blocks: list = field(default_factory=list)
 
 
+def weighted_loss(se, *weights):
+    """The mean of per-position squared errors `se` under the per-position weights that apply (each se's shape, or
+    None): an image-pair slider's difference weights, a masked-training mask. Their product is scaled to mean 1 per
+    image, so a picture counts the same however little of it is weighted; se.mean() when none apply."""
+    ws = [w for w in weights if w is not None]
+    if not ws:
+        return se.mean()
+    w = ws[0].to(se.device, se.dtype)
+    for x in ws[1:]:
+        w = w * x.to(se.device, se.dtype)
+    if w.dim() > 1:
+        w = w / w.mean(dim=tuple(range(1, w.dim())), keepdim=True).clamp_min(1e-8)
+    else:
+        w = w / w.mean().clamp_min(1e-8)
+    return (se * w).mean()
+
+
 class FamilyDriver:
     """Subclass per family. `description` is the family's FamilyDescription."""
 
@@ -194,11 +211,13 @@ class FamilyDriver:
 
     # ---- training -------------------------------------------------------------------------------
     def training_loss(self, dit, latents, cond: dict, generator, *, min_t: float = 0.0, max_t: float = 1.0,
-                      refs=None, diff_ref=None, diff_weight: float = 0.0):
+                      refs=None, diff_ref=None, diff_weight: float = 0.0, loss_mask=None):
         """One training forward. latents (1, C, h, w) on device, cond = the cached dict (batched), refs = the pair's
         reference latents [(1, C, rh, rw), ...] (edit training) or None. diff_ref / diff_weight (image-pair
         sliders): weight each token's error by how much latents and diff_ref differ there, so the slider learns
-        what changes between the poles and not what they share.
+        what changes between the poles and not what they share. loss_mask (masked training, a family with
+        `masked_training` in its description): (1, 1, h, w) per-cell weights on the latent's grid - brought onto the
+        family's tokens as the slider weights are and combined through weighted_loss.
         Returns (loss tensor, info dict e.g. {"t": 0.63}). Owns the family's noise/target/timestep rules."""
         raise NotImplementedError
 

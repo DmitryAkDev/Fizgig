@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, weighted_loss
 from fizgig.flux3 import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ class Flux3Driver(FamilyDriver):
             return dit(packed)
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0):
+                      diff_weight=0.0, loss_mask=None):
         h, w = latents.shape[-2:]
         x0 = S.to_tokens(latents.float())
         noise = torch.randn(x0.shape, generator=generator).to(latents.device)
@@ -192,6 +192,7 @@ class Flux3Driver(FamilyDriver):
         xt = (1 - t) * x0 + t * noise
         pred = self._forward(dit, xt, t, cond, h, w, refs=refs)
         target = noise - x0
+        wgt = None
         if diff_ref is not None and diff_weight > 0.0:
             # image-pair sliders (Krea 2's weighting, on Flux 3's tokens): each token's error weighted by how much the
             # two poles differ there, so the slider learns what changes between them, not what they share
@@ -202,8 +203,10 @@ class Flux3Driver(FamilyDriver):
             wgt = wgt / wgt.mean().clamp_min(1e-8)
             if float(dm) <= 1e-6:
                 wgt = torch.ones_like(wgt)                      # identical pair: uniform, never all-zero
-            return ((pred.float() - target).pow(2).mean(dim=-1) * wgt).mean(), {"t": t}
-        return F.mse_loss(pred.float(), target), {"t": t}
+        mw = None if loss_mask is None else S.to_tokens(loss_mask.float().to(x0.device)).mean(dim=-1)   # (h * w,)
+        if wgt is None and mw is None:
+            return F.mse_loss(pred.float(), target), {"t": t}
+        return weighted_loss((pred.float() - target).pow(2).mean(dim=-1), wgt, mw), {"t": t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         h, w = latents.shape[-2:]

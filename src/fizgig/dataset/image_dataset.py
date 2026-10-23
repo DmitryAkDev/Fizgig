@@ -24,6 +24,7 @@ from safetensors.torch import save_file, load_file
 from PIL import Image
 import cv2
 
+from fizgig.dataset.masks import folder_names, is_mask_file, load_mask, mask_for_stem, mask_problem
 from fizgig.utils.safetensors import mem_eff_save_file, MemoryEfficientSafeOpen
 from fizgig.training.metadata import (ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_9B_FULL,
                                       ARCHITECTURE_MINIMAX)
@@ -179,7 +180,7 @@ def glob_images(directory: str, base: str = "*", caption_extension: Optional[str
             img_paths.extend(glob.glob(os.path.join(glob.escape(directory), base + ext)))
         else:
             img_paths.extend(glob.glob(glob.escape(os.path.join(directory, base + ext))))
-    img_paths = list(set(img_paths))
+    img_paths = [p for p in set(img_paths) if not is_mask_file(p)]      # photo-masklabel.png is photo.png's mask
 
     if caption_extension is not None:
         caption_paths = glob.glob(os.path.join(glob.escape(directory), "*" + caption_extension))
@@ -592,6 +593,19 @@ class BucketBatchManager:
                     batch_tensor_data[content_key] = []
                 batch_tensor_data[content_key].append(tensor)
 
+        # Masked training: each item's mask on its latent's grid (an item without one counts everywhere)
+        if any(getattr(it, "mask_path", None) for it in bucket[start:end]):
+            masks = []
+            for it, lat in zip(bucket[start:end], batch_tensor_data.get("latents", [])):
+                m = None
+                if getattr(it, "mask_path", None):
+                    lh, lw = lat.shape[-2:]
+                    bw, bh = it.bucket_size
+                    if abs(bw / lw - bh / lh) < 1e-6:           # the latent is the bucket's grid, the right way round
+                        m = load_mask(it.mask_path, it.original_size, it.bucket_size, (lh, lw))
+                masks.append(torch.from_numpy(m)[None] if m is not None else torch.ones(1, *lat.shape[-2:]))
+            batch_tensor_data["loss_mask"] = masks
+
         # Stack tensors per key
         stacked: dict[str, Any] = {}
         for key, tensors in batch_tensor_data.items():
@@ -842,6 +856,10 @@ class ImageDataset(torch.utils.data.Dataset):
     # still's own encoding). Set on the CLASS by the trainer before the dataset group is
     # generated (the blueprint path builds and prepares the datasets in one go).
     clip_still_as_photo: bool = False
+    # Masked training (fizgig/dataset/masks.py): each item with a photo-masklabel.png beside its picture gets the mask
+    # on its latent's grid as `loss_mask` in the batch. Set on the CLASS by the trainer before the dataset group is
+    # generated, like clip_still_as_photo.
+    loss_masks: bool = False
 
     def __init__(
         self,
@@ -861,9 +879,11 @@ class ImageDataset(torch.utils.data.Dataset):
         clip_megapixels: Optional[float] = None,
         caption_replace: Optional[list] = None,
         photos_only: bool = False,
+        mask_directory: Optional[str] = None,
         **kwargs,
     ):
         super().__init__()
+        self.mask_directory = mask_directory      # masked training: the masks' folder when not image_directory
         # Clip Target Megapixels (MiniMax H3): a clip is cached and trained at this size or
         # smaller, so photos can train at 1 MP beside clips at a size that caches and trains fast.
         self.clip_megapixels = float(clip_megapixels) if clip_megapixels else None
@@ -1254,7 +1274,7 @@ class ImageDataset(torch.utils.data.Dataset):
             _exts = {e.lower() for e in IMAGE_EXTENSIONS}
             _exts |= {e.lower() for e in getattr(self, "extra_extensions", ())}
             valid_keys = {os.path.splitext(f)[0] for f in os.listdir(self.image_directory)
-                          if os.path.splitext(f)[1].lower() in _exts}
+                          if os.path.splitext(f)[1].lower() in _exts and not is_mask_file(f)}
         # The stems that are audio files. Cache filenames strip the extension, so the folder
         # listing is the only place an item's audio-ness can still be seen at this point.
         audio_keys = set()
@@ -1268,6 +1288,7 @@ class ImageDataset(torch.utils.data.Dataset):
         still_frame0_fallback = 0
 
         bucketed: dict[Tuple, list[ItemInfo]] = {}   # (w, h), or ("audio", w, h) for voice items
+        _mask_names, masked_items, misfit_masks = None, 0, []
         for cache_file in latent_cache_files:
             tokens = os.path.basename(cache_file).split("_")
             # Filename: {basename}_{W:04d}x{H:04d}_{arch}.safetensors
@@ -1317,6 +1338,19 @@ class ImageDataset(torch.utils.data.Dataset):
                 bucket_key = bucket_reso
             item_info = ItemInfo(item_key, "", image_size, bucket_reso, latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
+            _mdir = self.mask_directory or self.image_directory
+            if self.loss_masks and _mdir and bucket_key == bucket_reso                     and self.latent_cache_frames(cache_file) <= 1:          # stills only: never a clip or a voice
+                if _mask_names is None:
+                    _mask_names = folder_names(_mdir)
+                item_info.mask_path = mask_for_stem(_mdir, item_key, _mask_names)
+                if item_info.mask_path:
+                    _pic = next((os.path.join(_mdir, _mask_names[n]) for n in
+                                 (item_key.lower() + e.lower() for e in IMAGE_EXTENSIONS) if n in _mask_names), None)
+                    _why = mask_problem(item_info.mask_path, image_size, _pic)
+                    if _why:
+                        misfit_masks.append(f"{os.path.basename(item_info.mask_path)} ({_why})")
+                        item_info.mask_path = None              # its picture trains unmasked, and the log says so
+                masked_items += bool(item_info.mask_path)
 
             bucket = bucketed.get(bucket_key, [])
             for _ in range(self.num_repeats):
@@ -1364,6 +1398,15 @@ class ImageDataset(torch.utils.data.Dataset):
                     f"[dataset] {still_frame0_fallback} clip(s) were cached without a picked "
                     f"still — their frame 0 is used instead. Re-run caching with the tick on "
                     f"(or flush the cache) to pick sharp frames for them.")
+        if self.loss_masks:
+            logger.info(f"[masks] {masked_items} picture(s) in {self.mask_directory or self.image_directory} train "
+                        f"with their mask"
+                        + ("; the rest train as normal" if masked_items else
+                           " - none has a mask (name it after its picture: photo.png -> photo-masklabel.png)"))
+            if misfit_masks:
+                shown = ", ".join(misfit_masks[:8]) + (f", … {len(misfit_masks) - 8} more" if len(misfit_masks) > 8 else "")
+                logger.warning(f"[masks] {len(misfit_masks)} mask(s) can't be used - those pictures train WITHOUT a "
+                               f"mask: {shown}")
         self.batch_manager = BucketBatchManager(bucketed, self.batch_size, num_timestep_buckets=num_timestep_buckets)
         self.batch_manager.show_bucket_info()
         self.num_train_items = sum(len(b) for b in bucketed.values())

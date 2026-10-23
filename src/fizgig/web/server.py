@@ -31,6 +31,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from fizgig.dataset.masks import is_mask_file, mask_for_stem
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
 from fizgig.web import captions, history
@@ -362,7 +363,7 @@ def write_all_captions(text, folder, ext, overwrite=False):
     if not os.path.isdir(folder):
         raise ValueError("Set the training folder on the Start tab first.")
     photos = sorted(f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in
-                    (".png", ".jpg", ".jpeg", ".webp", ".bmp"))
+                    (".png", ".jpg", ".jpeg", ".webp", ".bmp") and not is_mask_file(f))
     if not photos:
         raise ValueError(f"No photos in {folder}.")
     if not ext.startswith("."):
@@ -1785,6 +1786,9 @@ def remove_from_dataset(folder, name, ext):
             names.append(stem + cext)
     if fext.lower() in _AUDIO:
         names += [f for f in os.listdir(folder) if os.path.splitext(f)[0] == stem and os.path.splitext(f)[1].lower() in _IMAGES]
+    mask = mask_for_stem(folder, stem)                # masked training: a picture's mask goes with it
+    if mask:
+        names.append(os.path.basename(mask))
     dest = os.path.join(folder, REMOVED_DIR)
     os.makedirs(dest, exist_ok=True)
     moved = []
@@ -1995,7 +1999,7 @@ def list_datasets() -> dict:
                     waves.append(e.path)
                 continue
             kind = "pic" if ext in _PIC else "clip" if ext == ".mp4" else "song" if ext in _SONG else ""
-            if not kind:
+            if not kind or is_mask_file(e.name):          # photo-masklabel.png: photo.png's mask, not a picture
                 continue
             pics += kind == "pic"
             clips += kind == "clip"
@@ -3062,9 +3066,10 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self.json({"items": []})
         keep = _caption_media_filter(names, family)
+        lower = {n.lower(): n for n in names}
         for n in names:
             stem, e = os.path.splitext(n)
-            if e.lower() not in MEDIA or not keep(n):
+            if e.lower() not in MEDIA or not keep(n) or is_mask_file(n):
                 continue
             cap = os.path.join(folder, stem + ext)
             try:
@@ -3072,7 +3077,9 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 text = None
             p = os.path.join(folder, n)
-            out.append((n, p, {"caption": text, "size": _media_size(p)}))
+            mask = mask_for_stem(folder, stem, lower)        # masked training: the picture's mask, shown on its row
+            out.append((n, p, {"caption": text, "size": _media_size(p),
+                               **({"mask": os.path.basename(mask)} if mask else {})}))
         return self.json({"items": pair_songs(out)})
 
     # -- POST

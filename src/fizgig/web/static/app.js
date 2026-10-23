@@ -5837,10 +5837,20 @@ function renderCaptions() {
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
     const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
+    // masked training: the picture's mask (photo-masklabel.png), shown in its place on a click
+    const pic = it.mask ? media.querySelector("img") || (media.tagName === "IMG" ? media : null) : null;
+    const maskBtn = pic ? el("button", {class: "btn btn-sm", text: "Show mask",
+      title: `${it.mask}: white trains fully, black only as much as the Training tab's Masked training card says.`,
+      onclick: () => {
+        const on = maskBtn.textContent === "Show mask";
+        if (on && !pic.dataset.picture) pic.dataset.picture = pic.src;
+        pic.src = on ? `/api/media?path=${encodeURIComponent(it.path.slice(0, it.path.length - it.name.length) + it.mask)}&t=${encodeURIComponent(TOKEN)}` : pic.dataset.picture;
+        maskBtn.textContent = on ? "Show picture" : "Show mask";
+      }}) : null;
     card.append(media, el("div", {class: "caption-card-body"},
       el("div", {class: "caption-card-title", text: mediaLabel(it)}),
-      size ? el("div", {class: "field-hint caption-card-size", text: size}) : null, ta,
-      el("div", {class: "field-row"}, save, recap, speech, remove, status)));
+      size ? el("div", {class: "field-hint caption-card-size", text: size + (it.mask ? " · has a mask" : "")}) : null, ta,
+      el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
 }

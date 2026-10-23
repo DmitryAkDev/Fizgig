@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver
+from fizgig.families.driver import FamilyDriver, weighted_loss
 from fizgig.zimage import pipeline as P
 
 DTYPE = torch.bfloat16
@@ -106,7 +106,7 @@ class ZImageDriver(FamilyDriver):
 
     # ---- training -------------------------------------------------------------------------------
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0):
+                      diff_weight=0.0, loss_mask=None):
         x0 = latents.float()
         n = x0.shape[0]
         sig = self._sample_sigma(n, generator, min_t, max_t).to(x0.device)
@@ -115,6 +115,7 @@ class ZImageDriver(FamilyDriver):
         xt = (1 - sb) * x0 + sb * noise
         pred = self._velocity(dit, xt, sig, [_cap(cond, i) for i in range(n)])
         target = noise - x0
+        w = None
         if diff_ref is not None and diff_weight > 0.0:
             # slider pairs: positions where the two poles differ count more (Krea 2's formula, as Qwen and Anima)
             d = (x0 - diff_ref.to(x0.device).float()).abs().mean(dim=1).flatten(1)     # (B, h*w)
@@ -123,9 +124,10 @@ class ZImageDriver(FamilyDriver):
             w = (1.0 - float(diff_weight)) + float(diff_weight) * r
             w = w / w.mean(dim=1, keepdim=True).clamp_min(1e-8)
             w = torch.where(dm > 1e-6, w, torch.ones_like(w))      # identical pair: uniform, never all-zero
-            se = (pred - target).pow(2).mean(dim=1).flatten(1)
-            return (se * w).mean(), {"t": float(sig.mean())}
-        return F.mse_loss(pred, target), {"t": float(sig.mean())}
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device).flatten(1)        # (B, h*w)
+        if w is None and mw is None:
+            return F.mse_loss(pred, target), {"t": float(sig.mean())}
+        return weighted_loss((pred - target).pow(2).mean(dim=1).flatten(1), w, mw), {"t": float(sig.mean())}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

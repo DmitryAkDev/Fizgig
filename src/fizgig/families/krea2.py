@@ -31,6 +31,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, slider=False, mp="0.25"):
 
 KREA2 = FamilyDescription(
     key="krea2",
+    masked_training=True,
     arch_id="krea2drv",
     display_name="Krea 2",
     gui_label="Krea 2",

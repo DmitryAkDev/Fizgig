@@ -177,10 +177,11 @@ def training_folder(image_dir, caption_ext, *, check_captions=True, media_exts=(
             out.append(f"No caption files (*{caption_ext}) found in {image_dir}. "
                        f"Use the Captions tab to generate them first.")
         else:
+            from fizgig.dataset.masks import is_mask_file      # photo-masklabel.png is a mask, not a picture
             stems = {os.path.splitext(os.path.basename(p))[0] for p in caption_files}
             uncaptioned = sorted(f for f in os.listdir(image_dir)
                                  if os.path.splitext(f)[1].lower() in media_exts
-                                 and os.path.splitext(f)[0] not in stems)
+                                 and os.path.splitext(f)[0] not in stems and not is_mask_file(f))
             if uncaptioned:
                 shown = ", ".join(uncaptioned[:6]) + (f" … and {len(uncaptioned) - 6} more"
                                                       if len(uncaptioned) > 6 else "")

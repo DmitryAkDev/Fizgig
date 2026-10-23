@@ -19,6 +19,8 @@ import os
 import random
 import re
 
+from fizgig.dataset.masks import is_mask_file
+
 REPO = "ShootTheSound/fizgig-multi-person-strangers"
 REVISION = "8aeb77502234781cb5dca524994c80efcaa51024"      # pinned: a run's composites never change underneath it
 PREFIX = "fizgig_mp_"                                       # the composites' file names (the trainer's --lr_boost)
@@ -270,7 +272,7 @@ def build(subjects, ext=".txt", seed=42, log=print):
     from PIL import Image
     people = strangers()
     for s in subjects:
-        photos = sorted(n for n in os.listdir(s["folder"]) if n.lower().endswith(_IMG))
+        photos = sorted(n for n in os.listdir(s["folder"]) if n.lower().endswith(_IMG) and not is_mask_file(n))
         if not photos:
             raise ValueError(f"no photos in {s['folder']}")
         stamps = []                              # a photo edited or replaced under the same name rebuilds them

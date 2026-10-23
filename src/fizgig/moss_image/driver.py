@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, weighted_loss
 from fizgig.moss_image import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -270,7 +270,7 @@ class MOSSImageDriver(FamilyDriver):
         return dit(xt, tt, hidden.to(xt.device))
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0):
+                      diff_weight=0.0, loss_mask=None):
         if refs:
             raise RuntimeError("MOSS-Image has no edit (reference-image) conditioning")
         x0 = latents.float()
@@ -279,6 +279,7 @@ class MOSSImageDriver(FamilyDriver):
         xt = (1 - t) * x0 + t * noise
         pred = self._forward(dit, xt, t, cond).float()
         target = noise - x0
+        wgt = None
         if diff_ref is not None and diff_weight > 0.0:
             # image-pair sliders (Krea 2's weighting): each token's error weighted by how much the two poles differ
             # there, so the slider learns what changes between them, not what they share
@@ -289,9 +290,11 @@ class MOSSImageDriver(FamilyDriver):
             wgt = wgt / wgt.mean().clamp_min(1e-8)
             if float(dm) <= 1e-6:
                 wgt = torch.ones_like(wgt)                      # identical pair: uniform, never all-zero
-            return ((pred - target).pow(2).mean(dim=1) * wgt).mean(), {"t": t}
-        # report eq. 3: per-token mean over channels, no sigma weighting
-        return F.mse_loss(pred, target), {"t": t}
+        mw = None if loss_mask is None else loss_mask.float().to(x0.device)[:, 0]             # (1, h, w)
+        if wgt is None and mw is None:
+            # report eq. 3: per-token mean over channels, no sigma weighting
+            return F.mse_loss(pred, target), {"t": t}
+        return weighted_loss((pred - target).pow(2).mean(dim=1), wgt, mw), {"t": t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

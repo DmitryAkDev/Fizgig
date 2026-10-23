@@ -514,6 +514,9 @@ class FamilyDescription:
     adaptive_lr_clip_signal: bool = False
     adaptive_lr: bool = True          # the Adaptive LR control (off: hidden, never sent - MiniMax H3)
     loss_watch: bool = True           # the per-image loss watch toggles (off: hidden, never sent - MiniMax H3)
+    # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
+    # later never gets a tick its driver can't honour
+    masked_training: bool = False
     network_hint: str = ""            # the line under Network Type in place of the LoRA / LoKR trade
     ema_hint: str = ""                # the line under Weight averaging (EMA) in place of the shared one
     ema_section: str = ""             # "other": the EMA row sits in Other Options (MiniMax H3's place)

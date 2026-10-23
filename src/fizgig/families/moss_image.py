@@ -46,6 +46,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
 
 MOSS_IMAGE = FamilyDescription(
     key="moss_image",
+    masked_training=True,
     arch_id="mossimage",
     display_name="MOSS-Image",
     gui_label="MOSS-Image",

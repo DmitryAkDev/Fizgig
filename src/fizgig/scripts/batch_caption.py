@@ -194,7 +194,9 @@ def _run_job(state: CaptionState, job: dict) -> bool:
 
     images = _load_image_list(list_file)
     allowed = IMAGE_EXTENSIONS | (VIDEO_EXTENSIONS if include_video else set())
-    images = [p for p in images if os.path.isfile(p) and os.path.splitext(p)[1].lower() in allowed]
+    from fizgig.dataset.masks import is_mask_file
+    images = [p for p in images if os.path.isfile(p) and os.path.splitext(p)[1].lower() in allowed
+              and not is_mask_file(p)]
     total = len(images)
     if not total:
         print("FAIL: no images in list", flush=True)

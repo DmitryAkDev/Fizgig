@@ -30,6 +30,8 @@ import threading
 import time
 import urllib.parse
 
+from fizgig.dataset.masks import folder_masks, is_mask_file
+
 logger = logging.getLogger("fizgig.web.helpers")
 
 PIECE = 8 << 20                                     # bytes per put (a 300 MB LoRA = 38 pieces)
@@ -2047,6 +2049,9 @@ def _share_cache_files(setup, prep):
             if os.path.isfile(p):
                 t = os.path.join(prep["trim"], str(i), os.path.basename(p)) if prep.get("trim") else ""
                 out.append((i, t if t and os.path.isfile(t) else p))
+        if "--masked_training" in (setup.get("args") or []) and d and os.path.isdir(d):
+            # masked training: the pictures' masks go with the cache (the helper has no training folder)
+            out += [(f"k{i}", m) for m in sorted(folder_masks(d, _media_exts()).values())]
     return out
 
 
@@ -2074,7 +2079,7 @@ def _unbundle(tag):
         with tarfile.open(bp) as tf:
             for m in tf.getmembers():
                 i, _, base = m.name.partition("/")
-                if not (m.isfile() and re.fullmatch(r"m?\d+", i) and base and os.path.basename(base) == base
+                if not (m.isfile() and re.fullmatch(r"[mk]?\d+", i) and base and os.path.basename(base) == base
                         and not base.startswith(".")):
                     continue
                 with tf.extractfile(m) as src, open(_dir("files", f"sh{tag}-{i}-{base}"), "wb") as dst:
@@ -2375,6 +2380,9 @@ def _share_start(body):
             take(i, os.path.join(d, f"cache{i}"), _untrim)
             ds["cache_directory"] = os.path.join(d, f"cache{i}").replace("\\", "/")
             ds["image_directory"] = os.path.join(d, "no_images").replace("\\", "/")
+            if glob.glob(_dir("files", f"sh{tag}-k{i}-*")):        # masked training: the masks came with the cache
+                take(f"k{i}", os.path.join(d, f"masks{i}"))
+                ds["mask_directory"] = os.path.join(d, f"masks{i}").replace("\\", "/")
     jobs = os.path.join(d, "jobs")
     shutil.rmtree(jobs, ignore_errors=True)
     os.makedirs(jobs)
@@ -2612,7 +2620,8 @@ def _setup_guess(out_dir, run, setup, link):
         p = _prep.get(_share_tag(out_dir, run, setup)) or {}
         folder = (p.get("bundles") or {}).get("folder")
         mb = os.path.getsize(folder) / 1e6 if folder and os.path.isfile(folder) else 0
-        n = sum(1 for _i, f in _share_folder_files(setup) if not f.lower().endswith(".txt")) if mb else 0
+        n = sum(1 for _i, f in _share_folder_files(setup) if not f.lower().endswith(".txt")
+                and not is_mask_file(f)) if mb else 0
         if not (mb and n and link.get("up")):
             return ""
         send = mb / link["up"]

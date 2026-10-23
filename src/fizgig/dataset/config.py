@@ -86,6 +86,8 @@ class ImageDatasetParams(BaseDatasetParams):
     # Photos only: a family that trains clips or voice globs neither from this folder (Fizgig LoRA Isolation on
     # MiniMax H3 trains people from their stills)
     photos_only: bool = False
+    # Masked training: where the pictures' masks are when not beside them (a training share's helper, sent the cache)
+    mask_directory: Optional[str] = None
 
 
 @dataclass
@@ -150,6 +152,7 @@ class ConfigSanitizer:
         "is_reg": bool,
         "caption_replace": [[str]],
         "photos_only": bool,
+        "mask_directory": str,
     }
 
     # Options that come from argparse only (not from user config)

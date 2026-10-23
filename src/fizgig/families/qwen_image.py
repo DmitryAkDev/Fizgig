@@ -40,6 +40,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, edit=False, slider=False):
 
 QWEN_IMAGE_21 = FamilyDescription(
     key="qwen_image21",
+    masked_training=True,
     arch_id="qwenimage21",
     display_name="Qwen Image 2.1",
     gui_label="Qwen Image 2.1",
