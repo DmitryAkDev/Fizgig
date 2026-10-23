@@ -3574,9 +3574,13 @@ class Handler(BaseHTTPRequestHandler):
                 update_prefs({"web_session_key": _SESSION_KEY[0]})
                 return self.json({"ok": True})
             if path == "/api/prefs":
+                # the workbench's render choice per model that offers it (description.workbench_render_choice)
+                render_keys = {f"workbench_render_{d.key}" for d in training_families()
+                               if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden"}
+                    "input_dataset_dir", "welcome_v8_hidden"} | render_keys
                 ch = b.get("changes") or {}
+                ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
                     ch = {**{k: "" for k in SETTING_PREFS}, **{k: v for k, v in PREF_DEFAULTS.items()
                                                                   if k in SETTING_PREFS}}
