@@ -3539,6 +3539,54 @@ async function loadPrep() {
   await prepSummary();
   pollPrep();
   lookPoll();
+  maskInfo();
+}
+
+// Image Prep's Make masks (fizgig/dataset/automask.py through prep_jobs.start_masks): the same job and log as a prep run
+const MASK_HINTS = {
+  person: "For a person LoRA: the room and the background count far less.",
+  head: "For likeness only: clothes and body count far less, as well as the background.",
+  not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face."};
+async function maskInfo() {
+  if (!S.imageFolder) { $("maskInfo").textContent = ""; return; }
+  const r = await api("/api/masks/info?folder=" + encodeURIComponent(S.imageFolder)).catch(() => null);
+  if (!r) return;
+  if (!$("maskKinds").childElementCount) {
+    const saved = (S.prepSaved || {}).maskKind || "person";
+    for (const [k, label] of Object.entries(r.kinds)) {
+      $("maskKinds").append(el("label", {class: "radio-label"}, el("input", {type: "radio", name: "maskKind", value: k,
+        checked: k === saved, onchange: () => { S.prepSaved = {...(S.prepSaved || {}), maskKind: k};
+          api("/api/state", {prep: S.prepSaved}).catch(() => {}); maskShow(r); }}), " " + label),
+        el("div", {class: "field-hint radio-hint", text: MASK_HINTS[k] || ""}));
+    }
+  }
+  S.prep.maskOpts = r;
+  maskShow(r);
+}
+function maskShow(r) {
+  const kind = (document.querySelector('input[name="maskKind"]:checked') || {}).value || "person";
+  $("maskInfo").textContent = !r.available ? "Making masks needs an update: run update_fizgig to add its one new " +
+    "package (ai-edge-litert)." : r.pictures ? `${r.with_mask} of ${r.pictures} pictures have a mask.` : "";
+  const subj = $("maskSubject");
+  subj.disabled = !r.baselines || !r.faces || kind === "not_faces";
+  if (subj.disabled) subj.checked = false;
+  $("maskSubjectHint").textContent = kind === "not_faces" ? "Not for Everything but the faces: every face is left out." :
+    !r.faces ? "Needs face detection, which isn't installed here (run install_fizgig.py)." :
+    r.baselines ? "Finds your subject by their face, with the Look Filter's 3 baselines; everyone else counts as background." :
+    "Needs the Look Filter's 3 baselines: choose them and scan the folder (the last card on this tab), then come back.";
+  $("maskRun").disabled = !r.available || !r.pictures || S.prep.running;
+}
+async function maskRun() {
+  if (!S.imageFolder) { $("maskState").textContent = "Choose the training folder on the Start tab first."; return; }
+  const kind = (document.querySelector('input[name="maskKind"]:checked') || {}).value || "person";
+  try {
+    await api("/api/masks/make", {folder: S.imageFolder, kind, subject_only: $("maskSubject").checked,
+      overwrite: $("maskReplace").checked});
+    S.prep.masking = true;
+    $("maskLog").textContent = ""; $("maskLog").style.display = "";
+    $("prepLog").textContent = ""; S.prep.logSize = 0;
+    pollPrep();
+  } catch (e) { $("maskState").textContent = e.message; }
 }
 
 async function prepSummary() {
@@ -3563,6 +3611,7 @@ async function pollPrep() {
   if (r) {
     if (r.size < S.prep.logSize) { $("prepLog").textContent = ""; S.prep.logSize = 0; }
     if (r.log) { $("prepLog").textContent += r.log; $("prepLog").scrollTop = $("prepLog").scrollHeight; }
+    if (r.log && S.prep.masking) { $("maskLog").textContent += r.log; $("maskLog").scrollTop = $("maskLog").scrollHeight; }
     S.prep.logSize = r.size;
     const was = S.prep.running;
     S.prep.running = r.state === "running";
@@ -3570,7 +3619,12 @@ async function pollPrep() {
     if (S.prep.running) $("prepRun").textContent = "Preparing…";
     $("prepState").textContent = S.prep.running ? "Working on the Fizgig computer: you can leave this page." :
       r.state === "done" ? "Done." : r.state === "failed" ? "It stopped with an error: see the log." : "";
-    if (was && !S.prep.running) { prepSummary(); loadDatasets(); }
+    if (S.prep.masking) {
+      $("maskState").textContent = S.prep.running ? "Making masks on the Fizgig computer: you can leave this page." :
+        r.state === "done" ? "Done." : r.state === "failed" ? "It stopped with an error: see below." : "";
+      $("maskRun").disabled = S.prep.running;
+    }
+    if (was && !S.prep.running) { prepSummary(); loadDatasets(); maskInfo(); S.prep.masking = false; }
   }
   if (S.prep.running) S.prep.timer = setTimeout(pollPrep, 1000);
 }
@@ -3824,6 +3878,7 @@ function wirePrep() {
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
   for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
+  $("maskRun").addEventListener("click", maskRun);
   $("prepTest").addEventListener("click", prepTest);
   faceSettingsWire();
   $("lookPick").addEventListener("click", lookPickOpen);

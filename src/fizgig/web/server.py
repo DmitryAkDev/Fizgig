@@ -2753,6 +2753,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
                               "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available(),
                               "face_settings": prep_jobs.face_settings()})
+        if path == "/api/masks/info":              # Image Prep's Make masks card: what's there for this folder
+            from fizgig.dataset import automask
+            folder = (qs.get("folder") or [""])[0]
+            pics = automask.pictures(folder) if folder and os.path.isdir(folder) else []
+            have = sum(1 for p in pics if mask_for_stem(folder, os.path.splitext(os.path.basename(p))[0]))
+            return self.json({"kinds": automask.KINDS, "available": automask.available(),
+                              "model_here": os.path.isfile(automask.model_path(user_data.MODELS_DIR)),
+                              "model_mb": automask.MODEL_MB, "pictures": len(pics), "with_mask": have,
+                              "baselines": bool(prep_jobs.look_baselines(folder)) if folder else False,
+                              "faces": prep_jobs.faces_available()})
         if path == "/api/prep/summary":            # the What will happen card
             from fizgig.dataset import prep as _prep
             g = lambda k, d="": (qs.get(k) or [d])[0]
@@ -3732,7 +3742,7 @@ class Handler(BaseHTTPRequestHandler):
                         str(b.get("dir") or ""), str(b.get("dataset") or ""), b.get("baselines") or [])})
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
-            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move"):
+            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
                 with _lock:
@@ -3748,6 +3758,9 @@ class Handler(BaseHTTPRequestHandler):
                                                          b.get("padding") or 20, bool(b.get("replace"))))
                     if path == "/api/look/scan":
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
+                    if path == "/api/masks/make":
+                        return self.json(prep_jobs.start_masks(folder, str(b.get("kind") or ""),
+                                                               bool(b.get("subject_only")), bool(b.get("overwrite"))))
                     return self.json(prep_jobs.look_move(folder, b.get("paths") or [],
                                                          captions.caption_ext(b.get("ext"))))
                 except ValueError as e:

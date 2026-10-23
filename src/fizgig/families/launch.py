@@ -507,6 +507,8 @@ def dataset_media(folder):
     img, vid, aud = ({e.lower() for e in x} for x in (IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, AUDIO_EXTENSIONS))
     for n in names:
         ext = os.path.splitext(n)[1].lower()
+        if is_mask_file(n):
+            continue
         kinds |= {"photo"} if ext in img else {"clip"} if ext in vid else {"voice"} if ext in aud else set()
     return kinds
 

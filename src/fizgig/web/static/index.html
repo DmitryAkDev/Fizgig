@@ -310,6 +310,30 @@
               <div class="card-title">Output log</div>
               <div class="card-content"><pre class="console-terminal prep-log" id="prepLog"></pre></div>
             </div>
+            <div class="section-card" id="maskCard">
+              <div class="card-title">Masks for masked training (optional)</div>
+              <div class="card-desc">Makes a black-and-white mask for each picture, for the Training tab's Masked
+                training: what you want the LoRA to learn is white, the rest black. Each is saved beside its picture as
+                photo-masklabel.png; the pictures themselves don't change.</div>
+              <div class="card-content">
+                <div class="field-hint" id="maskInfo"></div>
+                <div id="maskKinds"></div>
+                <label class="checkbox-label"><input type="checkbox" id="maskSubject">
+                  Only my subject, when there are several people</label>
+                <div class="field-hint radio-hint" id="maskSubjectHint">Finds your subject by their face, with the
+                  Look Filter's 3 baselines (the last card on this tab); everyone else counts as background.</div>
+                <label class="checkbox-label"><input type="checkbox" id="maskReplace"> Replace masks already there</label>
+                <div class="field-hint radio-hint">Off: masks already in the folder, including any you painted
+                  yourself, are kept.</div>
+                <div class="field-row"><button class="btn btn-primary" id="maskRun">Make masks</button>
+                  <span class="field-hint" id="maskState"></span></div>
+                <div class="field-hint">It runs on the CPU, a fraction of a second a picture. The first time, it
+                  downloads Google's person finder (16 MB).<br><br>Check the masks on the Captions tab: a picture
+                  with a mask has a Show mask button. A mask that's wrong can be painted over in any editor, or
+                  deleted (the picture then trains as normal).</div>
+                <pre class="console-terminal prep-log" id="maskLog" style="display:none"></pre>
+              </div>
+            </div>
           </div>
           <div class="section-card" id="lookCard">
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>

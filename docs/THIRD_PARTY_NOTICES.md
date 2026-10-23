@@ -264,6 +264,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+## LiteRT (Google, ai-edge-litert) and the MediaPipe Selfie Multiclass model — Apache License 2.0
+
+Image Prep's **Make masks** (masked training) runs Google's MediaPipe Selfie Multiclass segmentation model
+(`selfie_multiclass_256x256.tflite`) on the LiteRT runtime, installed from PyPI as `ai-edge-litert`. The model file is
+**not** shipped with Fizgig: it is downloaded from Google's own address the first time masks are made, and checked
+against a pinned SHA-256.
+
+https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter
+
+---
+
 ## Note on model weights
 
 The third-party notices above cover **source code** only. Krea 2 / FLUX.2 model

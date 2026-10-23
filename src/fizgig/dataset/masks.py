@@ -176,8 +176,11 @@ def folder_report(folders, image_exts):
         names = folder_names(folder)
         pics = [n for low, n in names.items() if os.path.splitext(low)[1] in exts and not is_mask_file(low)]
         found = {n: mask_for(os.path.join(folder, n), names) for n in pics}
-        key = (os.path.normcase(folder), tuple(sorted(
-            (n, m, os.path.getmtime(m), os.path.getmtime(os.path.join(folder, n))) for n, m in found.items() if m)))
+        try:
+            key = (os.path.normcase(folder), tuple(sorted(
+                (n, m, os.path.getmtime(m), os.path.getmtime(os.path.join(folder, n))) for n, m in found.items() if m)))
+        except OSError:                               # a file went while the folder was read: the next look gets it
+            continue
         if key not in _REPORTS:
             bad = []
             for n, m in found.items():

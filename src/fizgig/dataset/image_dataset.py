@@ -1339,7 +1339,8 @@ class ImageDataset(torch.utils.data.Dataset):
             item_info = ItemInfo(item_key, "", image_size, bucket_reso, latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
             _mdir = self.mask_directory or self.image_directory
-            if self.loss_masks and _mdir and bucket_key == bucket_reso                     and self.latent_cache_frames(cache_file) <= 1:          # stills only: never a clip or a voice
+            if self.loss_masks and _mdir and bucket_key == bucket_reso \
+                    and self.latent_cache_frames(cache_file) <= 1:          # stills only: never a clip or a voice
                 if _mask_names is None:
                     _mask_names = folder_names(_mdir)
                 item_info.mask_path = mask_for_stem(_mdir, item_key, _mask_names)

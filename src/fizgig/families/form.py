@@ -1106,7 +1106,8 @@ def _mask_note(desc, values, image_folder):
     """The line under Masked training: how many pictures have a mask, and any mask that won't be used."""
     rep = launch.mask_report(desc, {**values, "image_folder": image_folder,
                                     "extra_folders": [values.get(d) for d, _t, _c in CONCEPT_ROWS[:concept_count(values) - 1]]
-                                    if values.get("FAMILY_MULTICONCEPT") else []})
+                                    if values.get("FAMILY_MULTICONCEPT") and _kind(desc, values) not in ("edit", "slider")
+                                    else []})
     if not rep["total"]:
         return ""
     if not rep["with"] and not rep["bad"]:

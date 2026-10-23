@@ -85,10 +85,18 @@ def image_files(folder):
 
 
 def load_image(path):
-    img = Image.open(path)
+    """A picture as it's meant to be seen: a camera's rotation flag (EXIF) applied, since training reads the stored
+    pixels as they are and the saved PNG carries no flag."""
+    from PIL import ImageOps
+    img = ImageOps.exif_transpose(Image.open(path))
     if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
         return img.convert('RGBA')
     return img.convert('RGB')
+
+
+def _rotated(path):
+    from fizgig.dataset.masks import exif_rotated
+    return exif_rotated(path)
 
 
 def atomic_png_save(img, output_path):
@@ -110,7 +118,8 @@ def source_stats(folder, max_sample=40):
     """(image count, median area, median size) of the folder's top-level images, from headers only (cheap)."""
     exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
     try:
-        files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts]
+        files = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts
+                 and not is_mask_file(f)]
     except OSError:
         return 0, None, None
     sizes = []
@@ -251,6 +260,17 @@ class Prep:
         atomic_png_save(cropped, out_mask)
         self.log(f"  its mask: cropped the same way -> {os.path.basename(out_mask)}\n")
 
+    def crop_mask_for(self, filepath, size, face, padding, crop_path):
+        """Masked training: a face close-up made from a picture with a mask gets that mask, cropped the same way."""
+        from fizgig.dataset.masks import MASK_SUFFIX, mask_for, read_mask
+        from fizgig.face_utils import crop_to_face
+        m = mask_for(filepath)
+        if not m:
+            return
+        mk = read_mask(m)
+        mk = crop_to_face(mk.resize(size) if mk.size != size else mk, face, padding)
+        atomic_png_save(mk, os.path.splitext(crop_path)[0] + MASK_SUFFIX + ".png")
+
     # ---- faces ----
     def select_face(self, faces, face_mode):
         """(FaceInfo or None, note) by the face target."""
@@ -305,7 +325,7 @@ class Prep:
                 img, resized = resize_image(img, area)
                 w, h = img.size
                 output_path = os.path.join(output, os.path.splitext(filename)[0] + ".png")
-                if filepath == output_path and ext == '.png' and not resized:
+                if filepath == output_path and ext == '.png' and not resized and not _rotated(filepath):
                     self.log(f"Skipped (no changes): {filename}\n")
                     skipped += 1
                     img.close()
@@ -357,7 +377,8 @@ class Prep:
                 img, resized = resize_image(img, area)
                 w, h = img.size
                 output_path = os.path.join(output, os.path.splitext(filename)[0] + ".png")
-                if filepath == output_path and ext == '.png' and not resized and not cropped:
+                if filepath == output_path and ext == '.png' and not resized and not cropped \
+                        and not _rotated(filepath):
                     self.log(f"Skipped (no changes): {filename}\n")
                     skipped += 1
                     img.close()
@@ -408,6 +429,8 @@ class Prep:
                             crop, _ = resize_image(crop, area)
                             crop_name = f"FaceCrop_{crop_index:03d}.png"
                             crop.save(os.path.join(output, crop_name), "PNG")
+                            self.crop_mask_for(filepath, original_img.size, sel, face_padding,
+                                               os.path.join(output, crop_name))
                             cw, ch = crop.size
                             self.log(f"Face crop: {crop_name} ({cw}x{ch}) from {filename} "
                                      f"({original[0]}x{original[1]}) [{sel.gender}]\n")
@@ -424,7 +447,7 @@ class Prep:
                 img, resized = resize_image(original_img, area)
                 w, h = img.size
                 output_path = os.path.join(output, base + ".png")
-                if filepath == output_path and ext == '.png' and not resized:
+                if filepath == output_path and ext == '.png' and not resized and not _rotated(filepath):
                     self.log(f"OK (no changes): {filename}\n")
                     skipped += 1
                     img.close()

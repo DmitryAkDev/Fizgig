@@ -304,3 +304,78 @@ def look_move(folder, paths, caption_ext=".txt"):
             _look["scores"].pop(p, None)
     return {"moved": len(moved), "errors": errors, "dest": os.path.join(folder, "excluded_by_look"),
             "left": len(_look["scores"])}
+
+
+# ---- Make masks (masked training) -------------------------------------------------------------------------------
+def masks_available() -> bool:
+    from fizgig.dataset import automask
+    return automask.available()
+
+
+def look_baselines(folder):
+    """The Look Filter's three baselines saved with this folder (fizgig_look_scores.json), as paths; [] without."""
+    try:
+        with open(os.path.join(folder, "fizgig_look_scores.json"), encoding="utf-8") as f:
+            names = json.load(f).get("baselines") or []
+    except (OSError, ValueError):
+        return []
+    paths = [os.path.join(folder, n) for n in names]
+    return paths if len(paths) == 3 and all(os.path.isfile(p) for p in paths) else []
+
+
+def start_masks(folder, kind, subject_only=False, overwrite=False):
+    """Masks for every picture in the training folder (dataset/automask.py), as a prep run: the same log and state."""
+    from fizgig.dataset import automask
+    from fizgig.user_data import MODELS_DIR
+    if not folder or not os.path.isdir(folder):
+        raise ValueError("Choose the training folder on the Start tab first.")
+    if kind not in automask.KINDS:
+        raise ValueError("Pick what the masks should show.")
+    if not automask.available():
+        raise ValueError("Making masks needs the ai-edge-litert package: run the updater (update_fizgig) to add it.")
+    bases = look_baselines(folder) if subject_only else []
+    if subject_only and not bases:
+        raise ValueError("Keeping only your subject needs the Look Filter's 3 baselines: choose them and scan the "
+                         "folder (the last card on this tab) first.")
+    if subject_only and not faces_available():
+        raise ValueError("Face detection isn't installed on this machine: run install_fizgig.py to add it.")
+    with _lock:
+        if _job["state"] == "running":
+            raise ValueError("A prep run is already going.")
+        if _look["state"] == "running":
+            raise ValueError("The Look Filter is scanning. Wait for it to finish.")
+        _job.update(state="running", log="", folder=folder, started=time.time())
+
+    def work():
+        try:
+            _log(f"Making masks: {automask.KINDS[kind].lower()}"
+                 + (" - only your subject where there are several people" if subject_only else "")
+                 + (" (replacing masks already there)" if overwrite else " (masks already there are kept)") + "\n\n")
+            subject = det = None
+            if subject_only:
+                emb = face_embedder()
+                vecs = [v for v in (emb.embed_pil(_open_rgb(b))[0] for b in bases) if v is not None]
+                if not vecs:
+                    raise ValueError("no face found in the Look Filter's baselines")
+                subject, det = ((lambda crop: emb.embed_pil(crop)[0]), vecs), _face_detector()
+            c = automask.make_folder(folder, kind, MODELS_DIR, overwrite=overwrite, subject=subject, detector=det,
+                                     log=_log)
+            _log(f"\nDone: {c['made']} mask(s) written"
+                 + (f", {c['kept']} already there kept" if c["kept"] else "")
+                 + (f", {c['no_person']} picture(s) with nothing to mask" if c["no_person"] else "")
+                 + (f", {c['skipped']} skipped" if c["skipped"] else "")
+                 + ". Check them on the Captions tab (Show mask); paint over any that are wrong.\n")
+            end = "done"
+        except Exception as e:
+            _log(f"\nERROR: making masks failed — {type(e).__name__}: {e}\n")
+            end = "failed"
+        with _lock:
+            _job["state"] = end
+    threading.Thread(target=work, daemon=True).start()
+    return {"ok": True}
+
+
+def _open_rgb(path):
+    from PIL import Image
+    with Image.open(path) as im:
+        return im.convert("RGB")
