@@ -59,11 +59,12 @@ def mu_for_clean_share(pct):
 
 
 class MOSSImageDriver(FamilyDriver):
+    _plain_reads = False         # load_dit's file read: plain reads (the preview checkpoint, beside the training model)
 
     # ---- models ---------------------------------------------------------------------------------
     def load_dit(self, path, device):
         from fizgig.moss_image.model import load_moss_dit
-        return load_moss_dit(path, device=device).eval().requires_grad_(False)
+        return load_moss_dit(path, device=device, plain=self._plain_reads).eval().requires_grad_(False)
 
     # ---- training previews on the SFT checkpoint (train_preview_checkpoint; after @Murf-Code, PR #195) -------------
     def park_for_preview(self, dit, device):
@@ -96,7 +97,12 @@ class MOSSImageDriver(FamilyDriver):
         if free < need:
             per_block = (size / 2 if precision == "int8" else size) / N_BLOCKS
             swap = min(self.max_blocks_to_swap(), max(1, int((need - free) / max(per_block, 1e-3)) + 2))
-        m, swapped = quant.load_base(self, path, device, precision, swap, supports_backward=False)
+        # plain reads: mapping the 10 GB file beside the loaded training model crashed Windows with 32 GB of RAM (#229)
+        self._plain_reads = True
+        try:
+            m, swapped = quant.load_base(self, path, device, precision, swap, supports_backward=False)
+        finally:
+            self._plain_reads = False
         if swapped:
             self.block_swap_mode(m, inference=True)
         logger.info(f"[sample] SFT checkpoint: {precision}, {swapped} blocks streamed"

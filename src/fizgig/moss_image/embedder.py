@@ -282,6 +282,7 @@ def read_text_state_dict(path, dtype=torch.bfloat16, want=None) -> dict:
         from fizgig.minimax.convrot import dequantize_int8_convrot, parse_comfy_quant
         for base in quant:
             conf = parse_comfy_quant(sd.pop(base + ".comfy_quant"))
+            sd.pop(base + ".input_scale", None)       # an activation scale: these formats leave the input unquantised
             if conf.get("format") == "asym_w4a8_int8":
                 sd[base + ".weight"] = _decode_w4a8(sd, base, conf, dtype)
                 continue
