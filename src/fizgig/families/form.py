@@ -344,9 +344,7 @@ def form(desc):
            _row("FAMILY_SUBJECT_KIND3", "Subject 3 is", "choice", choices=SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
            _row("FAMILY_CONCEPT_DIR4", "Subject 4", "folder", upload=True, start="data"),
            _row("FAMILY_SUBJECT_KIND4", "Subject 4 is", "choice", choices=SUBJECT_KINDS, default=SUBJECT_KINDS[0]),
-           _row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
-                "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
-          if desc.multi_concept else []),
+           ] if desc.multi_concept else []),
         _row("FAMILY_PEOPLE_MODE", "Your subject and other people", "radio", PEOPLE_HINT, PEOPLE_MODES,
              default=PEOPLE_MODES[0], hint_labels=True,           # one line per choice, its name in bold
              sets={PEOPLE_MODES[0]: {"FAMILY_DOP": False, "FAMILY_MULTI_PERSON": False},
@@ -363,6 +361,10 @@ def form(desc):
         _row("FAMILY_SUBJECT_FIX", "Correct a trigger word, or what a subject is", "check",
              "Fizgig reads each subject's trigger word, and what they are, from their captions. Tick this only if "
              "the line under a subject shows the wrong word."),
+        # beside the card's other ticks (the tiles flow together): Use my captions, face crops first, Correct a trigger
+        *([_row("FAMILY_CONCEPT_BALANCE", "Balance the subjects (optional)", "check", "Repeats the smaller folders "
+                "so each subject gets about as many steps an epoch as the largest. Epochs get longer by the repeats.")]
+          if desc.multi_concept else []),
         *[r for n in (1, 2, 3, 4) for r in (
             _row("FAMILY_DOP_TRIGGER" + ("" if n == 1 else str(n)), f"Subject {n} - trigger word",
                  hint="The word your captions use for this subject, e.g. zwxem.\n"
