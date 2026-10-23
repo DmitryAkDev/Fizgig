@@ -7195,6 +7195,8 @@ function showTab(name) {
   if (name === "outputs") { loadRuns(); if (S.outputsOpen) loadOutputs(); }
   if (name === "pods") { podsLoad(); pickLoad(); }
   if (name === "helpers") helpLoad();
+  // the workbench's render choice follows the Samples tab, which may have changed since the tab last drew it
+  if (["studio", "royale", "profiler"].includes(name)) renderChoiceRefresh();
   api("/api/state", {tab: name}).catch(() => {});
 }
 
