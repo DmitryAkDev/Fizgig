@@ -273,7 +273,10 @@ def _read_sample_override(output_dir):
                     return None
             steps, cfg, turbo = num("steps", int), num("cfg", float), num("turbo", float)
             look = d.get("look") if isinstance(d.get("look"), str) else None   # the look LoRA's path, "" = off
-            return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
+            # the preview-model tick (Qwen's Turbo, Klein's Distilled): its file's path when ticked, "" = the training
+            # model, None = not sent (the run keeps what it started with)
+            ck = d.get("checkpoint") if isinstance(d.get("checkpoint"), str) else None
+            return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)), "checkpoint": ck,
                     "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
                     "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
                     "turbo": turbo if turbo is not None and turbo >= 0 else None,
@@ -1716,6 +1719,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             after = ov["after"] if ov.get("after") is not None else after
         return preview_due(done, every, until, after)
     speed_bad = [False]                      # the speed LoRA matched no layers: not tried again
+    ck_tried = [None]                        # the preview checkpoint a live change last asked for
     compared = [0]                           # the helper's last Check picture request this run answered
 
     def _previews(epoch):
@@ -1762,20 +1766,40 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.warning(f"[sample] CFG {cfg_now:g} needs a negative prompt this run did not encode - this preview "
                            "renders at CFG 1")
             cfg_now = 1.0
+        nonlocal ckpt_previews
+        on_ck = ckpt_previews is not None
+        if ov and ov.get("checkpoint") is not None and not slider and encoded is not None:
+            # the Samples tab's preview-model tick, changed while the run goes: unticked = this round on the training
+            # model (with the tab's own steps and CFG), ticked = on the checkpoint, loaded the first time it's asked for
+            want = ov["checkpoint"]
+            if not want:
+                on_ck = False
+            elif ckpt_previews is None or os.path.normcase(ckpt_previews.path) != os.path.normcase(want):
+                if ck_tried[0] != want:         # asked once per file: a run that can't take it says so once
+                    ck_tried[0] = want
+                    ckpt_previews = _make_ckpt_previews(want) or ckpt_previews
+                on_ck = ckpt_previews is not None and os.path.normcase(ckpt_previews.path) == os.path.normcase(want)
         if speed_now is not None:       # the Turbo LoRA at this round's strength; 0 = this round without it
             if strength_now <= 0:
                 speed_now = None
-            elif ckpt_previews is None or slider:     # on the training model: loaded the first time it is asked for
+            elif not on_ck or slider:     # on the training model: loaded the first time it is asked for
                 if net.has(SPEED) or (not speed_bad[0] and _add_speed(strength_now)):
                     net.set_strength(SPEED, strength_now)
                 else:
                     speed_bad[0], speed_now = True, None
-        if ckpt_previews is not None and not slider:
+            if on_ck and speed_now is not None and ckpt_previews.speed is None:
+                speed_now = None                # the Turbo LoRA was added for the training model's previews
+        if on_ck and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
             # a checkpoint that takes the speed LoRA (Kromoss): this round with it while its strength is above 0
             turbo_ck = ckpt_previews.speed is not None and speed_now is not None
             ck_steps = (steps_now if turbo_ck else (ask_steps or ck.steps))
             ck_cfg = (cfg_now if turbo_ck else (ck.cfg if ask_cfg is None else ask_cfg))
+            if not turbo_ck and ck.cfg <= 1.0 < ck_cfg:
+                # a guidance-distilled checkpoint (Qwen's Turbo, Klein's Distilled) renders burnt above CFG 1
+                logger.info(f"[sample] {os.path.basename(ckpt_previews.path)} renders at CFG 1 (it's distilled); the "
+                            f"CFG {ck_cfg:g} asked for is for the training model's previews")
+                ck_cfg = 1.0
 
             def _ck_render(m, fl, swp):
                 if turbo_ck and not fl.has(SPEED):     # loaded onto the checkpoint the first round that asks for it
@@ -1790,7 +1814,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     speed=speed_desc.settings if turbo_ck else dataclasses.replace(ck, cfg=ck_cfg),
                     swapped=bool(swp), refs=ref_latents)
             ckpt_previews.render(dit, net, ema, _ck_render)
-            write_mode({"model": os.path.basename(preview_checkpoint), "steps": ck_steps, "cfg": ck_cfg,
+            write_mode({"model": os.path.basename(ckpt_previews.path), "steps": ck_steps, "cfg": ck_cfg,
                         "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0},
                        epoch)
             last_prompt[0] = prompts[-1] if prompts else None
@@ -1876,27 +1900,29 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
                     "strength": strength_now if speed_now else 0}, epoch, look_now)
 
-    ckpt_previews = None
-    if preview_checkpoint and encoded is not None:
+    def _make_ckpt_previews(path):
+        """Previews on this preview checkpoint, or None (with the reason logged): at the start, or when the Samples
+        tab's tick turns it on mid-run."""
         if not desc.train_preview_checkpoint:
             logger.warning(f"[sample] {desc.display_name} has no checkpoint previews - ignoring --preview_checkpoint")
         elif finetune:      # the checkpoint carries a LoRA; a fine-tune changes the model itself, so it previews on that
             logger.info("[sample] a fine-tune previews on the model it trains, not the preview checkpoint")
-        elif not os.path.isfile(preview_checkpoint):
-            logger.warning(f"[sample] preview checkpoint {preview_checkpoint} not found - previews use the training "
-                           f"model")
+        elif not os.path.isfile(path):
+            logger.warning(f"[sample] preview checkpoint {path} not found - previews use the training model")
         else:
             from fizgig.families.base_check import checkpoint_takes_speed
-            ck_speed = speed_lora if (speed_lora and speed_desc and
-                                      checkpoint_takes_speed(desc, preview_checkpoint)) else None
-            ckpt_previews = _CheckpointPreviews(
-                driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
+            ck_speed = speed_lora if (speed_lora and speed_desc and checkpoint_takes_speed(desc, path)) else None
+            if ck_speed:
+                logger.info(f"[sample] {os.path.basename(path)} takes the {speed_desc.name}: previews on it use it "
+                            f"while its strength is above 0")
+            return _CheckpointPreviews(
+                driver, path, device, preview_checkpoint_cache, preview_int8,
                 context=(context_lora_path, context_lora_strength) if context_lora_path else None,
                 speed=(ck_speed, speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
                 if ck_speed else None)
-            if ck_speed:
-                logger.info(f"[sample] {os.path.basename(preview_checkpoint)} takes the {speed_desc.name}: previews "
-                            f"on it use it while its strength is above 0")
+        return None
+
+    ckpt_previews = _make_ckpt_previews(preview_checkpoint) if (preview_checkpoint and encoded is not None) else None
     def write_mode(mode, epoch=None, look=False, helper=""):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows. After a round
@@ -1925,7 +1951,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ck = desc.preview_checkpoint_sampling
             mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
                     "steps": asked_steps or (ck.steps if ck else sample_steps),
-                    "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None else asked_cfg}
+                    "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None
+                    else (1.0 if ck and ck.cfg <= 1.0 else asked_cfg)}
             if ckpt_previews.speed is not None and not speed_idle:
                 mode.update(turbo=speed_desc.name, strength=ckpt_previews.speed[1], steps=sample_steps,
                             cfg=sample_cfg_scale)
