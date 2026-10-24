@@ -241,7 +241,7 @@ def _write_json(path, data):
 # the desktop's DEFAULT_PREFS that aren't empty: a web-only install starts where the desktop app would
 PREF_DEFAULTS = {"lora_output_dir": "output_loras", "profiles_dir": "user_data/profiles", "cache_dir": "user_data/cache",
                  "runpod_stop_when_done": "0", "inference_blocks_to_swap": "Auto (detect from GPU)",
-                 "inference_int8": "1"}
+                 "inference_int8": "1", "lan_discovery": "1", "update_check": "1"}
 
 
 LAST_USED_FILE = user_data.LAST_USED_FILE           # the training folder, each folder's trigger word
@@ -303,7 +303,7 @@ def set_folder_trigger(folder, word):
 
 # the Preferences settings Reset to defaults puts back (the model files are never reset)
 SETTING_PREFS = ("lora_output_dir", "profiles_dir", "cache_dir", "input_lora_dir", "input_ref_dir",
-                 "inference_blocks_to_swap", "inference_int8")
+                 "inference_blocks_to_swap", "inference_int8", "lan_discovery", "update_check")
 
 
 def load_prefs() -> dict:
@@ -2531,7 +2531,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if path == "/api/helpers":
                     helpers.ensure_lead()
-                    return self.json(helpers.listing())
+                    return self.json(helpers.listing(look=g("look") == "1"))
                 if path == "/api/helper/info":
                     return self.json(helpers.info())
                 if path == "/api/helper/checkpoint_sha":   # a computer that brought a checkpoint home checks it
@@ -3596,6 +3596,9 @@ class Handler(BaseHTTPRequestHandler):
                                                                   if k in SETTING_PREFS}}
                 if "inference_int8" in ch:
                     ch["inference_int8"] = "1" if ch["inference_int8"] in (True, "1", 1) else "0"
+                for k in ("lan_discovery", "update_check"):
+                    if k in ch:
+                        ch[k] = "1" if ch[k] in (True, "1", 1) else "0"
                 upd = {k: str(v) for k, v in ch.items() if k in allowed}
                 if "cuda_device" in ch:
                     v = str(ch["cuda_device"] or "").strip()
@@ -3612,6 +3615,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("The port must be between 1024 and 65535.")
                     upd["web_port"] = str(port)
                 update_prefs(upd)
+                if "lan_discovery" in upd:              # Preferences > Network: answering other computers, now
+                    from fizgig.web import lan
+                    if upd["lan_discovery"] == "0":
+                        lan.stop()
+                    elif _LAN_PORT[0]:
+                        _lan_announce(_LAN_PORT[0])
                 return self.json({"ok": True})
             if path == "/api/state":
                 one = b.get("model_values")
@@ -4152,6 +4161,9 @@ def _follow_parent(pid):
             os._exit(0)
 
 
+_LAN_PORT = [0]          # the port other computers are told, when this Fizgig can be found at all (a password, not local)
+
+
 def _lan_announce(port):
     """What this Fizgig tells another computer's Pods tab: its name, GPU, port, build and whether it's training."""
     from fizgig.web import lan
@@ -4204,10 +4216,13 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     __import__("fizgig.web.helpers", fromlist=["x"]).local_restore()  # this computer's other GPU, as a helper
     if os.environ.get("FIZGIG_PARENT_PID"):          # this is that second Fizgig: it goes when the first does
         threading.Thread(target=_follow_first, daemon=True).start()
-    __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
+    if str(load_prefs().get("update_check", "1")) != "0":     # Preferences > Network: Check for new releases
+        __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
     if password and not on_pod() and host not in ("127.0.0.1", "localhost", "::1"):
-        _lan_announce(port)                    # other computers' Pods tabs find this one by themselves
+        _LAN_PORT[0] = port                    # Preferences > Network can switch the answering on and off
+        if __import__("fizgig.web.lan", fromlist=["x"]).enabled(load_prefs()):
+            _lan_announce(port)                # other computers' Pods tabs find this one by themselves
     shown = "localhost" if host in ("127.0.0.1", "::1") else host
     logger.info(f"Fizgig web UI on http://{shown}:{port}/" + (" (password required)" if password else ""))
     if open_browser:                           # Fizgig in browser: the page, once this is listening

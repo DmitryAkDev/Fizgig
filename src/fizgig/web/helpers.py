@@ -582,8 +582,9 @@ def _check(h, mine):
             "training": i.get("training")}
 
 
-def listing():
-    """The Helpers tab: each helper with its state and jobs, computers it could add, pods this one could help."""
+def listing(look=False):
+    """The Helpers tab: each helper with its state and jobs, computers it could add, pods this one could help. `look`:
+    the tab is open, so the network is searched for Fizgigs to add."""
     rows = []
     for h in _helpers():
         lv = _live.get(h["id"]) or {"state": "away"}
@@ -636,7 +637,7 @@ def listing():
                                                                     "Getting ready for the share"))
             if i.get("activity"):
                 row["activity"] = i["activity"]
-    found = _found()                     # first: it refreshes what's on the network, which the help list reads
+    found = _found(look)                 # first: it refreshes what's on the network, which the help list reads
     out = _pods_to_help()
     for o in out:
         o.update(link=_link_line(_link(o.get("url"))), link_mbps=_link_mbps(_link(o.get("url"))),
@@ -729,16 +730,19 @@ def _account_rows(key):
     return _acct["rows"] if _acct["key"] == key else None
 
 
-def _found():
-    """The Fizgigs that could be added: on this network (as the Pods tab finds them, asked at most every 10 s), the
-    pods running on your RunPod account (else the Pods tab's saved ones), and the Pods tab's saved addresses out on
-    the internet (a Vast.ai instance), leaving out the helpers already added."""
+def _found(look=False):
+    """The Fizgigs that could be added: on this network (as the Pods tab finds them, asked at most every 10 s and only
+    while the Helpers tab is open - `look` - so a page in the background sends nothing), the pods running on your
+    RunPod account (else the Pods tab's saved ones), and the Pods tab's saved addresses out on the internet (a Vast.ai
+    instance), leaving out the helpers already added."""
     mine = {_norm(h["url"]) for h in _helpers()}
     out = []
     seen = lambda u: _norm(u) in mine or _norm(u) in {_norm(x["url"]) for x in out}
     try:
         from fizgig.web import lan
-        if time.time() - _lan_seen["at"] > 10:
+        if not lan.enabled(_srv().load_prefs()):
+            _lan_seen.update(rows=[], at=0.0)
+        elif look and time.time() - _lan_seen["at"] > 10:
             _lan_seen.update(rows=lan.discover(0.6), at=time.time())
         out += [{"name": f.get("name"), "url": f.get("url"), "where": "lan",
                  "gpu": str(f.get("gpu") or "").replace("NVIDIA GeForce ", ""), "vram": f.get("vram_gb")}
