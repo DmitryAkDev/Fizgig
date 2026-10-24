@@ -7,7 +7,7 @@
 ![The Masked training card, on the Training tab](https://raw.githubusercontent.com/shootthesound/Fizgig/master/assets/masked_training/training_card.png)
 
 - **Turn it on** on the Training tab: **Masked training** card → **Train on the parts your masks show**. The line under it says how many pictures have a mask; pictures without one train as normal.
-- **Make masks for a whole folder in one click**, on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, or everything but the faces. It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (16 MB).
+- **Make masks for a whole folder in one click**, on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, everything but the faces, or just the background (for a place or scene LoRA). It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (16 MB).
 - **Only my subject, when there are several people.** Fizgig finds your subject by their face, with the Look Filter's 3 baselines; everyone else counts as background.
 - **Paint your own, or bring them from OneTrainer.** A mask is `photo-masklabel.png` beside `photo.jpg`, OneTrainer's naming, so its masks work as they are. Masks already in a folder are kept unless you tick **Replace masks already there**.
 - **Choose how much the background counts**: **How much outside the mask counts**, 0.1 by default (OneTrainer's default too), keeps a little of the scene. 0 ignores it completely.

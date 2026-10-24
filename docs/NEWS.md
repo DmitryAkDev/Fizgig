@@ -6,7 +6,7 @@
 
 **In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model. It seems especially effective on MOSS-Image with its default Clean-end share, Slide.** It works for Klein, Krea 2, Qwen Image 2.1, Flux 3, MOSS-Image, Z-Image, SDXL and Anima.
 
-**Make masks in one click** on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, or everything but the faces. With several people in a picture, it can keep just your subject. Or paint your own: OneTrainer's masks work as they are.
+**Make masks in one click** on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, everything but the faces, or just the background (for a place or scene LoRA). With several people in a picture, it can keep just your subject. Or paint your own: OneTrainer's masks work as they are.
 
 Tick **Train on the parts your masks show** on the Training tab. Update Fizgig on your computers, and restart your pods. [Masked training guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MASKED_TRAINING.md) · [Fizgig v8.9.6 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.6)
 
