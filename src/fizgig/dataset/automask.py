@@ -3,6 +3,7 @@ first use) run on LiteRT, on the CPU. It labels every pixel background / hair / 
 other (accessories), so one pass gives:
 
 - "person": everyone in the picture, hair to clothes (the default);
+- "no_clothes": the person without their clothes and accessories (face, hair and skin);
 - "head": the face and hair only;
 - "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces).
 
@@ -29,6 +30,7 @@ MODEL_SHA256 = "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0
 MODEL_MB = 16
 KINDS = {
     "person": "The person (hair to clothes)",
+    "no_clothes": "The person, not their clothes",
     "head": "Just the face and hair",
     "not_faces": "Everything but the faces",
 }
@@ -95,6 +97,8 @@ def mask_from(classes, kind):
     """The mask (H, W) float in [0, 1] of a kind from the class probabilities."""
     if kind == "person":
         m = 1.0 - classes[..., BACKGROUND]
+    elif kind == "no_clothes":
+        m = classes[..., FACE] + classes[..., HAIR] + classes[..., BODY]
     elif kind == "head":
         m = classes[..., FACE] + classes[..., HAIR]
     elif kind == "not_faces":

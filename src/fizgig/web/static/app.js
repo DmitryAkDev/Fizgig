@@ -3576,6 +3576,7 @@ async function loadPrep() {
 // Image Prep's Make masks (fizgig/dataset/automask.py through prep_jobs.start_masks): the same job and log as a prep run
 const MASK_HINTS = {
   person: "For a person LoRA: the room and the background count far less.",
+  no_clothes: "For a person LoRA that shouldn't learn their outfits: clothes count far less, as well as the background.",
   head: "For likeness only: clothes and body count far less, as well as the background.",
   not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face."};
 async function maskInfo() {

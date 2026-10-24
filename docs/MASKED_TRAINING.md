@@ -17,6 +17,7 @@ Start won't run with it ticked and no masks in the training folder.
 Image Prep tab → **Masks for masked training** card. Pick what the masks show:
 
 - **The person (hair to clothes)**: for a person LoRA. The background counts far less.
+- **The person, not their clothes**: a person LoRA that shouldn't learn their outfits. Clothes, accessories and background count far less.
 - **Just the face and hair**: likeness only. Clothes, body and background count far less.
 - **Everything but the faces**: for an outfit, body or style LoRA that shouldn't learn anyone's face.
 
