@@ -4,9 +4,9 @@ other (accessories), so one pass gives:
 
 - "person": everyone in the picture, hair to clothes (the default);
 - "no_clothes": the person without their clothes and accessories (face, hair and skin);
-- "body": the body's skin only - no face, hair, clothes or accessories;
-- "body_clothes": the person without the face and hair (body, clothes and accessories);
 - "head": the face and hair only;
+- "body_clothes": the person without the face and hair (body, clothes and accessories);
+- "body": the body's skin only - no face, hair, clothes or accessories;
 - "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces).
 
 With several people in a picture, "subject_only" keeps just the one whose face matches the Look Filter's three
@@ -33,9 +33,9 @@ MODEL_MB = 16
 KINDS = {
     "person": "The person (hair to clothes)",
     "no_clothes": "The person, not their clothes",
-    "body": "The body's skin, not the face, hair or clothes",
-    "body_clothes": "The body and clothes, not the face or hair",
     "head": "Just the face and hair",
+    "body_clothes": "The body and clothes, not the face or hair",
+    "body": "The body's skin, not the face, hair or clothes",
     "not_faces": "Everything but the faces",
 }
 BACKGROUND, HAIR, BODY, FACE, CLOTHES, OTHER = range(6)
