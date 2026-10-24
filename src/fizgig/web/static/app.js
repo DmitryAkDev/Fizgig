@@ -3576,10 +3576,10 @@ async function loadPrep() {
 // Image Prep's Make masks (fizgig/dataset/automask.py through prep_jobs.start_masks): the same job and log as a prep run
 const MASK_HINTS = {
   person: "For a person LoRA: the room and the background count far less.",
-  no_clothes: "For a person LoRA that shouldn't learn their outfits: clothes count far less, as well as the background.",
+  no_clothes: "For a person LoRA that shouldn't learn their outfits: their clothes and the background both count far less.",
   body: "For a body or skin LoRA (skin texture, tattoos) that shouldn't learn the face: face, hair, clothes and background count far less.",
   body_clothes: "For an outfit or body LoRA that shouldn't learn the face: face, hair and background count far less.",
-  head: "For likeness only: clothes and body count far less, as well as the background.",
+  head: "For likeness only: the body, clothes and background all count far less.",
   not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face."};
 async function maskInfo() {
   if (!S.imageFolder) { $("maskInfo").textContent = ""; return; }
