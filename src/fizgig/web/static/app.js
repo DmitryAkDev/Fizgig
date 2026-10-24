@@ -3580,6 +3580,7 @@ const MASK_HINTS = {
   body: "For a body or skin LoRA (skin texture, tattoos) that shouldn't learn the face: face, hair, clothes and background count far less.",
   body_clothes: "For an outfit or body LoRA that shouldn't learn the face: face, hair and background count far less.",
   head: "For likeness only: the body, clothes and background all count far less.",
+  clothes: "For an outfit LoRA: the person wearing it and the background count far less.",
   not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face.",
   background: "For a place or scene LoRA: the people in the pictures count far less."};
 async function maskInfo() {

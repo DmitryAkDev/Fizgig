@@ -7,6 +7,7 @@ other (accessories), so one pass gives:
 - "head": the face and hair only;
 - "body_clothes": the person without the face and hair (body, clothes and accessories);
 - "body": the body's skin only - no face, hair, clothes or accessories;
+- "clothes": the clothes and accessories only (an outfit LoRA);
 - "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces);
 - "background": the background only, every person left out (a place or scene LoRA).
 
@@ -37,6 +38,7 @@ KINDS = {
     "head": "Just the face and hair",
     "body_clothes": "The body and clothes, not the face or hair",
     "body": "The body's skin, not the face, hair or clothes",
+    "clothes": "Just the clothes",
     "not_faces": "Everything but the faces",
     "background": "Just the background, not the people",
 }
@@ -111,6 +113,8 @@ def mask_from(classes, kind):
         m = classes[..., BODY] + classes[..., CLOTHES] + classes[..., OTHER]
     elif kind == "head":
         m = classes[..., FACE] + classes[..., HAIR]
+    elif kind == "clothes":
+        m = classes[..., CLOTHES] + classes[..., OTHER]
     elif kind == "background":
         m = classes[..., BACKGROUND]
     elif kind == "not_faces":

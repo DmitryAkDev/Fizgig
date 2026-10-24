@@ -27,6 +27,7 @@ Image Prep tab → **Masks for masked training** card. Pick what the masks show:
 - **Just the face and hair**: likeness only. Clothes, body and background count far less.
 - **The body and clothes, not the face or hair**: an outfit or body LoRA that shouldn't learn the face. Face, hair and background count far less.
 - **The body's skin, not the face, hair or clothes**: a body or skin LoRA (skin texture, tattoos) that shouldn't learn the face. Face, hair, clothes and background count far less.
+- **Just the clothes**: for an outfit LoRA. Clothes and accessories train fully; the person wearing them and the background count far less.
 - **Everything but the faces**: for an outfit, body or style LoRA that shouldn't learn anyone's face.
 - **Just the background, not the people**: for a place or scene LoRA. The people in the pictures count far less; a picture with nobody in it trains whole.
 
