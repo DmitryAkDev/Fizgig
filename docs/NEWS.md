@@ -1,12 +1,12 @@
 # Fizgig news
 
-## 24 Oct 2026: Faster training on 48 GB+ cards
+## 24 Oct 2026: Faster training on 40 GB+ cards
 
-**Training is faster on cards with 48 GB or more**, which is most pods: A40, A6000, L40S, A100, H100, RTX PRO 6000. Gradient checkpointing saves memory by working parts of each step out twice; a big card doesn't need the saving, so Auto now turns it off when the run fits with room to spare. That's 13–27 % faster per step, measured on Krea 2, Qwen Image 2.1, MOSS-Image, Z-Image and MiniMax H3 (stills and clips).
+**Training is faster on cards with 40 GB or more**, which is most pods: A100, A40, A6000, L40S, H100, RTX PRO 6000. Gradient checkpointing saves memory by working parts of each step out twice; a big card doesn't need the saving, so Auto now turns it off when the run fits with room to spare. That's 13–27 % faster per step, measured on Krea 2, Qwen Image 2.1, MOSS-Image, Z-Image and MiniMax H3 (stills and clips).
 
-**Where it doesn't all fit**, at bigger sizes on a 48 GB card, the last blocks go without it instead: 3–21 % faster.
+**Where it doesn't all fit**, at bigger sizes, the last blocks go without it instead: 2–21 % faster.
 
-**Previews keep at least 4 GB free** either way. The figures behind it were measured on A100 80 GB, A40 48 GB and RTX PRO 6000 cards, from 0.25 to 2 MP. Cards of 32 GB and under, rank above 32, LoKR, fine-tunes and sliders keep checkpointing on, as before.
+**Previews keep at least 4 GB free** either way. The figures behind it were measured on A100 80 GB, A40 48 GB (and one capped to 40 GB) and RTX PRO 6000 cards, from 0.25 to 2 MP. Cards of 32 GB and under, rank above 32, LoKR, fine-tunes and sliders keep checkpointing on, as before.
 
 Restart your pods to get it. [Fizgig v8.9.5 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.5)
 
