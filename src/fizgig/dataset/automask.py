@@ -7,7 +7,8 @@ other (accessories), so one pass gives:
 - "head": the face and hair only;
 - "body_clothes": the person without the face and hair (body, clothes and accessories);
 - "body": the body's skin only - no face, hair, clothes or accessories;
-- "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces).
+- "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces);
+- "background": the background only, every person left out (a place or scene LoRA).
 
 With several people in a picture, "subject_only" keeps just the one whose face matches the Look Filter's three
 baselines (ArcFace, as the filter scores them): the person outline is split into figures - each pixel goes to the face
@@ -37,6 +38,7 @@ KINDS = {
     "body_clothes": "The body and clothes, not the face or hair",
     "body": "The body's skin, not the face, hair or clothes",
     "not_faces": "Everything but the faces",
+    "background": "Just the background, not the people",
 }
 BACKGROUND, HAIR, BODY, FACE, CLOTHES, OTHER = range(6)
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
@@ -109,6 +111,8 @@ def mask_from(classes, kind):
         m = classes[..., BODY] + classes[..., CLOTHES] + classes[..., OTHER]
     elif kind == "head":
         m = classes[..., FACE] + classes[..., HAIR]
+    elif kind == "background":
+        m = classes[..., BACKGROUND]
     elif kind == "not_faces":
         m = 1.0 - (classes[..., FACE] + classes[..., HAIR])
     else:
@@ -183,7 +187,7 @@ def make_folder(folder, kind, models_dir, *, overwrite=False, subject=None, dete
             continue
         m = mask_from(cls, kind)
         note = ""
-        if subject is not None and detector is not None and kind != "not_faces":
+        if subject is not None and detector is not None and kind not in ("not_faces", "background"):
             faces = [f.bbox for f in (detector.detect_from_pil(img) or [])]
             if len(faces) > 1:
                 embed, bases = subject

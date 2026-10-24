@@ -28,6 +28,7 @@ Image Prep tab → **Masks for masked training** card. Pick what the masks show:
 - **The body and clothes, not the face or hair**: an outfit or body LoRA that shouldn't learn the face. Face, hair and background count far less.
 - **The body's skin, not the face, hair or clothes**: a body or skin LoRA (skin texture, tattoos) that shouldn't learn the face. Face, hair, clothes and background count far less.
 - **Everything but the faces**: for an outfit, body or style LoRA that shouldn't learn anyone's face.
+- **Just the background, not the people**: for a place or scene LoRA. The people in the pictures count far less; a picture with nobody in it trains whole.
 
 Press **Make masks**. It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (MediaPipe Selfie Multiclass, 16 MB).
 

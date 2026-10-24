@@ -3580,7 +3580,8 @@ const MASK_HINTS = {
   body: "For a body or skin LoRA (skin texture, tattoos) that shouldn't learn the face: face, hair, clothes and background count far less.",
   body_clothes: "For an outfit or body LoRA that shouldn't learn the face: face, hair and background count far less.",
   head: "For likeness only: the body, clothes and background all count far less.",
-  not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face."};
+  not_faces: "For an outfit, a body or a style LoRA that shouldn't learn anyone's face.",
+  background: "For a place or scene LoRA: the people in the pictures count far less."};
 async function maskInfo() {
   if (!S.imageFolder) { $("maskInfo").textContent = ""; return; }
   const r = await api("/api/masks/info?folder=" + encodeURIComponent(S.imageFolder)).catch(() => null);
@@ -3602,9 +3603,10 @@ function maskShow(r) {
   $("maskInfo").textContent = !r.available ? "Making masks needs an update: run update_fizgig to add its one new " +
     "package (ai-edge-litert)." : r.pictures ? `${r.with_mask} of ${r.pictures} pictures have a mask.` : "";
   const subj = $("maskSubject");
-  subj.disabled = !r.baselines || !r.faces || kind === "not_faces";
+  subj.disabled = !r.baselines || !r.faces || kind === "not_faces" || kind === "background";
   if (subj.disabled) subj.checked = false;
   $("maskSubjectHint").textContent = kind === "not_faces" ? "Not for Everything but the faces: every face is left out." :
+    kind === "background" ? "Not for Just the background: every person is left out." :
     !r.faces ? "Needs face detection, which isn't installed here (run install_fizgig.py)." :
     r.baselines ? "Finds your subject by their face, with the Look Filter's 3 baselines; everyone else counts as background." :
     "Needs the Look Filter's 3 baselines: choose them and scan the folder (the last card on this tab), then come back.";
