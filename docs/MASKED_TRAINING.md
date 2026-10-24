@@ -12,11 +12,15 @@ In our tests of character LoRAs, masks significantly raised both the best likene
 
 Training tab → **Masked training** card → tick **Train on the parts your masks show**. The line under it says how many pictures have a mask. Pictures without one train as normal.
 
+![The Masked training card, on the Training tab](../assets/masked_training/training_card.png)
+
 Start won't run with it ticked and no masks in the training folder.
 
 ### …make masks automatically?
 
 Image Prep tab → **Masks for masked training** card. Pick what the masks show:
+
+![Make masks, on the Image Prep tab](../assets/masked_training/make_masks.png)
 
 - **The person (hair to clothes)**: for a person LoRA. The background counts far less.
 - **The person, not their clothes**: a person LoRA that shouldn't learn their outfits. Clothes, accessories and background count far less.
