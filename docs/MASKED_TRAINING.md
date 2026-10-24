@@ -4,6 +4,8 @@ Train on the part of each picture that matters: the person, not the room around 
 
 It works for Klein, Krea 2, Qwen Image 2.1, Flux 3, MOSS-Image, Z-Image, SDXL and Anima (photos; not clips or songs).
 
+In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model. It seems especially effective on MOSS-Image with its default Clean-end share, Slide.
+
 ## How do I…?
 
 ### …turn it on?

@@ -4,7 +4,7 @@
 
 **Train on the part of each picture that matters: the person, not the room around them.** A black-and-white mask beside a picture says which part counts. White is trained fully, grey partly, and black only as much as you choose. The picture itself still trains whole, so the LoRA sees your subject in their scene; it just stops copying the scene.
 
-**In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model.** It works for Klein, Krea 2, Qwen Image 2.1, Flux 3, MOSS-Image, Z-Image, SDXL and Anima.
+**In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model. It seems especially effective on MOSS-Image with its default Clean-end share, Slide.** It works for Klein, Krea 2, Qwen Image 2.1, Flux 3, MOSS-Image, Z-Image, SDXL and Anima.
 
 **Make masks in one click** on the Image Prep tab: the person, the person without their clothes, just the face and hair, the body and clothes without the face, the body's skin only, or everything but the faces. With several people in a picture, it can keep just your subject. Or paint your own: OneTrainer's masks work as they are.
 

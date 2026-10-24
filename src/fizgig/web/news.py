@@ -10,7 +10,7 @@ NEWS = [
         "body": (
             "Train on the part of each picture that matters: the person, not the room around them. A "
             "black-and-white mask beside a picture says which part counts; the picture still trains whole, so "
-            "the LoRA sees your subject in their scene but stops copying the scene. " + 'In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model.'
+            "the LoRA sees your subject in their scene but stops copying the scene. " + 'In our tests of character LoRAs, masks significantly raised both the best likeness a run reached, by eye and in likeness scores, and how quickly it got there, on every recent model. It seems especially effective on MOSS-Image with its default Clean-end share, Slide.'
             + "\n\nTick it on the Training tab (Masked training card), and make masks for a whole folder on the "
             "Image Prep tab. OneTrainer's masks work as they are."
         ),
