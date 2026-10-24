@@ -55,7 +55,6 @@ Captions tab: a picture with a mask has a **Show mask** button.
 
 - **All black.** It leaves nothing to train on.
 - **Not its picture's shape.** The picture was cropped or rotated after the mask was made.
-- **Its picture has a rotation flag (EXIF).** A camera's sideways photo is stored on its side, and training reads it that way. Run Image Prep on the folder: it saves pictures upright. Then make the mask again.
 
 **Masks go with their pictures.** Remove on the Captions tab, Move Marked in the Look Filter, Image Prep's resize and face crops, Move a run and a training share all take a picture's mask along.
 

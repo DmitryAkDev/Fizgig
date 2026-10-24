@@ -98,8 +98,8 @@ def read_mask(path):
 
 
 def exif_rotated(image_path):
-    """Does the picture carry a rotation flag (EXIF orientation other than 1)? Training reads its stored pixels as
-    they are, but a mask painted in an editor follows the flag - so the two wouldn't line up."""
+    """Does the picture carry a rotation flag (EXIF orientation other than 1)? Image Prep re-saves such a picture
+    upright."""
     from PIL import Image
     try:
         with Image.open(image_path) as im:
@@ -117,9 +117,6 @@ def mask_problem(path, image_size, image_path=None):
             size = im.size
     except Exception:
         return "can't be read"
-    if image_path and exif_rotated(image_path):
-        return ("its picture has a rotation flag (EXIF) - run Image Prep on the folder (it saves pictures upright) and "
-                "make the mask again")
     if not aspect_ok(size, image_size):
         return "isn't the shape of its picture (cropped or rotated after the mask was made?)"
     import numpy as np

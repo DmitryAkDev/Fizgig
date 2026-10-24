@@ -19,7 +19,8 @@ import urllib.request
 import numpy as np
 from PIL import Image
 
-from fizgig.dataset.masks import MASK_SUFFIX, MIN_COVER, exif_rotated, folder_names, is_mask_file, mask_for
+from fizgig.dataset.masks import MASK_SUFFIX, MIN_COVER, folder_names, is_mask_file, mask_for
+from fizgig.utils.upright import upright
 
 MODEL_NAME = "selfie_multiclass_256x256.tflite"
 MODEL_URL = ("https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/"
@@ -157,14 +158,9 @@ def make_folder(folder, kind, models_dir, *, overwrite=False, subject=None, dete
             continue
         try:
             with Image.open(p) as im:
-                img = im.convert("RGB")
+                img = upright(im).convert("RGB")      # as training reads it
         except Exception as e:
             log(f"  {name}: can't be read ({e}) - skipped\n")
-            counts["skipped"] += 1
-            continue
-        if exif_rotated(p):
-            log(f"  {name}: it has a rotation flag (EXIF) - run Image Prep first (it saves pictures upright), "
-                f"then make its mask\n")
             counts["skipped"] += 1
             continue
         cls = seg.classes(img)
