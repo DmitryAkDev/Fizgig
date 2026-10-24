@@ -1216,6 +1216,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     # ---- gradient checkpointing: "auto" goes without it when the measured figure fits the empty card (LoRA only -
     # LoKR without checkpointing measured 3-16 GB over a LoRA at 1 MP, Qwen edit pairs ~26 GB; fine-tunes, sliders, edit pairs and
     # the mid-run captioner carry memory the figures don't cover)
+    gc_off_blocks = 0
     if gradient_checkpointing == "auto":
         paired = any(d.get("control_directory") for d in user_config.get("datasets", []))
         if (quant.card_gb() < quant.NOGC_MIN_CARD_GB or finetune or slider or paired or auto_recaption
@@ -1228,6 +1229,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck, compiled=bool(do_compile),
                 kind=kind, rank=int(network_dim))
             logger.info(f"[checkpointing] gradient checkpointing {why}")
+            if gradient_checkpointing:
+                gc_off_blocks, why = quant.plan_partial_checkpointing(
+                    desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck,
+                    compiled=bool(do_compile), kind=kind, rank=int(network_dim))
+                if gc_off_blocks:
+                    logger.info(f"[checkpointing] gradient checkpointing {why}")
+                    if do_compile:          # the partial figures are compiled with the checkpoint outside the graph
+                        do_compile = "outside"
     gradient_checkpointing = bool(gradient_checkpointing)
 
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
@@ -1357,6 +1366,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     dit, swapped = quant.load_base(driver, dit_path, device, precision, blocks_to_swap)
     if gradient_checkpointing:
         driver.enable_gradient_checkpointing(dit, True)
+        dit.gc_off_blocks = gc_off_blocks       # the compiled blocks / H3's loop leave the last ones un-checkpointed
     net = FamilyLoRA(dit, driver, device=device)
     driver.prepare_training(dit, group, net)
     if training_adapter:
@@ -2188,10 +2198,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             progress.refresh()
 
     def _share_ok():
-        # gradient_checkpointing off: a big card planned this run without it, and a helper trains with it - the halves
+        # gradient_checkpointing off (or partly): a big card planned this run without it, and a helper trains with it - the halves
         # would differ, so no share (set a helper to share before the run starts and it keeps checkpointing)
         return (not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
-                and gradient_checkpointing)
+                and gradient_checkpointing and not gc_off_blocks)
 
     def _worker_epochs():
         """--share_worker: each epoch the lead hands over (its job file: the start LoRA, the share, the LR), in turn;
@@ -2267,10 +2277,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if share_now[0] is not None and epoch + 1 > share_now[0]["last"]:
                 share_now[0] = None
             _hs = _helper_share(output_dir, output_name) if share_now[0] is None and _share_ok() else None
-            if (not gradient_checkpointing and not share_off_said[0] and share_now[0] is None
+            if ((not gradient_checkpointing or gc_off_blocks) and not share_off_said[0] and share_now[0] is None
                     and _helper_share(output_dir, output_name)):
                 share_off_said[0] = True
-                logger.info("[share] a helper is ready to share, but this run trains without gradient checkpointing "
+                logger.info("[share] a helper is ready to share, but this run trains without (all of) gradient checkpointing "
                             "(a big card's plan) and a helper trains with it - the halves would differ, so this GPU "
                             "trains every image. Set the helper to share before starting a run and both keep it on.")
             if _hs:                  # a helper trains its share of this round's epochs, from the same start

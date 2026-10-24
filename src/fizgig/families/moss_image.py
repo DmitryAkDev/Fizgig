@@ -172,6 +172,9 @@ MOSS_IMAGE = FamilyDescription(
     # without gradient checkpointing: reserved peaks, compiled, ranks 8-16, previews on, RTX PRO 6000 (24 Oct 2026 night; the 2.0 points on real 2 MP photos)
     train_memory_nogc={"int8": ((0.25, 13.3), (0.5, 20.2), (0.75, 26.8), (1.0, 33.1), (1.05, 34.9), (1.5, 46.2), (2.0, 59.3)),
                        "bf16": ((0.25, 17.9), (0.5, 25.0), (0.75, 31.7), (1.0, 38.2), (1.05, 40.0), (1.5, 51.7), (2.0, 65.0))},
+    # partial checkpointing (quant.plan_partial_checkpointing): every block checkpointed (outside the graph), GB per
+    # block without it = the larger of the half-off and all-off slopes; RTX PRO 6000, previews on, 24 Oct 2026
+    train_memory_partial={"int8": (42, ((1.0, 10.4, 0.55), (1.5, 10.4, 0.86), (2.0, 10.7, 1.16)))},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     ema_default="0.98",

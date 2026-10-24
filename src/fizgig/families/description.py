@@ -498,6 +498,9 @@ class FamilyDescription:
     # A compiled LoRA run with no swap trains without checkpointing (13-27% faster) when this fits with a margin;
     # a precision missing here (nf4: its dequantised weights stay alive for backward) always checkpoints
     train_memory_nogc: dict = field(default_factory=dict)
+    # partial checkpointing on a big card where full off doesn't fit: {precision: (blocks, ((megapixels, GB with every
+    # block checkpointed, GB per block without it), ...))}, compiled with the checkpoint outside the graph, previews on
+    train_memory_partial: dict = field(default_factory=dict)
     optimizers: tuple = ("adamw8bit", "adamw")
     # optimizer settings a family's own trainer applied (only when Optimizer Args doesn't set them): an Adam-family
     # weight decay, and the 8-bit Adam eps floor of 1e-6 (training/optimizers.create_optimizer eps_floor_8bit - H3's

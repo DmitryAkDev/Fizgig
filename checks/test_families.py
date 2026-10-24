@@ -87,6 +87,28 @@ def test_ranks_past_the_measured_ones_checkpoint(monkeypatch):
     assert quant.plan_checkpointing(d, "int8", 0, 1.0, free_gb=90, rank=64)[0] is True
 
 
+def test_partial_checkpointing_fits_with_the_margin(monkeypatch):
+    """Partial checkpointing: big cards only, never past the figures, never all blocks, the planned peak plus the
+    margin inside free VRAM; every block on without figures, on a small card, under swap or past rank 32."""
+    from fizgig.families import quant
+    for key in FAMILIES:
+        d = registry.get(key)
+        for k, (blocks, pts) in d.train_memory_partial.items():
+            p, _, kind = k.partition(":")
+            assert p in d.precisions and blocks > 1, f"{key}: {k}"
+            assert list(pts) == sorted(pts) and all(b[1] >= a[1] and b[2] >= a[2] > 0 for a, b in zip(pts, pts[1:])), k
+            monkeypatch.setattr(quant, "card_gb", lambda: 48.0)
+            for mp, on_gb, per in pts:
+                for free in (44.5, 47.1, 79.0):
+                    n, _ = quant.plan_partial_checkpointing(d, p, 0, mp, free_gb=free, kind=kind)
+                    assert 0 <= n < blocks and (n == 0 or on_gb + n * per + quant.NOGC_MARGIN_GB <= free), (k, mp, free)
+                assert quant.plan_partial_checkpointing(d, p, 2, mp, free_gb=90, kind=kind)[0] == 0
+                assert quant.plan_partial_checkpointing(d, p, 0, mp, free_gb=90, kind=kind, rank=64)[0] == 0
+            assert quant.plan_partial_checkpointing(d, p, 0, pts[-1][0] + 0.5, free_gb=90, kind=kind)[0] == 0
+            monkeypatch.setattr(quant, "card_gb", lambda: 32.0)
+            assert quant.plan_partial_checkpointing(d, p, 0, pts[0][0], free_gb=1000, kind=kind)[0] == 0
+
+
 def test_share_shortfall_names_a_base_that_cannot_fit():
     """A helper's share at the lead's precision: a base that can't swap (4-bit) and doesn't fit is named before the
     model loads; one that fits with swap, or a family without figures, isn't."""

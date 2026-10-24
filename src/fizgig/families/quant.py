@@ -306,6 +306,31 @@ def plan_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None
     return True, f"on: off would need ~{need + NOGC_MARGIN_GB:.1f} GB at {megapixels:.2f} MP, {free_gb:.1f} GB free"
 
 
+def plan_partial_checkpointing(desc, precision, blocks_to_swap, megapixels, free_gb=None, compiled=True, kind="",
+                               rank=8):
+    """How many of the last blocks train without gradient checkpointing when full off doesn't fit a big card: (n, why).
+    Read from desc.train_memory_partial {key: (blocks, ((megapixels, GB with every block checkpointed, GB per block
+    without it), ...))} - reserved peaks, compiled with the checkpoint outside the graph, previews on - at the first
+    measured size at or above the run's (never between or past them), with NOGC_MARGIN_GB to spare. 0 = all on."""
+    key = f"{precision}:{kind}" if kind else precision
+    fig = (getattr(desc, "train_memory_partial", None) or {}).get(key)
+    if (not fig or blocks_to_swap > 0 or (not compiled and desc.compiles) or card_gb() < NOGC_MIN_CARD_GB
+            or rank > NOGC_MAX_RANK):
+        return 0, ""
+    blocks, pts = fig
+    at = [p for p in pts if p[0] + 0.01 >= megapixels]
+    if not at:
+        return 0, ""
+    mp, on_gb, per_block = min(at)
+    if free_gb is None:
+        free_gb = free_vram_gb()
+    n = max(0, min(blocks - 1, int((free_gb - NOGC_MARGIN_GB - on_gb) // per_block)))
+    if not n:
+        return 0, ""
+    return n, (f"partly off: the last {n} of {blocks} blocks without it (~{on_gb + n * per_block:.1f} GB at "
+               f"{megapixels:.2f} MP, {free_gb:.1f} GB free)")
+
+
 _SIM_OTHERS_GB = 0.8     # a simulated card also loses this to the desktop / other apps, as real cards do
 
 

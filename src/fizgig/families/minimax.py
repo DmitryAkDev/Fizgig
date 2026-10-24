@@ -387,6 +387,11 @@ MINIMAX = FamilyDescription(
         "int8:clips": ((6.39, 51.8), (9.7, 66.5), (13.27, 82.2)),
         "hqq:clips": ((6.39, 46.7), (13.27, 77.3)),
         "nf4:clips": ((6.39, 42.2),)},
+    # partial checkpointing (quant.plan_partial_checkpointing): every block checkpointed, GB per block without it - the
+    # last blocks cost more than the average (the routed middle blocks carry fewer tokens): on an A40, 15 off measured
+    # 0.94 GB each at the default size and 10 off 1.54 at 0.37 MP (25 off averaged 0.88 / 1.35 on an RTX PRO 6000) -
+    # those +10 %; previews on, 24 Oct 2026
+    train_memory_partial={"int8:clips": (50, ((6.39, 26.4, 1.04), (9.7, 26.4, 1.70)))},
     precision_labels={"auto": "Auto (recommended)", "int8": "int8 · most accurate, needs ~30 GB free",
                       "nf4": "4-bit · fits smaller cards", "hqq": "4-bit HQQ · lower error than 4-bit, slower"},
     precision_hint="Auto reads free VRAM at launch and picks precision and block swap together. int8 is the most "
