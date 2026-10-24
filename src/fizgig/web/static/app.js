@@ -546,7 +546,7 @@ function onValue(r, val) {
   if (r.key === "__SAMPLE_LIVE" || (S.values.__SAMPLE_LIVE &&
       ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
        "FAMILY_TURBO_STRENGTH", "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH",
-       "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK"].includes(r.key))) sampleLiveSoon();
+       "SAMPLE_EVERY_AFTER", "FAMILY_PREVIEW_LOOK", "SAMPLE_CHECKPOINT"].includes(r.key))) sampleLiveSoon();
   if (r.key === "CAPTION_TRIGGER_WORD") { S.trigger = String(val).trim(); $("capTrigger").value = S.trigger; saveTriggerSoon(S.trigger); }
   const extra = r.sets && r.sets[val];            // a kind of training that also sets others (Fine-tune's LR)
   if (extra) { Object.assign(S.values, extra); syncInputs(Object.keys(extra)); }
@@ -738,6 +738,7 @@ function renderPrefs() {
   host.innerHTML = "";
   if (S.pod) host.append(podCard());
   host.append(webPortCard());
+  if (!S.pod) host.append(networkCard());
   host.append(dataFolderCard());
   host.append(outputFolderCard());
   host.append(foldersCard());
@@ -1200,6 +1201,29 @@ function firewallRow() {
   };
   api("/api/lan/firewall").then(show).catch(() => {});
   return box;
+}
+
+// what Fizgig does on the network by itself (issue #236): finding your other computers and being found by them (a
+// broadcast on the local network while the Helpers or Pods tab is open, and an answer to theirs), and the release check
+function networkCard() {
+  const box = (key, label) => {
+    const on = el("input", {type: "checkbox"});
+    on.checked = String(S.set[key] ?? "1") !== "0";
+    on.addEventListener("change", () => api("/api/prefs", {changes: {[key]: on.checked}})
+      .then(() => { S.set[key] = on.checked ? "1" : "0"; }));
+    return el("label", {class: "checkbox-label"}, on, " " + label);
+  };
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Network"})),
+    el("div", {class: "card-desc", text: "What Fizgig does on the network without being asked. Pods, RunPod and " +
+      "computers added by their address work either way."}),
+    el("div", {class: "card-content"},
+      box("lan_discovery", "Find Fizgig on my other computers"),
+      el("div", {class: "field-hint", text: "While the Helpers or Pods tab is open, this computer asks the local network " +
+        "which computers run Fizgig, and it answers theirs (with a web password set). Nothing leaves your network. " +
+        "Off: no asking and no answering."}),
+      box("update_check", "Check for new releases"),
+      el("div", {class: "field-hint", text: "Once at start-up, Fizgig asks GitHub for its newest release tag (the About " +
+        "box says when one is out). Off: no check unless you press Check for updates in the About box."})));
 }
 
 // the web UI's port: saved by the first launch (8081, or the next free port if 8081 was taken)
@@ -3343,6 +3367,13 @@ async function runLossTick(training) {
   host.replaceChildren(lossGraph(d));
 }
 
+// a form value as the tab shows it: the row's default while it's never been set
+function valueOrDefault(key) {
+  if (S.values[key] !== undefined) return S.values[key];
+  for (const s of S.fam.form.sections) for (const r of s.rows) if (r && r.key === key) return r.default;
+  return undefined;
+}
+
 // the Samples tab's "Change the previews of the run going now": its prompts, seed, size, steps, CFG and Turbo
 // strength go to the run as the
 // trainer's sample override while ticked (sent again on every change), and come off when it's unticked
@@ -3353,7 +3384,7 @@ const sampleLiveSoon = debounce(async () => {
       seed: v.SAMPLE_SEED, width: v.SAMPLE_WIDTH, height: v.SAMPLE_HEIGHT, steps: v.SAMPLE_STEPS,
       cfg: v.SAMPLE_CFG_SCALE, turbo: v.FAMILY_TURBO_STRENGTH, every: v.SAMPLE_EVERY_N_EPOCHS,
       until: v.SAMPLE_LATER ? v.SAMPLE_UNTIL_EPOCH : 0, after: v.SAMPLE_LATER ? v.SAMPLE_EVERY_AFTER : 0,
-      look: !!v.FAMILY_PREVIEW_LOOK});
+      look: !!v.FAMILY_PREVIEW_LOOK, checkpoint: !!valueOrDefault("SAMPLE_CHECKPOINT")});
     if (note) note.textContent = r.on ? "Sent: the run's next previews use these." : "The run is back on its own prompts.";
   } catch (e) {
     if (note) note.textContent = S.run && (S.run.running || S.run.state === "starting") ? e.message : liveIdleText();
@@ -6844,8 +6875,8 @@ const svgEl = (s) => { const t = document.createElement("template"); t.innerHTML
 
 async function helpLoad(quiet) {
   if (!quiet) $("helpNote").textContent = "Checking your helpers...";
-  try { S.help.data = await api("/api/helpers"); } catch (e) { $("helpNote").textContent = e.message; return; }
-  const open = $("tab-helpers").classList.contains("active");
+  const open = $("tab-helpers").classList.contains("active");   // open: the network is searched too (off it, nothing)
+  try { S.help.data = await api("/api/helpers" + (open ? "?look=1" : "")); } catch (e) { $("helpNote").textContent = e.message; return; }
   if (!open) helpStrips();                // off the tab only its strips and the run card's line show
   else if (!S.help.typing) helpDraw();    // not while speeds are being typed: a redraw would empty the boxes
   clearTimeout(S.help.timer);           // every 3 s while one works, else every 15 s on the tab and 30 s off it

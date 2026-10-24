@@ -49,6 +49,7 @@ from PIL import Image
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 from fizgig import user_data
+from fizgig.utils.upright import upright
 
 _HERE = user_data.BASE_DIR          # the Fizgig folder: a relative face_yolo_model is relative to it
 PREFS_FILE = user_data.PREFS_FILE
@@ -159,7 +160,7 @@ def _pil_to_bgr(pil_image: Image.Image) -> np.ndarray:
 def _load_pil(path: str) -> Image.Image:
     """PIL, not cv2.imread: handles unicode paths on Windows."""
     with Image.open(path) as im:
-        return im.convert("RGB")
+        return upright(im).convert("RGB")
 
 
 def _box_iou(a, b) -> float:

@@ -17,6 +17,7 @@ import os
 import shutil
 
 from PIL import Image
+from fizgig.utils.upright import open_upright, upright_size
 
 from fizgig.dataset.masks import is_mask_file
 
@@ -85,10 +86,7 @@ def image_files(folder):
 
 
 def load_image(path):
-    """A picture as it's meant to be seen: a camera's rotation flag (EXIF) applied, since training reads the stored
-    pixels as they are and the saved PNG carries no flag."""
-    from PIL import ImageOps
-    img = ImageOps.exif_transpose(Image.open(path))
+    img = open_upright(path)
     if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
         return img.convert('RGBA')
     return img.convert('RGB')
@@ -126,7 +124,7 @@ def source_stats(folder, max_sample=40):
     for p in files[:max_sample]:
         try:
             with Image.open(p) as im:
-                sizes.append(im.size)
+                sizes.append(upright_size(im))
         except Exception:
             pass
     if not sizes:

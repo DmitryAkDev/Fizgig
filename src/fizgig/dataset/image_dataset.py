@@ -30,6 +30,7 @@ from fizgig.training.metadata import (ARCHITECTURE_KLEIN_9B, ARCHITECTURE_KLEIN_
                                       ARCHITECTURE_MINIMAX)
 
 import logging
+from fizgig.utils.upright import open_upright
 
 logger = logging.getLogger(__name__)
 
@@ -294,12 +295,22 @@ class ItemInfo:
 def source_stamp(path) -> str:
     """"size:mtime" of the picture a latent cache was made from, kept in the cache's metadata ("source"): any change
     re-encodes it, older or newer - a copied-in photo keeps its own date, so "newer than the cache" misses a folder
-    refilled with someone else's photos under the same names. "" when the file can't be read."""
+    refilled with someone else's photos under the same names. "" when the file can't be read. A picture with a rotation
+    flag adds ":upright", so one cached sideways (before the flag was applied) re-encodes."""
     try:
         st = os.stat(path)
-        return f"{st.st_size}:{int(st.st_mtime)}"
+        stamp = f"{st.st_size}:{int(st.st_mtime)}"
     except (OSError, TypeError):
         return ""
+    if os.path.splitext(str(path))[1].lower() in (".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".png"):
+        try:
+            from fizgig.utils.upright import orientation
+            with Image.open(path) as im:
+                if orientation(im) != 1:
+                    stamp += ":upright"
+        except Exception:
+            pass
+    return stamp
 
 
 def save_latent_cache(
@@ -793,7 +804,7 @@ class ImageDirectoryDatasource:
                 controls = [Image.fromarray(f) for f in pf]
             return image_path, imgs, caption, controls
 
-        img = Image.open(image_path)
+        img = open_upright(image_path)
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGB")
 
@@ -803,7 +814,7 @@ class ImageDirectoryDatasource:
         if self.has_control:
             controls = []
             for cp in self.control_paths[image_path]:
-                c = Image.open(cp)
+                c = open_upright(cp)
                 if c.mode not in ("RGB", "RGBA"):
                     c = c.convert("RGB")
                 controls.append(c)

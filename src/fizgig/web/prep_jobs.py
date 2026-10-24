@@ -11,6 +11,7 @@ import threading
 import time
 
 from fizgig.dataset import prep
+from fizgig.utils.upright import upright
 
 _lock = threading.Lock()
 _job = {"state": "idle", "log": "", "folder": "", "started": 0.0}
@@ -179,6 +180,7 @@ def test_faces(path, face_label):
     sel, _ = job.select_face(faces, prep.face_mode_of(face_label))
     hi = faces.index(sel) if sel in faces else None
     with Image.open(path) as img:
+        img = upright(img)
         img = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img
         shown = draw_face_boxes(img, faces, highlight_index=hi).convert("RGB")
     shown.thumbnail((1400, 1400))
@@ -223,7 +225,7 @@ def embed_face_box(path, embedder=None):
             bgr = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
             return (None, None) if bgr is None else emb.embed_bgr(bgr)
         with Image.open(path) as img:
-            return emb.embed_pil(img.convert("RGB"))
+            return emb.embed_pil(upright(img).convert("RGB"))
     except Exception:
         return None, None
 

@@ -47,7 +47,8 @@ def _open_training_frame(path: str):
 
     ext = os.path.splitext(path)[1].lower()
     if ext not in VIDEO_EXTENSIONS:
-        return Image.open(path)
+        from fizgig.utils.upright import open_upright
+        return open_upright(path)
     try:
         import cv2
 

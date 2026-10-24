@@ -46,6 +46,7 @@ from fizgig.training.metadata import (build_metadata, latest_sample_image, refre
                                       resolve_title, sample_for_epoch, thumbnail_data_uri)
 from fizgig.training.train_utils import LossRecorder, prune_state_dirs, validate_output_name  # noqa: E402
 from fizgig.training.step_log import StepLog, take_request  # noqa: E402
+from fizgig.utils.upright import open_upright
 
 logger = logging.getLogger(__name__)
 
@@ -272,7 +273,10 @@ def _read_sample_override(output_dir):
                     return None
             steps, cfg, turbo = num("steps", int), num("cfg", float), num("turbo", float)
             look = d.get("look") if isinstance(d.get("look"), str) else None   # the look LoRA's path, "" = off
-            return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)),
+            # the preview-model tick (Qwen's Turbo, Klein's Distilled): its file's path when ticked, "" = the training
+            # model, None = not sent (the run keeps what it started with)
+            ck = d.get("checkpoint") if isinstance(d.get("checkpoint"), str) else None
+            return {"prompts": prompts, "prompt": prompts[0], "seed": int(d.get("seed", 1234)), "checkpoint": ck,
                     "width": int(d.get("width", 1024)), "height": int(d.get("height", 1024)),
                     "steps": steps if steps and steps > 0 else None, "cfg": cfg if cfg and cfg > 0 else None,
                     "turbo": turbo if turbo is not None and turbo >= 0 else None,
@@ -445,7 +449,8 @@ def _load_references(paths, width, height):
     photo_2 ...) keep their own shape at that area, as they are sized in training."""
     import numpy as np
     from PIL import Image, ImageOps
-    imgs = [Image.open(p).convert("RGB") for p in paths]
+    from fizgig.utils.upright import open_upright
+    imgs = [open_upright(p).convert("RGB") for p in paths]
     size = _reference_size(*imgs[0].size, width * height)
     return [np.array(ImageOps.fit(im, size if i == 0 else _reference_size(*im.size, width * height), Image.LANCZOS))
             for i, im in enumerate(imgs)], size
@@ -979,7 +984,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  resume_state_dir=None, adaptive_lr=False, adaptive_lr_min=1e-4, adaptive_lr_max=2e-4,
                  max_grad_norm=1.0, ema_decay=0.0, optimizer_type="adamw", optimizer_args="",
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
-                 gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing=True, blocks_to_swap=0, network_type="lora", lokr_factor=8,
+                 gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
                  trigger_word=None, trigger_position="start", recaption_instruction=None,
                  recaption_instruction_detailed=None, captioner=None,
@@ -1195,6 +1200,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp)
             why += f" at {mp:.2f} MP"
+            if share_worker is not None:
+                # a helper's share trains at the lead's precision (the same base numbers): say so plainly, before the
+                # model loads, when this card can't hold it even with the most blocks swapped (the lead trains on)
+                short = quant.share_shortfall(desc, driver, precision, blocks_to_swap, mp)
+                if short:
+                    raise SystemExit(f"[share] This GPU can't train the lead's {desc.precision_labels.get(precision, precision)} "
+                                     f"base: {short}. The lead trains every image itself. To share with this GPU, "
+                                     "train on the lead with a smaller base (Auto, int8 or 4-bit).")
         logger.info(f"[precision] Auto plan: {precision}, block swap {blocks_to_swap} ({why}); asked {req}")
 
     # ---- torch.compile (Krea 2's rule), decided here on the empty card as the original does - the free VRAM its
@@ -1221,6 +1234,32 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info(f"[precision] Auto: {desc.precision_labels.get(alt, alt)} instead of {precision} - this run "
                         "is not compiled, and uncompiled that is the faster base for this file")
             precision = alt
+
+    # ---- gradient checkpointing: "auto" goes without it when the measured figure fits the empty card (LoRA only -
+    # LoKR without checkpointing measured 3-16 GB over a LoRA at 1 MP, Qwen edit pairs ~26 GB; fine-tunes, sliders, edit pairs and
+    # the mid-run captioner carry memory the figures don't cover)
+    gc_off_blocks = 0
+    if gradient_checkpointing == "auto":
+        paired = any(d.get("control_directory") for d in user_config.get("datasets", []))
+        if (quant.card_gb() < quant.NOGC_MIN_CARD_GB or finetune or slider or paired or auto_recaption
+                or str(network_type).lower() != "lora"
+                or gradient_accumulation_steps > 1):
+            gradient_checkpointing = True
+        else:
+            kind, mp_ck = driver.nogc_load(group)
+            gradient_checkpointing, why = quant.plan_checkpointing(
+                desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck, compiled=bool(do_compile),
+                kind=kind, rank=int(network_dim))
+            logger.info(f"[checkpointing] gradient checkpointing {why}")
+            if gradient_checkpointing:
+                gc_off_blocks, why = quant.plan_partial_checkpointing(
+                    desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck,
+                    compiled=bool(do_compile), kind=kind, rank=int(network_dim))
+                if gc_off_blocks:
+                    logger.info(f"[checkpointing] gradient checkpointing {why}")
+                    if do_compile:          # the partial figures are compiled with the checkpoint outside the graph
+                        do_compile = "outside"
+    gradient_checkpointing = bool(gradient_checkpointing)
 
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
     encoded = neg = vae = ref_imgs = ref_latents = None
@@ -1326,7 +1365,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info(f"[sample] previews see {os.path.basename(sample_image)} through the text encoder's vision "
                         f"path")
             te = driver.load_text_encoder(te_path, device)
-            encoded = driver.encode_text_with_image(te, sample_prompts, Image.open(sample_image))
+            encoded = driver.encode_text_with_image(te, sample_prompts, open_upright(sample_image))
             if sample_cfg_scale > 1.0 or not desc.samples_cfg_free:
                 neg = driver.encode_text(te, [sample_negative or ""])[0]     # negatives stay text-only
         else:
@@ -1349,6 +1388,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     dit, swapped = quant.load_base(driver, dit_path, device, precision, blocks_to_swap)
     if gradient_checkpointing:
         driver.enable_gradient_checkpointing(dit, True)
+        dit.gc_off_blocks = gc_off_blocks       # the compiled blocks / H3's loop leave the last ones un-checkpointed
     net = FamilyLoRA(dit, driver, device=device)
     driver.prepare_training(dit, group, net)
     if training_adapter:
@@ -1739,6 +1779,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             after = ov["after"] if ov.get("after") is not None else after
         return preview_due(done, every, until, after)
     speed_bad = [False]                      # the speed LoRA matched no layers: not tried again
+    ck_tried = [None]                        # the preview checkpoint a live change last asked for
     compared = [0]                           # the helper's last Check picture request this run answered
 
     def _previews(epoch):
@@ -1785,20 +1826,40 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.warning(f"[sample] CFG {cfg_now:g} needs a negative prompt this run did not encode - this preview "
                            "renders at CFG 1")
             cfg_now = 1.0
+        nonlocal ckpt_previews
+        on_ck = ckpt_previews is not None
+        if ov and ov.get("checkpoint") is not None and not slider and encoded is not None:
+            # the Samples tab's preview-model tick, changed while the run goes: unticked = this round on the training
+            # model (with the tab's own steps and CFG), ticked = on the checkpoint, loaded the first time it's asked for
+            want = ov["checkpoint"]
+            if not want:
+                on_ck = False
+            elif ckpt_previews is None or os.path.normcase(ckpt_previews.path) != os.path.normcase(want):
+                if ck_tried[0] != want:         # asked once per file: a run that can't take it says so once
+                    ck_tried[0] = want
+                    ckpt_previews = _make_ckpt_previews(want) or ckpt_previews
+                on_ck = ckpt_previews is not None and os.path.normcase(ckpt_previews.path) == os.path.normcase(want)
         if speed_now is not None:       # the Turbo LoRA at this round's strength; 0 = this round without it
             if strength_now <= 0:
                 speed_now = None
-            elif ckpt_previews is None or slider:     # on the training model: loaded the first time it is asked for
+            elif not on_ck or slider:     # on the training model: loaded the first time it is asked for
                 if net.has(SPEED) or (not speed_bad[0] and _add_speed(strength_now)):
                     net.set_strength(SPEED, strength_now)
                 else:
                     speed_bad[0], speed_now = True, None
-        if ckpt_previews is not None and not slider:
+            if on_ck and speed_now is not None and ckpt_previews.speed is None:
+                speed_now = None                # the Turbo LoRA was added for the training model's previews
+        if on_ck and not slider:
             ck = desc.preview_checkpoint_sampling          # the checkpoint's own recipe (Distilled: 4 steps, no CFG)
             # a checkpoint that takes the speed LoRA (Kromoss): this round with it while its strength is above 0
             turbo_ck = ckpt_previews.speed is not None and speed_now is not None
             ck_steps = (steps_now if turbo_ck else (ask_steps or ck.steps))
             ck_cfg = (cfg_now if turbo_ck else (ck.cfg if ask_cfg is None else ask_cfg))
+            if not turbo_ck and ck.cfg <= 1.0 < ck_cfg:
+                # a guidance-distilled checkpoint (Qwen's Turbo, Klein's Distilled) renders burnt above CFG 1
+                logger.info(f"[sample] {os.path.basename(ckpt_previews.path)} renders at CFG 1 (it's distilled); the "
+                            f"CFG {ck_cfg:g} asked for is for the training model's previews")
+                ck_cfg = 1.0
 
             def _ck_render(m, fl, swp):
                 if turbo_ck and not fl.has(SPEED):     # loaded onto the checkpoint the first round that asks for it
@@ -1813,7 +1874,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     speed=speed_desc.settings if turbo_ck else dataclasses.replace(ck, cfg=ck_cfg),
                     swapped=bool(swp), refs=ref_latents)
             ckpt_previews.render(dit, net, ema, _ck_render)
-            write_mode({"model": os.path.basename(preview_checkpoint), "steps": ck_steps, "cfg": ck_cfg,
+            write_mode({"model": os.path.basename(ckpt_previews.path), "steps": ck_steps, "cfg": ck_cfg,
                         "turbo": speed_desc.name if turbo_ck else "", "strength": strength_now if turbo_ck else 0},
                        epoch)
             last_prompt[0] = prompts[-1] if prompts else None
@@ -1899,27 +1960,29 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         write_mode({"model": "", "steps": steps_now, "cfg": cfg_now, "turbo": speed_desc.name if speed_now else "",
                     "strength": strength_now if speed_now else 0}, epoch, look_now)
 
-    ckpt_previews = None
-    if preview_checkpoint and encoded is not None:
+    def _make_ckpt_previews(path):
+        """Previews on this preview checkpoint, or None (with the reason logged): at the start, or when the Samples
+        tab's tick turns it on mid-run."""
         if not desc.train_preview_checkpoint:
             logger.warning(f"[sample] {desc.display_name} has no checkpoint previews - ignoring --preview_checkpoint")
         elif finetune:      # the checkpoint carries a LoRA; a fine-tune changes the model itself, so it previews on that
             logger.info("[sample] a fine-tune previews on the model it trains, not the preview checkpoint")
-        elif not os.path.isfile(preview_checkpoint):
-            logger.warning(f"[sample] preview checkpoint {preview_checkpoint} not found - previews use the training "
-                           f"model")
+        elif not os.path.isfile(path):
+            logger.warning(f"[sample] preview checkpoint {path} not found - previews use the training model")
         else:
             from fizgig.families.base_check import checkpoint_takes_speed
-            ck_speed = speed_lora if (speed_lora and speed_desc and
-                                      checkpoint_takes_speed(desc, preview_checkpoint)) else None
-            ckpt_previews = _CheckpointPreviews(
-                driver, preview_checkpoint, device, preview_checkpoint_cache, preview_int8,
+            ck_speed = speed_lora if (speed_lora and speed_desc and checkpoint_takes_speed(desc, path)) else None
+            if ck_speed:
+                logger.info(f"[sample] {os.path.basename(path)} takes the {speed_desc.name}: previews on it use it "
+                            f"while its strength is above 0")
+            return _CheckpointPreviews(
+                driver, path, device, preview_checkpoint_cache, preview_int8,
                 context=(context_lora_path, context_lora_strength) if context_lora_path else None,
                 speed=(ck_speed, speed_desc.strength if speed_lora_strength is None else speed_lora_strength)
                 if ck_speed else None)
-            if ck_speed:
-                logger.info(f"[sample] {os.path.basename(preview_checkpoint)} takes the {speed_desc.name}: previews "
-                            f"on it use it while its strength is above 0")
+        return None
+
+    ckpt_previews = _make_ckpt_previews(preview_checkpoint) if (preview_checkpoint and encoded is not None) else None
     def write_mode(mode, epoch=None, look=False, helper=""):
         """What this run's previews render with now, for the gallery (<sample_dir>/.previews_<name>.json): written at
         the start and after each preview round, so a live change of steps, CFG or Turbo strength shows. After a round
@@ -1948,7 +2011,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             ck = desc.preview_checkpoint_sampling
             mode = {"model": os.path.basename(preview_checkpoint), "turbo": "",
                     "steps": asked_steps or (ck.steps if ck else sample_steps),
-                    "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None else asked_cfg}
+                    "cfg": (ck.cfg if ck else sample_cfg_scale) if asked_cfg is None
+                    else (1.0 if ck and ck.cfg <= 1.0 else asked_cfg)}
             if ckpt_previews.speed is not None and not speed_idle:
                 mode.update(turbo=speed_desc.name, strength=ckpt_previews.speed[1], steps=sample_steps,
                             cfg=sample_cfg_scale)
@@ -2116,6 +2180,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     _share_keys = sorted({str(it.item_key) for ds in getattr(group, "datasets", [])
                           for b in getattr(getattr(ds, "batch_manager", None), "buckets", {}).values() for it in b})
     share_skip = [0]
+    share_off_said = [False]
     catching = [False]       # training a round's images the helper didn't bring back (counted once already)
 
     def _epoch_batches(epoch):
@@ -2158,7 +2223,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             progress.refresh()
 
     def _share_ok():
-        return not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
+        # gradient_checkpointing off (or partly): a big card planned this run without it, and a helper trains with it - the halves
+        # would differ, so no share (set a helper to share before the run starts and it keeps checkpointing)
+        return (not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
+                and gradient_checkpointing and not gc_off_blocks)
 
     def _worker_epochs():
         """--share_worker: each epoch the lead hands over (its job file: the start LoRA, the share, the LR), in turn;
@@ -2234,6 +2302,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if share_now[0] is not None and epoch + 1 > share_now[0]["last"]:
                 share_now[0] = None
             _hs = _helper_share(output_dir, output_name) if share_now[0] is None and _share_ok() else None
+            if ((not gradient_checkpointing or gc_off_blocks) and not share_off_said[0] and share_now[0] is None
+                    and _helper_share(output_dir, output_name)):
+                share_off_said[0] = True
+                logger.info("[share] a helper is ready to share, but this run trains without (all of) gradient checkpointing "
+                            "(a big card's plan) and a helper trains with it - the halves would differ, so this GPU "
+                            "trains every image. Set the helper to share before starting a run and both keep it on.")
             if _hs:                  # a helper trains its share of this round's epochs, from the same start
                 # the round: up to `every` epochs, ending early at any epoch that previews or saves (so the pictures
                 # and files hold both halves), at a pause, and at the run's end
@@ -2649,6 +2723,8 @@ def setup_parser():
                    help="step each weight as its gradient lands and free it (less VRAM; no clipping or accumulation)")
     p.add_argument("--reg_lr_multiplier", type=float, default=0.2,
                    help="fine-tune: LR multiplier for images in a dataset block marked is_reg = true")
+    p.add_argument("--gradient_checkpointing", default="auto", choices=("auto", "on"),
+                   help="auto: off for a compiled LoRA run with no block swap when the measured peak fits free VRAM")
     p.add_argument("--compile_blocks", default="auto", choices=("auto", "on", "outside", "off"),
                    help="torch.compile the DiT blocks (families with compiles=True); auto weighs warm-up vs run length")
     p.add_argument("--ema_decay", type=lambda v: v if str(v).lower().startswith("short") else float(v), default=0.0,
@@ -2731,6 +2807,7 @@ def main():
         lr_scheduler=a.lr_scheduler, lr_warmup_steps=a.lr_warmup_steps,
         lr_scheduler_num_cycles=a.lr_scheduler_num_cycles, lr_scheduler_power=a.lr_scheduler_power,
         gradient_accumulation_steps=a.gradient_accumulation_steps, compile_blocks=a.compile_blocks,
+        gradient_checkpointing=True if a.gradient_checkpointing == "on" else "auto",
         finetune=a.finetune, ft_rotations=a.ft_rotations, ft_save_every_rotations=a.ft_save_every_rotations,
         ft_rotate_every=a.ft_rotate_every, ft_max_parts=a.ft_max_parts, ft_start_window=a.ft_start_window, ft_epochs_done=a.ft_epochs_done,
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,

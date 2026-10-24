@@ -18,6 +18,7 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
+    keep_checkpointing          a helper is set to train a share: gradient checkpointing stays on (both halves match)
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
                                  "at_first": ..., "prompts": [lines as typed on the Samples tab]}
     samples_dir                 where preview prompt files go (the output folder's sample/)
@@ -40,6 +41,7 @@ already at Max Train Epochs.
 import os
 import re
 from dataclasses import dataclass, field
+from fizgig.utils.upright import upright_size
 
 from fizgig.dataset.masks import is_mask_file
 
@@ -332,7 +334,8 @@ def pair_problems(after_dir, before_dir, caption_ext=".txt", exts=PAIR_EXTS):
         if m and e.lower() in PAIR_EXTS:     # the original (the first): extra references may be any shape
             try:
                 with Image.open(os.path.join(after_dir, f)) as ia, Image.open(os.path.join(before_dir, m[0])) as ib:
-                    ra, rb = ia.width / ia.height, ib.width / ib.height
+                    (wa, ha), (wb, hb) = upright_size(ia), upright_size(ib)
+                    ra, rb = wa / ha, wb / hb
                 if abs(ra - rb) / ra > 0.02:
                     shapes.append(f)
             except OSError:
@@ -690,6 +693,8 @@ def train_command(desc, inputs, plan):
         cb = str(st.get("COMPILE_BLOCKS", "auto") or "auto").lower()
         if cb in ("auto", "on", "off", "outside"):
             cmd += ["--compile_blocks", cb]
+    if st.get("keep_checkpointing"):
+        cmd += ["--gradient_checkpointing", "on"]
     try:
         if int(float(str(st.get("GRADIENT_ACCUMULATION", "") or 1))) > 1:
             cmd += ["--gradient_accumulation_steps", str(int(float(st["GRADIENT_ACCUMULATION"])))]
@@ -1342,6 +1347,8 @@ def plan(desc, inputs):
     if people:                          # the side-by-side pictures: people only (an animal or a style has none)
         cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "multi_person.py"),
                "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        if not inputs.get("FAMILY_MP_FACECROPS_FIRST", True):
+            cmd.append("--no_face_first")
         for f, s, w in people:
             cmd += ["--subject", f, s["fused"], w]
         p.stages.append(Stage("Multi-person composites", cmd))

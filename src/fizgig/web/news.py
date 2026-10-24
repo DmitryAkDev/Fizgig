@@ -5,6 +5,19 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 
 NEWS = [
     {
+        "date": "24 Oct 2026",
+        "title": "Faster training on 40 GB+ cards",
+        "body": (
+            "On cards with 40 GB or more, which is most pods (A100, A40, A6000, L40S, H100, RTX PRO 6000), Auto now "
+            "turns gradient checkpointing off when the run fits with room to spare: 13-27 % faster per step on "
+            "Krea 2, Qwen Image 2.1, MOSS-Image, Z-Image and MiniMax H3. Where it doesn't all fit, the last blocks "
+            "go without it: 2-21 % faster.\n\n"
+            "Previews keep at least 4 GB free either way, and cards of 32 GB and under train as before. Restart "
+            "your pods to get it."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#24-oct-2026-faster-training-on-40-gb-cards"}],
+    },
+    {
         "date": "22 Oct 2026",
         "title": "Your other GPUs, at home or in the cloud, speeding up your run",
         "body": (

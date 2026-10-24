@@ -430,6 +430,15 @@ class FamilyDriver:
         why)."""
         return None
 
+    def nogc_load(self, group) -> tuple:
+        """What the checkpointing-off figures are read at: (kind, megapixels). kind "" reads
+        description.train_memory_nogc[precision], any other reads [f"{precision}:{kind}"]. Default: the largest
+        bucket, as stills."""
+        try:
+            return "", max(w * h / 1e6 for ds in group.datasets for (w, h) in ds.batch_manager.bucket_resos)
+        except Exception:
+            return "", 1.0
+
     def load_planned(self, path, device, precision: str, blocks_to_swap: int) -> Optional[tuple]:
         """Load the base at `precision` with `blocks_to_swap` streamed, the driver's own way - (dit, swapped) - or
         None for the shared load (quant.load_base: load_dit, quantise, enable_block_swap)."""
