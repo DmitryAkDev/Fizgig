@@ -103,6 +103,9 @@ ZIMAGE = FamilyDescription(
     # layer: its weights (~181M params: 0.36 GB bf16, 0.18 INT8).
     train_memory={"bf16": (((0.5, 17.1), (1.0, 17.2)), 0.36), "int8": (((0.5, 12.3), (1.0, 12.3)), 0.18),
                   "nf4": (((0.5, 10.0), (1.0, 10.1)), 0.0)},
+    # without gradient checkpointing: reserved peaks, compiled, ranks 8-16, previews on, RTX PRO 6000 (24 Oct 2026 night; the 2.0 points on real 2 MP photos)
+    train_memory_nogc={"int8": ((0.25, 14.5), (0.5, 19.9), (0.75, 26.2), (1.0, 31.6), (1.05, 33.0), (1.5, 43.1), (2.0, 54.4)),
+                       "bf16": ((0.25, 19.2), (0.5, 24.3), (0.75, 30.4), (1.0, 35.7), (1.05, 37.0), (1.5, 46.7), (2.0, 57.6))},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)

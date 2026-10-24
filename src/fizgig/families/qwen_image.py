@@ -153,6 +153,9 @@ QWEN_IMAGE_21 = FamilyDescription(
     # peak GB) points - the rank-16 peak at 0.25 MP - and GB saved per swapped block (weights, resolution-free).
     train_memory={"bf16": (((0.25, 14.9), (1.0, 19.0)), 0.44), "int8": (((0.25, 8.6), (1.0, 11.9)), 0.19),
                   "nf4": (((0.25, 6.0), (1.0, 9.5)), 0.0)},
+    # without gradient checkpointing: reserved peaks, compiled, ranks 8-16, previews on, RTX PRO 6000 (24 Oct 2026 night; the 2.0 points on real 2 MP photos)
+    train_memory_nogc={"int8": ((0.25, 15.0), (0.5, 21.9), (0.75, 28.9), (1.0, 36.2), (1.05, 37.3), (1.5, 49.2), (2.0, 63.4)),
+                       "bf16": ((0.25, 21.4), (0.5, 28.3), (0.75, 35.2), (1.0, 42.4), (1.05, 43.5), (1.5, 55.4), (2.0, 69.3))},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     edit_training=True,             # one checkpoint for text-to-image and edits (up to 10 references)

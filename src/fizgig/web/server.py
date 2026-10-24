@@ -885,6 +885,8 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
         captioner=captioner if captioner and os.path.isfile(captioner) else "",
         caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+    # a helper set to train a share: both halves keep gradient checkpointing, so they train with the same options
+    inputs["keep_checkpointing"] = any(h.get("share") for h in (prefs.get("helpers") or []))
     if ft_continue:          # a paused fine-tune: from its checkpoint, for the rotations left (the cache is built)
         inputs.update(FAMILY_FT_CONTINUE=ft_continue["continue"], FAMILY_FT_ROTATIONS=str(ft_continue["rotations"]),
                       resuming=True)

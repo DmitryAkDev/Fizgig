@@ -984,7 +984,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  resume_state_dir=None, adaptive_lr=False, adaptive_lr_min=1e-4, adaptive_lr_max=2e-4,
                  max_grad_norm=1.0, ema_decay=0.0, optimizer_type="adamw", optimizer_args="",
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
-                 gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing=True, blocks_to_swap=0, network_type="lora", lokr_factor=8,
+                 gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
                  trigger_word=None, trigger_position="start", recaption_instruction=None,
                  recaption_instruction_detailed=None, captioner=None,
@@ -1178,6 +1178,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         else:
             precision, blocks_to_swap, why = quant.plan(desc, driver, precision, blocks_to_swap, megapixels=mp)
             why += f" at {mp:.2f} MP"
+            if share_worker is not None:
+                # a helper's share trains at the lead's precision (the same base numbers): say so plainly, before the
+                # model loads, when this card can't hold it even with the most blocks swapped (the lead trains on)
+                short = quant.share_shortfall(desc, driver, precision, blocks_to_swap, mp)
+                if short:
+                    raise SystemExit(f"[share] This GPU can't train the lead's {desc.precision_labels.get(precision, precision)} "
+                                     f"base: {short}. The lead trains every image itself. To share with this GPU, "
+                                     "train on the lead with a smaller base (Auto, int8 or 4-bit).")
         logger.info(f"[precision] Auto plan: {precision}, block swap {blocks_to_swap} ({why}); asked {req}")
 
     # ---- torch.compile (Krea 2's rule), decided here on the empty card as the original does - the free VRAM its
@@ -1204,6 +1212,23 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             logger.info(f"[precision] Auto: {desc.precision_labels.get(alt, alt)} instead of {precision} - this run "
                         "is not compiled, and uncompiled that is the faster base for this file")
             precision = alt
+
+    # ---- gradient checkpointing: "auto" goes without it when the measured figure fits the empty card (LoRA only -
+    # LoKR without checkpointing measured 3-16 GB over a LoRA at 1 MP, Qwen edit pairs ~26 GB; fine-tunes, sliders, edit pairs and
+    # the mid-run captioner carry memory the figures don't cover)
+    if gradient_checkpointing == "auto":
+        paired = any(d.get("control_directory") for d in user_config.get("datasets", []))
+        if (quant.card_gb() < quant.NOGC_MIN_CARD_GB or finetune or slider or paired or auto_recaption
+                or str(network_type).lower() != "lora"
+                or gradient_accumulation_steps > 1):
+            gradient_checkpointing = True
+        else:
+            kind, mp_ck = driver.nogc_load(group)
+            gradient_checkpointing, why = quant.plan_checkpointing(
+                desc, precision, max(0, blocks_to_swap) if precision != "nf4" else 0, mp_ck, compiled=bool(do_compile),
+                kind=kind, rank=int(network_dim))
+            logger.info(f"[checkpointing] gradient checkpointing {why}")
+    gradient_checkpointing = bool(gradient_checkpointing)
 
     # ---- previews: encode prompts once, keep the VAE ---------------------------------------------
     encoded = neg = vae = ref_imgs = ref_latents = None
@@ -2120,6 +2145,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
     _share_keys = sorted({str(it.item_key) for ds in getattr(group, "datasets", [])
                           for b in getattr(getattr(ds, "batch_manager", None), "buckets", {}).values() for it in b})
     share_skip = [0]
+    share_off_said = [False]
     catching = [False]       # training a round's images the helper didn't bring back (counted once already)
 
     def _epoch_batches(epoch):
@@ -2162,7 +2188,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             progress.refresh()
 
     def _share_ok():
-        return not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
+        # gradient_checkpointing off: a big card planned this run without it, and a helper trains with it - the halves
+        # would differ, so no share (set a helper to share before the run starts and it keeps checkpointing)
+        return (not (slider or ftr is not None or dop_cond) and watch.watch is None and optimizer is not None
+                and gradient_checkpointing)
 
     def _worker_epochs():
         """--share_worker: each epoch the lead hands over (its job file: the start LoRA, the share, the LR), in turn;
@@ -2238,6 +2267,12 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             if share_now[0] is not None and epoch + 1 > share_now[0]["last"]:
                 share_now[0] = None
             _hs = _helper_share(output_dir, output_name) if share_now[0] is None and _share_ok() else None
+            if (not gradient_checkpointing and not share_off_said[0] and share_now[0] is None
+                    and _helper_share(output_dir, output_name)):
+                share_off_said[0] = True
+                logger.info("[share] a helper is ready to share, but this run trains without gradient checkpointing "
+                            "(a big card's plan) and a helper trains with it - the halves would differ, so this GPU "
+                            "trains every image. Set the helper to share before starting a run and both keep it on.")
             if _hs:                  # a helper trains its share of this round's epochs, from the same start
                 # the round: up to `every` epochs, ending early at any epoch that previews or saves (so the pictures
                 # and files hold both halves), at a pause, and at the run's end
@@ -2649,6 +2684,8 @@ def setup_parser():
                    help="step each weight as its gradient lands and free it (less VRAM; no clipping or accumulation)")
     p.add_argument("--reg_lr_multiplier", type=float, default=0.2,
                    help="fine-tune: LR multiplier for images in a dataset block marked is_reg = true")
+    p.add_argument("--gradient_checkpointing", default="auto", choices=("auto", "on"),
+                   help="auto: off for a compiled LoRA run with no block swap when the measured peak fits free VRAM")
     p.add_argument("--compile_blocks", default="auto", choices=("auto", "on", "outside", "off"),
                    help="torch.compile the DiT blocks (families with compiles=True); auto weighs warm-up vs run length")
     p.add_argument("--ema_decay", type=lambda v: v if str(v).lower().startswith("short") else float(v), default=0.0,
@@ -2726,6 +2763,7 @@ def main():
         lr_scheduler=a.lr_scheduler, lr_warmup_steps=a.lr_warmup_steps,
         lr_scheduler_num_cycles=a.lr_scheduler_num_cycles, lr_scheduler_power=a.lr_scheduler_power,
         gradient_accumulation_steps=a.gradient_accumulation_steps, compile_blocks=a.compile_blocks,
+        gradient_checkpointing=True if a.gradient_checkpointing == "on" else "auto",
         finetune=a.finetune, ft_rotations=a.ft_rotations, ft_save_every_rotations=a.ft_save_every_rotations,
         ft_rotate_every=a.ft_rotate_every, ft_max_parts=a.ft_max_parts, ft_start_window=a.ft_start_window, ft_epochs_done=a.ft_epochs_done,
         ft_fused_backward=a.ft_fused_backward, reg_lr_multiplier=a.reg_lr_multiplier,

@@ -144,6 +144,9 @@ KREA2 = FamilyDescription(
     # INT8 + 16 swapped blocks peaked 12.7 / 12.9 on the same run
     train_memory={"int8": (((0.25, 16.2), (1.0, 19.1)), 0.42), "nf4": (((0.25, 11.4), (1.0, 15.0)), 0.0),
                   "bf16": (((0.25, 26.0), (1.0, 28.9)), 0.84)},
+    # without gradient checkpointing: reserved peaks, compiled, ranks 8-16, previews on, RTX PRO 6000 (24 Oct 2026 night; the 2.0 points on real 2 MP photos)
+    train_memory_nogc={"int8": ((0.25, 23.2), (0.37, 26.8), (0.5, 30.4), (0.75, 37.6), (1.05, 44.9), (1.5, 57.7), (2.0, 69.9)),
+                       "bf16": ((0.25, 34.4), (0.37, 38.1), (0.5, 41.8), (0.75, 49.2), (1.05, 56.9), (1.5, 69.8), (2.0, 82.4))},
     optimizers=("adamw8bit", "adamw"),
     # the original's Automagic setup (Peter, 17 Sep 2026): the 264 Linears converge at very different speeds, and the
     # text-fusion stack (under-trained by the recipe) is the minority one shared rate outvotes; a 16-step sign window

@@ -494,6 +494,10 @@ class FamilyDescription:
     # block)}; the peak may instead be ((megapixels, GB), ...) points, interpolated for the run's resolution.
     # {} = Auto just takes the first precision
     train_memory: dict = field(default_factory=dict)
+    # the same peak with gradient checkpointing OFF, compiled blocks, no swap: {precision: ((megapixels, GB), ...)}.
+    # A compiled LoRA run with no swap trains without checkpointing (13-27% faster) when this fits with a margin;
+    # a precision missing here (nf4: its dequantised weights stay alive for backward) always checkpoints
+    train_memory_nogc: dict = field(default_factory=dict)
     optimizers: tuple = ("adamw8bit", "adamw")
     # optimizer settings a family's own trainer applied (only when Optimizer Args doesn't set them): an Adam-family
     # weight decay, and the 8-bit Adam eps floor of 1e-6 (training/optimizers.create_optimizer eps_floor_8bit - H3's

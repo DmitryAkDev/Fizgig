@@ -169,6 +169,9 @@ MOSS_IMAGE = FamilyDescription(
     # cut the preview peak 2.1 GB), 0.105 INT8.
     train_memory={"bf16": (((0.25, 15.1), (1.0, 15.1)), 0.211), "int8": (((0.25, 10.5), (1.0, 10.5)), 0.105),
                   "nf4": (((0.25, 8.5), (1.0, 8.5)), 0.0)},
+    # without gradient checkpointing: reserved peaks, compiled, ranks 8-16, previews on, RTX PRO 6000 (24 Oct 2026 night; the 2.0 points on real 2 MP photos)
+    train_memory_nogc={"int8": ((0.25, 13.3), (0.5, 20.2), (0.75, 26.8), (1.0, 33.1), (1.05, 34.9), (1.5, 46.2), (2.0, 59.3)),
+                       "bf16": ((0.25, 17.9), (0.5, 25.0), (0.75, 31.7), (1.0, 38.2), (1.05, 40.0), (1.5, 51.7), (2.0, 65.0))},
     optimizers=("adamw", "adamw8bit"),
     network_types=("lora", "lokr"),
     ema_default="0.98",

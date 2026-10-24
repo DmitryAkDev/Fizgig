@@ -1843,7 +1843,8 @@ HELPER_SHARE, SHARE_DIR = ".helper_share.json", ".helper_share"     # fizgig.fam
 HELPER_SHARE_WAIT = ".helper_share_wait.json"
 _DROP = ("--sample", "--speed_lora", "--preview", "--save_state", "--keep_last", "--ema", "--adaptive", "--metadata",
          "--log_per_image", "--per_image", "--auto_recaption", "--warmup_look", "--trigger", "--recaption",
-         "--captioner", "--resume", "--text_encoder", "--save_every", "--save_until", "--share_worker")
+         "--captioner", "--resume", "--text_encoder", "--save_every", "--save_until", "--share_worker",
+         "--gradient_checkpointing")
 _sw = {}               # tag -> {proc, dir, log}: this computer's share workers
 
 
@@ -2412,7 +2413,7 @@ def _share_start(body):
         args += ["--blocks_to_swap", "-1"]
     if setup.get("precision") and "--precision" not in args:
         args += ["--precision", setup["precision"]]
-    args += ["--share_worker", jobs]
+    args += ["--gradient_checkpointing", "on", "--share_worker", jobs]   # as the lead trains when it shares
     env = os.environ.copy()
     env.update(PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1", PYTHONPATH=os.path.join(s.BASE_DIR, "src"))
     log = open(os.path.join(d, "worker.log"), "w", encoding="utf-8")

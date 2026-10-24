@@ -18,6 +18,7 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
+    keep_checkpointing          a helper is set to train a share: gradient checkpointing stays on (both halves match)
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
                                  "at_first": ..., "prompts": [lines as typed on the Samples tab]}
     samples_dir                 where preview prompt files go (the output folder's sample/)
@@ -684,6 +685,8 @@ def train_command(desc, inputs, plan):
         cb = str(st.get("COMPILE_BLOCKS", "auto") or "auto").lower()
         if cb in ("auto", "on", "off", "outside"):
             cmd += ["--compile_blocks", cb]
+    if st.get("keep_checkpointing"):
+        cmd += ["--gradient_checkpointing", "on"]
     try:
         if int(float(str(st.get("GRADIENT_ACCUMULATION", "") or 1))) > 1:
             cmd += ["--gradient_accumulation_steps", str(int(float(st["GRADIENT_ACCUMULATION"])))]
