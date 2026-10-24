@@ -4,6 +4,7 @@ other (accessories), so one pass gives:
 
 - "person": everyone in the picture, hair to clothes (the default);
 - "no_clothes": the person without their clothes and accessories (face, hair and skin);
+- "body": the body's skin only - no face, hair, clothes or accessories;
 - "head": the face and hair only;
 - "not_faces": everything but the faces and hair (an outfit, a body, a style LoRA that mustn't learn faces).
 
@@ -31,6 +32,7 @@ MODEL_MB = 16
 KINDS = {
     "person": "The person (hair to clothes)",
     "no_clothes": "The person, not their clothes",
+    "body": "The body's skin, not the face, hair or clothes",
     "head": "Just the face and hair",
     "not_faces": "Everything but the faces",
 }
@@ -99,6 +101,8 @@ def mask_from(classes, kind):
         m = 1.0 - classes[..., BACKGROUND]
     elif kind == "no_clothes":
         m = classes[..., FACE] + classes[..., HAIR] + classes[..., BODY]
+    elif kind == "body":
+        m = classes[..., BODY]
     elif kind == "head":
         m = classes[..., FACE] + classes[..., HAIR]
     elif kind == "not_faces":
