@@ -264,7 +264,7 @@ def share_shortfall(desc, driver, precision, blocks_to_swap, megapixels, free_gb
             f"{free_gb:.1f} GB free")
 
 
-NOGC_MIN_CARD_GB = 44.0   # big cards only (48 GB and up; a 48 GB card reports ~44.5-47 GiB) - smaller cards always checkpoint
+NOGC_MIN_CARD_GB = 38.0   # big cards only (40 GB and up; a 40 GB A100 reports ~39.4 GiB) - 32 GB and smaller always checkpoint
 NOGC_MARGIN_GB = 4.0     # over the measured no-checkpointing peak: rank, adapters, EMA, a Context LoRA, a busy desktop
 NOGC_MAX_RANK = 32       # rank 32 measured +0.6-1.8 GB over the figures (inside the margin); higher ranks unmeasured
 

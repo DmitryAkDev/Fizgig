@@ -99,7 +99,7 @@ def test_partial_checkpointing_fits_with_the_margin(monkeypatch):
             assert list(pts) == sorted(pts) and all(b[1] >= a[1] and b[2] >= a[2] > 0 for a, b in zip(pts, pts[1:])), k
             monkeypatch.setattr(quant, "card_gb", lambda: 48.0)
             for mp, on_gb, per in pts:
-                for free in (44.5, 47.1, 79.0):
+                for free in (38.9, 44.5, 47.1, 79.0):
                     n, _ = quant.plan_partial_checkpointing(d, p, 0, mp, free_gb=free, kind=kind)
                     assert 0 <= n < blocks and (n == 0 or on_gb + n * per + quant.NOGC_MARGIN_GB <= free), (k, mp, free)
                 assert quant.plan_partial_checkpointing(d, p, 2, mp, free_gb=90, kind=kind)[0] == 0
