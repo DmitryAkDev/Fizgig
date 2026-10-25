@@ -3734,12 +3734,16 @@ async function maskSamPreview() {
   $("maskSamPrevState").textContent = "Finding them (the first time loads SAM 3.1, a few seconds) …";
   $("maskSamPreview").disabled = true;
   try {
+    // two pictures not shown yet in this folder, until every one has been: then a fresh round
+    if (S.prep.samShownFor !== S.imageFolder) { S.prep.samShown = []; S.prep.samShownFor = S.imageFolder; }
     const r = await api("/api/masks/sam_preview", {folder: S.imageFolder, include: $("maskSamInclude").value,
-      exclude: $("maskSamExclude").value});
+      exclude: $("maskSamExclude").value, shown: S.prep.samShown});
+    S.prep.samShown = r.fresh ? r.fresh : [...S.prep.samShown, ...r.pictures.map((p) => p.name)];
     $("maskSamPreviews").replaceChildren(...r.pictures.map((p) => el("figure", {class: "mask-sam-shot"},
       el("img", {src: p.src, alt: p.name}),
       el("figcaption", {text: p.cover ? `${p.name} · ${Math.round(p.cover * 100)}% masked` : `${p.name} · nothing found`}))));
-    $("maskSamPrevState").textContent = "Blue is what the LoRA learns; nothing is saved yet.";
+    $("maskSamPrevState").textContent = "Blue is what the LoRA learns; nothing is saved yet. Press again for two " +
+      `more (${Math.min(S.prep.samShown.length, r.of)} of ${r.of} seen).`;
   } catch (e) { $("maskSamPrevState").textContent = e.message; }
   $("maskSamPreview").disabled = false;
 }

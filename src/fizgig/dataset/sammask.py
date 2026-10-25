@@ -196,19 +196,35 @@ def _make_folder(seg, folder, include, exclude, overwrite, subject, detector, lo
     return counts
 
 
-def preview(folder, include, exclude, path, n=2, side=320):
-    """The first n pictures with their masks over them: [(name, PIL picture), ...], nothing written."""
+def preview_pictures(folder, shown=(), n=2):
+    """(n random pictures not in `shown` - the names already previewed this round, the names that start the next
+    round). When fewer than n are left, those go first and the rest come from a fresh round; the second list is then
+    the fresh round's so far, else None."""
+    import random
+    pics = pictures(folder)
+    seen = {s.lower() for s in shown}
+    left = [p for p in pics if os.path.basename(p).lower() not in seen]
+    if len(left) >= min(n, len(pics)):
+        return random.sample(left, min(n, len(left))), None
+    fill = random.sample([p for p in pics if p not in left], min(n, len(pics)) - len(left))
+    return left + fill, [os.path.basename(p) for p in fill]
+
+
+def preview(folder, include, exclude, path, shown=(), n=2, side=320):
+    """n random pictures not previewed yet (preview_pictures), with their masks over them: ([(name, PIL picture,
+    share masked), ...], the next round's names or None), nothing written."""
     if not _use.acquire(blocking=False):
         raise ValueError("Masks are being made now. Wait for them to finish.")
     try:
-        return _preview(segmenter(path), folder, include, exclude, n, side)
+        pics, fresh = preview_pictures(folder, shown, n)
+        return _preview(segmenter(path), pics, include, exclude, side), fresh
     finally:
         _use.release()
 
 
-def _preview(seg, folder, include, exclude, n, side):
+def _preview(seg, pics, include, exclude, side):
     out = []
-    for p in pictures(folder)[:n]:
+    for p in pics:
         with Image.open(p) as im:
             img = upright(im).convert("RGB")
         m, _ = picture_mask(seg, img, include, exclude)

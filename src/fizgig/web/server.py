@@ -3828,7 +3828,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not include:
                     return self.json({"error": "Type what the masks should show in Mask these (e.g. person)."}, 400)
                 try:
-                    shots = sammask.preview(folder, include, exclude, where)
+                    shots, fresh = sammask.preview(folder, include, exclude, where, shown=b.get("shown") or [])
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
                 except Exception as e:
@@ -3840,7 +3840,7 @@ class Handler(BaseHTTPRequestHandler):
                     pic.save(buf, "JPEG", quality=88)
                     pics.append({"name": name, "cover": round(cover, 3),
                                  "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
-                return self.json({"ok": True, "pictures": pics})
+                return self.json({"ok": True, "pictures": pics, "fresh": fresh, "of": len(sammask.pictures(folder))})
             if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
