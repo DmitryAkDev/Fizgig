@@ -6242,7 +6242,9 @@ function openInstr() {
   $("capInstrBox").style.display = "";
   $("capInstr").value = t.instruction;
   $("capInstrHint").textContent = `What Qwen3-VL is told for "${t.label}"` + (t.edited ? " (edited)" : " (as shipped)") +
-    ". Saved here, the trainer's auto-recaption uses it too.";
+    ". Saved here. " + ({training: "Auto-recaption uses it too, on its first try at a stuck picture.",
+      exhaustive: "Auto-recaption uses it too, on its second try at a stuck picture."}[t.key] ||
+      "Auto-recaption doesn't use this one: it uses Training caption (first try) and Exhaustive detail (second try).");
   $("capInstrStatus").textContent = "";
 }
 

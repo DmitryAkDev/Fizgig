@@ -82,6 +82,11 @@ class Watch:
         if auto_recaption:
             logger.info(f"[auto-recaption] ON - stuck images re-captioned from {self.image_dir}"
                         + (f" (trigger: '{trigger_word}')" if trigger_word else ""))
+            logger.info("[auto-recaption] first try: " + ("your edited \"Training caption\" instruction"
+                        if recaption_instruction else "the shipped \"Training caption\" instruction")
+                        + "; second try: " + ("your edited \"Exhaustive detail\" instruction"
+                        if recaption_instruction_detailed else "the shipped \"Exhaustive detail\" instruction")
+                        + " (Captions tab)")
         self.watch = PerImageLossWatch(output_dir, apply_lr=per_image_lr, write_jsonl=True,
                                        dataset_dir=self.image_dir, caption_ext=self.caption_ext,
                                        family=self.driver.description.key)
@@ -279,7 +284,7 @@ class Watch:
                                        "a future re-cache will use the old caption")
                     rows.append((k, items[k], cap, attempt))
                     logger.info(f"[auto-recaption] {os.path.basename(k)} (attempt {attempt}/2"
-                                f"{', detailed' if attempt >= 2 else ''}): \"{cap[:110]}\"")
+                                f"{', detailed' if attempt >= 2 else ''}): \"{cap}\"")
                 except Exception:
                     logger.warning(f"[auto-recaption] captioning failed for {os.path.basename(k)} - retry next "
                                    f"boundary", exc_info=True)
