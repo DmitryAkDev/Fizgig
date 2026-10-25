@@ -402,7 +402,7 @@ def form(desc):
                  "0.1 keeps a little of the background, so the LoRA still knows your subject sits in a scene. "
                  "0 ignores it completely - then a very small mask trains hard on a few spots.", launch.MASK_FLOORS),
             _row("MASK_PRIOR", "Outside the mask, keep the model's own picture", "choice",
-                 "Prior preservation outside the mask (OneTrainer's masked prior preservation). "
+                 "Prior preservation outside the mask. "
                  "Off: outside the mask the LoRA still learns your photos a little (as much as the setting above). "
                  "On: there it learns to draw what the model itself would, so backgrounds and the model's look stay "
                  "the model's own. Each step takes longer (up to about half again). The higher the number, the firmer.",

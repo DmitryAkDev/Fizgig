@@ -64,7 +64,7 @@ Captions tab: a picture with a mask has a **Show mask** button.
 
 **Outside the mask, keep the model's own picture**, under the tick. Off, the part outside the mask still learns your photos a little (as much as the setting above). On, it learns to draw there what the model itself would draw: at each step Fizgig also asks the model, with your LoRA switched off, what it sees outside the mask, and teaches the LoRA to give the same answer. So the LoRA learns your subject and leaves backgrounds and the model's own look alone. The number is how firmly; 1 counts the outside as much as the inside.
 
-Each step takes longer: one extra pass through the model, without the LoRA. In our tests that added from a few percent to about half again, depending on the model. It's for LoRAs: a slider or a fine-tune trains without it. OneTrainer calls it masked prior preservation; AI-Toolkit has the same idea as its inverted mask prior.
+Each step takes longer: one extra pass through the model, without the LoRA. In our tests that added from a few percent to about half again, depending on the model. It's for LoRAs: a slider or a fine-tune trains without it. This is known as masked prior preservation.
 
 ## What to watch out for
 
