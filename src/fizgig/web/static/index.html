@@ -317,12 +317,14 @@
                 photo-masklabel.png; the pictures themselves don't change.</div>
               <div class="card-content">
                 <div class="field-hint" id="maskInfo"></div>
-                <label class="checkbox-label"><input type="checkbox" id="maskSam"> Use SAM 3.1: masks from words</label>
-                <div class="field-hint radio-hint">Meta's Segment Anything finds whatever you name ("person", "hair",
-                  "the dog") with sharper edges than the person finder. It runs on the GPU: make masks when nothing is
-                  training.</div>
+                <div class="mask-step">1. How the masks are made</div>
+                <input type="checkbox" id="maskSam" hidden>
+                <span class="seg" id="maskMethod"><button class="btn" data-sam="0">Person finder</button><button
+                  class="btn" data-sam="1">SAM 3.1: from words</button></span>
+                <div class="field-hint" id="maskMethodHint"></div>
+                <div class="mask-sam-state" id="maskSamState" style="display:none"></div>
+                <div class="mask-step">2. What the masks show</div>
                 <div id="maskSamBox" style="display:none">
-                  <div class="field-hint" id="maskSamState"></div>
                   <div class="field-row"><span class="field-label">Mask these:</span>
                     <input type="text" id="maskSamInclude" class="w-path" placeholder="e.g. person" value="person"></div>
                   <div class="field-row"><span class="field-label">Leave these out:</span>
@@ -334,6 +336,7 @@
                   <div class="mask-sam-previews" id="maskSamPreviews"></div>
                 </div>
                 <div id="maskKinds"></div>
+                <div class="mask-step">3. Options</div>
                 <label class="checkbox-label"><input type="checkbox" id="maskSubject">
                   Only my subject, when there are several people</label>
                 <div class="field-hint radio-hint" id="maskSubjectHint">Finds your subject by their face, with the
@@ -343,8 +346,8 @@
                   yourself, are kept.</div>
                 <div class="field-row" style="margin-top: 16px"><button class="btn btn-primary" id="maskRun">Make masks</button>
                   <span class="field-hint" id="maskState"></span></div>
-                <div class="field-hint">It runs on the CPU, a fraction of a second a picture. The first time, it
-                  downloads Google's person finder (16 MB).<br><br>Check the masks on the Captions tab: a picture
+                <div class="field-hint"><span id="maskRunHint">It runs on the CPU, a fraction of a second a picture.
+                  The first time, it downloads Google's person finder (16 MB).</span><br><br>Check the masks on the Captions tab: a picture
                   with a mask has a Show mask button. A mask that's wrong can be painted over in any editor, or
                   deleted (the picture then trains as normal).</div>
                 <pre class="console-terminal prep-log" id="maskLog" style="display:none"></pre>

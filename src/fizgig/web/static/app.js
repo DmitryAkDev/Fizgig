@@ -3685,7 +3685,8 @@ async function maskInfo() {
     $("maskSam").checked = !!sv.maskSam;
     if (sv.maskSamInclude != null) $("maskSamInclude").value = sv.maskSamInclude;
     if (sv.maskSamExclude != null) $("maskSamExclude").value = sv.maskSamExclude;
-    $("maskSam").addEventListener("change", () => { maskSamSave(); maskShow(S.prep.maskOpts || r); });
+    $("maskMethod").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      $("maskSam").checked = b.dataset.sam === "1"; maskSamSave(); maskShow(S.prep.maskOpts || r); }));
     $("maskSamInclude").addEventListener("change", maskSamSave);
     $("maskSamExclude").addEventListener("change", maskSamSave);
     $("maskSamPreview").addEventListener("click", maskSamPreview);
@@ -3705,7 +3706,15 @@ function maskSamShow(r) {
   const on = $("maskSam").checked, sam = r.sam || {}, f = sam.fetch || {};
   $("maskSamBox").style.display = on ? "" : "none";
   $("maskKinds").style.display = on ? "none" : "";
+  $("maskMethod").querySelectorAll("button").forEach((b) => b.classList.toggle("active", (b.dataset.sam === "1") === on));
+  $("maskMethodHint").textContent = on ? "Meta's Segment Anything: type what to mask (\"person\", \"hair\", " +
+    "\"the dog\") and it finds it, with sharper edges. A 1.75 GB download, once; it runs on the GPU." :
+    "Google's person finder: pick a part of the person below. Small and quick, on the CPU.";
+  $("maskRunHint").textContent = on ? "It runs on the GPU, a fraction of a second a picture once loaded (several " +
+    "seconds a picture without a GPU). Make masks when nothing is training." :
+    "It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (16 MB).";
   const st = $("maskSamState");
+  st.style.display = on ? "" : "none";
   if (f.state === "running") {
     st.replaceChildren(`Downloading SAM 3.1: ${f.gb} of ${f.of} GB …`);
     clearTimeout(S.prep.samTimer);
@@ -3713,11 +3722,11 @@ function maskSamShow(r) {
   } else if (sam.path) {
     st.replaceChildren("SAM 3.1 is downloaded.");
   } else {
-    st.replaceChildren((f.state === "failed" ? `The download failed (${f.error}). ` : "") +
-      `SAM 3.1 isn't here yet (${sam.gb || 1.75} GB, once). `, el("button", {class: "btn btn-sm",
-      text: f.state === "failed" ? "Try again" : "Download", onclick: async () => {
+    st.replaceChildren(el("button", {class: "btn btn-primary",
+      text: f.state === "failed" ? "Try the download again" : `Download SAM 3.1 (${sam.gb || 1.75} GB)`, onclick: async () => {
         await api("/api/masks/sam_fetch", {}).catch((e) => { st.textContent = e.message; });
-        maskInfo(); }}));
+        maskInfo(); }}), el("span", {class: "field-hint", text: f.state === "failed" ? ` The download failed: ${f.error}` :
+        " Needed once, before the first masks."}));
   }
   $("maskSamPreview").disabled = !on || !sam.path || !r.pictures || S.prep.running;
 }
