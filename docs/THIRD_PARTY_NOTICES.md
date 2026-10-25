@@ -157,7 +157,8 @@ installer uses code from that project as follows:
 the terms of the GNU General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
 version. A copy of the GPL-3.0 text is available at
-https://www.gnu.org/licenses/gpl-3.0.html and in comfyui-rocm's `LICENSE` file.
+`LICENSES/GPL-3.0.txt` in this repository (also at
+https://www.gnu.org/licenses/gpl-3.0.html and in comfyui-rocm's `LICENSE` file).
 
 To receive source for `detect_gpu.py`, use this repository or the upstream
 comfyui-rocm repository linked above.
@@ -188,8 +189,9 @@ Apache-2.0, and each carries a header saying so:
 
 These files are free software: you may redistribute and/or modify them under
 the terms of the GNU General Public License v3.0. A copy of the GPL-3.0 text is
-available at https://www.gnu.org/licenses/gpl-3.0.html and in ComfyUI's
-`LICENSE` file. Their source is this repository.
+in `LICENSES/GPL-3.0.txt` in this repository (also at
+https://www.gnu.org/licenses/gpl-3.0.html and in ComfyUI's
+`LICENSE` file). Their source is this repository.
 
 The MiniMax H3 model weights are not part of this code; MiniMax's own licence
 applies to them (see the note on model weights below).
