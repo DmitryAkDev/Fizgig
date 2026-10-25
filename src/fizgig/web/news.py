@@ -6,6 +6,18 @@ _ARTICLE = "https://github.com/shootthesound/Fizgig/blob/master/docs/NEWS.md"
 NEWS = [
     {
         "date": "25 Oct 2026",
+        "title": "Masks from words with SAM 3.1",
+        "body": (
+            "Make masks of anything by naming it: on the Image Prep tab's masks card, choose SAM 3.1 and type what "
+            "the masks show (person, hair, the dog) and what to leave out (glasses). Meta's Segment Anything finds "
+            "it, with much sharper edges than the person finder.\n\n"
+            "Download it once from the card (1.75 GB), preview it on two random pictures, then make masks."
+        ),
+        "links": [{"text": "Read more", "href": _ARTICLE + "#25-oct-2026-masks-from-words-with-sam-31"},
+                  {"text": "The guide", "href": "https://github.com/shootthesound/Fizgig/blob/master/docs/MASKED_TRAINING.md"}],
+    },
+    {
+        "date": "25 Oct 2026",
         "title": "Masked training",
         "body": (
             "Train on the part of each picture that matters: the person, not the room around them. A "

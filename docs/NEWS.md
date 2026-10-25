@@ -1,5 +1,11 @@
 # Fizgig news
 
+## 25 Oct 2026: Masks from words with SAM 3.1
+
+**Make masks of anything by naming it.** On the Image Prep tab's masks card, choose **SAM 3.1: from words** and type what the masks show ("person", "hair", "the dog", "red dress"), and optionally what to leave out ("glasses"). Meta's Segment Anything model finds it, with much sharper edges than the person finder, around hair especially.
+
+Download it once from the card (1.75 GB), press **Preview on 2 random pictures** to check, then **Make masks**. It runs on the GPU, so make masks when nothing is training. Update Fizgig on your computers, and restart your pods. [Masked training guide](https://github.com/shootthesound/Fizgig/blob/master/docs/MASKED_TRAINING.md) · [Fizgig v8.9.9 release notes](https://github.com/shootthesound/Fizgig/releases/tag/v8.9.9)
+
 ## 25 Oct 2026: Masked training
 
 **Train on the part of each picture that matters: the person, not the room around them.** A black-and-white mask beside a picture says which part counts. White is trained fully, grey partly, and black only as much as you choose. The picture itself still trains whole, so the LoRA sees your subject in their scene; it just stops copying the scene.
