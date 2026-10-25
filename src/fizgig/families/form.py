@@ -404,7 +404,7 @@ def form(desc):
             _row("MASK_PRIOR", "Outside the mask, keep the model's own picture", "choice",
                  "Off: outside the mask the LoRA still learns your photos a little (as much as the setting above). "
                  "On: there it learns to draw what the model itself would, so backgrounds and the model's look stay "
-                 "the model's own. Each step takes about a third longer. The higher the number, the firmer.",
+                 "the model's own. Each step takes longer (up to about half again). The higher the number, the firmer.",
                  launch.MASK_PRIORS),
         ])
     add("subjects", "Subjects", "training", subjects,
