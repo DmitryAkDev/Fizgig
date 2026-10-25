@@ -366,7 +366,8 @@
                   </div>
                   <div class="me-bar">
                     <span class="seg" id="meTool"><button class="btn btn-sm active" data-tool="brush" title="Paint white: learned (B)">Brush</button><button
-                      class="btn btn-sm" data-tool="erase" title="Paint black: not learned (E)">Eraser</button></span>
+                      class="btn btn-sm" data-tool="erase" title="Paint black: not learned (E)">Eraser</button><button
+                      class="btn btn-sm" data-tool="sam" title="Click a thing to add it to the mask, right-click to take it away (S). Needs SAM 3.1, downloaded on this card">SAM click</button></span>
                     <label class="me-slider" title="Brush size ([ and ])">Size <input type="range" id="meSize" min="2" max="400" value="40"></label>
                     <label class="me-slider" title="Soft edges: 0 is a hard edge">Softness <input type="range" id="meSoft" min="0" max="100" value="30"></label>
                     <label class="me-slider" title="How white each stroke paints: below 100 paints grey (learned partly)">Strength <input type="range" id="meStrength" min="5" max="100" value="100"></label>
@@ -389,7 +390,8 @@
                     <span class="field-hint" id="meState"></span>
                   </div>
                   <div class="field-hint">Scroll to zoom, hold Space and drag (or drag with the middle button) to move
-                    around. Keys: B brush, E eraser, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures.</div>
+                    around. Keys: B brush, E eraser, S SAM click, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures. SAM click: click
+                    something to add it to the mask, right-click to take it away.</div>
                 </details>
               </div>
             </div>

@@ -3831,6 +3831,22 @@ class Handler(BaseHTTPRequestHandler):
                 from fizgig.dataset import sammask
                 sammask.download(user_data.MODELS_DIR)
                 return self.json({"ok": True, "sam": _sam_info()})
+            if path == "/api/masks/edit/sam_click":  # the mask editor: the object SAM 3.1 finds where you clicked
+                from fizgig.web import mask_edit
+                import base64
+                where = _sam_info()["path"]
+                if not where:
+                    return self.json({"error": "SAM 3.1 isn't here yet: choose SAM 3.1 on this card and press "
+                                               "Download first."}, 400)
+                try:
+                    png = mask_edit.sam_click(str(b.get("folder") or ""), str(b.get("name") or ""),
+                                              float(b.get("x") or 0), float(b.get("y") or 0), where)
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+                except Exception as e:
+                    logger.exception("SAM click")
+                    return self.json({"error": f"SAM 3.1 couldn't run: {type(e).__name__}: {e}"}, 400)
+                return self.json({"ok": True, "png": "data:image/png;base64," + base64.b64encode(png).decode()})
             if path == "/api/masks/sam_preview":    # the first two pictures with their SAM masks, nothing written
                 from fizgig.dataset import sammask
                 import base64

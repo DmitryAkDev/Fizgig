@@ -56,6 +56,16 @@ def mask_png(folder, name):
     return buf.getvalue()
 
 
+def sam_click(folder, name, x, y, model_path):
+    """The object SAM 3.1 finds at (x, y) on the upright picture -> grayscale PNG bytes at the picture's size."""
+    from fizgig.dataset import sammask
+    img = _open_upright(_picture(folder, name))
+    m = sammask.point(img, x, y, model_path)
+    buf = io.BytesIO()
+    Image.fromarray(m.astype(np.uint8) * 255, "L").save(buf, "PNG")
+    return buf.getvalue()
+
+
 def save(folder, name, png_data_url):
     """Write the painted mask (a PNG data URL, white = train) as the picture's photo-masklabel.png, replacing any mask
     it had. An all-black mask removes the file instead (the picture then trains as normal). -> {"saved"|"removed"}."""

@@ -3896,7 +3896,7 @@ function meDraw() {
       c.globalAlpha = 1;
     }
   }
-  if (m.cursor && !m.panning) {                        // the brush, its size on screen
+  if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 1;
     c.beginPath(); c.arc(m.cursor[0], m.cursor[1], Number($("meSize").value) / 2, 0, Math.PI * 2); c.stroke();
@@ -3996,6 +3996,7 @@ function meWire() {
     cv.setPointerCapture(e.pointerId);
     const p = meAt(e);
     if (e.button === 1 || space) { pan = {sx: p.sx, sy: p.sy, ox: m.ox, oy: m.oy}; m.panning = true; e.preventDefault(); return; }
+    if (m.tool === "sam") { if (e.button === 0 || e.button === 2) meSamClick(p, e.button === 2); return; }
     if (e.button !== 0) return;
     mePush(); meDab(p.x, p.y); last = p; m.dirty = true; meStateLine(); meDraw();
   });
@@ -4009,6 +4010,7 @@ function meWire() {
   const up = () => { last = null; pan = null; m.panning = false; meDraw(); };
   cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
   cv.addEventListener("pointerleave", () => { m.cursor = null; meDraw(); });
+  cv.addEventListener("contextmenu", (e) => e.preventDefault());          // right-click is SAM click's "take away"
   cv.addEventListener("wheel", (e) => {
     if (!m.mask) return;
     e.preventDefault();
@@ -4032,13 +4034,39 @@ function meWire() {
     }
     else if (k === "b" || k === "B") meTool("brush");
     else if (k === "e" || k === "E") meTool("erase");
+    else if (k === "s" || k === "S") meTool("sam");
     else if (k === "0") meFit();
   });
   document.addEventListener("keyup", (e) => { if (e.key === " ") space = false; });
   window.addEventListener("resize", () => { if ($("maskEdit").open) meFit(); });
 }
+async function meSamClick(p, takeAway) {
+  // SAM 3.1 finds the thing under the click; it's added to the mask (or, right-click, taken out of it)
+  const m = meState();
+  if (m.samBusy || !m.mask || p.x < 0 || p.y < 0 || p.x >= m.mask.width || p.y >= m.mask.height) return;
+  m.samBusy = true;
+  const name = m.name;
+  $("meState").textContent = "SAM 3.1 is finding it (the first click loads the model, a few seconds) …";
+  try {
+    const r = await api("/api/masks/edit/sam_click", {folder: m.folder || S.imageFolder, name,
+      x: p.x * m.pic.naturalWidth / m.mask.width, y: p.y * m.pic.naturalHeight / m.mask.height});
+    if (m.name !== name) return;                       // moved on meanwhile
+    const found = el("canvas", {width: m.mask.width, height: m.mask.height});
+    meFromGray(found, await meImage(r.png));
+    mePush();
+    const c = m.mask.getContext("2d");
+    c.globalCompositeOperation = takeAway ? "destination-out" : "source-over";
+    c.drawImage(found, 0, 0);
+    c.globalCompositeOperation = "source-over";
+    m.dirty = true;
+    $("meState").textContent = (takeAway ? "Taken away." : "Added.") + " Not saved yet.";
+    meDraw();
+  } catch (e) { $("meState").textContent = e.message; }
+  finally { m.samBusy = false; }
+}
 function meTool(t) {
   meState().tool = t;
+  $("meCanvas").style.cursor = t === "sam" ? "crosshair" : "none";
   $("meTool").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.tool === t));
 }
 
