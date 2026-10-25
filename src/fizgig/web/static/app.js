@@ -3044,12 +3044,20 @@ function exMode(mode) {
   exRemember();
 }
 
+// Target rank: the dropdown shows the rank when it's one it lists, else Other… with the number in the box beside it
+function exRankShow() {
+  const v = String($("exRank").value), listed = [...$("exRankPick").options].some((o) => o.value === v);
+  $("exRankPick").value = listed ? v : "__other";
+  $("exRank").style.display = listed ? "none" : "";
+}
+
 async function extractOpen() {
   if (!S.ex.wired) wireExtract();
   const sv = exSaved();
   if (!S.ex.info) {
     if (sv.source) $("exSource").value = sv.source;
     if (sv.rank) $("exRank").value = sv.rank;
+    exRankShow();
     const on = new Set(sv.ftRanks || [32, 64]);
     $("exFtRanks").replaceChildren(...EX_FT_RANKS.map((r) => { const c = el("input", {type: "checkbox", value: r, onchange: exRemember});
       c.checked = on.has(r); return el("label", {class: "checkbox-label"}, c, " " + r); }));
@@ -3171,9 +3179,17 @@ async function extractPoll() {
 
 function wireExtract() {
   S.ex.wired = true;
+  exRankShow();
   $("exFamily").addEventListener("change", () => { extractFamily($("exFamily").value, $("exPreset").value); exRemember(); });
   $("exPreset").addEventListener("change", extractPresetChanged);
   for (const ev of ["change", "input"]) $("exRank").addEventListener(ev, () => { extractName(); exRemember(); });
+  $("exRankPick").addEventListener("change", () => {      // a listed rank, or Other… and a box for any number
+    const other = $("exRankPick").value === "__other";
+    if (!other) $("exRank").value = $("exRankPick").value;
+    $("exRank").style.display = other ? "" : "none";
+    if (other) { $("exRank").focus(); $("exRank").select(); }
+    extractName(); exRemember();
+  });
   $("exSource").addEventListener("change", () => extractSource($("exSource").value.trim()));
   const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE"}, $("exSource"), extractSource);
   $("exSourceBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>
