@@ -4021,7 +4021,10 @@ function meWire() {
   cv.addEventListener("wheel", (e) => {
     if (!m.mask) return;
     e.preventDefault();
-    const p = meAt(e), k = Math.exp(-e.deltaY * 0.0015), z = Math.min(40, Math.max(0.05, m.zoom * k));
+    // zooming out stops where the whole picture fits (smaller is never useful), and centres it there
+    const cv = $("meCanvas"), fit = Math.min(cv.width / m.mask.width, cv.height / m.mask.height);
+    const p = meAt(e), k = Math.exp(-e.deltaY * 0.0015), z = Math.min(40, Math.max(fit, m.zoom * k));
+    if (z <= fit) { meFit(); return; }
     m.ox = p.sx - (p.sx - m.ox) * (z / m.zoom); m.oy = p.sy - (p.sy - m.oy) * (z / m.zoom); m.zoom = z;
     meDraw();
   }, {passive: false});
