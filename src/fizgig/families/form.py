@@ -75,6 +75,8 @@ DEFAULTS = {
 }
 
 
+TRAINING_ORDER = ("model", "output", "params", "edit", "slider", "finetune", "memory", "optimizer", "other")
+# any other Training card (Masked training, Subjects) comes after these, under the Extras divider
 TRAINING_OPEN = ("output", "params")         # the Training tab's cards open when it opens; the rest start closed
 
 
@@ -681,6 +683,12 @@ def form(desc):
             _row("SAMPLE_CFG_SCALE", "CFG Scale", hint=desc.cfg_note(), default=str(desc.preview_cfg)),
             _row("SAMPLE_NEGATIVE", "Negative Prompt", "text", default=neg or "") if neg is not None else None,
         ])
+    # the Training tab's order: what every run sets, then (after the Extras divider) the features you choose to use
+    order = {sid: i for i, sid in enumerate(TRAINING_ORDER)}
+    sections.sort(key=lambda sec: (sec["tab"] != "training", order.get(sec["id"], len(order))))
+    first = next((sec for sec in sections if sec["tab"] == "training" and sec["id"] not in order), None)
+    if first:
+        first["extras"] = True               # the divider goes above it
     return {"sections": sections, "presets": [{"name": n, "values": dict(v)} for n, v in (desc.presets or ())]}
 
 

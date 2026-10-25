@@ -1286,7 +1286,7 @@ input[type="range"] {
 :root {
   --bg-deep: #12161D; --bg-side: #0E1218; --bg-surface: #1A2029; --bg-raised: #212834; --bg-hover: #252D3A;
   --bg-inset: #10141A; --bg-header: #0E1218; --border: #2A3341; --text-secondary: #93A3B5; --text-muted: #66778A;
-  --radius: 12px; --radius-sm: 8px; --bg-row-alt: #1F242B; --bg-sec-open: #1E2A3D;
+  --radius: 12px; --radius-sm: 8px; --bg-row-alt: #1F242B; --bg-sec-open: #1E2A3D; --lilac: #B9A3E8; --lilac-line: rgba(185, 163, 232, 0.45);
 }
 body { font-size: 13.5px; background: var(--bg-deep); }
 .window-titlebar { display: none; }
@@ -2291,3 +2291,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   color: var(--text-muted); font-size: 14pt; line-height: 1; visibility: hidden; }
 .prompt-line:hover .prompt-del, .prompt-line:focus-within .prompt-del { visibility: visible; }
 .prompt-del:hover { color: var(--text-primary); }
+
+/* the Training tab's Extras: a lilac divider, and a lilac edge down each card under it */
+.extras-divider { display: flex; align-items: center; gap: 14px; margin: 22px 4px 12px; color: var(--lilac);
+  font-size: 10pt; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.extras-divider::before, .extras-divider::after { content: ""; flex: 1 1 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--lilac-line)); }
+.extras-divider::after { background: linear-gradient(90deg, var(--lilac-line), transparent); }
+.section-card.sec-extra { border-left: 3px solid var(--lilac); }

@@ -256,6 +256,9 @@ function renderSections(tab, host) {
     if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
     const card = el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body);
     show();
+    if (sec.extras) host.append(el("div", {class: "extras-divider", "data-extras": "1"}, el("span", {text: "✦ Extras ✦"})));
+    if (sec.extras) card.classList.add("sec-extra");
+    else if (host.querySelector(".extras-divider")) card.classList.add("sec-extra");
     host.append(card);
   }
 }
@@ -726,6 +729,10 @@ async function refreshState() {
   });
   document.querySelectorAll(".section-card[data-section]").forEach((c) => {
     c.style.display = hidden.has(c.dataset.section) ? "none" : "";
+  });
+  document.querySelectorAll(".extras-divider").forEach((d) => {    // no divider over nothing
+    const extras = [...d.parentNode.querySelectorAll(".section-card.sec-extra")];
+    d.style.display = extras.some((c) => c.style.display !== "none") ? "" : "none";
   });
   turboFollow();
   if (S.state.pending) setTimeout(refreshStateSoon, 2500);   // a note still being worked out (the fine-tune plan)
