@@ -260,23 +260,6 @@ def verdicts(abl):
     return out
 
 
-def repair_settings(abl, down=0.5):
-    """What the profile suggests for Repair Studio: ({block id: (enabled, strength)}, [notes]). Groups that give
-    more bleed than likeness are turned down to `down`; groups with little effect are switched off; every other
-    block stays as trained."""
-    vd = verdicts(abl)
-    blocks, notes = {}, []
-    for w, label, bs in abl["windows"]:
-        tag = vd[w][0]
-        if tag == "bleed":
-            blocks.update({b: (True, down) for b in bs})
-            notes.append(f"{label} at {down:g} (more bleed than likeness)")
-        elif tag == "quiet":
-            blocks.update({b: (False, 1.0) for b in bs})
-            notes.append(f"{label} off (little effect)")
-    return blocks, notes
-
-
 # ---- report -----------------------------------------------------------------------------------------------------
 _CSS = """
 body{font-family:Segoe UI,system-ui,sans-serif;background:#16181d;color:#e6e6e6;margin:0;padding:28px 34px;}

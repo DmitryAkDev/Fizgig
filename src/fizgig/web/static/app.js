@@ -2887,7 +2887,7 @@ async function profilerRun() {
     await api("/api/profile/run", {family: $("pfFamily").value, lora: $("pfLora").value.trim(), mode: pfMode(),
       prompt: $("pfPrompt").value.trim(), class_prompt: $("pfClass").value.trim(), baselines: S.pf.photos,
       size: Number($("pfSize").value)});
-    $("pfReport").style.display = $("pfStudio").style.display = "none";
+    $("pfReport").style.display = "none";
     profilerPoll();
   } catch (e) { $("pfStatus").textContent = e.message; }
 }
@@ -2911,33 +2911,7 @@ async function profilerPoll() {
     $("pfReport").href = `/api/profile/report?path=${encodeURIComponent(res.report)}&t=${encodeURIComponent(TOKEN)}`;
     $("pfReport").style.display = "";
   }
-  S.pf.last = res && res.studio;
-  $("pfStudio").style.display = S.pf.last ? "" : "none";
   if (running && $("tab-profiler").classList.contains("active")) S.pf.poll = setTimeout(profilerPoll, 800);
-}
-
-async function profilerToStudio() {
-  // the desktop's "Open in Repair Studio": the LoRA on the same prompt, seed and size, the profile's suggestions on the
-  // sliders (bleed-heavy groups turned down, quiet ones off), so the change shows side by side and saves as a new file
-  const h = S.pf.last;
-  if (!h) return;
-  showTab("studio");                                 // opens Studio; wait for its model list and layout
-  for (let i = 0; i < 100 && !(S.st.familiesLoaded && S.st.layout); i++) await new Promise((r) => setTimeout(r, 100));
-  if ($("stFamily").value !== h.family) { $("stFamily").value = h.family; await studioFamily(); }
-  $("stPrimary").value = h.lora; $("stPrompt").value = h.prompt; $("stSeed").value = String(h.seed);
-  const [hw, hh] = Array.isArray(h.size) ? h.size : [h.size, h.size];
-  if ([...$("stW").options].some((o) => o.value === String(hw))) $("stW").value = String(hw);
-  if ([...$("stH").options].some((o) => o.value === String(hh))) $("stH").value = String(hh);
-  for (const [id, b] of Object.entries(S.st.blocks)) {
-    const [on, strength] = h.blocks[id] || [true, 1.0];
-    b.pe = !!on; b.ps = Number(strength);
-  }
-  studioSync(); studioCommit(); stRemember();
-  let msg = h.notes.length ? "From the profile: " + h.notes.join("; ") + "." :
-    "The profile found no group to turn down or switch off: the likeness and any bleed sit in the same blocks, so the sliders stay as trained.";
-  if (h.class_prompt) msg += ` To see the bleed, set the prompt to "${h.class_prompt}".`;
-  $("stSetupMsg").textContent = msg;                // stays put while the status line follows the load
-  await studioStart();
 }
 
 function wireProfiler() {
@@ -2955,7 +2929,6 @@ function wireProfiler() {
   $("pfPhotosClear").addEventListener("click", () => { S.pf.photos = []; pfPhotosDraw(); pfRemember(); });
   $("pfRun").addEventListener("click", profilerRun);
   $("pfStop").addEventListener("click", () => api("/api/profile/stop", {}).then(profilerPoll));
-  $("pfStudio").addEventListener("click", profilerToStudio);
 }
 
 // ---- Extract: a LoRA reduced to a lower rank (exact weight SVD from the file; fizgig/web/tools.py runs it) ----
