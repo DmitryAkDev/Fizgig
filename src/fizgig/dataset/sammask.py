@@ -196,6 +196,16 @@ def _make_folder(seg, folder, include, exclude, overwrite, subject, detector, lo
     return counts
 
 
+def point(img, x, y, path):
+    """The mask editor's SAM click: the object at (x, y) of the upright picture `img` (PIL) -> bool (H, W)."""
+    if not _use.acquire(blocking=False):
+        raise ValueError("Masks are being made now. Wait for them to finish.")
+    try:
+        return segmenter(path).point_mask(np.asarray(img), [(float(x), float(y), 1)])
+    finally:
+        _use.release()
+
+
 def preview_pictures(folder, shown=(), n=2):
     """(n random pictures not in `shown` - the names already previewed this round, the names that start the next
     round). When fewer than n are left, those go first and the rest come from a fresh round; the second list is then

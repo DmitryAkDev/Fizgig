@@ -119,6 +119,20 @@ class SAM3Segmenter:
                               "mask": m.cpu().numpy()})
         return found
 
+    @torch.no_grad()
+    def point_mask(self, image, points, refine=2):
+        """image: uint8 (H, W, 3); points: [(x, y, 1 = this / 0 = not this)] in its pixels -> bool (H, W): the object
+        at the points, through SAM's decoder (SAM3_Detect's point path)."""
+        H, W = image.shape[:2]
+        img = torch.from_numpy(np.ascontiguousarray(image[..., :3])).to(self.device, torch.float32) / 255.0
+        frame = F.interpolate(img.permute(2, 0, 1)[None], size=(SIZE, SIZE), mode="bilinear").to(self.dtype)
+        coords = torch.tensor([[[x / W * SIZE, y / H * SIZE] for x, y, _l in points]], dtype=self.dtype, device=self.device)
+        labels = torch.tensor([[int(l) for _x, _y, l in points]], dtype=torch.int32, device=self.device)
+        logit = self.model.forward_segment(frame, point_inputs={"point_coords": coords, "point_labels": labels})
+        for _ in range(max(0, refine - 1)):
+            logit = self.model.forward_segment(frame, mask_inputs=logit)
+        return (F.interpolate(logit.float(), size=(H, W), mode="bilinear")[0, 0] > 0).cpu().numpy()
+
     def _refine(self, img, coarse, box, H, W, iterations):
         """A detector mask through SAM's decoder on a crop around its box (SAM3_Detect's _refine_mask)."""
         def coarse_only():

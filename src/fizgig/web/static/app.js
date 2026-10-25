@@ -3678,6 +3678,10 @@ const MASK_HINTS = {
   background: "For a place or scene LoRA: the people in the pictures count far less."};
 async function maskInfo() {
   if (!S.imageFolder) { $("maskInfo").textContent = ""; return; }
+  // the editor follows the folder, and the masks a run just made
+  if ($("maskEdit").open && S.me && !S.me.dirty && (S.me.folder !== S.imageFolder || S.me.wantList)) {
+    S.me.wantList = false; meOpen();
+  }
   const r = await api("/api/masks/info?folder=" + encodeURIComponent(S.imageFolder)).catch(() => null);
   if (!r) return;
   if (!$("maskKinds").childElementCount) {
@@ -3785,6 +3789,325 @@ async function maskRun() {
   } catch (e) { $("maskState").textContent = e.message; }
 }
 
+// ---- Image Prep's mask editor (web/mask_edit.py): a picture at a time, its mask painted on a working canvas (at most
+// 4 MP: training reads masks at the latent grid's size, far below that) and saved back at the picture's own size
+const ME_MAX_PX = 4e6, ME_UNDO = 20;
+function meState() {
+  if (!S.me) S.me = {list: [], at: -1, name: "", pic: null, mask: null, dirty: false, undo: [], redo: [],
+                     tool: "brush", view: "over", zoom: 1, ox: 0, oy: 0, folder: ""};
+  return S.me;
+}
+function meShown() {
+  const m = meState(), f = $("meFilter").value;
+  return m.list.filter((p) => f === "all" || (f === "mask") === p.mask);
+}
+async function meOpen() {
+  const m = meState();
+  if (!S.imageFolder) { $("meState").textContent = "Choose the training folder on the Start tab first."; return; }
+  try {
+    const r = await api("/api/masks/edit/list?folder=" + encodeURIComponent(S.imageFolder));
+    m.list = r.pictures; m.folder = S.imageFolder;
+  } catch (e) { $("meState").textContent = e.message; return; }
+  const shown = meShown();
+  const keep = shown.findIndex((p) => p.name === m.name);
+  await meGo(keep >= 0 ? keep : 0, true);
+}
+async function meGo(i, force) {
+  const m = meState(), shown = meShown();
+  if (!shown.length) {
+    m.at = -1; m.name = ""; m.pic = null;
+    $("meCount").textContent = "0 of 0"; $("meName").textContent = "No pictures here.";
+    meDraw(); return;
+  }
+  i = (i + shown.length) % shown.length;
+  if (!force && shown[i].name === m.name) return;
+  if (m.dirty && !(await meSave())) return;           // moving on saves the one you were on
+  m.at = i; m.name = shown[i].name;
+  $("meCount").textContent = `${i + 1} of ${shown.length}`;
+  $("meName").textContent = m.name;
+  $("meState").textContent = "Loading…";
+  const q = `folder=${encodeURIComponent(S.imageFolder)}&name=${encodeURIComponent(m.name)}&t=${encodeURIComponent(TOKEN)}`;
+  const pic = await meImage("/api/masks/edit/picture?" + q).catch(() => null);
+  if (!pic || m.name !== shown[i].name) { $("meState").textContent = pic ? "" : "Couldn't load the picture."; return; }
+  const k = Math.min(1, Math.sqrt(ME_MAX_PX / (pic.naturalWidth * pic.naturalHeight)));
+  const w = Math.max(1, Math.round(pic.naturalWidth * k)), h = Math.max(1, Math.round(pic.naturalHeight * k));
+  const mask = el("canvas", {width: w, height: h});
+  if (shown[i].mask) {
+    const mimg = await meImage("/api/masks/edit/mask?" + q + "&v=" + Date.now()).catch(() => null);
+    if (mimg) meFromGray(mask, mimg);
+  }
+  m.pic = pic; m.mask = mask; m.dirty = false; m.undo = []; m.redo = [];
+  meStateLine();
+  $("meState").textContent = shown[i].mask ? "" : "No mask yet: paint one with the Brush.";
+  meFit();
+}
+function meImage(src) {
+  return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = src; });
+}
+function meFromGray(canvas, img) {
+  // the saved mask (grey = how much is learned) -> the working canvas: white, with that much opacity
+  const c = canvas.getContext("2d");
+  c.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const d = c.getImageData(0, 0, canvas.width, canvas.height), a = d.data;
+  for (let p = 0; p < a.length; p += 4) { const v = a[p]; a[p] = a[p + 1] = a[p + 2] = 255; a[p + 3] = v; }
+  c.putImageData(d, 0, 0);
+}
+function meFit() {
+  const m = meState(), cv = $("meCanvas"), st = $("meStage");
+  cv.width = st.clientWidth || 800;
+  cv.height = Math.max(300, Math.min(window.innerHeight * 0.7, 900));
+  if (m.mask) {
+    m.zoom = Math.min(cv.width / m.mask.width, cv.height / m.mask.height);
+    m.ox = (cv.width - m.mask.width * m.zoom) / 2; m.oy = (cv.height - m.mask.height * m.zoom) / 2;
+  }
+  meDraw();
+}
+function meLayers() {
+  // the mask as two layers over the picture: blue where it's learned, black where it isn't (each as much as the mask)
+  const m = meState(), w = m.mask.width, h = m.mask.height;
+  if (!m.tint || m.tint.width !== w || m.tint.height !== h) {
+    m.tint = el("canvas", {width: w, height: h}); m.dim = el("canvas", {width: w, height: h});
+  }
+  const t = m.tint.getContext("2d");
+  t.globalCompositeOperation = "copy"; t.drawImage(m.mask, 0, 0);
+  t.globalCompositeOperation = "source-in"; t.fillStyle = "rgb(90,170,255)"; t.fillRect(0, 0, w, h);
+  t.globalCompositeOperation = "source-over";
+  const d = m.dim.getContext("2d");
+  d.globalCompositeOperation = "copy"; d.fillStyle = "#000"; d.fillRect(0, 0, w, h);
+  d.globalCompositeOperation = "destination-out"; d.drawImage(m.mask, 0, 0);
+  d.globalCompositeOperation = "source-over";
+  return [m.tint, m.dim];
+}
+function meDraw() {
+  const m = meState(), cv = $("meCanvas"), c = cv.getContext("2d");
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.fillStyle = "#0b0e12"; c.fillRect(0, 0, cv.width, cv.height);
+  if (!m.pic || !m.mask) return;
+  c.setTransform(m.zoom, 0, 0, m.zoom, m.ox, m.oy);
+  c.imageSmoothingEnabled = m.zoom < 2;
+  const w = m.mask.width, h = m.mask.height, show = Number($("meShow").value) / 100;
+  if (m.view === "mask") {
+    c.fillStyle = "#000"; c.fillRect(0, 0, w, h); c.drawImage(m.mask, 0, 0);
+  } else {
+    c.drawImage(m.pic, 0, 0, w, h);
+    if (m.view === "over") {
+      const [tint, dim] = meLayers();
+      c.globalAlpha = show * 0.8; c.drawImage(dim, 0, 0);       // what isn't learned dimmed...
+      c.globalAlpha = show * 0.6; c.drawImage(tint, 0, 0);      // ...and what is, tinted blue
+      c.globalAlpha = 1;
+    }
+  }
+  if (m.samAt) {                                       // SAM at work: a ring pulsing at the click
+    const ph = (performance.now() % 1000) / 1000;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.strokeStyle = `rgba(90,170,255,${1 - ph})`; c.lineWidth = 3;
+    c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 6 + ph * 22, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = "rgb(90,170,255)"; c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
+  }
+  if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 1;
+    c.beginPath(); c.arc(m.cursor[0], m.cursor[1], Number($("meSize").value) / 2, 0, Math.PI * 2); c.stroke();
+  }
+}
+function meAt(e) {
+  const m = meState(), r = $("meCanvas").getBoundingClientRect();
+  const sx = (e.clientX - r.left) * ($("meCanvas").width / r.width), sy = (e.clientY - r.top) * ($("meCanvas").height / r.height);
+  return {sx, sy, x: (sx - m.ox) / m.zoom, y: (sy - m.oy) / m.zoom};
+}
+function meSnapshot() {
+  const m = meState(), copy = el("canvas", {width: m.mask.width, height: m.mask.height});
+  copy.getContext("2d").drawImage(m.mask, 0, 0);
+  return copy;
+}
+function mePush() {
+  const m = meState();
+  m.undo.push(meSnapshot()); if (m.undo.length > ME_UNDO) m.undo.shift();
+  m.redo = [];
+}
+function meRestore(from, to) {
+  const m = meState();
+  if (!from.length) return;
+  to.push(meSnapshot());
+  const c = m.mask.getContext("2d");
+  c.globalCompositeOperation = "copy"; c.drawImage(from.pop(), 0, 0); c.globalCompositeOperation = "source-over";
+  m.dirty = true; meStateLine(); meDraw();
+}
+function meDab(x, y) {
+  // one stamp of the brush on the mask: white with the strength's opacity, or that much taken away
+  const m = meState(), c = m.mask.getContext("2d");
+  const r = Number($("meSize").value) / 2 / m.zoom, soft = Number($("meSoft").value) / 100;
+  const a = Number($("meStrength").value) / 100;
+  const g = c.createRadialGradient(x, y, r * (1 - soft) * 0.999, x, y, r);
+  g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(1, "rgba(255,255,255,0)");
+  c.globalCompositeOperation = m.tool === "erase" ? "destination-out" : "source-over";
+  c.fillStyle = soft > 0 ? g : `rgba(255,255,255,${a})`;
+  c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+  c.globalCompositeOperation = "source-over";
+}
+function meStroke(from, to) {
+  const m = meState(), r = Math.max(0.5, Number($("meSize").value) / 2 / m.zoom);
+  const dx = to.x - from.x, dy = to.y - from.y, n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / (r * 0.3)));
+  for (let k = 1; k <= n; k++) meDab(from.x + dx * k / n, from.y + dy * k / n);
+}
+function meStateLine() {
+  // the save status beside Save now: unsaved changes, saved, or no mask on this picture yet
+  const m = meState(), b = $("meSaved"), item = m.list.find((p) => p.name === m.name);
+  const st = !m.name ? "" : m.dirty ? "unsaved" : item && item.mask ? "saved" : "none";
+  b.dataset.state = st;
+  b.textContent = {unsaved: "● Unsaved changes", saved: "✓ Saved", none: "No mask yet", "": ""}[st];
+  $("meSave").disabled = !m.dirty;
+  $("meRevert").disabled = !m.dirty;
+}
+async function meSave() {
+  const m = meState();
+  if (!m.mask || !m.name) return true;
+  // the mask on opaque black, so grey is grey however it was painted
+  const out = el("canvas", {width: m.mask.width, height: m.mask.height}), c = out.getContext("2d");
+  c.fillStyle = "#000"; c.fillRect(0, 0, out.width, out.height); c.drawImage(m.mask, 0, 0);
+  try {
+    const r = await api("/api/masks/edit/save", {folder: m.folder || S.imageFolder, name: m.name,
+      png: out.toDataURL("image/png")});
+    m.dirty = false;
+    const item = m.list.find((p) => p.name === m.name);
+    if (item) item.mask = !r.removed;
+    meStateLine();
+    $("meState").textContent = r.removed ? "All black, so the mask was removed: this picture trains as normal." :
+      `Saved ${m.name.replace(/\.[^.]+$/, "")}-masklabel.png.`;
+    maskInfo();
+    return true;
+  } catch (e) { $("meState").textContent = e.message; return false; }
+}
+function meWire() {
+  const m = meState(), cv = $("meCanvas");
+  let last = null, pan = null, space = false;
+  $("maskEdit").addEventListener("toggle", () => {
+    if ($("maskEdit").open) meOpen(); else if (meState().dirty) meSave();      // closing it saves
+  });
+  window.addEventListener("beforeunload", (e) => {   // closing the window with edits not saved: ask first
+    if (S.me && S.me.dirty) { e.preventDefault(); e.returnValue = ""; }
+  });
+  $("mePrev").addEventListener("click", () => meGo(meState().at - 1));
+  $("meNext").addEventListener("click", () => meGo(meState().at + 1));
+  $("meFilter").addEventListener("change", () => meGo(0, true));
+  $("meTool").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => meTool(b.dataset.tool)));
+  $("meView").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    m.view = b.dataset.view;
+    $("meView").querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+    meDraw();
+  }));
+  $("meShow").addEventListener("input", meDraw);
+  $("meFit").addEventListener("click", meFit);
+  $("meUndo").addEventListener("click", () => meRestore(m.undo, m.redo));
+  $("meRedo").addEventListener("click", () => meRestore(m.redo, m.undo));
+  const whole = (fn) => () => { if (!m.mask) return; mePush(); fn(m.mask.getContext("2d")); m.dirty = true; meStateLine(); meDraw(); };
+  $("meFill").addEventListener("click", whole((c) => { c.fillStyle = "#fff"; c.fillRect(0, 0, m.mask.width, m.mask.height); }));
+  $("meClear").addEventListener("click", whole((c) => c.clearRect(0, 0, m.mask.width, m.mask.height)));
+  $("meInvert").addEventListener("click", whole((c) => {
+    const d = c.getImageData(0, 0, m.mask.width, m.mask.height), a = d.data;
+    for (let p = 0; p < a.length; p += 4) { a[p] = a[p + 1] = a[p + 2] = 255; a[p + 3] = 255 - a[p + 3]; }
+    c.putImageData(d, 0, 0);
+  }));
+  $("meSave").addEventListener("click", meSave);
+  $("meRevert").addEventListener("click", () => { m.dirty = false; meGo(m.at, true); });
+  cv.addEventListener("pointerdown", (e) => {
+    if (!m.mask) return;
+    cv.setPointerCapture(e.pointerId);
+    const p = meAt(e);
+    if (e.button === 1 || space) { pan = {sx: p.sx, sy: p.sy, ox: m.ox, oy: m.oy}; m.panning = true; e.preventDefault(); return; }
+    if (m.tool === "sam") {                            // a click adds; right-click or Alt+click takes away
+      if (e.button === 0 || e.button === 2) meSamClick(p, e.button === 2 || e.altKey);
+      return;
+    }
+    if (e.button !== 0) return;
+    mePush(); meDab(p.x, p.y); last = p; m.dirty = true; meStateLine(); meDraw();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    const p = meAt(e);
+    m.cursor = [p.sx, p.sy];
+    if (pan) { m.ox = pan.ox + p.sx - pan.sx; m.oy = pan.oy + p.sy - pan.sy; }
+    else if (last) { meStroke(last, p); last = p; }
+    meDraw();
+  });
+  const up = () => { last = null; pan = null; m.panning = false; meDraw(); };
+  cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+  cv.addEventListener("pointerleave", () => { m.cursor = null; meDraw(); });
+  cv.addEventListener("contextmenu", (e) => e.preventDefault());          // right-click is SAM click's "take away"
+  cv.addEventListener("wheel", (e) => {
+    if (!m.mask) return;
+    e.preventDefault();
+    // zooming out stops where the whole picture fits (smaller is never useful), and centres it there
+    const cv = $("meCanvas"), fit = Math.min(cv.width / m.mask.width, cv.height / m.mask.height);
+    const p = meAt(e), k = Math.exp(-e.deltaY * 0.0015), z = Math.min(40, Math.max(fit, m.zoom * k));
+    if (z <= fit) { meFit(); return; }
+    m.ox = p.sx - (p.sx - m.ox) * (z / m.zoom); m.oy = p.sy - (p.sy - m.oy) * (z / m.zoom); m.zoom = z;
+    meDraw();
+  }, {passive: false});
+  document.addEventListener("keydown", (e) => {
+    if (!$("maskEdit").open || !$("tab-prep").classList.contains("active")) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName) &&
+        document.activeElement.type !== "range") return;
+    const k = e.key;
+    if (k === " ") { space = true; e.preventDefault(); }
+    else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === "z") { e.preventDefault(); meRestore(m.undo, m.redo); }
+    else if ((e.ctrlKey || e.metaKey) && k.toLowerCase() === "y") { e.preventDefault(); meRestore(m.redo, m.undo); }
+    else if (k === "ArrowLeft") { e.preventDefault(); meGo(m.at - 1); }
+    else if (k === "ArrowRight") { e.preventDefault(); meGo(m.at + 1); }
+    else if (k === "[" || k === "]") {
+      const s = $("meSize"), v = Number(s.value);
+      s.value = Math.max(2, Math.min(400, Math.round(k === "[" ? v / 1.2 : v * 1.2 + 1))); meDraw();
+    }
+    else if (k === "b" || k === "B") meTool("brush");
+    else if (k === "e" || k === "E") meTool("erase");
+    else if (k === "s" || k === "S") meTool("sam");
+    else if (k === "0") meFit();
+  });
+  document.addEventListener("keyup", (e) => { if (e.key === " ") space = false; });
+  window.addEventListener("resize", () => { if ($("maskEdit").open) meFit(); });
+}
+async function meSamClick(p, takeAway) {
+  // SAM 3.1 finds the thing under the click; it's added to the mask (or, right-click, taken out of it)
+  const m = meState();
+  if (m.samBusy || !m.mask || p.x < 0 || p.y < 0 || p.x >= m.mask.width || p.y >= m.mask.height) return;
+  m.samBusy = true;
+  const name = m.name;
+  meBusy(m.samLoaded ? (takeAway ? "Finding what to take away…" : "Finding it…") :
+    "Loading SAM 3.1… (the first click takes a few seconds)", [p.sx, p.sy]);
+  $("meState").textContent = "";
+  try {
+    const r = await api("/api/masks/edit/sam_click", {folder: m.folder || S.imageFolder, name,
+      x: p.x * m.pic.naturalWidth / m.mask.width, y: p.y * m.pic.naturalHeight / m.mask.height});
+    if (m.name !== name) return;                       // moved on meanwhile
+    const found = el("canvas", {width: m.mask.width, height: m.mask.height});
+    meFromGray(found, await meImage(r.png));
+    mePush();
+    const c = m.mask.getContext("2d");
+    c.globalCompositeOperation = takeAway ? "destination-out" : "source-over";
+    c.drawImage(found, 0, 0);
+    c.globalCompositeOperation = "source-over";
+    m.dirty = true; m.samLoaded = true; meStateLine();
+    $("meState").textContent = takeAway ? "Taken away." : "Added.";
+  } catch (e) { $("meState").textContent = e.message; }
+  finally { m.samBusy = false; meBusy(""); meDraw(); }
+}
+function meBusy(text, at) {
+  // SAM at work: a line over the picture, a wait cursor, and a ring pulsing where you clicked
+  const m = meState();
+  $("meBusy").style.display = text ? "" : "none";
+  $("meBusyText").textContent = text;
+  $("meCanvas").style.cursor = text ? "wait" : (m.tool === "sam" ? "crosshair" : "none");
+  m.samAt = text ? at : null;
+  if (text) {
+    const tick = () => { if (!meState().samAt) return; meDraw(); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
+}
+function meTool(t) {
+  meState().tool = t;
+  $("meCanvas").style.cursor = t === "sam" ? "crosshair" : "none";
+  $("meTool").querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.tool === t));
+}
+
 async function prepSummary() {
   const p = prepSettings(), faceOn = p.mode !== "Resize Only";
   document.querySelectorAll(".prep-face select, .prep-face input").forEach((i) => { i.disabled = !faceOn || !S.prep.opts.face_tools; });
@@ -3820,7 +4143,7 @@ async function pollPrep() {
         r.state === "done" ? "Done." : r.state === "failed" ? "It stopped with an error: see below." : "";
       $("maskRun").disabled = S.prep.running;
     }
-    if (was && !S.prep.running) { prepSummary(); loadDatasets(); maskInfo(); S.prep.masking = false; }
+    if (was && !S.prep.running) { if (S.prep.masking && S.me) S.me.wantList = true; prepSummary(); loadDatasets(); maskInfo(); S.prep.masking = false; }
   }
   if (S.prep.running) S.prep.timer = setTimeout(pollPrep, 1000);
 }
@@ -4080,6 +4403,7 @@ function wirePrep() {
   for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
+  meWire();
   $("prepTest").addEventListener("click", prepTest);
   faceSettingsWire();
   $("lookPick").addEventListener("click", lookPickOpen);
@@ -7451,6 +7775,7 @@ function tabsMenu(open) {
 }
 
 function showTab(name) {
+  if (name !== "prep" && S.me && S.me.dirty) meSave();      // leaving Image Prep saves the mask being edited
   const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
   if (tb) $("tabsToggleName").textContent = tb.textContent;
   tabsMenu(false);
