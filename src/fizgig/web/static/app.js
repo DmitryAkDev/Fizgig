@@ -3837,6 +3837,7 @@ async function meGo(i, force) {
     if (mimg) meFromGray(mask, mimg);
   }
   m.pic = pic; m.mask = mask; m.dirty = false; m.undo = []; m.redo = [];
+  meStateLine();
   $("meState").textContent = shown[i].mask ? "" : "No mask yet: paint one with the Brush.";
   meFit();
 }
@@ -3950,8 +3951,13 @@ function meStroke(from, to) {
   for (let k = 1; k <= n; k++) meDab(from.x + dx * k / n, from.y + dy * k / n);
 }
 function meStateLine() {
-  const m = meState();
-  $("meState").textContent = m.dirty ? "Not saved yet." : $("meState").textContent;
+  // the save status beside Save now: unsaved changes, saved, or no mask on this picture yet
+  const m = meState(), b = $("meSaved"), item = m.list.find((p) => p.name === m.name);
+  const st = !m.name ? "" : m.dirty ? "unsaved" : item && item.mask ? "saved" : "none";
+  b.dataset.state = st;
+  b.textContent = {unsaved: "● Unsaved changes", saved: "✓ Saved", none: "No mask yet", "": ""}[st];
+  $("meSave").disabled = !m.dirty;
+  $("meRevert").disabled = !m.dirty;
 }
 async function meSave() {
   const m = meState();
@@ -3965,6 +3971,7 @@ async function meSave() {
     m.dirty = false;
     const item = m.list.find((p) => p.name === m.name);
     if (item) item.mask = !r.removed;
+    meStateLine();
     $("meState").textContent = r.removed ? "All black, so the mask was removed: this picture trains as normal." :
       `Saved ${m.name.replace(/\.[^.]+$/, "")}-masklabel.png.`;
     maskInfo();
@@ -3974,7 +3981,12 @@ async function meSave() {
 function meWire() {
   const m = meState(), cv = $("meCanvas");
   let last = null, pan = null, space = false;
-  $("maskEdit").addEventListener("toggle", () => { if ($("maskEdit").open) meOpen(); });
+  $("maskEdit").addEventListener("toggle", () => {
+    if ($("maskEdit").open) meOpen(); else if (meState().dirty) meSave();      // closing it saves
+  });
+  window.addEventListener("beforeunload", (e) => {   // closing the window with edits not saved: ask first
+    if (S.me && S.me.dirty) { e.preventDefault(); e.returnValue = ""; }
+  });
   $("mePrev").addEventListener("click", () => meGo(meState().at - 1));
   $("meNext").addEventListener("click", () => meGo(meState().at + 1));
   $("meFilter").addEventListener("change", () => meGo(0, true));
@@ -4073,8 +4085,8 @@ async function meSamClick(p, takeAway) {
     c.globalCompositeOperation = takeAway ? "destination-out" : "source-over";
     c.drawImage(found, 0, 0);
     c.globalCompositeOperation = "source-over";
-    m.dirty = true; m.samLoaded = true;
-    $("meState").textContent = (takeAway ? "Taken away." : "Added.") + " Not saved yet.";
+    m.dirty = true; m.samLoaded = true; meStateLine();
+    $("meState").textContent = takeAway ? "Taken away." : "Added.";
   } catch (e) { $("meState").textContent = e.message; }
   finally { m.samBusy = false; meBusy(""); meDraw(); }
 }
@@ -7763,6 +7775,7 @@ function tabsMenu(open) {
 }
 
 function showTab(name) {
+  if (name !== "prep" && S.me && S.me.dirty) meSave();      // leaving Image Prep saves the mask being edited
   const tb = document.querySelector(`.tab-item[data-tab="${name}"] span`);
   if (tb) $("tabsToggleName").textContent = tb.textContent;
   tabsMenu(false);

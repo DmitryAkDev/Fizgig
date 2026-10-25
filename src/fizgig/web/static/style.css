@@ -2330,3 +2330,8 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   animation: me-spin .8s linear infinite; }
 @keyframes me-spin { to { transform: rotate(360deg); } }
 .me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }
+
+.me-saved { font-size: 9.5pt; font-weight: 600; }
+.me-saved[data-state="unsaved"] { color: var(--warning); }
+.me-saved[data-state="saved"] { color: var(--success); }
+.me-saved[data-state="none"] { color: var(--text-muted); font-weight: 400; }

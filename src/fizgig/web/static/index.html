@@ -354,7 +354,9 @@
                 <details class="mask-edit" id="maskEdit">
                   <summary>Edit masks</summary>
                   <div class="field-hint">Paint over a mask that's wrong, or make one by hand. White is what the LoRA
-                    learns. Moving to another picture saves the one you were on.</div>
+                    learns. Each picture's mask is saved beside it as photo-masklabel.png: when you press
+                    <b>Save now</b>, and on its own when you move to another picture, change the filter, close Edit
+                    masks or leave this tab. A mask saved all black is deleted (the picture then trains as normal).</div>
                   <div class="me-bar">
                     <button class="btn btn-sm" id="mePrev" title="Previous picture (←)">←</button>
                     <span class="me-count" id="meCount"></span>
@@ -386,8 +388,9 @@
                   <div class="me-stage" id="meStage"><canvas id="meCanvas"></canvas>
                     <div class="me-busy" id="meBusy" style="display:none"><span class="me-spin"></span><span id="meBusyText"></span></div></div>
                   <div class="me-bar">
-                    <button class="btn btn-primary btn-sm" id="meSave">Save</button>
-                    <button class="btn btn-sm" id="meRevert" title="Back to the saved mask">Revert</button>
+                    <span class="me-saved" id="meSaved"></span>
+                    <button class="btn btn-primary btn-sm" id="meSave" disabled>Save now</button>
+                    <button class="btn btn-sm" id="meRevert" title="Throw away the changes since the last save" disabled>Revert</button>
                     <span class="field-hint" id="meState"></span>
                   </div>
                   <div class="field-hint">Scroll to zoom, hold Space and drag (or drag with the middle button) to move
