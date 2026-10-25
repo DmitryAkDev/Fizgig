@@ -2810,6 +2810,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"modes": list(_prep.MODES), "megapixels": _prep.MEGAPIXELS,
                               "faces": _prep.FACE_TARGETS, "face_tools": prep_jobs.faces_available(),
                               "face_settings": prep_jobs.face_settings()})
+        if path in ("/api/masks/edit/list", "/api/masks/edit/picture", "/api/masks/edit/mask"):   # the mask editor
+            from fizgig.web import mask_edit
+            folder, name = (qs.get("folder") or [""])[0], (qs.get("name") or [""])[0]
+            if not folder or not os.path.isdir(folder):
+                return self.json({"error": "Choose the training folder on the Start tab first."}, 400)
+            try:
+                if path == "/api/masks/edit/list":
+                    return self.json({"pictures": mask_edit.listing(folder)})
+                if path == "/api/masks/edit/picture":
+                    return self._send(200, mask_edit.picture_jpeg(folder, name), "image/jpeg")
+                data = mask_edit.mask_png(folder, name)
+                return self.json({"error": "no mask"}, 404) if data is None else self._send(200, data, "image/png")
+            except ValueError as e:
+                return self.json({"error": str(e)}, 400)
         if path == "/api/masks/info":              # Image Prep's Make masks card: what's there for this folder
             from fizgig.dataset import automask
             folder = (qs.get("folder") or [""])[0]
@@ -3841,7 +3855,7 @@ class Handler(BaseHTTPRequestHandler):
                     pics.append({"name": name, "cover": round(cover, 3),
                                  "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
                 return self.json({"ok": True, "pictures": pics, "fresh": fresh, "of": len(sammask.pictures(folder))})
-            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make"):
+            if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make", "/api/masks/edit/save"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
                 with _lock:
@@ -3857,6 +3871,9 @@ class Handler(BaseHTTPRequestHandler):
                                                          b.get("padding") or 20, bool(b.get("replace"))))
                     if path == "/api/look/scan":
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
+                    if path == "/api/masks/edit/save":
+                        from fizgig.web import mask_edit
+                        return self.json(mask_edit.save(folder, str(b.get("name") or ""), str(b.get("png") or "")))
                     if path == "/api/masks/make":
                         sam = None
                         if b.get("sam"):

@@ -2312,3 +2312,15 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .mask-step { margin: 18px 0 6px; color: var(--text-primary); font-weight: 600; font-size: 10.5pt; }
 #maskMethod { margin-bottom: 4px; }
 .mask-sam-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }
+
+/* the masks card's Edit masks: a picture at a time with its mask, painted on a canvas */
+.mask-edit { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.mask-edit > summary { cursor: pointer; font-weight: 600; color: var(--text-primary); font-size: 10.5pt; }
+.me-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; }
+.me-count { min-width: 64px; text-align: center; color: var(--text-secondary); font-size: 9.5pt; }
+.me-name { color: var(--text-muted); font-size: 9pt; overflow-wrap: anywhere; }
+.me-slider { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 9pt; }
+.me-slider input[type="range"] { width: 110px; }
+.me-stage { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--bg-inset); }
+.me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }

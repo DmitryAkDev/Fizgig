@@ -351,6 +351,46 @@
                   with a mask has a Show mask button. A mask that's wrong can be painted over in any editor, or
                   deleted (the picture then trains as normal).</div>
                 <pre class="console-terminal prep-log" id="maskLog" style="display:none"></pre>
+                <details class="mask-edit" id="maskEdit">
+                  <summary>Edit masks</summary>
+                  <div class="field-hint">Paint over a mask that's wrong, or make one by hand. White is what the LoRA
+                    learns. Moving to another picture saves the one you were on.</div>
+                  <div class="me-bar">
+                    <button class="btn btn-sm" id="mePrev" title="Previous picture (←)">←</button>
+                    <span class="me-count" id="meCount"></span>
+                    <button class="btn btn-sm" id="meNext" title="Next picture (→)">→</button>
+                    <select id="meFilter" class="w-combo st-small-select">
+                      <option value="all">All pictures</option><option value="mask">With a mask</option>
+                      <option value="none">Without a mask</option></select>
+                    <span class="me-name" id="meName"></span>
+                  </div>
+                  <div class="me-bar">
+                    <span class="seg" id="meTool"><button class="btn btn-sm active" data-tool="brush" title="Paint white: learned (B)">Brush</button><button
+                      class="btn btn-sm" data-tool="erase" title="Paint black: not learned (E)">Eraser</button></span>
+                    <label class="me-slider" title="Brush size ([ and ])">Size <input type="range" id="meSize" min="2" max="400" value="40"></label>
+                    <label class="me-slider" title="Soft edges: 0 is a hard edge">Softness <input type="range" id="meSoft" min="0" max="100" value="30"></label>
+                    <label class="me-slider" title="How white each stroke paints: below 100 paints grey (learned partly)">Strength <input type="range" id="meStrength" min="5" max="100" value="100"></label>
+                  </div>
+                  <div class="me-bar">
+                    <span class="seg" id="meView"><button class="btn btn-sm active" data-view="over">Picture + mask</button><button
+                      class="btn btn-sm" data-view="mask">Mask only</button><button class="btn btn-sm" data-view="pic">Picture only</button></span>
+                    <label class="me-slider" title="How strongly the mask shows over the picture">Mask shows <input type="range" id="meShow" min="10" max="90" value="55"></label>
+                    <button class="btn btn-sm" id="meFit" title="Fit the picture (0)">Fit</button>
+                    <button class="btn btn-sm" id="meUndo" title="Undo (Ctrl+Z)">Undo</button>
+                    <button class="btn btn-sm" id="meRedo" title="Redo (Ctrl+Y)">Redo</button>
+                    <button class="btn btn-sm" id="meFill" title="The whole picture white">Fill</button>
+                    <button class="btn btn-sm" id="meClear" title="The whole picture black">Clear</button>
+                    <button class="btn btn-sm" id="meInvert" title="Swap white and black">Invert</button>
+                  </div>
+                  <div class="me-stage" id="meStage"><canvas id="meCanvas"></canvas></div>
+                  <div class="me-bar">
+                    <button class="btn btn-primary btn-sm" id="meSave">Save</button>
+                    <button class="btn btn-sm" id="meRevert" title="Back to the saved mask">Revert</button>
+                    <span class="field-hint" id="meState"></span>
+                  </div>
+                  <div class="field-hint">Scroll to zoom, hold Space and drag (or drag with the middle button) to move
+                    around. Keys: B brush, E eraser, [ ] size, Ctrl+Z / Ctrl+Y, 0 fit, ← → pictures.</div>
+                </details>
               </div>
             </div>
           </div>
