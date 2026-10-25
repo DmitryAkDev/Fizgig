@@ -616,6 +616,29 @@ def _dop_step(driver, dit, net, latents, cond, gen, *, weight, min_t, max_t, acc
     return loss.item()
 
 
+class _MaskPrior:
+    """Masked prior preservation (OneTrainer's masked_prior_preservation_weight, AI-Toolkit's inverted_mask_prior):
+    outside a picture's mask the target is the model's own prediction with the LoRA at 0, so the LoRA learns to
+    leave the rest of the picture as the base model draws it instead of only learning it less. The driver calls
+    base() with its forward at the step's noised input, before the training forward (families/driver.py
+    prior_base / with_prior)."""
+
+    def __init__(self, driver, dit, net, weight, swapped):
+        self.driver, self.dit, self.net, self.weight, self.swapped = driver, dit, net, float(weight), bool(swapped)
+
+    def base(self, forward):
+        try:
+            self.net.set_trainable_multiplier(0.0)
+            if self.swapped:     # a forward with no backward: streamed as inference, as DOP's is
+                self.driver.block_swap_mode(self.dit, inference=True)
+            with torch.no_grad():
+                return forward().detach().float()
+        finally:
+            self.net.set_trainable_multiplier(1.0)
+            if self.swapped:
+                self.driver.block_swap_mode(self.dit, inference=False)
+
+
 def _dop_ft_targets(driver, dit, loader, dop_cond, cond_for, device, *, samples, seed, min_t, max_t):
     """A fine-tune's DOP targets, made before its first step while the model is still the original: for each image,
     `samples` noised inputs (the family's own timestep rule) and the original model's prediction there for the
@@ -993,7 +1016,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1):
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1121,6 +1144,14 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                              for b in ds.batch_manager.buckets.values() for it in b if getattr(it, "mask_path", None)})
         logger.info(f"[masks] masked training: {masked_images} picture(s) with a mask, outside the mask counts "
                     f"x{float(mask_floor):g}")
+    mask_prior = float(mask_prior or 0.0) if masked_training else 0.0
+    if mask_prior and (slider or finetune):
+        logger.info("[masks] keeping the model's own picture outside the mask needs a LoRA to switch off (not a "
+                    "slider or a fine-tune): it's off for this run")
+        mask_prior = 0.0
+    elif mask_prior:
+        logger.info(f"[masks] outside the mask, the LoRA is kept to the model's own picture at x{mask_prior:g} "
+                    "(one extra forward a step, without the LoRA)")
 
     def _loss_mask(batch):
         """The step's per-cell loss weights (masked training), or None: a picture without a mask trains as normal."""
@@ -1722,6 +1753,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         if masked_training:
             md.update({"ss_masked_training": "True", "ss_mask_floor": f"{float(mask_floor):g}",
                        "ss_masked_images": str(masked_images)})
+            if mask_prior:
+                md["ss_mask_prior"] = f"{mask_prior:g}"
         md.update(driver.run_metadata())
         return md
 
@@ -2273,6 +2306,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                             + " (untick Start together on the Helpers tab to start now)")
                 _noted = time.time()
             time.sleep(2)
+    prior = _MaskPrior(driver, dit, net, mask_prior, swapped) if mask_prior else None
     for epoch in (_worker_epochs() if share_worker else range(start_epoch, max_train_epochs)):
         shared_epoch.value = epoch + 1
         driver.begin_epoch(epoch + 1 + (ftr.epochs_done if ftr is not None else 0))   # a continued fine-tune counts on
@@ -2437,7 +2471,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 _lm = _loss_mask(batch)
                 loss, _info = driver.training_loss(dit, latents, cond, gen, min_t=min_timestep, max_t=max_timestep,
                                                    **({"refs": refs} if refs else {}),
-                                                   **({"loss_mask": _lm} if _lm is not None else {}))
+                                                   **({"loss_mask": _lm} if _lm is not None else {}),
+                                                   **({"prior": prior} if prior is not None and _lm is not None
+                                                      else {}))
                 if "lr_mult" in _info and lr_acc:
                     lr_acc[-1] *= _info["lr_mult"]     # where the step landed (the H3 noise-band LR)
                 if pending == 0 and optimizer is not None:
@@ -2755,6 +2791,9 @@ def setup_parser():
                         "fully, grey partly, black at --mask_floor; pictures without a mask train as normal")
     p.add_argument("--mask_floor", type=float, default=0.1,
                    help="masked training: how much outside the mask counts (0 = nothing, 1 = as much as inside)")
+    p.add_argument("--mask_prior", type=float, default=0.0,
+                   help="masked training: outside the mask, keep the LoRA to the model's own prediction (LoRA at 0) "
+                        "at this weight (OneTrainer's masked prior preservation; 0 = off; one extra forward a step)")
     return p
 
 
@@ -2817,7 +2856,8 @@ def main():
         dop=a.dop, dop_trigger=a.dop_trigger, dop_class=a.dop_class, dop_weight=a.dop_weight, dop_every=a.dop_every,
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
-        share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor)
+        share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
+        mask_prior=a.mask_prior)
 
 
 if __name__ == "__main__":

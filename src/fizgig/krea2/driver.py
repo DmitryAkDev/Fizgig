@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, weighted_loss
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
 
 DTYPE = torch.bfloat16
 _BLOCK_MODULES = ("attn.wq", "attn.wk", "attn.wv", "attn.gate", "attn.wo", "mlp.gate", "mlp.up", "mlp.down")
@@ -179,7 +179,7 @@ class Krea2Driver(FamilyDriver):
         with torch.autocast(device_type=device.type, dtype=DTYPE):
             return dit(img=img, context=txt, t=t.to(DTYPE), pos=pos, mask=mask)
 
-    def loss_at(self, dit, latents, noise, t, cond, *, diff_ref=None, diff_weight=0.0, loss_mask=None):
+    def loss_at(self, dit, latents, noise, t, cond, *, diff_ref=None, diff_weight=0.0, loss_mask=None, prior=None):
         """The training loss for a given latent, noise and t - the original compute_loss's arithmetic, in the same
         dtype order. training_loss draws noise and t; tests call this directly to compare with the original."""
         from fizgig.krea2.sampling import patchify_block
@@ -190,6 +190,7 @@ class Krea2Driver(FamilyDriver):
         t_ = t.view(-1, 1, 1, 1).to(DTYPE)
         noised = (1.0 - t_) * latent + t_ * noise
         target, _, _ = patchify_block(noise - latent, patch)
+        base = prior_base(prior, loss_mask, lambda: self._forward(dit, noised, t, cond))
         pred = self._forward(dit, noised, t, cond)
         w = None
         if diff_ref is not None and diff_weight > 0.0:
@@ -205,10 +206,13 @@ class Krea2Driver(FamilyDriver):
             mw = patchify_block(loss_mask.to(latent.device).float(), patch)[0].mean(dim=-1)
         if w is None and mw is None:
             return F.mse_loss(pred.float(), target.float())
-        return weighted_loss((pred.float() - target.float()).pow(2).mean(dim=-1), w, mw)
+        loss = weighted_loss((pred.float() - target.float()).pow(2).mean(dim=-1), w, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred.float() - base).pow(2).mean(dim=-1), mw, w)
+        return loss
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0, loss_mask=None):
+                      diff_weight=0.0, loss_mask=None, prior=None):
         if refs:
             raise RuntimeError("Krea 2 has no edit training (its DiT takes no reference latents)")
         patch = dit.config.patch
@@ -216,7 +220,7 @@ class Krea2Driver(FamilyDriver):
         noise = torch.randn(latents.shape, generator=generator)
         t = self._sample_t(n_tokens, generator, min_t, max_t)
         loss = self.loss_at(dit, latents, noise, t, cond, diff_ref=diff_ref, diff_weight=diff_weight,
-                            loss_mask=loss_mask)
+                            loss_mask=loss_mask, prior=prior)
         return loss, {"t": float(t.mean())}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):

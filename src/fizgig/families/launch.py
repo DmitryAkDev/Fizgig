@@ -665,6 +665,8 @@ def train_command(desc, inputs, plan):
     mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
     if masked_on(desc, st):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
+        if mask_prior(desc, st):
+            cmd += ["--mask_prior", f"{mask_prior(desc, st):g}"]
     if dop_on(desc, st) or mp_subs:
         trig, cls = dop_rules(st)
         if mp_subs:          # the captions are read fused: DOP swaps "zwxemwoman" for "a woman"
@@ -1122,6 +1124,8 @@ def dop_on(desc, st):
 
 
 MASK_FLOORS = ("0 - not at all", "0.05", "0.1 (recommended)", "0.2", "0.3", "0.5")
+# masked prior preservation (OneTrainer's weight): outside the mask, the model's own picture at this weight
+MASK_PRIORS = ("Off", "0.5", "1", "2")
 
 
 def masked_on(desc, st):
@@ -1137,6 +1141,17 @@ def mask_floor(st):
     except ValueError:
         return 0.1
     return min(1.0, max(0.0, v))
+
+
+def mask_prior(desc, st):
+    """Outside the mask, keep the model's own picture: the Training tab's weight, 0 when off - and for a slider or
+    a fine-tune (it switches the LoRA off for a step: there's none to switch)."""
+    if slider_on(desc, st) or ft_on(desc, st):
+        return 0.0
+    try:
+        return max(0.0, float(str(st.get("MASK_PRIOR") or "Off").split()[0]))
+    except ValueError:
+        return 0.0
 
 
 def mask_folders(desc, st):

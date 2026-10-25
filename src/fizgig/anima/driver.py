@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver, weighted_loss
+from fizgig.families.driver import FamilyDriver, prior_base, weighted_loss, with_prior
 
 DTYPE = torch.bfloat16
 HELPER = "circlestone-labs/Anima-Base-v1.0-Diffusers"   # tokenizers + the Qwen3 config (helper_files)
@@ -161,7 +161,7 @@ class AnimaDriver(FamilyDriver):
 
     # ---- training -------------------------------------------------------------------------------
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0, loss_mask=None):
+                      diff_weight=0.0, loss_mask=None, prior=None):
         x0 = latents.float()
         if x0.dim() == 4:
             x0 = x0.unsqueeze(2)                                                    # (B, 16, 1, h, w)
@@ -171,6 +171,7 @@ class AnimaDriver(FamilyDriver):
         noise = torch.randn(x0.shape, generator=generator).to(x0.device)
         tb = t.view(-1, 1, 1, 1, 1)
         xt = (1 - tb) * x0 + tb * noise
+        base = prior_base(prior, loss_mask, lambda: self._velocity(dit, xt, t, cond))
         pred = self._velocity(dit, xt, t, cond).float()
         w = None
         if diff_ref is not None and diff_weight > 0.0:
@@ -186,7 +187,10 @@ class AnimaDriver(FamilyDriver):
         mw = None if loss_mask is None else loss_mask.float().to(x0.device).flatten(1)        # (B, h*w), one frame
         if w is None and mw is None:
             return F.mse_loss(pred, noise - x0), {"t": float(t.mean())}
-        return weighted_loss((pred - (noise - x0)).pow(2).mean(dim=1).flatten(1), w, mw), {"t": float(t.mean())}
+        loss = weighted_loss((pred - (noise - x0)).pow(2).mean(dim=1).flatten(1), w, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1).flatten(1), mw, w)
+        return loss, {"t": float(t.mean())}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import FamilyDriver, weighted_loss
+from fizgig.families.driver import FamilyDriver, prior_base, weighted_loss, with_prior
 from fizgig.zimage import pipeline as P
 
 DTYPE = torch.bfloat16
@@ -106,13 +106,14 @@ class ZImageDriver(FamilyDriver):
 
     # ---- training -------------------------------------------------------------------------------
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0, loss_mask=None):
+                      diff_weight=0.0, loss_mask=None, prior=None):
         x0 = latents.float()
         n = x0.shape[0]
         sig = self._sample_sigma(n, generator, min_t, max_t).to(x0.device)
         noise = torch.randn(x0.shape, generator=generator).to(x0.device)
         sb = sig.view(-1, 1, 1, 1)
         xt = (1 - sb) * x0 + sb * noise
+        base = prior_base(prior, loss_mask, lambda: self._velocity(dit, xt, sig, [_cap(cond, i) for i in range(n)]))
         pred = self._velocity(dit, xt, sig, [_cap(cond, i) for i in range(n)])
         target = noise - x0
         w = None
@@ -127,7 +128,10 @@ class ZImageDriver(FamilyDriver):
         mw = None if loss_mask is None else loss_mask.float().to(x0.device).flatten(1)        # (B, h*w)
         if w is None and mw is None:
             return F.mse_loss(pred, target), {"t": float(sig.mean())}
-        return weighted_loss((pred - target).pow(2).mean(dim=1).flatten(1), w, mw), {"t": float(sig.mean())}
+        loss = weighted_loss((pred - target).pow(2).mean(dim=1).flatten(1), w, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred.float() - base).pow(2).mean(dim=1).flatten(1), mw, w)
+        return loss, {"t": float(sig.mean())}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

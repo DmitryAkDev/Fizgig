@@ -23,7 +23,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fizgig.families.driver import Block, BlockGroup, FamilyDriver, weighted_loss
+from fizgig.families.driver import Block, BlockGroup, FamilyDriver, prior_base, weighted_loss, with_prior
 from fizgig.moss_image import sampling as S
 
 logger = logging.getLogger(__name__)
@@ -270,13 +270,14 @@ class MOSSImageDriver(FamilyDriver):
         return dit(xt, tt, hidden.to(xt.device))
 
     def training_loss(self, dit, latents, cond, generator, *, min_t=0.0, max_t=1.0, refs=None, diff_ref=None,
-                      diff_weight=0.0, loss_mask=None):
+                      diff_weight=0.0, loss_mask=None, prior=None):
         if refs:
             raise RuntimeError("MOSS-Image has no edit (reference-image) conditioning")
         x0 = latents.float()
         noise = torch.randn(x0.shape, generator=generator).to(x0.device)
         t = self._sample_t(generator, min_t, max_t, self._t_mu())
         xt = (1 - t) * x0 + t * noise
+        base = prior_base(prior, loss_mask, lambda: self._forward(dit, xt, t, cond))
         pred = self._forward(dit, xt, t, cond).float()
         target = noise - x0
         wgt = None
@@ -294,7 +295,10 @@ class MOSSImageDriver(FamilyDriver):
         if wgt is None and mw is None:
             # report eq. 3: per-token mean over channels, no sigma weighting
             return F.mse_loss(pred, target), {"t": t}
-        return weighted_loss((pred - target).pow(2).mean(dim=1), wgt, mw), {"t": t}
+        loss = weighted_loss((pred - target).pow(2).mean(dim=1), wgt, mw)
+        if base is not None:
+            loss = with_prior(loss, prior, base, (pred - base).pow(2).mean(dim=1), mw, wgt)
+        return loss, {"t": t}
 
     def noise_latents(self, latents, generator, *, min_t=0.0, max_t=1.0):
         x0 = latents.float()

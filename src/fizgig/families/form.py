@@ -66,7 +66,7 @@ DEFAULTS = {
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
-    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)",
+    "ENABLE_CACHE": True, "MASKED_TRAINING": False, "MASK_FLOOR": "0.1 (recommended)", "MASK_PRIOR": "Off",
     "METADATA_TITLE": "", "METADATA_AUTHOR": "", "METADATA_DESCRIPTION": "", "METADATA_LICENSE": "",
     "METADATA_TAGS": "", "METADATA_TRIGGER_PHRASE": "", "METADATA_THUMBNAIL": "",
     "SAMPLE_ENABLED": True, "SAMPLE_PROMPT": "A high quality photo", "SAMPLE_SEED": "1234",
@@ -401,6 +401,11 @@ def form(desc):
             _row("MASK_FLOOR", "How much outside the mask counts", "choice",
                  "0.1 keeps a little of the background, so the LoRA still knows your subject sits in a scene. "
                  "0 ignores it completely - then a very small mask trains hard on a few spots.", launch.MASK_FLOORS),
+            _row("MASK_PRIOR", "Outside the mask, keep the model's own picture", "choice",
+                 "Off: outside the mask the LoRA still learns your photos a little (as much as the setting above). "
+                 "On: there it learns to draw what the model itself would, so backgrounds and the model's look stay "
+                 "the model's own. Each step takes about a third longer. The higher the number, the firmer.",
+                 launch.MASK_PRIORS),
         ])
     add("subjects", "Subjects", "training", subjects,
         help={"href": VIDEO, "text": "How to set up Fizgig LoRA Isolation",
@@ -805,11 +810,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         if prompt_slider or (media and "photo" not in media):
             hidden.add("masks")             # a prompt slider makes its own pictures; a folder of clips has none to mask
         elif not values.get("MASKED_TRAINING"):
-            hidden.add("MASK_FLOOR")
+            hidden |= {"MASK_FLOOR", "MASK_PRIOR"}
         else:
             note = _mask_note(desc, values, image_folder)
             if note:
                 notes["MASKED_TRAINING"] = note
+            if kind in ("slider", "finetune"):      # it switches the LoRA off for a step: a slider or a fine-tune has none
+                disabled.add("MASK_PRIOR")
+                notes["MASK_PRIOR"] = "For a LoRA: a slider or a fine-tune trains without it."
     lokr = str(values.get("NETWORK_TYPE", "")).startswith("LoKR") and kind not in ("slider", "finetune")
     hidden |= {"NETWORK_DIM", "NETWORK_ALPHA"} if lokr else {"LOKR_FACTOR"}
     if lokr:
@@ -1216,6 +1224,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
+        MASK_PRIOR=s("MASK_PRIOR"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
