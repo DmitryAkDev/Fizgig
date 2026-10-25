@@ -4003,7 +4003,10 @@ function meWire() {
     cv.setPointerCapture(e.pointerId);
     const p = meAt(e);
     if (e.button === 1 || space) { pan = {sx: p.sx, sy: p.sy, ox: m.ox, oy: m.oy}; m.panning = true; e.preventDefault(); return; }
-    if (m.tool === "sam") { if (e.button === 0 || e.button === 2) meSamClick(p, e.button === 2); return; }
+    if (m.tool === "sam") {                            // a click adds; right-click or Alt+click takes away
+      if (e.button === 0 || e.button === 2) meSamClick(p, e.button === 2 || e.altKey);
+      return;
+    }
     if (e.button !== 0) return;
     mePush(); meDab(p.x, p.y); last = p; m.dirty = true; meStateLine(); meDraw();
   });
