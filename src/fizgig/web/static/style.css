@@ -2315,7 +2315,18 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 
 /* the masks card's Edit masks: a picture at a time with its mask, painted on a canvas */
 .mask-edit { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
-.mask-edit > summary { cursor: pointer; font-weight: 600; color: var(--text-primary); font-size: 10.5pt; }
+/* its heading: a bar that reads as something to open */
+.mask-edit > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 12px; padding: 12px 16px 12px 40px; position: relative; border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: var(--radius-sm); background: var(--bg-raised); }
+.mask-edit > summary::-webkit-details-marker { display: none; }
+.mask-edit > summary::before { content: "▶"; position: absolute; left: 16px; top: 13px; color: var(--accent);
+  font-size: 10pt; }
+.mask-edit[open] > summary::before { content: "▼"; }
+.mask-edit > summary:hover { background: var(--bg-hover); }
+.mask-edit[open] > summary { margin-bottom: 8px; }
+.me-sum-title { font-weight: 600; color: var(--text-primary); font-size: 11pt; }
+.me-sum-sub { color: var(--text-secondary); font-size: 9.5pt; }
 .me-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; }
 .me-count { min-width: 64px; text-align: center; color: var(--text-secondary); font-size: 9.5pt; }
 .me-name { color: var(--text-muted); font-size: 9pt; overflow-wrap: anywhere; }
