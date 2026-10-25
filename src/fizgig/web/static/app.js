@@ -3964,6 +3964,10 @@ async function lookPoll() {
   const r = await api("/api/look/status").catch(() => null);
   if (!r) return;
   S.prep.look = r;
+  // a scan that just finished saved the 3 baselines: the masks card's Only my subject can be ticked now (#242)
+  const wasRunning = S.prep.lookRunning;
+  S.prep.lookRunning = r.state === "running";
+  if (wasRunning && !S.prep.lookRunning) maskInfo();
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
   $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
