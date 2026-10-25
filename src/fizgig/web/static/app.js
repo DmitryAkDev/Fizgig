@@ -1812,6 +1812,12 @@ async function loadGallery() {
 // ---- likeness to the subject (fizgig/web/gallery_likeness.py; the desktop gallery's likeness.json) ------------
 S.lik = {dir: "", picked: []};
 const LIK_PICS = /\.(png|jpe?g|webp)$/i;
+// ArcFace never reaches 100%: two photos of the same person score about 72% against each other. Shown wherever ArcFace
+// scores are (a scorer label that isn't ArcFace's means another embedder, on its own scale; none recorded = ArcFace).
+const ARC_PEAK = "Peak ArcFace is about 72%: that's what two photos of the same person score against each other, " +
+  "so no picture reaches 100%.";
+function arcPeak(label) { return !label || String(label).startsWith("ArcFace") ? ARC_PEAK : ""; }
+
 async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
   const ask = S.lik.ask = (S.lik.ask || 0) + 1;     // an older refresh's answer arriving late changes nothing
@@ -1845,6 +1851,7 @@ async function likenessShow(dir, items, run, view) {
   }
   $("likPanel").style.display = epochs.length ? "" : "none";
   if (!epochs.length) return;
+  $("likPeak").textContent = arcPeak(d.embedder);
   $("likRun").textContent = `${run} - best so far: epoch ${bestEpoch} (${Math.round(avgs[best] * 100)}% average likeness)`;
   const cv = $("likChart");
   const w = cv.clientWidth || 900;
@@ -2751,6 +2758,7 @@ function royaleCurrent() { return Math.max(0, Math.min(Math.round(Number($("rySc
 
 async function royaleScore() {
   $("ryLikeStatus").textContent = "Scoring… (the first run loads the face model)";
+  $("ryLikePeak").textContent = "";
   try {
     const r = await api("/api/royale/score", {ref: $("ryLikeRef").value.trim()});
     S.ry.scores = r.scores; S.ry.best = r.best;
@@ -2760,6 +2768,7 @@ async function royaleScore() {
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
       (r.embedder && !r.embedder.startsWith("ArcFace") ? `  · ${r.embedder}` : "");     // named when it isn't the usual one
+    $("ryLikePeak").textContent = arcPeak(r.embedder).replace("72%", "0.72 (72%)");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
 }
@@ -3806,6 +3815,7 @@ async function lookPoll() {
   if (!r) return;
   S.prep.look = r;
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
+  $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
   if (r.state === "running") {
     $("lookStatus").textContent = r.progress[0] ? `Scoring faces… ${r.progress[0]}/${r.progress[1]}` :
