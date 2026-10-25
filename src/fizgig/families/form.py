@@ -619,7 +619,8 @@ def form(desc):
         _row("_prompts_note", " ".join(t for k, t in desc.samples_text if k == "prompts"), "note")
         if any(k == "prompts" for k, _t in desc.samples_text) else None,
         _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
-             "One prompt per line."),
+             "One prompt per line: Enter starts the next. The numbers are the gallery's Prompt 1, 2, 3…",
+             lines=True),
         _row("_overtrain_tip", "Tip - catch overtraining early: give one prompt something your dataset doesn't have, "
              "a pose, angle or setting none of your photos show. Early epochs follow it. When the LoRA starts to "
              "overtrain, that's the first thing to fail, as the previews drift back to your photos. The last epoch that "
