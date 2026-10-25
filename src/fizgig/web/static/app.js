@@ -1522,7 +1522,7 @@ function renderChoiceDraw(id, L) {
 
 // every tab's box (and Studio's note) after a change, or a tab's model changing
 async function renderChoiceRefresh() {
-  for (const [id, sel] of [["stRender", "stFamily"], ["ryRender", "ryFamily"], ["pfRenderChoice", "pfFamily"]]) {
+  for (const [id, sel] of [["stRender", "stFamily"], ["ryRenderChoice", "ryFamily"], ["pfRenderChoice", "pfFamily"]]) {
     if (!$(id) || !$(sel) || !$(sel).value) continue;
     const r = await api("/api/studio/render_choice?family=" + encodeURIComponent($(sel).value)).catch(() => null);
     if (!r) continue;
@@ -2801,8 +2801,8 @@ async function royalePoll() {
   try { st = await api("/api/royale/status"); } catch (e) { return; }
   const running = st.state === "rendering";
   $("ryRender").disabled = running; $("ryStop").disabled = !running;
-  $("rySBadge").textContent = running ? "Rendering" : "";
-  $("rySBadge").dataset.state = running ? "running" : "idle";
+  $("rySetupBadge").textContent = running ? "Rendering" : "";
+  $("rySetupBadge").dataset.state = running ? "running" : "idle";
   const done = st.items.filter((x) => x.png).length;
   $("ryBar").style.width = running ? `${Math.round(100 * Math.max(done, 0.3) / Math.max(st.total, 1))}%` : "0";
   if (st.status) $("ryStatus").textContent = st.status + (st.error && st.state === "failed" ? ` ${st.error}` : "");

@@ -954,13 +954,13 @@
             <p>Render every epoch of a training run on one seed, then crossfade between them to find the sweet spot.</p>
           </div>
           <div class="section-card">
-            <div class="card-title"><span>Setup</span><span class="run-badge" id="rySBadge"></span></div>
+            <div class="card-title"><span>Setup</span><span class="run-badge" id="rySetupBadge"></span></div>
             <div class="card-desc">Point at a training output folder. Renders use the model's preview model (its Turbo /
               distilled checkpoint when set).</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Model:</span><select id="ryFamily" class="w-combo"></select>
                 <span class="field-hint">Follows the checkpoints' own model.</span></div>
-              <div class="field-row" id="ryRender" style="display:none"></div>
+              <div class="field-row" id="ryRenderChoice" style="display:none"></div>
               <div class="field-row"><span class="field-label">Source:</span>
                 <label class="radio-label"><input type="radio" name="rySource" value="folder" checked> Training folder (compare epochs)</label>
                 <label class="radio-label"><input type="radio" name="rySource" value="single"> Single LoRA</label></div>
