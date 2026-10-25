@@ -185,8 +185,9 @@ def folder_report(folders, image_exts):
                     continue
                 try:
                     from PIL import Image
+                    from fizgig.utils.upright import upright_size
                     with Image.open(os.path.join(folder, n)) as im:
-                        size = im.size
+                        size = upright_size(im)         # as training reads it (a rotation flag applied)
                     why = mask_problem(m, size, os.path.join(folder, n))
                 except Exception:
                     why = "its picture can't be read"

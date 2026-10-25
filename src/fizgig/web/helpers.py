@@ -2059,10 +2059,11 @@ def _share_cache_files(setup, prep):
             # (only those this computer uses, so both halves train the same pictures masked)
             from PIL import Image
             from fizgig.dataset.masks import mask_problem
+            from fizgig.utils.upright import upright_size
             for pic, m in sorted(folder_masks(d, _media_exts()).items()):
                 try:
                     with Image.open(os.path.join(d, pic)) as im:
-                        ok = not mask_problem(m, im.size, os.path.join(d, pic))
+                        ok = not mask_problem(m, upright_size(im), os.path.join(d, pic))
                 except Exception:
                     ok = False
                 if ok:
