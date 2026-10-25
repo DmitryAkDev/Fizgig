@@ -233,10 +233,19 @@ function triggerCheckBlock() {
 
 function renderSections(tab, host) {
   host.innerHTML = "";
+  if (!S.secShut) S.secShut = {};
   for (const sec of S.fam.form.sections.filter((s) => s.tab === tab)) {
-    const body = el("div", {class: "card-content" + (sec.collapsed ? " collapsed" : "")});
-    const head = el("div", {class: "card-title collapsible-header", onclick: () => body.classList.toggle("collapsed")},
-      el("span", {text: (sec.collapsed ? "▶ " : "▼ ") + sec.title}));
+    // open or closed as the form says, or as you left it this session (a family switch redraws the cards)
+    const key = tab + ":" + sec.id, shut = key in S.secShut ? S.secShut[key] : !!sec.collapsed;
+    const body = el("div", {class: "card-content" + (shut ? " collapsed" : "")});
+    const label = el("span");
+    const head = el("div", {class: "card-title collapsible-header"}, label);
+    const show = () => {
+      const c = body.classList.contains("collapsed");
+      label.textContent = (c ? "▶ " : "▼ ") + sec.title;
+      card.classList.toggle("sec-open", !c);
+    };
+    head.onclick = () => { body.classList.toggle("collapsed"); S.secShut[key] = body.classList.contains("collapsed"); show(); };
     if (sec.help) {         // the card's video, a link across the top of the card
       body.append(el("a", {class: "sec-video", href: sec.help.href, target: "_blank", rel: "noopener"},
         el("span", {class: "sec-video-play", text: "▶"}),
@@ -245,7 +254,9 @@ function renderSections(tab, host) {
     }
     for (const r of sec.rows) body.append(renderRow(r));
     if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
-    host.append(el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body));
+    const card = el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body);
+    show();
+    host.append(card);
   }
 }
 

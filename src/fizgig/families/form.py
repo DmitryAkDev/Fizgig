@@ -75,6 +75,9 @@ DEFAULTS = {
 }
 
 
+TRAINING_OPEN = ("output", "params")         # the Training tab's cards open when it opens; the rest start closed
+
+
 def _row(key, label, kind="entry", hint="", choices=(), default=None, **extra):
     return {"key": key, "label": label, "kind": kind, "hint": hint, "choices": list(choices),
             "default": DEFAULTS.get(key, "") if default is None else default, **extra}
@@ -220,6 +223,8 @@ def form(desc):
     def add(sid, title, tab, rows, collapsed=False, help=None):
         """help: {"href", "text", "sub"?} - the card's video, a link across its top"""
         rows = [r for r in rows if r]
+        if tab == "training":                    # the Training tab opens on Output and Training Parameters only
+            collapsed = sid not in TRAINING_OPEN
         if rows:
             sections.append({"id": sid, "title": title, "tab": tab, "rows": rows, "collapsed": collapsed,
                              **({"help": help} if help else {})})
