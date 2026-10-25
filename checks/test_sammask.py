@@ -1,4 +1,4 @@
-"""SAM 3.1 masks (Image Prep's masks from words): the words typed, where the model file is found, and the checkpoint's
+"""SAM 3.1 masks (Image Prep's masks from words): the words typed, the downloaded model file, and the checkpoint's
 key conversion - no model, no GPU."""
 import torch
 
@@ -11,18 +11,10 @@ def test_words_split_on_commas_and_lines():
     assert sammask.split_words("") == []
 
 
-def test_model_found_in_preferences_models_folder_or_comfyui(tmp_path):
-    models = tmp_path / "fizgig_models"
-    models.mkdir()
-    comfy = tmp_path / "ComfyUI" / "models"
-    (comfy / "checkpoints").mkdir(parents=True)
-    (comfy / "loras").mkdir()
-    prefs = {"some_lora": str(comfy / "loras" / "a.safetensors")}
-    assert sammask.find_model(prefs, str(models)) == ""
-    (comfy / "checkpoints" / sammask.NAME).write_bytes(b"x")
-    assert sammask.find_model(prefs, str(models)) == str(comfy / "checkpoints" / sammask.NAME)
-    (models / sammask.NAME).write_bytes(b"x")                 # the models folder's own copy comes first
-    assert sammask.find_model(prefs, str(models)) == str(models / sammask.NAME)
+def test_model_is_the_downloaded_file_in_the_models_folder(tmp_path):
+    assert sammask.find_model(str(tmp_path)) == ""
+    (tmp_path / sammask.NAME).write_bytes(b"x")
+    assert sammask.find_model(str(tmp_path)) == str(tmp_path / sammask.NAME)
 
 
 def test_checkpoint_keys_split_into_model_and_text_encoder():

@@ -46,10 +46,7 @@ Tick **Use SAM 3.1: masks from words** on the same card. Instead of the list abo
 
 **Preview on 2 pictures** shows the first two pictures with their masks over them before you make any. Then press **Make masks**.
 
-SAM 3.1 is Meta's Segment Anything model. It finds whatever you name, with sharper edges than the person finder (around hair especially). It needs a 1.75 GB file, ComfyUI's `sam3.1_multiplex_fp16.safetensors`:
-
-- If your ComfyUI already has it (`models/checkpoints/`), and Fizgig knows that ComfyUI from any of your model paths, it uses that copy.
-- Otherwise press **Download** on the card. It goes into Fizgig's models folder, once, and stays there through updates.
+SAM 3.1 is Meta's Segment Anything model. It finds whatever you name, with sharper edges than the person finder (around hair especially). The first time, press **Download** on the card: it fetches the model (1.75 GB) into Fizgig's models folder, once, and it stays there through updates.
 
 It runs on the GPU, a fraction of a second a picture once it has loaded; on a computer without one it takes several seconds a picture. Make masks when nothing is training. **Only my subject** works with it too.
 

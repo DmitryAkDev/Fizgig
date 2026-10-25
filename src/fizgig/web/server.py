@@ -373,13 +373,10 @@ def _session_key() -> str:
 
 
 def _sam_info():
-    """The masks card's SAM 3.1 line: the file it would use (Preferences, the models folder or a ComfyUI copy), where
-    that is, and how a download is going."""
+    """The masks card's SAM 3.1 line: the downloaded file ("" before the download) and how a download is going."""
     from fizgig.dataset import sammask
-    path = sammask.find_model(load_prefs(), user_data.MODELS_DIR)
-    where = ("" if not path else "models" if os.path.dirname(os.path.abspath(path)) ==
-             os.path.abspath(user_data.MODELS_DIR) else "comfy")
-    return {"path": path, "where": where, "fetch": sammask.fetch_state(user_data.MODELS_DIR), "gb": sammask.SIZE_GB}
+    return {"path": sammask.find_model(user_data.MODELS_DIR), "fetch": sammask.fetch_state(user_data.MODELS_DIR),
+            "gb": sammask.SIZE_GB}
 
 
 def update_prefs(changes: dict):
@@ -3818,7 +3815,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": str(e)}, 400)
             if path == "/api/masks/sam_fetch":      # SAM 3.1 into the models folder (1.75 GB, once)
                 from fizgig.dataset import sammask
-                sammask.download(user_data.MODELS_DIR, on_done=lambda dest: update_prefs({sammask.PREF_KEY: dest}))
+                sammask.download(user_data.MODELS_DIR)
                 return self.json({"ok": True, "sam": _sam_info()})
             if path == "/api/masks/sam_preview":    # the first two pictures with their SAM masks, nothing written
                 from fizgig.dataset import sammask

@@ -2,9 +2,8 @@
 the person finder in automask.py. "Mask these" is a few short phrases ("person", "hair", "the dog"); each picture's
 mask is everything they find, less what "Leave these out" finds ("glasses", "the phone").
 
-The model is ComfyUI's single file (Comfy-Org/sam3.1, 1.75 GB): downloaded once into the models folder, or the copy in
-a ComfyUI install Fizgig already knows (its models folder holds it as checkpoints/sam3.1_multiplex_fp16.safetensors).
-It runs on the GPU when there is one (a fraction of a second a picture), on the CPU otherwise (several seconds)."""
+The model is ComfyUI's single file (Comfy-Org/sam3.1, 1.75 GB), downloaded once into Fizgig's models folder from the
+masks card. It runs on the GPU when there is one (a fraction of a second a picture), on the CPU otherwise (several seconds)."""
 import os
 import threading
 import time
@@ -19,7 +18,6 @@ from fizgig.utils.upright import upright
 REPO, FILE = "Comfy-Org/sam3.1", "checkpoints/sam3.1_multiplex_fp16.safetensors"
 NAME = os.path.basename(FILE)
 SIZE_GB = 1.75
-PREF_KEY = "sam3_model"
 IDLE_UNLOAD = 120                         # seconds the loaded model waits for the next preview or run
 
 _lock = threading.Lock()
@@ -33,39 +31,13 @@ def split_words(text):
     return [p.strip() for p in str(text or "").replace("\n", ",").split(",") if p.strip()]
 
 
-def _comfy_copies(prefs):
-    """sam3.1 in the ComfyUI models folders the user's paths point into (any path with a 'models' folder in it)."""
-    seen, out = set(), []
-    for v in (prefs or {}).values():
-        if not isinstance(v, str) or not v:
-            continue
-        parts = os.path.normpath(v).split(os.sep)
-        low = [p.lower() for p in parts]
-        if "models" not in low:
-            continue
-        root = os.sep.join(parts[:len(low) - 1 - low[::-1].index("models") + 1])
-        if root.lower() in seen:
-            continue
-        seen.add(root.lower())
-        p = os.path.join(root, "checkpoints", NAME)
-        if os.path.isfile(p):
-            out.append(p)
-    return out
-
-
-def find_model(prefs, models_dir):
-    """The SAM 3.1 file to use, or "": the one set in Preferences, the models folder's, or a ComfyUI copy."""
-    p = (prefs or {}).get(PREF_KEY) or ""
-    if p and os.path.isfile(p):
-        return p
+def find_model(models_dir):
+    """The downloaded SAM 3.1 file in the models folder, or "" before the download."""
     p = os.path.join(models_dir, NAME)
-    if os.path.isfile(p):
-        return p
-    found = _comfy_copies(prefs)
-    return found[0] if found else ""
+    return p if os.path.isfile(p) else ""
 
 
-def download(models_dir, on_done=None):
+def download(models_dir):
     """Fetch the file into the models folder on a worker thread; fetch_state() follows it."""
     with _lock:
         if _fetch["state"] == "running":
@@ -79,8 +51,6 @@ def download(models_dir, on_done=None):
             dest = os.path.join(models_dir, NAME)
             if os.path.normcase(os.path.abspath(got)) != os.path.normcase(os.path.abspath(dest)):
                 os.replace(got, dest)              # from the repo's checkpoints/ subfolder to the models folder
-            if on_done:
-                on_done(dest)
             with _lock:
                 _fetch.update(state="done", at=time.time())
         except Exception as e:

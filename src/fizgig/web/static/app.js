@@ -3700,7 +3700,7 @@ async function maskInfo() {
   S.prep.maskOpts = r;
   maskShow(r);
 }
-// SAM 3.1 on the masks card: words instead of the person finder's choices, its file found or downloaded here
+// SAM 3.1 on the masks card: words instead of the person finder's choices; its file is downloaded from here
 function maskSamShow(r) {
   const on = $("maskSam").checked, sam = r.sam || {}, f = sam.fetch || {};
   $("maskSamBox").style.display = on ? "" : "none";
@@ -3711,7 +3711,7 @@ function maskSamShow(r) {
     clearTimeout(S.prep.samTimer);
     S.prep.samTimer = setTimeout(maskInfo, 2000);
   } else if (sam.path) {
-    st.replaceChildren(sam.where === "comfy" ? "Using the SAM 3.1 in your ComfyUI: " + sam.path : "SAM 3.1 is here.");
+    st.replaceChildren("SAM 3.1 is downloaded.");
   } else {
     st.replaceChildren((f.state === "failed" ? `The download failed (${f.error}). ` : "") +
       `SAM 3.1 isn't here yet (${sam.gb || 1.75} GB, once). `, el("button", {class: "btn btn-sm",
