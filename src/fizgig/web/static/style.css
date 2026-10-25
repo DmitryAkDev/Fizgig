@@ -2301,3 +2301,14 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .section-card.sec-extra { border-left: 3px solid var(--lilac); }
 
 #tab-extract input.ex-rank { width: 96px; flex: none; }
+
+/* the masks card's SAM preview: two pictures with their masks over them */
+.mask-sam-previews { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+.mask-sam-shot { margin: 0; }
+.mask-sam-shot img { display: block; max-width: 320px; width: 100%; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.mask-sam-shot figcaption { color: var(--text-muted); font-size: 8.5pt; margin-top: 3px; }
+
+/* the masks card's steps: how they're made, what they show, options */
+.mask-step { margin: 18px 0 6px; color: var(--text-primary); font-weight: 600; font-size: 10.5pt; }
+#maskMethod { margin-bottom: 4px; }
+.mask-sam-state { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 2px; }

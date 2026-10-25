@@ -37,6 +37,19 @@ Masks already in the folder are kept unless you tick **Replace masks already the
 
 Make masks after resizing and face crops. A crop made later carries its mask with it, but this way the masks you check are the final ones.
 
+### …make masks of anything, by naming it (SAM 3.1)?
+
+Tick **Use SAM 3.1: masks from words** on the same card. Instead of the list above you type what the masks show:
+
+- **Mask these**: a few words for each thing, separated by commas: `person`, `hair, face`, `the dog`, `red dress`.
+- **Leave these out** (optional): what to take away from that: `glasses`, `phone`, `hat`.
+
+**Preview on 2 pictures** shows the first two pictures with their masks over them before you make any. Then press **Make masks**.
+
+SAM 3.1 is Meta's Segment Anything model. It finds whatever you name, with sharper edges than the person finder (around hair especially). The first time, press **Download** on the card: it fetches the model (1.75 GB) into Fizgig's models folder, once, and it stays there through updates.
+
+It runs on the GPU, a fraction of a second a picture once it has loaded; on a computer without one it takes several seconds a picture. Make masks when nothing is training. **Only my subject** works with it too.
+
 ### …keep only my subject when there are other people in the picture?
 
 Tick **Only my subject, when there are several people**. Fizgig finds your subject by their face, using the Look Filter's 3 baselines (the last card on the Image Prep tab: choose them and scan the folder first). The other people count as background.

@@ -187,6 +187,19 @@ Apache-2.0, and each carries a header saying so:
   ported from `comfy/k_diffusion/sampling.py` (`res_multistep`). The rest of
   that file is Fizgig's own and Apache-2.0.
 
+Fizgig's SAM 3.1 masks (Image Prep's Make masks from words) are ported from
+ComfyUI's SAM 3 support at commit 2035799. These files are **GPL-3.0** too, each
+with a header saying so:
+
+- `src/fizgig/sam3/sam.py`, `tracker.py`, `detector.py` — copied from
+  `comfy/ldm/sam3/` with ComfyUI's helpers taken from `_comfy.py`.
+- `src/fizgig/sam3/_comfy.py` — the ComfyUI helpers they use (layer classes,
+  attention, the FLUX rope functions, LayerNorm2d, a resize) in plain PyTorch.
+- `src/fizgig/sam3/segment.py` — the checkpoint key conversion
+  (`comfy/supported_models.py`), the text encoder settings
+  (`comfy/text_encoders/sam3_clip.py`) and the detect and refine steps
+  (`comfy_extras/nodes_sam3.py`).
+
 These files are free software: you may redistribute and/or modify them under
 the terms of the GNU General Public License v3.0. A copy of the GPL-3.0 text is
 in `LICENSES/GPL-3.0.txt` in this repository (also at
@@ -277,10 +290,18 @@ https://ai.google.dev/edge/mediapipe/solutions/vision/image_segmenter
 
 ---
 
+## CLIP tokenizer (OpenAI) — MIT License
+
+`src/fizgig/assets/clip_tokenizer/` (the SAM 3.1 text encoder's vocabulary) is
+the tokenizer of OpenAI's CLIP ViT-L/14 (`openai/clip-vit-large-patch14`), as
+ComfyUI ships it. Copyright (c) 2021 OpenAI, MIT License.
+
+---
+
 ## Note on model weights
 
 The third-party notices above cover **source code** only. Krea 2 / FLUX.2 model
 weights, the Qwen-Image VAE weights, the Qwen3-VL text-encoder weights, and the
-MiniMax H3 training adapters (circlestone-labs and Ostris) are distributed by their respective publishers under their own model licenses, which
+MiniMax H3 training adapters (circlestone-labs and Ostris), and Meta's SAM 3.1 weights (the SAM License) are distributed by their respective publishers under their own model licenses, which
 the user accepts when downloading them. Fizgig does not redistribute any model
 weights.
