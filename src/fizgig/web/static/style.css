@@ -2281,7 +2281,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .prompt-line + .prompt-line { border-top: 1px solid var(--border); }
 .prompt-num { flex: 0 0 34px; padding: 7px 8px 0 0; text-align: right; color: var(--text-muted);
   font-size: 9pt; font-weight: 600; user-select: none; }
-.form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 0; resize: none;
+.form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
   overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
 .form-row .prompt-line textarea:focus { background: rgba(59,130,246,.08); box-shadow: none; }
 .prompt-del { flex: 0 0 28px; height: 28px; margin: 2px 2px 0 0; background: none; border: none; cursor: pointer;

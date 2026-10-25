@@ -521,7 +521,11 @@ function promptLines(r, wrap) {
   const list = el("div", {class: "prompt-lines"});
   const boxes = () => [...list.querySelectorAll("textarea")];
   const save = () => onValue(r, boxes().map((b) => b.value).join("\n"));
-  const grow = (b) => { b.style.height = "auto"; b.style.height = b.scrollHeight + 2 + "px"; };
+  const grow = (b) => {                     // to its text; a hidden tab measures 0, so it waits to be seen
+    if (!b.offsetParent) return;
+    b.style.height = "auto"; b.style.height = b.scrollHeight + 2 + "px";
+  };
+  new ResizeObserver(() => boxes().forEach(grow)).observe(list);     // shown at last, or a wider window
   const renumber = () => list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
   function line(text, after) {
     const box = el("textarea", {rows: 1, spellcheck: "false", "aria-label": "Prompt"});
