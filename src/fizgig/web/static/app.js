@@ -279,6 +279,7 @@ function renderRow(r) {
   let input;
   const set = (val) => onValue(r, val);
   if (r.kind === "blocks") return blockPicker(r, wrap);
+  if (r.lines) return promptLines(r, wrap);
   if (r.kind === "cadence") return cadenceRow(r, wrap);
   if (r.kind === "split") return splitRow(r, wrap);
   if (r.kind === "check") {
@@ -512,6 +513,80 @@ function splitRow(r, wrap) {
   if (r.warn) wrap.append(el("div", {class: "field-hint tc-warn"}, r.warn, r.warn_link ? el("a", {class: "inline-link",
     target: "_blank", rel: "noopener", href: r.warn_link, text: " Best values: the Reddit discussion →"}) : ""));
   show();
+  return wrap;
+}
+
+// a list of prompts, one numbered box each (the gallery's Prompt 1, 2, 3…), saved as the one-per-line text it always was
+function promptLines(r, wrap) {
+  const list = el("div", {class: "prompt-lines"});
+  const boxes = () => [...list.querySelectorAll("textarea")];
+  const save = () => onValue(r, boxes().map((b) => b.value).join("\n"));
+  const grow = (b) => {                     // to its text; a hidden tab measures 0, so it waits to be seen
+    if (!b.offsetParent) return;
+    b.style.height = "auto"; b.style.height = b.scrollHeight + 2 + "px";
+  };
+  new ResizeObserver(() => boxes().forEach(grow)).observe(list);     // shown at last, or a wider window
+  const renumber = () => list.querySelectorAll(".prompt-num").forEach((n, i) => { n.textContent = i + 1; });
+  function line(text, after) {
+    const box = el("textarea", {rows: 1, spellcheck: "false", "aria-label": "Prompt"});
+    box.value = text;
+    const item = el("div", {class: "prompt-line"}, el("span", {class: "prompt-num"}), box,
+      el("button", {class: "prompt-del", text: "×", title: "Remove this prompt", tabindex: -1, onclick: () => {
+        if (boxes().length > 1) item.remove(); else box.value = "";
+        renumber(); save();
+      }}));
+    box.addEventListener("input", () => { grow(box); save(); });
+    box.addEventListener("keydown", (e) => {
+      const at = box.selectionStart, flat = at === box.selectionEnd;
+      if (e.key === "Enter" && !e.isComposing) {           // the rest of the line starts the next prompt
+        e.preventDefault();
+        const rest = box.value.slice(box.selectionEnd);
+        box.value = box.value.slice(0, at); grow(box);
+        const next = line(rest, item);
+        next.setSelectionRange(0, 0); next.focus();
+        renumber(); save();
+      } else if (e.key === "Backspace" && flat && at === 0 && item.previousElementSibling) {   // join the one above
+        e.preventDefault();
+        const prev = item.previousElementSibling.querySelector("textarea"), end = prev.value.length;
+        prev.value += box.value; grow(prev);
+        item.remove(); prev.focus(); prev.setSelectionRange(end, end);
+        renumber(); save();
+      }
+    });
+    box.addEventListener("paste", (e) => {                 // pasted lines become prompts of their own
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      if (!/\r?\n/.test(text)) return;
+      e.preventDefault();
+      const parts = text.split(/\r?\n/);
+      const head = box.value.slice(0, box.selectionStart), tail = box.value.slice(box.selectionEnd);
+      box.value = head + parts[0]; grow(box);
+      let last = item, lastBox = box;
+      for (const p of parts.slice(1)) { lastBox = line(p, last); last = lastBox.parentNode; }
+      const end = lastBox.value.length;
+      lastBox.value += tail; grow(lastBox);
+      lastBox.focus(); lastBox.setSelectionRange(end, end);
+      renumber(); save();
+    });
+    if (after) after.after(item); else list.append(item);
+    requestAnimationFrame(() => grow(box));
+    return box;
+  }
+  function draw() {
+    list.replaceChildren();
+    const v = String(S.values[r.key] ?? "").split(/\r?\n/);
+    for (const t of v) line(t);
+    renumber();
+  }
+  const sync = el("input", {type: "hidden", id: "f_" + r.key});    // syncInputs (a preset, Last Train) redraws it
+  sync._sync = draw;
+  const add = el("button", {class: "btn btn-sm", text: "+ Add prompt", onclick: () => {
+    const last = list.lastElementChild;
+    line("", last).focus(); renumber(); save();
+  }});
+  wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, add, sync);
+  if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
+  wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
+  draw();
   return wrap;
 }
 
@@ -1720,7 +1795,7 @@ function previewFigure(it, prompts, eager, byEpoch) {
   const own = byEpoch && it.epoch != null && byEpoch[String(it.epoch)];
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
   return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
-    el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt}) : null,
+    el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
       el("span", {class: "preview-file", text: it.name}))), it);
 }
 // the family's line on how this preview was made (the run's record), shown over it in the lightbox
@@ -1741,7 +1816,7 @@ function previewGrid(items, prompts, eager) {
   for (const i of idxs) {
     table.append(el("tr", {},
       el("th", {class: "prompt-head"}, el("b", {text: `Prompt ${i + 1}`}),
-        prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i]}) : null),
+        prompts[i] ? el("span", {class: "preview-prompt", text: prompts[i], title: prompts[i]}) : null),
       ...epochs.map((e) => { const it = at.get(e + ":" + i);
         return el("td", {}, it ? withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
           el("figcaption", {class: "visually-hidden"}, el("b", {text: previewLabel(it)}),

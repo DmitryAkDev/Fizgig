@@ -6,6 +6,7 @@
   --bg-surface: #252D38;     /* Cards, panels, inputs */
   --bg-hover: #2A3542;       /* Hover state */
   --bg-inset: #1A2028;       /* Input backgrounds, dark inset */
+  --bg-row-alt: #2C3036;     /* Every other line of a list of boxes (the sample prompts) */
   --bg-header: #1A2028;      /* Notebook tab bar & titlebar background */
   --bg-section-hdr: #1A2028; /* CollapsibleFrame header (exact match to bg_header) */
   --text-primary: #F0F4F8;   /* Primary text */
@@ -1285,7 +1286,7 @@ input[type="range"] {
 :root {
   --bg-deep: #12161D; --bg-side: #0E1218; --bg-surface: #1A2029; --bg-raised: #212834; --bg-hover: #252D3A;
   --bg-inset: #10141A; --bg-header: #0E1218; --border: #2A3341; --text-secondary: #93A3B5; --text-muted: #66778A;
-  --radius: 12px; --radius-sm: 8px;
+  --radius: 12px; --radius-sm: 8px; --bg-row-alt: #1F242B;
 }
 body { font-size: 13.5px; background: var(--bg-deep); }
 .window-titlebar { display: none; }
@@ -2271,3 +2272,19 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 /* a single choice greyed in a row of pills */
 .checkbox-label.choice-off { opacity: 0.4; cursor: not-allowed; }
 .run-helper .pod-dot { display: inline-block; vertical-align: -1px; }
+
+/* the sample prompts: one numbered box each, every other one dark grey, across the card */
+.prompt-lines { display: flex; flex-direction: column; gap: 0; width: 100%; margin: 4px 0 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.prompt-line { display: flex; align-items: flex-start; background: var(--bg-inset); }
+.prompt-line:nth-child(even) { background: var(--bg-row-alt); }
+.prompt-line + .prompt-line { border-top: 1px solid var(--border); }
+.prompt-num { flex: 0 0 34px; padding: 7px 8px 0 0; text-align: right; color: var(--text-muted);
+  font-size: 9pt; font-weight: 600; user-select: none; }
+.form-row .prompt-line textarea { flex: 1 1 auto; width: auto; max-width: none; min-height: 32px; resize: none;
+  overflow: hidden; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 6px 4px; }
+.form-row .prompt-line textarea:focus { background: rgba(59,130,246,.08); box-shadow: none; }
+.prompt-del { flex: 0 0 28px; height: 28px; margin: 2px 2px 0 0; background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 14pt; line-height: 1; visibility: hidden; }
+.prompt-line:hover .prompt-del, .prompt-line:focus-within .prompt-del { visibility: visible; }
+.prompt-del:hover { color: var(--text-primary); }
