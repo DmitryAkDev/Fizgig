@@ -41,7 +41,7 @@ Make masks after resizing and face crops. A crop made later carries its mask wit
 
 Tick **Only my subject, when there are several people**. Fizgig finds your subject by their face, using the Look Filter's 3 baselines (the last card on the Image Prep tab: choose them and scan the folder first). The other people count as background.
 
-### …make masks by hand, or use masks from OneTrainer?
+### …make masks by hand, or use masks from another trainer?
 
 Save a black-and-white picture beside each photo, named after it with `-masklabel` added:
 
@@ -50,7 +50,7 @@ beach.jpg
 beach-masklabel.png
 ```
 
-Paint white over what you want learned and black over the rest; grey for in between and soft edges. A mask smaller than its picture is fine (it's stretched to fit), as is one painted white on a transparent layer (transparent counts as black). OneTrainer uses the same naming, so its masks work as they are.
+Paint white over what you want learned and black over the rest; grey for in between and soft edges. A mask smaller than its picture is fine (it's stretched to fit), as is one painted white on a transparent layer (transparent counts as black). Other trainers that use this naming make masks that work as they are.
 
 ### …check a mask?
 
@@ -58,11 +58,11 @@ Captions tab: a picture with a mask has a **Show mask** button.
 
 ### …choose how much the background counts?
 
-**How much outside the mask counts**, under the tick. 0.1 (recommended, and OneTrainer's default) keeps a little of the background, so the LoRA still knows your subject sits in a scene. 0 ignores it completely; then a very small mask trains hard on a few spots.
+**How much outside the mask counts**, under the tick. 0.1 (recommended) keeps a little of the background, so the LoRA still knows your subject sits in a scene. 0 ignores it completely; then a very small mask trains hard on a few spots.
 
 ### …keep the model's own look outside the mask?
 
-**Outside the mask, keep the model's own picture**, under the tick. Off, the part outside the mask still learns your photos a little (as much as the setting above). On, it learns to draw there what the model itself would draw: at each step Fizgig also asks the model, with your LoRA switched off, what it sees outside the mask, and teaches the LoRA to give the same answer. So the LoRA learns your subject and leaves backgrounds and the model's own look alone. The number is how firmly; 1 counts the outside as much as the inside.
+**Outside the mask, keep the model's own picture**, under the tick. Off, the part outside the mask still learns your photos a little (as much as the setting above). On, it learns to draw there what the model itself would draw: at each step Fizgig also asks the model, with your LoRA switched off, what it sees outside the mask, and teaches the LoRA to give the same answer. So the LoRA learns your subject and leaves backgrounds and the model's own look alone. The number is how firmly; 1 counts the outside as much as the inside. It still works with **How much outside the mask counts** at 0: that stops the outside learning your photos, and this keeps it to the model's own picture.
 
 Each step takes longer: one extra pass through the model, without the LoRA. In our tests that added from a few percent to about half again, depending on the model. It's for LoRAs: a slider or a fine-tune trains without it. This is known as masked prior preservation.
 
@@ -75,6 +75,6 @@ Each step takes longer: one extra pass through the model, without the LoRA. In o
 
 **Masks go with their pictures.** Remove on the Captions tab, Move Marked in the Look Filter, Image Prep's resize and face crops, Move a run and a training share all take a picture's mask along.
 
-**Each picture counts the same.** A picture with a small mask isn't trained more weakly than one with a big mask: the loss is scaled so every picture's weight is the same as without masks. (OneTrainer calls this "normalize masked area loss"; here it's always on.)
+**Each picture counts the same.** A picture with a small mask isn't trained more weakly than one with a big mask: the loss is scaled so every picture's weight is the same as without masks.
 
 **The saved LoRA says it was masked.** Its metadata carries `ss_masked_training`, `ss_mask_floor` and how many pictures had a mask.

@@ -405,7 +405,9 @@ def form(desc):
                  "Prior preservation outside the mask. "
                  "Off: outside the mask the LoRA still learns your photos a little (as much as the setting above). "
                  "On: there it learns to draw what the model itself would, so backgrounds and the model's look stay "
-                 "the model's own. Each step takes longer (up to about half again). The higher the number, the firmer.",
+                 "the model's own. It works with the setting above at 0 too: 0 stops the outside learning your photos, and this "
+                 "still keeps it to the model's own picture. Each step takes longer (up to about half again). The "
+                 "higher the number, the firmer.",
                  launch.MASK_PRIORS),
         ])
     add("subjects", "Subjects", "training", subjects,
