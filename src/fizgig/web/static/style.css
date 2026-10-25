@@ -2299,3 +2299,5 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   background: linear-gradient(90deg, transparent, var(--lilac-line)); }
 .extras-divider::after { background: linear-gradient(90deg, var(--lilac-line), transparent); }
 .section-card.sec-extra { border-left: 3px solid var(--lilac); }
+
+#tab-extract input.ex-rank { width: 96px; flex: none; }

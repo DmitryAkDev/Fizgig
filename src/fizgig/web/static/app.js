@@ -3133,9 +3133,11 @@ async function extractRun() {
   const custom = $("exPreset").value === "Custom";
   const blocks = custom ? [...$("exCustom").querySelectorAll("input:checked")].map((c) => c.value) : [];
   if (custom && !blocks.length) { $("exStatus").textContent = "Custom is selected but no blocks are ticked."; return; }
+  const rank = Number($("exRank").value);
+  if (!Number.isInteger(rank) || rank < 1) { $("exStatus").textContent = "Target rank is a whole number, 1 or more."; return; }
   try {
     const r = await api("/api/extract/run", {family: $("exFamily").value, source: $("exSource").value.trim(),
-      name: $("exName").value.trim(), out_dir: $("exOutDir").value.trim(), rank: Number($("exRank").value),
+      name: $("exName").value.trim(), out_dir: $("exOutDir").value.trim(), rank,
       preset: custom || !(S.ex.info.presets || []).length ? "" : $("exPreset").value, blocks});
     $("exStatus").textContent = `Extracting to ${r.output}…`;
     $("exDone").replaceChildren();
@@ -3171,7 +3173,7 @@ function wireExtract() {
   S.ex.wired = true;
   $("exFamily").addEventListener("change", () => { extractFamily($("exFamily").value, $("exPreset").value); exRemember(); });
   $("exPreset").addEventListener("change", extractPresetChanged);
-  $("exRank").addEventListener("change", () => { extractName(); exRemember(); });
+  for (const ev of ["change", "input"]) $("exRank").addEventListener(ev, () => { extractName(); exRemember(); });
   $("exSource").addEventListener("change", () => extractSource($("exSource").value.trim()));
   const up = uploadButton({kind: "path", key: "EXTRACT_SOURCE"}, $("exSource"), extractSource);
   $("exSourceBtns").replaceChildren(el("button", {class: "btn", text: "Choose…", onclick: () =>

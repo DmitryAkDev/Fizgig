@@ -1408,11 +1408,13 @@
           </div>
           <div class="section-card" data-exmode="lora">
             <div class="card-title">Options</div>
-            <div class="card-desc">Target rank: the rank the extracted LoRA keeps (its strongest directions).</div>
+            <div class="card-desc">Target rank: the rank the extracted LoRA keeps (its strongest directions). Pick one or type
+              any number, such as the Profiler's "Rank holding 95%".</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Target rank:</span>
-                <select id="exRank" class="w-combo st-small-select"><option>1</option><option>2</option><option selected>4</option>
-                  <option>8</option><option>16</option></select></div>
+                <input id="exRank" type="number" min="1" step="1" value="4" list="exRanks" class="ex-rank">
+                <datalist id="exRanks"><option value="1"><option value="2"><option value="4"><option value="8"><option value="16">
+                  <option value="32"><option value="64"><option value="128"></datalist></div>
             </div>
           </div>
           <div class="section-card">
