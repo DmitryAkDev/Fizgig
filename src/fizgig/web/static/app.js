@@ -3896,6 +3896,13 @@ function meDraw() {
       c.globalAlpha = 1;
     }
   }
+  if (m.samAt) {                                       // SAM at work: a ring pulsing at the click
+    const ph = (performance.now() % 1000) / 1000;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.strokeStyle = `rgba(90,170,255,${1 - ph})`; c.lineWidth = 3;
+    c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 6 + ph * 22, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = "rgb(90,170,255)"; c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
+  }
   if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 1;
@@ -4046,7 +4053,9 @@ async function meSamClick(p, takeAway) {
   if (m.samBusy || !m.mask || p.x < 0 || p.y < 0 || p.x >= m.mask.width || p.y >= m.mask.height) return;
   m.samBusy = true;
   const name = m.name;
-  $("meState").textContent = "SAM 3.1 is finding it (the first click loads the model, a few seconds) …";
+  meBusy(m.samLoaded ? (takeAway ? "Finding what to take away…" : "Finding it…") :
+    "Loading SAM 3.1… (the first click takes a few seconds)", [p.sx, p.sy]);
+  $("meState").textContent = "";
   try {
     const r = await api("/api/masks/edit/sam_click", {folder: m.folder || S.imageFolder, name,
       x: p.x * m.pic.naturalWidth / m.mask.width, y: p.y * m.pic.naturalHeight / m.mask.height});
@@ -4058,11 +4067,22 @@ async function meSamClick(p, takeAway) {
     c.globalCompositeOperation = takeAway ? "destination-out" : "source-over";
     c.drawImage(found, 0, 0);
     c.globalCompositeOperation = "source-over";
-    m.dirty = true;
+    m.dirty = true; m.samLoaded = true;
     $("meState").textContent = (takeAway ? "Taken away." : "Added.") + " Not saved yet.";
-    meDraw();
   } catch (e) { $("meState").textContent = e.message; }
-  finally { m.samBusy = false; }
+  finally { m.samBusy = false; meBusy(""); meDraw(); }
+}
+function meBusy(text, at) {
+  // SAM at work: a line over the picture, a wait cursor, and a ring pulsing where you clicked
+  const m = meState();
+  $("meBusy").style.display = text ? "" : "none";
+  $("meBusyText").textContent = text;
+  $("meCanvas").style.cursor = text ? "wait" : (m.tool === "sam" ? "crosshair" : "none");
+  m.samAt = text ? at : null;
+  if (text) {
+    const tick = () => { if (!meState().samAt) return; meDraw(); requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
 }
 function meTool(t) {
   meState().tool = t;

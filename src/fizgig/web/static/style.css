@@ -2321,6 +2321,12 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .me-name { color: var(--text-muted); font-size: 9pt; overflow-wrap: anywhere; }
 .me-slider { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 9pt; }
 .me-slider input[type="range"] { width: 110px; }
-.me-stage { width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden;
-  background: var(--bg-inset); }
+.me-stage { position: relative; width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--bg-inset); }
+.me-busy { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center;
+  gap: 8px; padding: 6px 12px; border-radius: 999px; background: rgba(10, 14, 20, .85); border: 1px solid var(--border);
+  color: var(--text-primary); font-size: 9.5pt; pointer-events: none; }
+.me-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent);
+  animation: me-spin .8s linear infinite; }
+@keyframes me-spin { to { transform: rotate(360deg); } }
 .me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }
