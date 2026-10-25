@@ -3681,6 +3681,14 @@ async function maskInfo() {
   const r = await api("/api/masks/info?folder=" + encodeURIComponent(S.imageFolder)).catch(() => null);
   if (!r) return;
   if (!$("maskKinds").childElementCount) {
+    const sv = S.prepSaved || {};
+    $("maskSam").checked = !!sv.maskSam;
+    if (sv.maskSamInclude != null) $("maskSamInclude").value = sv.maskSamInclude;
+    if (sv.maskSamExclude != null) $("maskSamExclude").value = sv.maskSamExclude;
+    $("maskSam").addEventListener("change", () => { maskSamSave(); maskShow(S.prep.maskOpts || r); });
+    $("maskSamInclude").addEventListener("change", maskSamSave);
+    $("maskSamExclude").addEventListener("change", maskSamSave);
+    $("maskSamPreview").addEventListener("click", maskSamPreview);
     const saved = (S.prepSaved || {}).maskKind || "person";
     for (const [k, label] of Object.entries(r.kinds)) {
       $("maskKinds").append(el("label", {class: "radio-label"}, el("input", {type: "radio", name: "maskKind", value: k,
@@ -3692,25 +3700,70 @@ async function maskInfo() {
   S.prep.maskOpts = r;
   maskShow(r);
 }
+// SAM 3.1 on the masks card: words instead of the person finder's choices, its file found or downloaded here
+function maskSamShow(r) {
+  const on = $("maskSam").checked, sam = r.sam || {}, f = sam.fetch || {};
+  $("maskSamBox").style.display = on ? "" : "none";
+  $("maskKinds").style.display = on ? "none" : "";
+  const st = $("maskSamState");
+  if (f.state === "running") {
+    st.replaceChildren(`Downloading SAM 3.1: ${f.gb} of ${f.of} GB …`);
+    clearTimeout(S.prep.samTimer);
+    S.prep.samTimer = setTimeout(maskInfo, 2000);
+  } else if (sam.path) {
+    st.replaceChildren(sam.where === "comfy" ? "Using the SAM 3.1 in your ComfyUI: " + sam.path : "SAM 3.1 is here.");
+  } else {
+    st.replaceChildren((f.state === "failed" ? `The download failed (${f.error}). ` : "") +
+      `SAM 3.1 isn't here yet (${sam.gb || 1.75} GB, once). `, el("button", {class: "btn btn-sm",
+      text: f.state === "failed" ? "Try again" : "Download", onclick: async () => {
+        await api("/api/masks/sam_fetch", {}).catch((e) => { st.textContent = e.message; });
+        maskInfo(); }}));
+  }
+  $("maskSamPreview").disabled = !on || !sam.path || !r.pictures || S.prep.running;
+}
+async function maskSamPreview() {
+  $("maskSamPrevState").textContent = "Finding them (the first time loads SAM 3.1, a few seconds) …";
+  $("maskSamPreview").disabled = true;
+  try {
+    const r = await api("/api/masks/sam_preview", {folder: S.imageFolder, include: $("maskSamInclude").value,
+      exclude: $("maskSamExclude").value});
+    $("maskSamPreviews").replaceChildren(...r.pictures.map((p) => el("figure", {class: "mask-sam-shot"},
+      el("img", {src: p.src, alt: p.name}),
+      el("figcaption", {text: p.cover ? `${p.name} · ${Math.round(p.cover * 100)}% masked` : `${p.name} · nothing found`}))));
+    $("maskSamPrevState").textContent = "Blue is what the LoRA learns; nothing is saved yet.";
+  } catch (e) { $("maskSamPrevState").textContent = e.message; }
+  $("maskSamPreview").disabled = false;
+}
+function maskSamSave() {
+  S.prepSaved = {...(S.prepSaved || {}), maskSam: $("maskSam").checked, maskSamInclude: $("maskSamInclude").value,
+    maskSamExclude: $("maskSamExclude").value};
+  api("/api/state", {prep: S.prepSaved}).catch(() => {});
+}
 function maskShow(r) {
   const kind = (document.querySelector('input[name="maskKind"]:checked') || {}).value || "person";
-  $("maskInfo").textContent = !r.available ? "Making masks needs an update: run update_fizgig to add its one new " +
+  maskSamShow(r);
+  const sam = $("maskSam").checked;
+  $("maskInfo").textContent = !r.available && !sam ? "Making masks needs an update: run update_fizgig to add its one new " +
     "package (ai-edge-litert)." : r.pictures ? `${r.with_mask} of ${r.pictures} pictures have a mask.` : "";
   const subj = $("maskSubject");
-  subj.disabled = !r.baselines || !r.faces || kind === "not_faces" || kind === "background";
+  subj.disabled = !r.baselines || !r.faces || (!sam && (kind === "not_faces" || kind === "background"));
   if (subj.disabled) subj.checked = false;
-  $("maskSubjectHint").textContent = kind === "not_faces" ? "Not for Everything but the faces: every face is left out." :
+  $("maskSubjectHint").textContent = sam ? (!r.faces ? "Needs face detection, which isn't installed here (run install_fizgig.py)." :
+    r.baselines ? "Finds your subject by their face, with the Look Filter's 3 baselines, and keeps only what's on them." :
+    "Needs the Look Filter's 3 baselines: choose them and scan the folder (the last card on this tab), then come back.") :
+    kind === "not_faces" ? "Not for Everything but the faces: every face is left out." :
     kind === "background" ? "Not for Just the background: every person is left out." :
     !r.faces ? "Needs face detection, which isn't installed here (run install_fizgig.py)." :
     r.baselines ? "Finds your subject by their face, with the Look Filter's 3 baselines; everyone else counts as background." :
     "Needs the Look Filter's 3 baselines: choose them and scan the folder (the last card on this tab), then come back.";
-  $("maskRun").disabled = !r.available || !r.pictures || S.prep.running;
+  $("maskRun").disabled = (sam ? !(r.sam || {}).path : !r.available) || !r.pictures || S.prep.running;
 }
 async function maskRun() {
   if (!S.imageFolder) { $("maskState").textContent = "Choose the training folder on the Start tab first."; return; }
   const kind = (document.querySelector('input[name="maskKind"]:checked') || {}).value || "person";
   try {
     await api("/api/masks/make", {folder: S.imageFolder, kind, subject_only: $("maskSubject").checked,
+      sam: $("maskSam").checked, include: $("maskSamInclude").value, exclude: $("maskSamExclude").value,
       overwrite: $("maskReplace").checked});
     S.prep.masking = true;
     $("maskLog").textContent = ""; $("maskLog").style.display = "";

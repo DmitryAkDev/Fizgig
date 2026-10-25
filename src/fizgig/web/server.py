@@ -372,6 +372,16 @@ def _session_key() -> str:
         return _SESSION_KEY[0]
 
 
+def _sam_info():
+    """The masks card's SAM 3.1 line: the file it would use (Preferences, the models folder or a ComfyUI copy), where
+    that is, and how a download is going."""
+    from fizgig.dataset import sammask
+    path = sammask.find_model(load_prefs(), user_data.MODELS_DIR)
+    where = ("" if not path else "models" if os.path.dirname(os.path.abspath(path)) ==
+             os.path.abspath(user_data.MODELS_DIR) else "comfy")
+    return {"path": path, "where": where, "fetch": sammask.fetch_state(user_data.MODELS_DIR), "gb": sammask.SIZE_GB}
+
+
 def update_prefs(changes: dict):
     """Only the given keys, read fresh and written atomically: the desktop app may be open on the same files."""
     with _lock:
@@ -2812,7 +2822,7 @@ class Handler(BaseHTTPRequestHandler):
                               "model_here": os.path.isfile(automask.model_path(user_data.MODELS_DIR)),
                               "model_mb": automask.MODEL_MB, "pictures": len(pics), "with_mask": have,
                               "baselines": bool(prep_jobs.look_baselines(folder)) if folder else False,
-                              "faces": prep_jobs.faces_available()})
+                              "faces": prep_jobs.faces_available(), "sam": _sam_info()})
         if path == "/api/prep/summary":            # the What will happen card
             from fizgig.dataset import prep as _prep
             g = lambda k, d="": (qs.get(k) or [d])[0]
@@ -3806,6 +3816,34 @@ class Handler(BaseHTTPRequestHandler):
                         str(b.get("dir") or ""), str(b.get("dataset") or ""), b.get("baselines") or [])})
                 except ValueError as e:
                     return self.json({"error": str(e)}, 400)
+            if path == "/api/masks/sam_fetch":      # SAM 3.1 into the models folder (1.75 GB, once)
+                from fizgig.dataset import sammask
+                sammask.download(user_data.MODELS_DIR, on_done=lambda dest: update_prefs({sammask.PREF_KEY: dest}))
+                return self.json({"ok": True, "sam": _sam_info()})
+            if path == "/api/masks/sam_preview":    # the first two pictures with their SAM masks, nothing written
+                from fizgig.dataset import sammask
+                import base64
+                import io
+                folder, where = str(b.get("folder") or ""), _sam_info()["path"]
+                if not where:
+                    return self.json({"error": "SAM 3.1 isn't here yet: press Download first."}, 400)
+                include, exclude = sammask.split_words(b.get("include")), sammask.split_words(b.get("exclude"))
+                if not include:
+                    return self.json({"error": "Type what the masks should show in Mask these (e.g. person)."}, 400)
+                try:
+                    shots = sammask.preview(folder, include, exclude, where)
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+                except Exception as e:
+                    logger.exception("SAM preview")
+                    return self.json({"error": f"SAM 3.1 couldn't run: {type(e).__name__}: {e}"}, 400)
+                pics = []
+                for name, pic, cover in shots:
+                    buf = io.BytesIO()
+                    pic.save(buf, "JPEG", quality=88)
+                    pics.append({"name": name, "cover": round(cover, 3),
+                                 "src": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
+                return self.json({"ok": True, "pictures": pics})
             if path in ("/api/prep/run", "/api/look/scan", "/api/look/move", "/api/masks/make"):
                 folder = str(b.get("folder") or "")
                 norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
@@ -3823,8 +3861,14 @@ class Handler(BaseHTTPRequestHandler):
                     if path == "/api/look/scan":
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
                     if path == "/api/masks/make":
+                        sam = None
+                        if b.get("sam"):
+                            from fizgig.dataset import sammask
+                            sam = {"path": _sam_info()["path"], "include": sammask.split_words(b.get("include")),
+                                   "exclude": sammask.split_words(b.get("exclude"))}
                         return self.json(prep_jobs.start_masks(folder, str(b.get("kind") or ""),
-                                                               bool(b.get("subject_only")), bool(b.get("overwrite"))))
+                                                               bool(b.get("subject_only")), bool(b.get("overwrite")),
+                                                               sam=sam))
                     return self.json(prep_jobs.look_move(folder, b.get("paths") or [],
                                                          captions.caption_ext(b.get("ext"))))
                 except ValueError as e:

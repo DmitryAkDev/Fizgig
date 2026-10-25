@@ -317,6 +317,22 @@
                 photo-masklabel.png; the pictures themselves don't change.</div>
               <div class="card-content">
                 <div class="field-hint" id="maskInfo"></div>
+                <label class="checkbox-label"><input type="checkbox" id="maskSam"> Use SAM 3.1: masks from words</label>
+                <div class="field-hint radio-hint">Meta's Segment Anything finds whatever you name ("person", "hair",
+                  "the dog") with sharper edges than the person finder. It runs on the GPU: make masks when nothing is
+                  training.</div>
+                <div id="maskSamBox" style="display:none">
+                  <div class="field-hint" id="maskSamState"></div>
+                  <div class="field-row"><span class="field-label">Mask these:</span>
+                    <input type="text" id="maskSamInclude" class="w-path" placeholder="e.g. person" value="person"></div>
+                  <div class="field-row"><span class="field-label">Leave these out:</span>
+                    <input type="text" id="maskSamExclude" class="w-path" placeholder="optional, e.g. glasses, phone"></div>
+                  <div class="field-hint">A few words for each thing, separated by commas. Everything in Mask these is
+                    white, then anything in Leave these out is taken away.</div>
+                  <div class="field-row"><button class="btn" id="maskSamPreview">Preview on 2 pictures</button>
+                    <span class="field-hint" id="maskSamPrevState"></span></div>
+                  <div class="mask-sam-previews" id="maskSamPreviews"></div>
+                </div>
                 <div id="maskKinds"></div>
                 <label class="checkbox-label"><input type="checkbox" id="maskSubject">
                   Only my subject, when there are several people</label>

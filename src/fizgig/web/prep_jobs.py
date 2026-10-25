@@ -325,15 +325,21 @@ def look_baselines(folder):
     return paths if len(paths) == 3 and all(os.path.isfile(p) for p in paths) else []
 
 
-def start_masks(folder, kind, subject_only=False, overwrite=False):
-    """Masks for every picture in the training folder (dataset/automask.py), as a prep run: the same log and state."""
+def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
+    """Masks for every picture in the training folder (dataset/automask.py), as a prep run: the same log and state.
+    sam: {"path", "include", "exclude"} to make them with SAM 3.1 from words instead (dataset/sammask.py)."""
     from fizgig.dataset import automask
     from fizgig.user_data import MODELS_DIR
     if not folder or not os.path.isdir(folder):
         raise ValueError("Choose the training folder on the Start tab first.")
-    if kind not in automask.KINDS:
+    if sam is not None:
+        if not sam.get("path"):
+            raise ValueError("SAM 3.1 isn't here yet: press Download on the masks card.")
+        if not sam.get("include"):
+            raise ValueError("Type what the masks should show in Mask these (e.g. person).")
+    elif kind not in automask.KINDS:
         raise ValueError("Pick what the masks should show.")
-    if not automask.available():
+    elif not automask.available():
         raise ValueError("Making masks needs the ai-edge-litert package: run the updater (update_fizgig) to add it.")
     bases = look_baselines(folder) if subject_only else []
     if subject_only and not bases:
@@ -350,7 +356,9 @@ def start_masks(folder, kind, subject_only=False, overwrite=False):
 
     def work():
         try:
-            _log(f"Making masks: {automask.KINDS[kind].lower()}"
+            what = (f"with SAM 3.1, {', '.join(sam['include'])}"
+                    + (f" without {', '.join(sam['exclude'])}" if sam["exclude"] else "")) if sam is not None                 else automask.KINDS[kind].lower()
+            _log(f"Making masks: {what}"
                  + (" - only your subject where there are several people" if subject_only else "")
                  + (" (replacing masks already there)" if overwrite else " (masks already there are kept)") + "\n\n")
             subject = det = None
@@ -360,8 +368,13 @@ def start_masks(folder, kind, subject_only=False, overwrite=False):
                 if not vecs:
                     raise ValueError("no face found in the Look Filter's baselines")
                 subject, det = ((lambda crop: emb.embed_pil(crop)[0]), vecs), _face_detector()
-            c = automask.make_folder(folder, kind, MODELS_DIR, overwrite=overwrite, subject=subject, detector=det,
-                                     log=_log)
+            if sam is not None:
+                from fizgig.dataset import sammask
+                c = sammask.make_folder(folder, sam["include"], sam["exclude"], sam["path"], overwrite=overwrite,
+                                        subject=subject, detector=det, log=_log)
+            else:
+                c = automask.make_folder(folder, kind, MODELS_DIR, overwrite=overwrite, subject=subject, detector=det,
+                                         log=_log)
             _log(f"\nDone: {c['made']} mask(s) written"
                  + (f", {c['kept']} already there kept" if c["kept"] else "")
                  + (f", {c['no_person']} picture(s) with nothing to mask" if c["no_person"] else "")
