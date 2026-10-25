@@ -91,6 +91,10 @@ _run = {"proc": None, "state": "idle", "stage": "", "lora": "", "output_dir": ""
 _log: list[tuple[int, str]] = []        # (line number, text), the last 5000
 _log_n = [0]
 _log_event = threading.Condition(_lock)
+LOGS_DIR = user_file("logs")            # each run's log as a file too (the console's only lasts until a restart)
+LOGS_KEPT = 20
+_run_log = {"file": None, "path": "", "bar_at": 0.0}
+_BAR = re.compile(r"\d+%\|")             # a progress bar's redraw: one a minute in the file, and its 100%
 _stats = {"vram": [0, 0], "ram": [0, 0], "vram_peak": 0, "ram_peak": 0, "device_name": "GPU"}
 
 
@@ -220,6 +224,46 @@ def append_log(text: str):
         _log.append((_log_n[0], text))
         del _log[:-5000]
         _log_event.notify_all()
+        f = _run_log["file"]
+        if f is None or text == LOG_CLEAR:
+            return
+        if _BAR.search(text) and "100%|" not in text:
+            if time.time() - _run_log["bar_at"] < 60:
+                return
+            _run_log["bar_at"] = time.time()
+        try:
+            f.write(text)
+            f.flush()
+        except (OSError, ValueError):
+            _run_log["file"] = None
+
+
+def _open_run_log(lora):
+    """A new run's log file, user_data/logs/<date>_<time>_<lora>.log; only the newest LOGS_KEPT are kept."""
+    with _lock:
+        if _run_log["file"] is not None:
+            try:
+                _run_log["file"].close()
+            except OSError:
+                pass
+        _run_log.update(file=None, path="", bar_at=0.0)
+        try:
+            os.makedirs(LOGS_DIR, exist_ok=True)
+            name = re.sub(r"[^\w.-]+", "_", lora or "run")[:80]
+            path = os.path.join(LOGS_DIR, f"{datetime.datetime.now():%Y-%m-%d_%H%M%S}_{name}.log")
+            _run_log.update(file=open(path, "w", encoding="utf-8"), path=path)
+        except OSError:
+            return
+    for p in sorted((p for p in os.listdir(LOGS_DIR) if p.endswith(".log")), reverse=True)[LOGS_KEPT:]:
+        try:
+            os.remove(os.path.join(LOGS_DIR, p))
+        except OSError:
+            pass
+
+
+def _log_where():
+    """The line naming this run's log file, for a failure's message."""
+    return f"Full log: {_run_log['path']}\n" if _run_log["path"] else ""
 
 
 # ---- prefs and the web UI's own state ---------------------------------------------------------------------------
@@ -1376,6 +1420,7 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
     with _lock:
         _run["history_id"] = hid
     append_log(LOG_CLEAR)                    # this run's log on a clean console
+    _open_run_log(inputs["LORA_NAME"])
     if note:
         append_log(note + "\n")
     for line in plan.console:
@@ -1478,7 +1523,7 @@ def _run_stages(stages, out_dir):
         try:
             proc = _popen(stage.cmd)
         except OSError as e:
-            append_log(f"✖ {stage.name} could not start: {e}\n")
+            append_log(f"✖ {stage.name} could not start: {e}\n" + _log_where())
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
             history.end(_run.get("history_id"), "failed", _run.get("progress"))
@@ -1513,7 +1558,7 @@ def _run_stages(stages, out_dir):
             webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
             return
         if ret != 0:
-            append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n")
+            append_log(f"\n✖ {stage.name} failed (exit code {ret}).\n" + _log_where())
             with _lock:
                 _run.update(state="failed", proc=None, ended_at=time.time())
             history.end(_run.get("history_id"), "failed", _run.get("progress"))

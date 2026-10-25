@@ -96,6 +96,8 @@ Open Fizgig in your phone's browser (your computer's address, or a pod's) and us
 
 The run card shows the run's progress, time left and log, and a **loss graph** that fills in as it trains: every step's loss (faint) with a smoothed line over it, the epochs marked, the lowest point, and the learning rate when Adaptive LR moves it. Drag **Smoothing**, tick **Log scale** or **Clip outliers** (one spike no longer flattens the rest), and point at the graph for a step's figures; the settings are remembered. **Sample now** makes the previews after the current step instead of waiting for the epoch to end (they show with the others, under the epoch in progress), and **Save now** saves the LoRA as it is, as `<name>-stepNNNNNNN.safetensors` beside its checkpoints. A fine-tune saves and previews at whole rotations only, so it doesn't offer them.
 
+Each run's log is also saved as a file in `user_data/logs` in your Fizgig folder, named with the date, time and LoRA name, so an error is still there after a restart. The newest 20 are kept. When a run fails, the last line of its log names the file.
+
 ## The password
 
 Without a password the web UI only opens on the machine it runs on. With one (8 characters or more; a pod's own VNC password works at any length), it listens on every address and asks for it, so a phone, tablet or another computer on your network can open it.
