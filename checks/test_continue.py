@@ -91,3 +91,39 @@ def test_nothing_left_to_continue_from(run, tmp_path):
     for d in os.listdir(run["out"]):
         shutil.rmtree(os.path.join(run["out"], d))
     assert "isn't there" in server._continue_run(run["id"])["error"]
+
+
+def test_two_starts_at_once_make_one_run(monkeypatch):
+    # checking a run takes a few seconds: a second Start in that time must find the first going, not start a copy
+    import threading
+    import time
+    from types import SimpleNamespace
+    calls = []
+
+    def slow_plan(*a, **kw):
+        time.sleep(0.3)
+        calls.append(1)
+        return None, {"LORA_OUTPUT_DIR": "", "LORA_NAME": "x"}, SimpleNamespace(problems=["stop here"])
+
+    monkeypatch.setattr(server, "_plan", slow_plan)
+    monkeypatch.setattr(server.captions, "status", lambda: {"state": "idle"})
+    monkeypatch.setattr(server.captions, "unload", lambda: None)
+    monkeypatch.setattr(server.studio, "holding_gpu", lambda: False)
+    server._run.update(proc=None, state="idle")
+    real_one = server._start_one
+
+    def one(*a):                                 # the first gets as far as starting; its plan is slow
+        r = real_one(*a)
+        server._run["state"] = "starting"
+        return r
+    monkeypatch.setattr(server, "_start_one", one)
+    out = []
+    ts = [threading.Thread(target=lambda: out.append(server._start("krea2", {}, ""))) for _ in range(3)]
+    try:
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        assert len(calls) == 1 and sum(1 for r in out if "already going" in str(r.get("error"))) == 2
+    finally:
+        server._run.update(state="idle")

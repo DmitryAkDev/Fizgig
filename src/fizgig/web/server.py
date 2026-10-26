@@ -1453,13 +1453,23 @@ def _resumed(result):
     return result
 
 
+_claim = threading.Lock()                   # one Start at a time: checking and planning a run takes a few seconds
+
+
 def _start(family_key, values, image_folder, resume="", ft_continue=None, note="", models=None, carry=""):
-    if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
-        append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
-        studio.stop_worker()
+    # a second Start while the first is still being checked (a double click, two tabs, the queue) waits here and then
+    # finds the first one going - before, each passed the check and three copies of one run trained at once
+    with _claim:
+        return _start_one(family_key, values, image_folder, resume, ft_continue, note, models, carry)
+
+
+def _start_one(family_key, values, image_folder, resume, ft_continue, note, models, carry):
     with _lock:
         if _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running"):
             return {"error": "A run is already going. Stop or pause it first."}
+    if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
+        append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
+        studio.stop_worker()
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held

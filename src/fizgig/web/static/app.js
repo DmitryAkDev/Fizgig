@@ -1404,11 +1404,19 @@ async function check() {
 }
 
 async function start(path, body) {
+  if (S.starting) return;                  // checking a run takes the server a few seconds: one press is one run
+  S.starting = true;
+  const btn = path === "/api/start" ? $("btnStart") : null;
+  if (btn) { btn.disabled = true; btn.dataset.label = btn.dataset.label || btn.textContent; btn.textContent = "Starting…"; }
   try {
     const r = await api(path, path === "/api/start" ? runBody() : (body || {}));
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
-    pollRun();
   } catch (e) { showProblems([e.message]); }
+  finally {
+    S.starting = false;
+    if (btn) btn.textContent = btn.dataset.label;
+    await pollRun();                        // sets Start's state from the run
+  }
 }
 
 // Resume: the paused run's own settings, unless the form now has another picture size for it (Target Megapixels,
@@ -1466,7 +1474,7 @@ async function pollRun() {
   $("runCardBadge").dataset.state = r.state;
   showProgress(r.progress, r.state, r.lora, r.stage);
   const moveBusy = !!(r.move && ["moving", "back", "moved"].includes(r.move.state));
-  $("btnStart").disabled = live || moveBusy;
+  $("btnStart").disabled = live || moveBusy || !!S.starting;
   $("btnPause").disabled = !r.running;
   // a model that can't pause (a RefMod is made in one go): no Pause button for its runs
   const runFam = S.schema.families.find((f) => f.key === (r.family || S.family)) || {};
