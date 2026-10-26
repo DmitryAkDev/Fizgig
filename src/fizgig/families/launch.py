@@ -18,6 +18,7 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
+    recaption_triggers          auto-recaption's trigger word for each other folder ({key prefix: word})
     recaption_tasks             auto-recaption's (first try, second try) Captions tab task keys
     keep_checkpointing          a helper is set to train a share: gradient checkpointing stays on (both halves match)
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
@@ -790,6 +791,9 @@ def train_command(desc, inputs, plan):
             trig = _s(st.get("caption_trigger"))
             if trig and trig.lower() != "trigger_word":
                 cmd += ["--trigger_word", trig]      # leads each AI caption, as the Captions tab writes it
+            if st.get("recaption_triggers"):         # the other folders' own: {key prefix: trigger word}
+                import json as _json
+                cmd += ["--recaption_triggers", _json.dumps(st["recaption_triggers"])]
             from fizgig.krea2.caption_text import RECAPTION_DEFAULTS, recaption_instruction
             ovr = st.get("caption_overrides") or {}
             tasks = tuple(st.get("recaption_tasks") or RECAPTION_DEFAULTS)

@@ -1009,7 +1009,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  lr_scheduler="constant", lr_warmup_steps=0, lr_scheduler_num_cycles=1, lr_scheduler_power=1.0,
                  gradient_accumulation_steps=1, compile_blocks="auto", gradient_checkpointing="auto", blocks_to_swap=0, network_type="lora", lokr_factor=8,
                  log_per_image_loss=False, per_image_lr=False, auto_recaption=False, warmup_look_outliers=False,
-                 trigger_word=None, trigger_position="start", recaption_instruction=None,
+                 trigger_word=None, trigger_position="start", recaption_triggers=None, recaption_instruction=None,
                  recaption_instruction_detailed=None, recaption_task=None, recaption_task_detailed=None,
                  captioner=None, finetune=False, ft_rotations=10, ft_save_every_rotations=1, ft_rotate_every=1, ft_max_parts=0,
                  ft_start_window=0,
@@ -1643,6 +1643,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                   auto_recaption=auto_recaption, warmup_look=warmup_look_outliers,
                   resume=bool(resume_state_dir), start_epoch=start_epoch, te_path=te_path,
                   trigger_word=trigger_word, trigger_position=trigger_position,
+                  recaption_triggers=json.loads(recaption_triggers) if recaption_triggers else None,
                   recaption_instruction=recaption_instruction,
                   recaption_instruction_detailed=recaption_instruction_detailed, captioner_path=captioner,
                   recaption_task=recaption_task, recaption_task_detailed=recaption_task_detailed)
@@ -2669,6 +2670,8 @@ def setup_parser():
     p.add_argument("--auto_recaption", action="store_true", help="recaption stuck images (needs --captioner)")
     p.add_argument("--warmup_look_outliers", action="store_true", help="LR warm-up for Look Filter outliers")
     p.add_argument("--trigger_position", default="start", choices=("start", "end"))
+    p.add_argument("--recaption_triggers", default=None,
+                   help="auto-recaption's trigger word per other folder, as JSON {key prefix: word}")
     p.add_argument("--recaption_instruction", default=None)
     p.add_argument("--recaption_instruction_detailed", default=None)
     p.add_argument("--recaption_task", default=None, help="the first try's Captions tab task, for the log")
@@ -2819,6 +2822,7 @@ def main():
         blocks_to_swap=a.blocks_to_swap, speed_lora_strength=a.speed_lora_strength, network_type=a.network_type, lokr_factor=a.lokr_factor,
         log_per_image_loss=a.log_per_image_loss, per_image_lr=a.per_image_lr, auto_recaption=a.auto_recaption,
         warmup_look_outliers=a.warmup_look_outliers, trigger_word=a.trigger_word, trigger_position=a.trigger_position,
+        recaption_triggers=a.recaption_triggers,
         recaption_instruction=a.recaption_instruction,
         recaption_instruction_detailed=a.recaption_instruction_detailed, captioner=a.captioner,
         recaption_task=a.recaption_task, recaption_task_detailed=a.recaption_task_detailed,

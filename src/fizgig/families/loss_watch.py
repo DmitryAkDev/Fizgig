@@ -66,11 +66,12 @@ class Watch:
 
     def __init__(self, output_dir, group, user_config, driver, *, log=False, per_image_lr=False, auto_recaption=False,
                  warmup_look=False, resume=False, start_epoch=0, te_path=None, trigger_word=None,
-                 trigger_position="start", recaption_instruction=None, recaption_instruction_detailed=None,
+                 trigger_position="start", recaption_triggers=None, recaption_instruction=None, recaption_instruction_detailed=None,
                  captioner_path=None, recaption_task=None, recaption_task_detailed=None):
         from fizgig.training.loss_logger import PerImageLossWatch, is_enabled as env_on
         self.output_dir, self.group, self.driver, self.te_path = output_dir, group, driver, te_path
         self.trigger_word, self.trigger_position = trigger_word, trigger_position
+        self.triggers = dict(recaption_triggers or {})     # another folder's own trigger word, by key prefix
         self.instr, self.instr_detailed = recaption_instruction, recaption_instruction_detailed
         self.recaptioned = {}
         self.captioner_path = captioner_path
@@ -287,9 +288,10 @@ class Watch:
                     instr = (self.instr_detailed if attempt >= 2 else self.instr) or None
                     # 160 tokens on the first try: room for the Detailed and Style tasks (a caption ends where it ends)
                     cap = generate_caption(enc, img, detailed=attempt >= 2, instruction=instr, max_new_tokens=160)
-                    if self.trigger_word:
-                        cap = (f"{cap}, {self.trigger_word}" if str(self.trigger_position) == "end"
-                               else f"{self.trigger_word}, {cap}")
+                    prefix = self.watch.where(k)[0] or ""
+                    trig = self.triggers.get(prefix, "") if prefix else self.trigger_word   # the picture's folder's
+                    if trig:
+                        cap = (f"{cap}, {trig}" if str(self.trigger_position) == "end" else f"{trig}, {cap}")
                     try:
                         _p, folder, name = self.watch.where(k)
                         with open(os.path.join(folder, name + self.caption_ext), "w", encoding="utf-8") as f:

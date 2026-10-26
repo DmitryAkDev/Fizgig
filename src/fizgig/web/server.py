@@ -937,6 +937,13 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
         captioner=captioner if captioner and os.path.isfile(captioner) else "",
         caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+    # auto-recaption's trigger word per folder: a sub-folder's or another subject's own (the Captions tab's for it, else
+    # the word its captions open with), never the training folder's
+    trig = {f"{rel}/": subject_trigger(f, ext) for rel, f in launch.run_subfolders(desc, inputs)}
+    if inputs.get("multiconcept"):
+        trig.update({f"s{i}:": str(values.get(f"DOP_FOLDER_TRIGGER{i}") or "")
+                     for i, f in enumerate(inputs.get("extra_folders") or [], start=2) if f})
+    inputs["recaption_triggers"] = trig
     # a helper set to train a share: both halves keep gradient checkpointing, so they train with the same options
     inputs["keep_checkpointing"] = any(h.get("share") for h in (prefs.get("helpers") or []))
     if ft_continue:          # a paused fine-tune: from its checkpoint, for the rotations left (the cache is built)

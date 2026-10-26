@@ -123,11 +123,13 @@ def test_auto_recaption_writes_the_subfolders_caption(tree, monkeypatch):
     monkeypatch.setattr(utils, "load_krea2_text_encoder", lambda *a, **k: types.SimpleNamespace(to=lambda d: None))
     monkeypatch.setattr(embedder, "generate_caption", lambda *a, **k: "a red outfit")
     folders = {"": str(tree), "outfits/red/": str(tree / "outfits" / "red")}
-    obj = types.SimpleNamespace(captioner_path="x", instr=None, instr_detailed=None, trigger_word=None,
+    obj = types.SimpleNamespace(captioner_path="x", instr=None, instr_detailed=None, trigger_word="zmain",
+                                triggers={"outfits/red/": "zred"},
                                 trigger_position="start", caption_ext=".txt", auto_recaption=True,
                                 watch=types.SimpleNamespace(where=lambda k: where(k, folders)))
     rows = loss_watch.Watch._recaption(obj, [("outfits/red/a", None, 1)], {"outfits/red/a": "item"}, "cpu")
-    assert rows and open(tree / "outfits" / "red" / "a.txt", encoding="utf-8").read() == "a red outfit"
+    # its own folder's trigger word, never the training folder's
+    assert rows and open(tree / "outfits" / "red" / "a.txt", encoding="utf-8").read() == "zred, a red outfit"
     assert open(tree / "a.txt", encoding="utf-8").read() == "a photo"           # the same-named one is untouched
 
 
