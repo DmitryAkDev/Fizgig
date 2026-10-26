@@ -1742,7 +1742,7 @@ function renderWebQueue(q) {
         onclick: async () => {
           try {
             await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
-            queueEditing({id: it.id, n: i + 1});
+            queueEditing({id: it.id, n: i + 1, lora: it.lora});
             showTab("training");
             $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.` +
               (it.continues ? " It still continues from its last save, so keep its LoRA name and output folder." : "");
@@ -3599,10 +3599,16 @@ async function loadIntoForm(s) {
 }
 
 // a queued run being edited: Add to queue saves it back in its place
+// editing a queued run: a bar at the bottom of the window, on every tab, with Save to queue and Cancel edit, until
+// one of them (or a Start) ends it; the Training tab's Add to queue steps aside meanwhile
 function queueEditing(item) {
   S.editQueue = item;
   $("btnQueue").textContent = item ? `Save to queue (run ${item.n})` : "Add to queue";
-  $("btnQueueCancel").style.display = item ? "" : "none";
+  $("btnQueue").style.display = item ? "none" : "";
+  $("queueEditBar").style.display = item ? "" : "none";
+  $("queueEditText").replaceChildren(...(item ? [el("b", {text: `Editing queued run ${item.n}`}),
+    el("span", {text: (item.lora ? `: ${item.lora}. ` : ". ") + "Change what you like on the tabs, then Save to " +
+      "queue puts it back in its place. Cancel edit leaves it as it was."})] : []));
 }
 
 // a run's previews and checkpoints, from its output folder
@@ -8525,10 +8531,18 @@ function wire() {
           `Added to the queue as number ${r.position}` + (before ? `: it starts after ${before}` + (eta ? ` (about ${eta})` : "") :
           ": it starts as soon as nothing else is training") + ".");
         queueEditing(null);
-      } else showProblems(r.problems || (r.error ? [r.error] : []));
+      } else {
+        showProblems(r.problems || (r.error ? [r.error] : []));
+        if (ed) $("queueEditText").replaceChildren(el("b", {text: `Not saved: `}),   // the bar is where you pressed it
+          el("span", {text: (r.problems || [r.error]).join(" ")}));
+      }
       pollRun();
-    } catch (e) { showProblems([e.message]); }
+    } catch (e) {
+      showProblems([e.message]);
+      if (S.editQueue) $("queueEditText").replaceChildren(el("b", {text: "Not saved: "}), el("span", {text: e.message}));
+    }
   });
+  $("queueEditSave").addEventListener("click", () => $("btnQueue").click());
   $("btnQueueCancel").addEventListener("click", () => { queueEditing(null); $("runStatus").textContent = "Edit cancelled: the queued run is as it was."; });
   $("webQueueStart").addEventListener("click", () => api("/api/queue/start", {}).then(pollRun)
     .catch((e) => { $("runStatus").textContent = e.message; }));

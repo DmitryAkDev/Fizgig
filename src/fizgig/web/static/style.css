@@ -2048,6 +2048,13 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 
 /* a pod's auto-stop countdown, over every tab */
 .pod-stop-bar { position: sticky; top: 0; z-index: 20; }
+/* editing a queued run: fixed to the bottom of the window, on every tab, until Save to queue or Cancel edit */
+.queue-edit-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40;
+  width: min(900px, calc(100vw - 32px)); display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 16px; border-radius: 10px; background: var(--bg-surface); border: 1px solid var(--accent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .45); color: var(--text-primary); font-size: 13px; }
+.queue-edit-bar #queueEditText { flex: 1 1 300px; }
+.queue-edit-actions { display: flex; gap: 8px; margin-left: auto; }
 .pod-stop-bar .btn { margin-left: 12px; }
 
 /* ACE: one song player under the two waveform pictures (the desktop's) */
