@@ -1492,9 +1492,15 @@ async function pollRun() {
   runLossTick(live);
   // Per-image loss on the run card while a run with the loss watch trains (Runs & outputs has it after): any of its
   // ticks runs the watch - per-image LR, the look warm-up and auto-recaption track every image too
+  // always there for a model with the loss watch: greyed (its hover says which ticks turn it on) until a run tracks it
   const ilOn = live && r.history_id && ["KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK",
     "KREA2_AUTO_RECAPTION"].some((k) => [true, "true", "True", "1", 1].includes((r.values || {})[k]));
-  $("btnImageLoss").style.display = ilOn ? "" : "none";
+  const ilDesc = S.schema.families.find((f) => f.key === (live ? r.family : S.family));
+  const ilb = $("btnImageLoss");
+  ilb.style.display = ilDesc && ilDesc.loss_watch !== false ? "" : "none";
+  ilb.classList.toggle("is-off", !ilOn);
+  ilb.setAttribute("aria-disabled", ilOn ? "false" : "true");
+  ilb.title = ilOn ? IL_ON_TIP : IL_OFF_TIP;
   if (!ilOn) $("runImageLoss").style.display = "none";
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
   const runDesc = S.schema.families.find((f) => f.key === r.family);
@@ -1664,6 +1670,10 @@ function wireSliderLive() {
     } catch (e) { $("slSay").textContent = e.message; }
   });
 }
+
+// Per-image loss, on the run card and Runs & outputs: what it shows, and (greyed) how to turn it on
+const IL_ON_TIP = "Each training image's loss by epoch, against the rest of the dataset: which images are still being learned, which are done, and what the loss watch decided about each";
+const IL_OFF_TIP = "Each training image's loss by epoch, and what the loss watch decided about each. To use it, tick one of these on the Training tab before you press Start: Track how each image trains, per-image LR, the look warm-up or auto-recaption.";
 
 // the queue at a glance, from every tab (the sidebar, under the run, always there) and at the top of the Run card:
 // what's next, or that it's held and why, with Start queue right there; the queue itself is on Runs & outputs
@@ -2447,8 +2457,11 @@ async function loadRuns() {
       }}) : null;
     // per-image loss (a family with the loss watch, when the run kept its log)
     const ilBox = el("div", {class: "il-box", style: "display:none"});
-    const ilBtn = run.image_loss ? el("button", {class: "btn btn-sm btn-lilac", text: "Per-image loss",
-      title: "Each training image's loss by epoch, against the rest of the dataset - which images are hard, which are being learned, and what the loss watch decided about each.",
+    const ilFam = S.schema.families.find((f) => f.key === run.family);
+    const ilBtn = !run.image_loss && ilFam && ilFam.loss_watch !== false ? el("button", {
+      class: "btn btn-sm btn-lilac is-off", text: "Per-image loss", "aria-disabled": "true",
+      title: "This run didn't track it. " + IL_OFF_TIP}) :
+      run.image_loss ? el("button", {class: "btn btn-sm btn-lilac", text: "Per-image loss", title: IL_ON_TIP,
       onclick: async () => {
         if (ilBox.style.display !== "none") { ilBox.style.display = "none"; return; }
         ilBox.style.display = ""; ilBox.textContent = "Loading…";
@@ -8360,7 +8373,7 @@ function wire() {
   $("presetSave").addEventListener("click", presetSaveOpen);
   $("btnImageLoss").addEventListener("click", async () => {      // the same view as Runs & outputs, for the run going now
     const box = $("runImageLoss"), id = S.run && S.run.history_id;
-    if (!id) return;
+    if (!id || $("btnImageLoss").classList.contains("is-off")) return;
     if (box.style.display !== "none") { box.style.display = "none"; return; }
     box.style.display = ""; box.textContent = "Loading…";
     try { imageLossPanel(box, await api("/api/runs/image_loss?id=" + encodeURIComponent(id)), {...S.run, id}); }

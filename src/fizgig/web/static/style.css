@@ -615,6 +615,7 @@ input[type="checkbox"], input[type="radio"] {
 /* Per-image loss (the run card and Runs & outputs): lilac, the loss watch's colour */
 .btn-lilac { background: var(--lilac); border-color: var(--lilac); color: var(--bg-deep); }
 .btn-lilac:hover { filter: brightness(1.08); border-color: var(--lilac); }
+.btn-lilac.is-off { opacity: .4; cursor: help; filter: none; }   /* greyed: its hover says which ticks turn it on */
 
 .btn-warning {
   background: var(--warning);
