@@ -2356,6 +2356,11 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .me-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent);
   animation: me-spin .8s linear infinite; }
 @keyframes me-spin { to { transform: rotate(360deg); } }
+/* the start-up cover: over the page until boot() has built it; the login box sits above it */
+.boot-cover { position: fixed; inset: 0; z-index: 1500; background: var(--bg-deep); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; color: var(--text-secondary); font-size: 11pt; }
+.boot-cover.done { display: none; }
+.boot-spin { width: 28px; height: 28px; border-width: 3px; }
 .me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }
 
 .me-saved { font-size: 9.5pt; font-weight: 600; }

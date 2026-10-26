@@ -51,7 +51,7 @@ document.addEventListener("error", (e) => {
 
 // ---- start-up ----------------------------------------------------------------------------------------------
 async function boot() {
-  try { S.schema = await api("/api/schema"); } catch (e) { return; }
+  try { S.schema = await api("/api/schema"); } catch (e) { if (e.message === "login") return; throw e; }
   // Fizgig was updated while this web UI kept running the old server: some new parts won't work until it restarts
   $("outdatedBanner").style.display = S.schema.outdated ? "" : "none";
   const st = await api("/api/state");
@@ -83,6 +83,7 @@ async function boot() {
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
+  $("bootCover").classList.add("done");    // the forms are there: the page is usable
   newsCard();
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
@@ -1671,6 +1672,16 @@ function wireSliderLive() {
   });
 }
 
+// A button whose job lasts as long as its request (a score, an export, a save): greyed from the press until it
+// answers, so a second press can't start it again (#249). Jobs the page polls grey their buttons from the status.
+function held(btn, fn) {
+  return async (...a) => {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    try { return await fn(...a); } finally { btn.disabled = false; }
+  };
+}
+
 // Per-image loss, on the run card and Runs & outputs: what it shows, and (greyed) how to turn it on
 const IL_ON_TIP = "Each training image's loss by epoch, against the rest of the dataset: which images are still being learned, which are done, and what the loss watch decided about each";
 const IL_OFF_TIP = "Each training image's loss by epoch, and what the loss watch decided about each. To use it, tick one of these on the Training tab before you press Start: Track how each image trains, per-image LR, the look warm-up or auto-recaption.";
@@ -2361,7 +2372,10 @@ async function loadRuns() {
     // trained all it was set to asks how far to train first
     const contBox = el("div", {class: "field-row", style: "display:none"});
     const cp = run.continue;
+    let contGoing = false;
     const contGo = async (more) => {
+      if (contGoing) return;
+      contGoing = true;
       alertRow.textContent = "";
       try {
         const x = await api("/api/runs/continue", {id: run.id, more: more || ""});
@@ -2375,7 +2389,7 @@ async function loadRuns() {
           showTab("training");
           setTimeout(() => document.querySelector(".run-card").scrollIntoView({behavior: "smooth", block: "start"}), 50);
         } else loadRuns();
-      } catch (e) { alertRow.textContent = e.message; }
+      } catch (e) { alertRow.textContent = e.message; } finally { contGoing = false; }
     };
     const contAsk = (why) => {
       const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
@@ -3005,22 +3019,22 @@ function wireRoyale() {
     $("ryStatus").textContent = "Model unloaded - the renders stay here until the next render.";
   });
   $("ryScrub").addEventListener("input", royaleScrub);
-  $("ryScore").addEventListener("click", royaleScore);
+  $("ryScore").addEventListener("click", held($("ryScore"), royaleScore));
   $("ryBest").addEventListener("click", royaleBest);
-  $("ryExport").addEventListener("click", () => royaleExport(false));
-  $("ryLikeExport").addEventListener("click", () => royaleExport(true));
-  $("ryStills").addEventListener("click", async () => {
+  $("ryExport").addEventListener("click", held($("ryExport"), () => royaleExport(false)));
+  $("ryLikeExport").addEventListener("click", held($("ryLikeExport"), () => royaleExport(true)));
+  $("ryStills").addEventListener("click", held($("ryStills"), async () => {
     $("ryExportStatus").textContent = "Saving stills…";
     try { const r = await api("/api/royale/stills", {out_dir: $("ryOut").value.trim()});
       $("ryExportStatus").textContent = `Saved ${r.saved.length} stills → ${$("ryOut").value.trim()}`; }
     catch (e) { $("ryExportStatus").textContent = e.message; }
-  });
-  $("ryPromote").addEventListener("click", async () => {
+  }));
+  $("ryPromote").addEventListener("click", held($("ryPromote"), async () => {
     try { const r = await api("/api/royale/promote", {i: royaleCurrent(), out_dir: $("ryOut").value.trim(),
       name: $("ryPromoteName").value.trim()});
       $("ryPromoteStatus").textContent = `Saved ${ryLabel(S.ry.items[royaleCurrent()].label).toLowerCase()} → ${r.path}`; }
     catch (e) { $("ryPromoteStatus").textContent = e.message; }
-  });
+  }));
 }
 
 // ---- Profiler: what a LoRA's blocks do (fizgig/web/tools.py runs scripts/profile_run.py, the desktop Profiler's job) ----
@@ -4376,16 +4390,17 @@ async function lookPickOpen() {
 function lookBasesShow() {
   $("lookBases").replaceChildren(...S.prep.bases.map((p) => el("img", {src: thumbOf(p), title: p, alt: ""})),
     el("span", {class: "field-hint", text: `${S.prep.bases.length} of 3 chosen`}));
-  $("lookScan").disabled = S.prep.bases.length !== 3;
+  $("lookScan").disabled = S.prep.bases.length !== 3 || !!S.prep.lookRunning;
 }
 
 async function lookScan() {
+  $("lookScan").disabled = true;                  // until the scan's status says it's over (#249)
   try {
     await api("/api/look/scan", {folder: S.imageFolder, baselines: S.prep.bases});
     S.prep.picking = false; $("lookPicker").style.display = "none";
     S.prep.marked = new Set(); S.prep.page = 0;
     lookPoll();
-  } catch (e) { $("lookStatus").textContent = e.message; }
+  } catch (e) { $("lookStatus").textContent = e.message; lookBasesShow(); }
 }
 
 async function lookPoll() {
@@ -4398,6 +4413,8 @@ async function lookPoll() {
   const wasRunning = S.prep.lookRunning;
   S.prep.lookRunning = r.state === "running";
   if (wasRunning && !S.prep.lookRunning) maskInfo();
+  $("lookScan").disabled = S.prep.lookRunning || S.prep.bases.length !== 3;
+  $("lookPick").disabled = S.prep.lookRunning;
   $("lookDecision").textContent = r.decision ? r.decision.replace("[faces] ", "") : "";
   $("lookPeak").textContent = r.state === "done" && r.rows && r.rows.length ? arcPeak(r.embedder) : "";
   const mine = r.folder === S.imageFolder;        // the last scan may be of another folder
@@ -4461,7 +4478,8 @@ function lookMoveAsk() {
     el("div", {class: "field-hint", text: `Move ${n} picture(s), with their captions, out of the dataset to ` +
       `${S.imageFolder}${sep}excluded_by_look? Nothing is deleted: move them back to put them in again.`}),
     el("div", {class: "field-row"},
-      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async () => {
+      el("button", {class: "btn btn-sm btn-danger", text: "Move", onclick: async (ev) => {
+        ev.currentTarget.disabled = true;           // the confirm goes when it's done; on an error it says why
         try {
           const r = await api("/api/look/move", {folder: S.imageFolder, paths: [...S.prep.marked], ext: capExt()});
           S.prep.marked = new Set();
@@ -6616,7 +6634,7 @@ function wireCaptions() {
   $("capStop").addEventListener("click", () => capRun("/api/captions/stop", {}));
   $("capUnload").addEventListener("click", () => capRun("/api/captions/unload", {}));
   $("frPreview").addEventListener("click", () => findReplace(false));
-  $("frApply").addEventListener("click", () => findReplace(true));
+  $("frApply").addEventListener("click", held($("frApply"), () => findReplace(true)));
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("capPrev").addEventListener("click", () => { S.cap.page--; renderCaptions(); window.scrollTo(0, 0); });
@@ -8525,7 +8543,7 @@ function wire() {
   });
   new MutationObserver(() => { if (!$("rvModal").classList.contains("active")) rvStop(); })
     .observe($("rvModal"), {attributes: true, attributeFilter: ["class"]});
-  $("likStart").addEventListener("click", () => likenessSet(S.lik.picked));
+  $("likStart").addEventListener("click", held($("likStart"), () => likenessSet(S.lik.picked)));
   $("likClear").addEventListener("click", () => likenessSet([]));
   document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {
     S.galleryView = b.dataset.view; loadGallery(); }));
@@ -8602,4 +8620,9 @@ function wire() {
 // the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()
 $("loginButton").addEventListener("click", login);
 $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
-boot();
+boot().catch((e) => {             // a start that fails says so, rather than sitting on "Starting Fizgig…"
+  if (e && e.message === "login") return;
+  $("bootCoverText").textContent = "Fizgig didn't finish starting: " + (e && e.message || e) +
+    ". Reload the page; if it happens again, the console window says why.";
+  document.querySelector("#bootCover .boot-spin").style.display = "none";
+});

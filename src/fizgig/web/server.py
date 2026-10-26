@@ -1617,6 +1617,8 @@ def _run_stages(stages, out_dir):
                 webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
                 return
             _run["stage"] = stage.name
+            if str((_run.get("progress") or {}).get("note") or "").startswith("Caching"):
+                _run["progress"] = None          # the last stage's cache count isn't this stage's
         append_log(f"\n▶ {stage.name}\n")
         try:
             proc = _popen(stage.cmd)
@@ -1637,7 +1639,11 @@ def _run_stages(stages, out_dir):
                 upd = None
             if upd:
                 with _lock:
-                    if upd.get("kind") == "preview":
+                    if upd.get("kind") == "cache":      # a cache stage's count: its own bar and line
+                        n, total = upd["n"], upd["total"]
+                        _run["progress"] = {**_progress_dict({}), "percent": 100.0 * n / total if total else 0.0,
+                                            "note": f"Caching {upd['what']}: {n} of {total}"}
+                    elif upd.get("kind") == "preview":
                         p = dict(_run.get("progress") or _progress_dict({}))
                         p["note"] = {"start": "Making previews…", "complete": ""}.get(upd.get("phase"), "")
                         _run["progress"] = p
@@ -4495,6 +4501,14 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     if str(load_prefs().get("update_check", "1")) != "0":     # Preferences > Network: Check for new releases
         __import__("fizgig.web.update_check", fromlist=["x"]).start()   # a newer release? (the About button says)
     threading.Thread(target=_poll_stats_loop, daemon=True).start()
+    # the page's first ask is the schema, and its first build imports torch (block maps, the optimizer list): seconds,
+    # more on a slow disk. Built now, while the window or browser opens, the page has it sooner (#249)
+    def _warm():
+        try:
+            get_schema(ref_dit_set=False)
+        except Exception:                      # the page's own ask says what's wrong
+            pass
+    threading.Thread(target=_warm, daemon=True).start()
     if password and not on_pod() and host not in ("127.0.0.1", "localhost", "::1"):
         _LAN_PORT[0] = port                    # Preferences > Network can switch the answering on and off
         if __import__("fizgig.web.lan", fromlist=["x"]).enabled(load_prefs()):
