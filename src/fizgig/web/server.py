@@ -2081,10 +2081,13 @@ def list_datasets() -> dict:
     return {"root": root, "datasets": out[:300], "total": len(out)}
 
 
-def _upload_top(folder, dest, single):
+def _upload_top(dest, single):
     """The training folder an upload went into: its top folder when a file went into one of its sub-folders."""
-    parts = str(folder or "").split("/")
-    return dest if single or len(parts) < 2 else os.path.join(uploads_root(), parts[0])
+    if single:
+        return dest
+    root = uploads_root()
+    rel = os.path.relpath(dest, root)
+    return os.path.join(root, rel.split(os.sep)[0]) if not rel.startswith("..") else dest
 
 
 def _upload_target(folder, name, single):
@@ -2113,7 +2116,7 @@ def upload_status(folder, name, single, size, mtime=None):
     final = os.path.join(dest, name)
     same_time = mtime is not None and os.path.isfile(final) and abs(os.path.getmtime(final) - mtime) < 2
     if ext != ".zip" and os.path.isfile(final) and os.path.getsize(final) == size and same_time:
-        return {"have": size, "done": True, "path": final, "folder": _upload_top(folder, dest, single)}
+        return {"have": size, "done": True, "path": final, "folder": _upload_top(dest, single)}
     have = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
     return {"have": have if have <= size else 0, "done": False}
 
@@ -2209,7 +2212,7 @@ def _finish_upload(name, ext, dest, tmp, single):
             replaced.append(name)
         os.replace(tmp, os.path.join(dest, name))
         saved.append(name)
-    return {"folder": _upload_top(folder, dest, single), "saved": sorted(set(saved)), "skipped": skipped,
+    return {"folder": _upload_top(dest, single), "saved": sorted(set(saved)), "skipped": skipped,
             "replaced": replaced,
             "badname": badname}
 

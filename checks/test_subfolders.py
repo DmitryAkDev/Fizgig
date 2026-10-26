@@ -138,3 +138,15 @@ def test_the_per_image_view_finds_each_picture_and_caption(tree, tmp_path):
     image_loss.save_caption(run, "outfits/red/a", "fixed", ".txt")
     assert image_loss.read_caption(run, "outfits/red/a", ".txt") == ("fixed", True)
     assert image_loss.read_caption(run, "a", ".txt") == ("a photo", True)
+
+
+def test_an_upload_keeps_its_subfolder_and_answers_with_the_top_folder(tmp_path, monkeypatch):
+    import io
+    from fizgig.web import server
+    monkeypatch.setattr(server, "uploads_root", lambda: str(tmp_path))
+    r = server._save_upload("probe/group/one", "x.txt", io.BytesIO(b"hi"), 2)
+    assert (tmp_path / "probe" / "group" / "one" / "x.txt").is_file()
+    assert r["folder"] == os.path.join(str(tmp_path), "probe")
+    for bad in ("probe/../evil", "probe//x", "../x"):
+        with pytest.raises(ValueError):
+            server._save_upload(bad, "x.txt", io.BytesIO(b"hi"), 2)
