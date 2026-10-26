@@ -92,7 +92,6 @@ class Watch:
         self.folders = _folders(group, self.image_dir)
         if self.folders and not self.image_dir:
             self.image_dir = next(iter(self.folders.values()))
-        _write_folders(output_dir, self.folders)
         if auto_recaption and not self.image_dir:
             logger.warning("[auto-recaption] image_directory not found in the dataset config - auto-recaption off")
             auto_recaption = False
@@ -332,18 +331,6 @@ def _warmup_keys(keys, look, prefix):
         logger.info(f"[look-warmup] {len(use)} look-outlier image(s) on LR warm-up x0.4 -> x1.0 "
                     f"({emb} scores, cutoff {float(cut):.2f})")
     return use
-
-
-def _write_folders(output_dir, folders):
-    """loss_log/folders.json: {key prefix: folder}, so the per-image view finds each picture and its caption."""
-    try:
-        d = os.path.join(output_dir, "loss_log")
-        os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, "folders.json.tmp"), "w", encoding="utf-8") as f:
-            json.dump(folders, f, indent=2)
-        os.replace(os.path.join(d, "folders.json.tmp"), os.path.join(d, "folders.json"))
-    except OSError:
-        logger.warning("[loss-watch] could not write loss_log/folders.json", exc_info=True)
 
 
 def _cleanup(output_dir):

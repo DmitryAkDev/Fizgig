@@ -7,6 +7,7 @@ writes the log, so it never has charts."""
 
 import json
 import os
+import re
 
 LOG = os.path.join("loss_log", "per_image_loss.jsonl")
 REPORT = os.path.join("loss_log", "problem_images.json")
@@ -92,24 +93,20 @@ def caption_state(output_dir):
     return queued, applied
 
 
-def folders(run):
-    """{key prefix: folder} the run's trainer wrote (loss_log/folders.json: sub-folders, other subjects), else the
-    run's training folder alone."""
-    try:
-        with open(os.path.join(run.get("output_dir") or "", "loss_log", "folders.json"), encoding="utf-8") as f:
-            got = json.load(f)
-        if isinstance(got, dict) and got:
-            return {str(k): str(v) for k, v in got.items()}
-    except (OSError, ValueError):
-        pass
-    return {"": run.get("image_folder") or ""}
-
-
 def _where(run, key):
-    """(folder, name in it) of a training key."""
-    from fizgig.training.loss_logger import where
-    _p, folder, name = where(key, folders(run))
-    return (folder, name) if folder is not None else (run.get("image_folder") or "", os.path.basename(str(key)))
+    """(folder, name in it) of a training key, from the run as it is on this machine (a run moved here or back has
+    its own paths): a sub-folder's key ("outfits/red/a") is a path inside the run's training folder, another
+    subject's ("s2:a") is that subject's folder in the run's settings."""
+    key, image_folder = str(key), run.get("image_folder") or ""
+    m = re.match(r"s(\d+):(.*)$", key)
+    if m:
+        from fizgig.families.form import CONCEPT_ROWS
+        n = int(m.group(1))
+        rows = CONCEPT_ROWS[n - 2:n - 1] if n >= 2 else ()
+        d = str((run.get("values") or {}).get(rows[0][0]) or "") if rows else ""
+        return d, m.group(2)
+    rel, _, name = key.rpartition("/")
+    return (os.path.join(image_folder, *rel.split("/")) if rel else image_folder), name
 
 
 def read_caption(run, key, ext):

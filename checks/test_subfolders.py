@@ -135,17 +135,18 @@ def test_auto_recaption_writes_the_subfolders_caption(tree, monkeypatch):
 
 def test_the_per_image_view_finds_each_picture_and_caption(tree, tmp_path):
     from fizgig.web import image_loss
+    # nothing stored about the folders: a run moved to a pod (or back) finds them from its own training folder
     out = tmp_path / "run"
     os.makedirs(out / "loss_log")
-    with open(out / "loss_log" / "folders.json", "w", encoding="utf-8") as f:
-        json.dump({"": str(tree), "outfits/red/": str(tree / "outfits" / "red")}, f)
-    run = {"output_dir": str(out), "image_folder": str(tree), "result": "done"}
+    run = {"output_dir": str(out), "image_folder": str(tree), "result": "done",
+           "values": {"FAMILY_CONCEPT_DIR": str(tree / "outfits" / "blue")}}
     pics = image_loss.image_paths(run, ["a", "outfits/red/a"])
     assert pics["outfits/red/a"] == os.path.join(str(tree / "outfits" / "red"), "a.png")
     assert pics["a"] == os.path.join(str(tree), "a.png")
     image_loss.save_caption(run, "outfits/red/a", "fixed", ".txt")
     assert image_loss.read_caption(run, "outfits/red/a", ".txt") == ("fixed", True)
     assert image_loss.read_caption(run, "a", ".txt") == ("a photo", True)
+    assert image_loss.read_caption(run, "s2:b", ".txt") == ("a photo", True)              # subject 2's folder
 
 
 def test_an_upload_keeps_its_subfolder_and_answers_with_the_top_folder(tmp_path, monkeypatch):
