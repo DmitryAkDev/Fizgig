@@ -1723,7 +1723,9 @@ function renderWebQueue(q) {
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      it.continues ? null : el("button", {class: "btn btn-sm", text: "Edit",
+      // a Continue has nothing to edit (it carries on with the run's own settings): its place kept, so the rows line up
+      it.continues ? el("button", {class: "btn btn-sm", text: "Edit", style: "visibility:hidden", tabindex: "-1"}) :
+      el("button", {class: "btn btn-sm", text: "Edit",
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
