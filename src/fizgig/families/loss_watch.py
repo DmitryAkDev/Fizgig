@@ -264,7 +264,7 @@ class Watch:
         _ack(self.output_dir, todo, epoch)
         _remove(processing)
         logger.info(f"[caption-fix] {len(todo)} caption(s) re-encoded - next epoch trains on the fixed text. "
-                    f"Loss-watch history reset for: " + ", ".join(os.path.basename(k) for k, _, _, _ in todo))
+                    f"Loss-watch history reset for: " + ", ".join(k for k, _, _, _ in todo))
 
     def _recaption(self, auto, items, device):
         """Caption the stuck images with the shared captioner (Krea 2's Qwen3-VL-4B, loaded for the call and freed
@@ -300,10 +300,10 @@ class Watch:
                         logger.warning(f"[auto-recaption] could not write the .txt for {k} - this run is fixed, "
                                        "a future re-cache will use the old caption")
                     rows.append((k, items[k], cap, attempt))
-                    logger.info(f"[auto-recaption] {os.path.basename(k)} (attempt {attempt}/2"
+                    logger.info(f"[auto-recaption] {k} (attempt {attempt}/2"
                                 f"{', detailed' if attempt >= 2 else ''}): \"{cap}\"")
                 except Exception:
-                    logger.warning(f"[auto-recaption] captioning failed for {os.path.basename(k)} - retry next "
+                    logger.warning(f"[auto-recaption] captioning failed for {k} - retry next "
                                    f"boundary", exc_info=True)
         finally:
             enc.to("cpu")
