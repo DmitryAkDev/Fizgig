@@ -819,7 +819,7 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
-SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used. On: the pictures in its "
+SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used.\nOn: the pictures in its "
                    "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
                    "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "
                    "is. Image Prep and Captions work on one folder at a time: to caption or mask a sub-folder, choose "
