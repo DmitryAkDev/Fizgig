@@ -1490,8 +1490,10 @@ async function pollRun() {
   renderWebQueue(r.web_queue || {items: []});
   queueSummary(r.web_queue || {items: []}, r);
   runLossTick(live);
-  // Per-image loss on the run card while a run with the per-image loss tick trains (Runs & outputs has it after)
-  const ilOn = live && r.history_id && (r.values || {}).KREA2_LOSS_WATCH;
+  // Per-image loss on the run card while a run with the loss watch trains (Runs & outputs has it after): any of its
+  // ticks runs the watch - per-image LR, the look warm-up and auto-recaption track every image too
+  const ilOn = live && r.history_id && ["KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK",
+    "KREA2_AUTO_RECAPTION"].some((k) => [true, "true", "True", "1", 1].includes((r.values || {})[k]));
   $("btnImageLoss").style.display = ilOn ? "" : "none";
   if (!ilOn) $("runImageLoss").style.display = "none";
   // Sample now / Save now: while a LoRA trains (a fine-tune saves and previews at whole rotations)
