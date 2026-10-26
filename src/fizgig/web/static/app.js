@@ -1649,18 +1649,28 @@ function wireSliderLive() {
   });
 }
 
-// the queue at a glance, from every tab (the sidebar, under the run) and at the top of the Run card: what's next, or
-// that it's held and why, with Start queue right there
+// the queue at a glance, from every tab (the sidebar, under the run, always there) and at the top of the Run card:
+// what's next, or that it's held and why, with Start queue right there; the queue itself is on Runs & outputs
 function toQueue() {
-  showTab("training");
+  showTab("outputs");
   setTimeout(() => $("webQueueCard").scrollIntoView({behavior: "smooth", block: "start"}), 50);
 }
 
 function queueSummary(q, r) {
   const items = q.items || [], n = items.length;
   const side = $("sideQueue"), up = $("runUpNext");
-  side.style.display = up.style.display = n ? "" : "none";
-  if (!n) { S.queueSumSig = null; return; }
+  up.style.display = n ? "" : "none";
+  if (!n) {
+    if (S.queueSumSig === "empty") return;
+    S.queueSumSig = "empty";
+    side.classList.remove("held");
+    $("sideQueueBadge").textContent = "Empty";
+    $("sideQueueBadge").dataset.state = "idle";
+    $("sideQueueList").replaceChildren(el("div", {class: "side-queue-empty", text: "Nothing queued"}));
+    $("sideQueueHeld").textContent = "";
+    $("sideQueueStart").style.display = "none";
+    return;
+  }
   const text = q.held ? `Queue held: ${q.reason || "press Start queue to carry on"}` :
     q.waiting ? `Queue waiting: ${q.waiting}` : "";
   const sig = JSON.stringify([text, q.held, q.reason, q.waiting, items.map((it) => [it.id, it.lora])]);
@@ -1686,19 +1696,19 @@ function queueSummary(q, r) {
 // the web UI's own queue: reorder, remove, start or hold
 function renderWebQueue(q) {
   const items = q.items || [];
-  $("webQueueCard").style.display = items.length ? "" : "none";
   const badge = $("webQueueBadge");
   badge.textContent = !items.length ? "" : q.held ? "Held" : q.waiting ? "Waiting" : `${items.length} queued`;
   badge.dataset.state = q.held ? "paused" : q.waiting ? "pausing" : "running";
   $("webQueueState").textContent = q.held ? q.reason : q.waiting ? q.waiting :
-    items.length ? "The first starts as soon as nothing else is training." : "";
+    items.length ? "The first starts as soon as nothing else is training." :
+    "Nothing queued. Add to queue on the Training tab lines a run up here.";
   $("webQueueStart").style.display = q.held ? "" : "none";
   $("webQueueHold").style.display = q.held || !items.length ? "none" : "";
   $("webQueueClear").style.display = items.length ? "" : "none";
   S.queueIds = items.map((it) => it.id);
   // rebuilt only when the queue changes: rebuilding on every poll replaced a button between press and release, and
   // the browser dropped that click (Remove sometimes did nothing)
-  const sig = JSON.stringify(items.map((it) => [it.id, it.lora, it.family, it.image_folder, it.queued_at]));
+  const sig = JSON.stringify(items.map((it) => [it.id, it.lora, it.family, it.image_folder, it.queued_at, it.continues]));
   if (sig === S.queueSig) return;
   S.queueSig = sig;
   const famName = (k) => ((S.schema.families.find((f) => f.key === k) || {}).display_name) || k;
@@ -1706,17 +1716,20 @@ function renderWebQueue(q) {
   host.innerHTML = "";
   items.forEach((it, i) => host.append(el("div", {class: "checkpoint-row queue-row"},
     el("span", {class: "checkpoint-name", text: `${i + 1}. ${it.lora}`}),
-    el("span", {class: "field-hint", text: `${famName(it.family)} · ${it.image_folder} · queued ${it.queued_at}`}),
+    el("span", {class: "field-hint", text: `${famName(it.family)} · ${it.image_folder} · queued ${it.queued_at}` +
+      (it.continues ? " · continues from its last save" : "")}),
     el("span", {class: "queue-actions"},
       el("button", {class: "btn btn-sm", text: "↑", title: "Earlier", disabled: i === 0,
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      el("button", {class: "btn btn-sm", text: "Edit", title: "Load its settings into the form; Save to queue puts them back in its place",
+      it.continues ? null : el("button", {class: "btn btn-sm", text: "Edit",
+        title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
           try {
             await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
             queueEditing({id: it.id, n: i + 1});
+            showTab("training");
             $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.`;
           } catch (e) { $("runStatus").textContent = e.message; }
         }}),
@@ -2317,6 +2330,50 @@ async function loadRuns() {
           $("runStatus").textContent = `Loaded the settings of ${run.lora || "that run"}: check them, then Start.`;
         } catch (e) { alertRow.textContent = e.message; }
       }});
+    // Continue: on from the run's newest save, with its own settings (only when that save is still there); a run that
+    // trained all it was set to asks how far to train first
+    const contBox = el("div", {class: "field-row", style: "display:none"});
+    const cp = run.continue;
+    const contGo = async (more) => {
+      alertRow.textContent = "";
+      try {
+        const x = await api("/api/runs/continue", {id: run.id, more: more || ""});
+        if (x.need) { contAsk(x.error); return; }
+        if (x.problems) { alertRow.textContent = x.problems.join(" "); return; }
+        contBox.style.display = "none";
+        alertRow.textContent = x.queued ? "A run is training now: this one is on the queue, and continues when its " +
+          "turn comes." : `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
+        pollRun();
+        if (!x.queued) showTab("training");
+        else loadRuns();
+      } catch (e) { alertRow.textContent = e.message; }
+    };
+    const contAsk = (why) => {
+      const box = el("input", {type: "number", min: String(cp.done + 1), step: "1", class: "w-num",
+        value: String(cp.done + (cp.unit === "epoch" ? Math.max(1, Math.round(cp.done / 2)) : 1))});
+      contBox.replaceChildren(el("span", {class: "field-hint", text: why + " Train to:"}), box,
+        el("span", {class: "field-hint", text: cp.unit + "s"}),
+        el("button", {class: "btn btn-sm btn-primary", text: "Continue", onclick: () => {
+          const n = parseInt(box.value, 10);
+          if (!(n > cp.done)) { alertRow.textContent = `More than ${cp.done}, please.`; return; }
+          contGo(String(n));
+        }}),
+        el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => { contBox.style.display = "none"; }}));
+      contBox.style.display = "";
+    };
+    const cont = cp ? el("button", {class: "btn btn-sm btn-primary",
+      text: cp.done >= cp.of ? "Continue…" : "Continue",
+      title: `Trains on from its newest save (${cp.unit} ${cp.done}${cp.of ? " of " + cp.of : ""}), with this run's own ` +
+        "settings, into this same run" + (cp.done >= cp.of ? `. It has trained all its ${cp.unit}s, so you choose how ` +
+        "far to take it first" : ""),
+      onclick: () => {
+        if (cp.done >= cp.of) {
+          if (contBox.style.display !== "none") { contBox.style.display = "none"; return; }
+          contAsk(`It has trained all ${cp.of} ${cp.unit}s.`);
+        } else contGo("");
+      }}) : null;
+    const contHint = cp ? el("span", {class: "field-hint",
+      text: `Saved at ${cp.unit} ${cp.done}${cp.of ? " of " + cp.of : ""}`}) : null;
     // Delete run: says what goes first (checkpoints, saved states, previews - never the training folder), then deletes
     const delBox = el("div", {class: "run-delete", style: "display:none"});
     const del = el("button", {class: "btn btn-sm btn-danger", text: "Delete run…", onclick: async () => {
@@ -2388,7 +2445,8 @@ async function loadRuns() {
         `${new Date(run.started_at * 1000).toLocaleString()} · ${dur(run.started_at, run.ended_at)}`, figs]
         .filter(Boolean).join("  ·  ")}),
       lossChart(run.curve),
-      el("div", {class: "field-row"}, showFiles, lgBtn, ilBtn, notesBtn, again, del), delBox, alertRow, notesBox, files,
+      el("div", {class: "field-row"}, cont, contHint, showFiles, lgBtn, ilBtn, notesBtn, again, del), contBox, delBox,
+      alertRow, notesBox, files,
       lgBox, ilBox));
   }
   if (!r.runs.length) host.append(el("div", {class: "field-hint", text: "No runs yet. Every run you start is listed here " +

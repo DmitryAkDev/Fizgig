@@ -1356,6 +1356,77 @@ def _restore_pause():
     webqueue.hold("The last run is paused. Resume it: the queue carries on after it finishes.", for_pause=True)
 
 
+def _continue_point(rec):
+    """Where Continue on a run's card carries on from: {kind "state" | "ft", path, done, of, key, unit} - a LoRA's
+    newest saved state (its epoch, of Max Train Epochs) or a fine-tune's newest checkpoint (its rotations, of Train
+    for) - or None when there's nothing to continue from (no save left, a run training or moved away)."""
+    if not rec or rec.get("source") != "web" or rec.get("result") in ("running", "moved"):
+        return None
+    desc = get_family(rec.get("family") or "")
+    values, name, out = rec.get("values") or {}, rec.get("lora") or "", rec.get("output_dir") or ""
+    if desc is None or not name or not out:
+        return None
+    if desc.finetune and form._kind(desc, values) == "finetune":
+        path = launch.latest_ft_checkpoint(out, name)
+        if not path:
+            return None
+        left, done, _c = launch.ft_rotations_left(path, values.get("FAMILY_FT_ROTATIONS"),
+                                                  values.get("FAMILY_FT_ROTATE_EVERY"))
+        return {"kind": "ft", "path": path, "done": done, "of": done + left, "key": "FAMILY_FT_ROTATIONS",
+                "unit": "rotation"}
+    path = launch.latest_state(out, name)
+    m = re.search(r"-(\d{6})-state$", path)
+    if not m:
+        return None
+    try:
+        of = int(str(values.get("MAX_TRAIN_EPOCHS") or "0").strip())
+    except ValueError:
+        of = 0
+    return {"kind": "state", "path": path, "done": int(m.group(1)), "of": of, "key": "MAX_TRAIN_EPOCHS",
+            "unit": "epoch"}
+
+
+def _continue_run(run_id, more="", queue_ok=True):
+    """Continue on Runs & outputs: the run trains on from its newest save, with its own settings and into its own
+    record. more: the epochs (a fine-tune: rotations) to train to, for a run that already trained all it was set to.
+    A run training here now: it goes on the queue instead, and continues when its turn comes."""
+    rec = history.get(run_id)
+    pt = _continue_point(rec)
+    if pt is None:
+        return {"error": "Nothing to continue from: this run's saved state isn't there any more."}
+    values = dict(rec.get("values") or {})
+    if str(more or "").strip():
+        try:
+            values[pt["key"]] = str(int(str(more).strip()))
+        except ValueError:
+            return {"error": f"Train to: a whole number of {pt['unit']}s, please."}
+    unit = pt["unit"] + "s"
+    if pt["kind"] == "ft":
+        left, done, cont = launch.ft_rotations_left(pt["path"], values.get("FAMILY_FT_ROTATIONS"),
+                                                    values.get("FAMILY_FT_ROTATE_EVERY"))
+        target = done + left
+    else:
+        done, target = pt["done"], int(str(values.get("MAX_TRAIN_EPOCHS") or "0").strip() or 0)
+    if done >= target:
+        return {"need": pt["key"], "done": done, "unit": pt["unit"],
+                "error": f"This run has trained all {target} {unit}. Choose how many {unit} to train to, then "
+                         f"Continue."}
+    with _lock:
+        busy = _run["proc"] is not None and _run["proc"].poll() is None or _run["state"] in ("starting", "running")
+    if busy:
+        if not queue_ok:
+            return {"error": "A run is already going. Stop or pause it first."}
+        webqueue.add(rec["family"], {**values, "__continue": run_id, "__more": str(more or "")},
+                     rec.get("image_folder") or "", rec.get("lora") or "", rec.get("output_dir") or "")
+        return {"ok": True, "queued": True}
+    note = f"=== Continuing {rec.get('lora')} from {os.path.basename(pt['path'])}: to {target} {unit} ==="
+    if pt["kind"] == "ft":
+        return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
+            "continue": cont, "rotations": left}, note=note, carry=run_id))
+    return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
+                           carry=run_id))
+
+
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
 
 
@@ -1381,7 +1452,7 @@ def _resumed(result):
     return result
 
 
-def _start(family_key, values, image_folder, resume="", ft_continue=None, note="", models=None):
+def _start(family_key, values, image_folder, resume="", ft_continue=None, note="", models=None, carry=""):
     if studio.holding_gpu():                    # Repair Studio's model leaves the GPU for the run
         append_log("Unloading Repair Studio's model to free the GPU for this run.\n")
         studio.stop_worker()
@@ -1430,7 +1501,7 @@ def _start(family_key, values, image_folder, resume="", ft_continue=None, note="
                     values=dict(values), image_folder=image_folder, pause=False, resume="", resume_mode="")
     save_state({"last_run": {"family": family_key, "values": values, "image_folder": image_folder}})
     hid = history.start("web", family_key, inputs["LORA_NAME"], out_dir, image_folder, dict(values),
-                        resume=bool(resume or ft_continue))
+                        resume=bool(resume or ft_continue), carry=carry)
     with _lock:
         _run["history_id"] = hid
     append_log(LOG_CLEAR)                    # this run's log on a clean console
@@ -1452,7 +1523,9 @@ def _queue_starter(item):
     if captions.status()["state"] in ("loading", "running", "translating"):
         return False, "wait: captions are being made - the next run starts when they finish"
     try:
-        r = _start(item["family"], item["values"], item.get("image_folder") or "")
+        cid = (item.get("values") or {}).get("__continue")
+        r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False) if cid else
+             _start(item["family"], item["values"], item.get("image_folder") or ""))
     except Exception as e:
         return False, str(e)
     if r.get("ok"):
@@ -2892,6 +2965,8 @@ class Handler(BaseHTTPRequestHandler):
                 r["image_loss"] = bool(owners.get(r.get("id")) and d is not None and getattr(d, "loss_watch", False))
                 r["loss_graph"] = key not in newest and os.path.isfile(
                     step_log.loss_path(r.get("output_dir") or "", r.get("lora") or ""))
+                # Continue: the newest run with its name and folder owns its saves (an older one's are overwritten)
+                r["continue"] = _continue_point(r) if key not in newest else None
                 newest.add(key)
             return self.json({"runs": runs})
         if path == "/api/queue/item":                # a queued run's settings, for Edit
@@ -3529,6 +3604,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/runs/delete":              # Delete run: asks first (confirm false = what it'd delete)
                 r = delete_run(str(b.get("id") or ""), confirm=bool(b.get("confirm")))
                 return self.json(r, 400 if r.get("error") else 200)
+            if path == "/api/runs/continue":            # Continue: on from the run's newest save
+                from fizgig.web import helpers as _helpers
+                if _helpers.move_busy():                # a run of this computer's is moving
+                    return self.json({"error": _helpers.move_busy()}, 400)
+                r = _continue_run(str(b.get("id") or ""), str(b.get("more") or ""))
+                return self.json(r, 400 if r.get("error") and not r.get("need") else 200)
             if path == "/api/runs/settings":            # Start again with these settings
                 rec = history.get(str(b.get("id") or ""))
                 if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):

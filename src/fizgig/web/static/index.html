@@ -66,16 +66,17 @@
           <button class="tab-item" data-tab="helpers"><i></i><span>Helpers</span></button>
         </nav>
         <button class="side-run" id="sideRun" data-goto="training" title="The run - open the Training tab">
+          <span class="side-queue-title">Training</span>
           <span class="side-run-top"><span class="run-badge" id="runBadge"></span><span id="sideRunName"></span></span>
           <span class="run-bar"><span id="sideRunBar"></span></span>
           <span class="side-run-text" id="sideRunText"></span>
         </button>
-        <div class="side-queue" id="sideQueue" role="button" tabindex="0" title="The queue - open it on the Training tab"
-          style="display:none">
-          <div class="side-queue-head"><span class="side-queue-title">Up next</span><span class="run-badge" id="sideQueueBadge"></span></div>
+        <div class="side-queue" id="sideQueue" role="button" tabindex="0" title="The queue - open it on Runs &amp; outputs">
+          <div class="side-queue-head"><span class="side-queue-title">Queue</span><span class="run-badge" id="sideQueueBadge"></span></div>
           <div class="side-queue-list" id="sideQueueList"></div>
           <div class="side-queue-held" id="sideQueueHeld"></div>
           <button class="btn btn-sm btn-primary" id="sideQueueStart" style="display:none">Start queue</button>
+          <span class="side-queue-open">Manage the queue ›</span>
         </div>
         <div class="gpu-monitor" id="statusBar"></div>
         <a class="runpod-btn" id="sideDeploy" href="https://console.runpod.io/deploy?type=GPU&amp;gpu=RTX+5090&amp;count=1&amp;template=bdrdew7hxw&amp;ref=vkb387ep"
@@ -659,18 +660,6 @@
               <div id="problems" class="problems"></div>
               <div class="run-upnext" id="runUpNext" style="display:none"></div>
               <pre class="console-terminal" id="console"></pre>
-            </div>
-          </div>
-          <div class="section-card" id="webQueueCard" style="display:none">
-            <div class="card-title"><span>Queue</span><span class="run-badge" id="webQueueBadge"></span></div>
-            <div class="card-desc">Runs lined up here, in order. Each starts when the one before it finishes; one that
-              fails, is stopped or pauses holds the queue until you press Start queue.</div>
-            <div class="card-content">
-              <div class="field-hint" id="webQueueState"></div>
-              <div id="webQueueList" class="checkpoint-list"></div>
-              <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
-                <button class="btn" id="webQueueHold">Hold</button>
-                <button class="btn" id="webQueueClear" title="Take every queued run off the queue (a run training now carries on)">Clear queue</button></div>
             </div>
           </div>
           <div class="section-card">
@@ -1546,12 +1535,25 @@
         <section id="tab-outputs" class="tab-panel">
           <div class="tab-banner">
             <h1>Runs &amp; outputs</h1>
-            <p>Every run you've started, newest first: how it went, its previews and
-              checkpoints, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
+            <p>The queue, then every run you've started, newest first: how it went, its previews and
+              checkpoints, Continue to train it on from its last save, and its settings to start again with. Below, every LoRA and fine-tune saved in Fizgig's
               output folders. Download sends a file to
               the device you're using now. Very large fine-tunes come off faster another way: on a pod, through its
               <a class="fm-link fm-text" target="_blank" rel="noopener">file manager</a>; on your own server, with scp or rsync
               from the folder shown.</p>
+          </div>
+          <div class="section-card" id="webQueueCard">
+            <div class="card-title"><span>Queue</span><span class="run-badge" id="webQueueBadge"></span></div>
+            <div class="card-desc">Runs lined up here, in order: <b>Add to queue</b> beside Start on the Training tab
+              puts one here, and so does Continue on a run below while another trains. Each starts when the one before
+              it finishes; one that fails, is stopped or pauses holds the queue until you press Start queue.</div>
+            <div class="card-content">
+              <div class="field-hint" id="webQueueState"></div>
+              <div id="webQueueList" class="checkpoint-list"></div>
+              <div class="field-row"><button class="btn btn-primary" id="webQueueStart">Start queue</button>
+                <button class="btn" id="webQueueHold">Hold</button>
+                <button class="btn" id="webQueueClear" title="Take every queued run off the queue (a run training now carries on)">Clear queue</button></div>
+            </div>
           </div>
           <div class="section-card">
             <div class="card-title"><span>Runs</span><button class="btn btn-sm" id="runsReload">Reload</button></div>

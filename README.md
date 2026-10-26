@@ -119,7 +119,7 @@ Full list: [docs/TRAINING.md](docs/TRAINING.md). Everything also runs headless: 
 ## One app, wherever you are
 
 - **In its own window** (`Launch Fizgig.bat`), or **in your browser** (`Launch Fizgig in browser.bat`) — the same app either way.
-- **The queue in sight**: what's training and what's up next sit in the sidebar on every tab; a held queue says why, with Start queue right there.
+- **The queue in sight**: what's training and what's queued sit in the sidebar on every tab; a held queue says why, with Start queue right there. **Continue** on any run in Runs & outputs picks it up again from its last save, so you can pause one project, train another and come back.
 - **On your phone or another computer**: set a password in Preferences and open it over your network, or scan the Start tab's **Open on your phone** QR code and you're straight in; add it to your phone's home screen and it opens like an app.
 - **On your other computer's GPU**: train on your desktop's card from your laptop. Fizgig finds your other computers running it, and the **Pods** tab opens one as it does a pod ([how](docs/WEB_UI.md#your-other-computers-use-ones-gpu-from-another)).
 - **On a rented GPU**: the **Pods** tab finds the card that's cheapest per run among those RunPod has free right now (one card or two), deploys it, opens the pod in the same window (logged in for you), and sends a training folder from your computer straight to it. Prefer Vast.ai? Fizgig has a template there too, with https addresses and a stop when the run finishes ([Vast.ai](docs/VAST.md)).
@@ -172,7 +172,7 @@ Model files download from the **Preferences** tab: one **Download models for me*
 
 Prefer Vast.ai? The same image runs there: **[Fizgig on Vast.ai](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning)** ([guide](docs/VAST.md)).
 
-Step by step: [Quick start](docker/README.md#quick-start-nothing-installed-on-your-computer). The pod also has a drag-and-drop file manager for big datasets and fine-tunes (the **File manager** button in the sidebar), one-click model downloads and an optional auto-stop when training finishes. [The full pod guide](docker/README.md).
+Step by step: [Quick start](docker/README.md#quick-start-nothing-installed-on-your-computer). The pod also has a drag-and-drop file manager for big datasets and fine-tunes (the **File manager** button in the sidebar), one-click model downloads and an optional auto-stop when training finishes. A pod updates to the newest Fizgig each time it starts; to keep one on a version, [set `FIZGIG_REF`](docker/README.md#keep-a-pod-on-one-version). [The full pod guide](docker/README.md).
 
 Mid-job on the old pod with the remote desktop? It stays available as **[Fizgig Classic v7.x](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=faoq8ed6um&ref=vkb387ep)**, and pods you already have keep running as they are.
 
