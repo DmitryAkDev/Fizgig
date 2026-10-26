@@ -95,7 +95,9 @@ def start(source, family, lora, output_dir, image_folder, values, resume=False):
                         if r.get("result") != "paused":
                             break
                         r.update(result="running", ended_at=None, resumed_at=time.time(), server_pid=os.getpid(),
-                                 values=values or r.get("values") or {})    # e.g. a new Target Megapixels
+                                 values=values or r.get("values") or {},    # e.g. a new Target Megapixels
+                                 # where its pictures are now (a run moved to a pod again unpacks somewhere new)
+                                 image_folder=image_folder or r.get("image_folder"))
                         _write(runs)
                         return r["id"]
         except OSError:
