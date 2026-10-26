@@ -487,9 +487,11 @@ def verdict(sim, thresholds=None):
 
 
 def look_files(folder):
-    """The folder's images to score, normpath'd (baselines are compared by path)."""
+    """The folder's images to score, normpath'd (baselines are compared by path) - not the masks beside them
+    (photo-masklabel.png, #247)."""
     return sorted(os.path.normpath(os.path.join(folder, f)) for f in os.listdir(folder)
-                  if os.path.isfile(os.path.join(folder, f)) and os.path.splitext(f)[1].lower() in LOOK_EXTS)
+                  if os.path.isfile(os.path.join(folder, f)) and os.path.splitext(f)[1].lower() in LOOK_EXTS
+                  and not is_mask_file(f))
 
 
 def cutoff(scores, floor=0.25):
