@@ -1411,6 +1411,12 @@ async function start(path, body) {
   try {
     const r = await api(path, path === "/api/start" ? runBody() : (body || {}));
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
+    // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
+    // put this run's settings in its place)
+    if (r.ok && S.editQueue) {
+      queueEditing(null);
+      $("runStatus").textContent = "Started. The queued run you were editing is left as it was.";
+    }
   } catch (e) { showProblems([e.message]); }
   finally {
     S.starting = false;
