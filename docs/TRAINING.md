@@ -37,7 +37,7 @@ A training folder is read at its top level only. Tick **Also train on its sub-fo
 **Captions and Image Prep** work on one folder at a time, and their lines say so when the training folder has sub-folders. To caption a sub-folder, make its masks, resize it or run the Look Consistency Filter on it, choose it as the training folder on the Start tab, then choose the top folder again to train. Each sub-folder's trigger word is the one you saved for it on the Captions tab, else the word its captions start with. With masked training on, each sub-folder's pictures use the masks in their own folder.
 
 **While it trains** (the Krea 2 loss watch, [details](KREA2.md#the-trainer-curates-your-dataset-while-it-trains-experimental)), every picture is kept with its own folder:
-- **Problem Images** and the run's per-image view on Runs & outputs name each picture with its folder (`outfits/red/03`), and a caption you edit there is written into that picture's own folder.
+- **Per-image loss** (on the run card while it trains, and on the run in Runs & outputs) names each picture with its folder (`outfits/red/03`), and a caption you edit there is written into that picture's own folder.
 - **Auto-recaption** writes the new caption into the picture's own folder, with that folder's trigger word.
 - **Exclusions** are saved in each folder's own `fizgig_excluded.json`, so they travel with its pictures.
 - The **look-outlier warm-up** reads each folder's own Look Filter scores (`fizgig_look_scores.json`, from a scan of that folder). Pictures moved into a sub-folder's `excluded_by_look` are left out.

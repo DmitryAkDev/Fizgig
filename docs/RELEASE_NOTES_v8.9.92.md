@@ -6,7 +6,7 @@
 - **The line under the tick says what it will train** before you press Start: how many folders and pictures, the folders not captioned yet first, and **Show all folders** for the full list. Start refuses a sub-folder that isn't captioned and names it.
 - **Left out:** `excluded_by_look`, `originals`, hidden folders, and the output and cache folders when they sit inside.
 - **Fine-tunes** train every folder in the tree. If the folder you picked for **Regularisation images** sits inside your training folder, its photos are not trained as your own pictures: they are only used as regularisation images, as they would be from any other folder.
-- **Problem Images, auto-recaption and exclusions keep each picture with its folder.** A caption edited in Problem Images or rewritten by auto-recaption goes into that picture's own folder, with that folder's trigger word.
+- **Per-image loss, auto-recaption and exclusions keep each picture with its folder.** A caption edited in Per-image loss or rewritten by auto-recaption goes into that picture's own folder, with that folder's trigger word.
 - **On a pod:** Upload a folder, Send to this pod and Move a run carry the sub-folders when the tick is on.
 - Captions and Image Prep work on one folder at a time: to caption or mask a sub-folder, choose it as the training folder on the Start tab.
 - Not with Subjects 2-4, DOP, Fizgig LoRA Isolation, Edit or slider training; the tick is hidden there.
@@ -26,7 +26,7 @@
 - **Resume with another Optimizer Type than the run trained with** no longer stops with "loaded state dict has a different number of parameter groups": the LoRA's weights and epoch carry on, with a fresh optimizer, and the log says so. Resume Training's hint now points to Continue, which keeps the run's own settings (thanks @jake661, #246).
 - **Pressing Start more than once started the run more than once**, every copy training at the same time into the same files. One press is one run now, and the button reads Starting… until it's up.
 - **Starting a run ends editing a queued run**, so Save to queue can't put the new run's settings in the queued run's place.
-- **With Subjects 2-4, auto-recaption, exclusions and Problem Images caption edits now go to that subject's own folder**, with its own trigger word. Before, they looked in Subject 1's folder.
+- **With Subjects 2-4, auto-recaption, exclusions and caption edits in Per-image loss now go to that subject's own folder**, with its own trigger word. Before, they looked in Subject 1's folder.
 - **A run moved to the same pod twice:** its per-image view and caption edits looked in the first move's folder, which was gone.
 - **Make masks** says to tick **Replace masks already there** when it keeps the masks a folder already has (thanks @crazyscale-dotcom, #245).
 
