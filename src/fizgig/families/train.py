@@ -100,7 +100,8 @@ def _save_state(output_dir, output_name, net, optimizer, *, epoch, global_step, 
         rng["cuda"] = torch.cuda.get_rng_state_all()
     torch.save(rng, os.path.join(state_dir, "rng.pt"))
     with open(os.path.join(state_dir, "training_state.json"), "w", encoding="utf-8") as f:   # commit marker, last
-        json.dump({"epoch": epoch, "global_step": global_step, "architecture": arch_id, **(extra or {})}, f)
+        json.dump({"epoch": epoch, "global_step": global_step, "architecture": arch_id,
+                   "optimizer": optimizer.__class__.__name__, **(extra or {})}, f)
     logger.info(f"[state] saved -> {state_dir}")
     return state_dir
 
@@ -189,7 +190,22 @@ def _load_state(state_dir, net, optimizer, device, arch, untagged_own=False, dri
             sd["state"] = {perm[int(k)]: v for k, v in sd["state"].items()}
             meta["legacy_perm"] = perm
             logger.info("[resume] an older trainer's state: optimizer moments remapped into this LoRA's order")
-        optimizer.load_state_dict(sd)
+        # another Optimizer Type than the run trained with (#246): its saved moments don't fit this one, so the LoRA's
+        # weights carry on with a fresh optimizer (a state from before the type was saved: as its groups tell)
+        was, now = meta.get("optimizer"), optimizer.__class__.__name__
+        if was and was != now:
+            why = f"it trained with {was}, and this resume uses {now}"
+        elif len(sd.get("param_groups") or []) != len(optimizer.param_groups):
+            why = "it trained with another Optimizer Type than this resume uses"
+        else:
+            why = ""
+        if why:
+            meta["fresh_optimizer"] = True
+            logger.info(f"[resume] {why}: continuing from the state's LoRA weights and epoch, with a fresh "
+                        f"optimizer (it settles within a few steps). To carry the optimizer on too, resume with "
+                        f"{was or 'the run' + chr(39) + 's own'} Optimizer Type.")
+        else:
+            optimizer.load_state_dict(sd)
     else:
         logger.info("[resume] this state was saved by another trainer: continuing from its LoRA weights, with a "
                     "fresh optimizer and weight average (they settle within a few steps)")
@@ -1627,7 +1643,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             global_step = start_epoch * steps_per_epoch
         if adaptive:
             adaptive.load_state_dict(meta.get("adaptive_lr_state"))
-        if optimizer is not None and meta.get("own_state") and not owns_its_rate(optimizer):
+        if (optimizer is not None and meta.get("own_state") and not meta.get("fresh_optimizer")
+                and not owns_its_rate(optimizer)):
             resume_lr(optimizer, _fresh_lrs, meta, box_learning_rate, adaptive)
         if ema is not None and meta["own_state"] and os.path.exists(os.path.join(resume_state_dir, "ema.pt")):
             _esd = torch.load(os.path.join(resume_state_dir, "ema.pt"), map_location="cpu")
