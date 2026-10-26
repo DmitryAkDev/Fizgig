@@ -88,6 +88,8 @@ class ImageDatasetParams(BaseDatasetParams):
     photos_only: bool = False
     # Masked training: where the pictures' masks are when not beside them (a training share's helper, sent the cache)
     mask_directory: Optional[str] = None
+    # The pictures' training-key prefix (ImageDataset.item_prefix): a sub-folder's path, or another folder's tag
+    item_prefix: str = ""
 
 
 @dataclass
@@ -153,6 +155,7 @@ class ConfigSanitizer:
         "caption_replace": [[str]],
         "photos_only": bool,
         "mask_directory": str,
+        "item_prefix": str,
     }
 
     # Options that come from argparse only (not from user config)

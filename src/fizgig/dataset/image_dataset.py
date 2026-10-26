@@ -891,9 +891,14 @@ class ImageDataset(torch.utils.data.Dataset):
         caption_replace: Optional[list] = None,
         photos_only: bool = False,
         mask_directory: Optional[str] = None,
+        item_prefix: str = "",
         **kwargs,
     ):
         super().__init__()
+        # Each picture's training key is item_prefix + its name: a training folder's own pictures have none, a
+        # sub-folder's is its path ("outfits/red/"), another subject's or the regularisation set's a tag ("s2:",
+        # "reg:") - so same-named pictures in two folders stay apart, and the loss watch finds each one's folder
+        self.item_prefix = item_prefix or ""
         self.mask_directory = mask_directory      # masked training: the masks' folder when not image_directory
         # Clip Target Megapixels (MiniMax H3): a clip is cached and trained at this size or
         # smaller, so photos can train at 1 MP beside clips at a size that caches and trains fast.
@@ -1347,7 +1352,8 @@ class ImageDataset(torch.utils.data.Dataset):
                         continue
                     accepted_smaller_clips += 1
                 bucket_key = bucket_reso
-            item_info = ItemInfo(item_key, "", image_size, bucket_reso, latent_cache_path=cache_file)
+            item_info = ItemInfo(self.item_prefix + item_key, "", image_size, bucket_reso,
+                                 latent_cache_path=cache_file)
             item_info.text_encoder_output_cache_path = te_cache
             _mdir = self.mask_directory or self.image_directory
             if self.loss_masks and _mdir and bucket_key == bucket_reso \
@@ -1372,7 +1378,7 @@ class ImageDataset(torch.utils.data.Dataset):
             # bucket) never qualify; a still (3-D latent) is left alone.
             if (self.clip_still_as_photo and bucket_key != ("audio",) + AUDIO_SENTINEL_RESO
                     and self.latent_cache_frames(cache_file) > 1):
-                ff = ItemInfo(item_key + "#still", "", image_size, bucket_reso,
+                ff = ItemInfo(self.item_prefix + item_key + "#still", "", image_size, bucket_reso,
                               latent_cache_path=cache_file)
                 ff.text_encoder_output_cache_path = te_cache
                 ff.still_only = True

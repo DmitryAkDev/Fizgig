@@ -2070,11 +2070,21 @@ def list_datasets() -> dict:
                 thumbs.append(e.path)
         if not elsewhere:
             _sweep_parts(path, entries)
-        if pics + clips + songs:
+        # its sub-folders' pictures: trained on only with the Training tab's Also train on its sub-folders
+        subs = launch.subfolders(path) if any(e.is_dir() and not e.name.startswith(".") for e in entries) else []
+        sub_items = sum(launch._media_count(f) for _r, f in subs)
+        if pics + clips + songs + sub_items:
             out.append({"name": name, "path": path, "pictures": pics, "clips": clips, "songs": songs,
-                        "captioned": captioned, "time": newest, "thumbs": thumbs or waves, "elsewhere": elsewhere})
+                        "captioned": captioned, "time": newest, "thumbs": thumbs or waves, "elsewhere": elsewhere,
+                        "sub_items": sub_items, "sub_folders": len(subs)})
     out.sort(key=lambda x: -x["time"])
     return {"root": root, "datasets": out[:300], "total": len(out)}
+
+
+def _upload_top(folder, dest, single):
+    """The training folder an upload went into: its top folder when a file went into one of its sub-folders."""
+    parts = str(folder or "").split("/")
+    return dest if single or len(parts) < 2 else os.path.join(uploads_root(), parts[0])
 
 
 def _upload_target(folder, name, single):
@@ -2086,11 +2096,12 @@ def _upload_target(folder, name, single):
             raise ValueError(f"{name}: not a LoRA (.safetensors), face model (.onnx), picture, clip or song.")
         dest = UPLOAD_FILES
     else:
-        folder = _upload_name(folder, "Folder name")
+        # "name/sub/folder": a folder upload that keeps its sub-folders (Also train on its sub-folders)
+        folder = "/".join(_upload_name(p, "Folder name") for p in str(folder or "").split("/"))
         if ext not in UPLOAD_EXTS:
             raise ValueError(f"{name}: Fizgig doesn't train on {ext or 'this'} files. It takes pictures, .mp4 clips, "
                              f"songs (.wav .mp3 .flac .m4a), caption .txt files, .json song details and .zip files.")
-        dest = os.path.join(uploads_root(), folder)
+        dest = os.path.join(uploads_root(), *folder.split("/"))
     return name, ext, dest, os.path.join(dest, f".{name}.part")
 
 
@@ -2102,7 +2113,7 @@ def upload_status(folder, name, single, size, mtime=None):
     final = os.path.join(dest, name)
     same_time = mtime is not None and os.path.isfile(final) and abs(os.path.getmtime(final) - mtime) < 2
     if ext != ".zip" and os.path.isfile(final) and os.path.getsize(final) == size and same_time:
-        return {"have": size, "done": True, "path": final, "folder": dest}
+        return {"have": size, "done": True, "path": final, "folder": _upload_top(folder, dest, single)}
     have = os.path.getsize(tmp) if os.path.isfile(tmp) else 0
     return {"have": have if have <= size else 0, "done": False}
 
@@ -2198,7 +2209,8 @@ def _finish_upload(name, ext, dest, tmp, single):
             replaced.append(name)
         os.replace(tmp, os.path.join(dest, name))
         saved.append(name)
-    return {"folder": dest, "saved": sorted(set(saved)), "skipped": skipped, "replaced": replaced,
+    return {"folder": _upload_top(folder, dest, single), "saved": sorted(set(saved)), "skipped": skipped,
+            "replaced": replaced,
             "badname": badname}
 
 
@@ -2894,7 +2906,7 @@ class Handler(BaseHTTPRequestHandler):
             res = image_loss.residuals(run.get("output_dir")) if run and d is not None and d.loss_watch else None
             if res is None:
                 return self.json({"error": "This run has no per-image loss log."}, 404)
-            pics = image_loss.image_paths(run.get("image_folder"), [im["key"] for im in res["images"]])
+            pics = image_loss.image_paths(run, [im["key"] for im in res["images"]])
             queued, applied = image_loss.caption_state(run.get("output_dir"))
             return self.json({**res, "live": run.get("result") in ("running", "paused"),
                               "images": [{**im, "path": pics.get(im["key"], ""), "queued": im["key"] in queued,
@@ -2903,7 +2915,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/runs/caption":              # one training image's caption, for the per-image editor
             from fizgig.web import image_loss
             run = history.get((qs.get("id") or [""])[0]) or {}
-            text, ok = image_loss.read_caption(run.get("image_folder"), (qs.get("key") or [""])[0],
+            text, ok = image_loss.read_caption(run, (qs.get("key") or [""])[0],
                                                captions.caption_ext((qs.get("ext") or [""])[0]))
             return self.json({"caption": text, "folder_ok": ok})
         if path == "/api/about":                     # ?check=1: look for a newer release again (the About box's)

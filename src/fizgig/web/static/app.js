@@ -2210,6 +2210,14 @@ async function datasetPictures(d) {
   lightboxShow(0);
 }
 
+// Image Prep and Captions work on the one folder: a training folder with sub-folders says how to reach theirs
+function subfoldersHint() {
+  const norm = (p) => (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const d = ((S.datasets || {}).datasets || []).find((x) => norm(x.path) === norm(S.imageFolder));
+  return d && d.sub_folders ? ` · This works on this folder only, not its ${d.sub_folders} sub-folder` +
+    `${d.sub_folders === 1 ? "" : "s"}: to caption or mask one, choose it as the training folder on the Start tab.` : "";
+}
+
 function renderDatasets() {
   const r = S.datasets;
   if (!r) return;
@@ -2245,7 +2253,10 @@ function renderDatasets() {
       el("div", {class: "dataset-meta"}, el("b", {text: d.name}),
         d.elsewhere ? el("span", {class: "dataset-where", text: d.path, title: "A folder you picked, outside the training data folder"}) : null,
         el("span", {text: what}),
-        el("span", {class: d.captioned >= total ? "ok" : "warn", text: caps}),
+        d.sub_items ? el("span", {class: "dataset-subs", text: `+ ${d.sub_items} in ${d.sub_folders} sub-folder` +
+          (d.sub_folders === 1 ? "" : "s"), title: "Trained on only when Also train on its sub-folders is ticked on " +
+          "the Training tab"}) : null,
+        total ? el("span", {class: d.captioned >= total ? "ok" : "warn", text: caps}) : null,
         el("span", {class: "dataset-when", text: d.time ? new Date(d.time * 1000).toLocaleDateString() : ""}),
         el("div", {class: "dataset-actions"},
           act("Captions", "Train on this folder and open it on the Captions tab", () => { choose(); showTab("captions"); }),
@@ -3658,8 +3669,8 @@ async function loadPrep() {
     $("prepNoFaces").style.display = o.face_tools ? "none" : "";
     faceSettingsShow(o.face_settings);
   }
-  $("prepFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
-    "Choose the training folder on the Start tab first.";
+  $("prepFolder").textContent = (S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
+    "Choose the training folder on the Start tab first.") + subfoldersHint();
   await prepSummary();
   pollPrep();
   lookPoll();
@@ -6346,8 +6357,8 @@ async function loadCaptions() {
     `&ext=${encodeURIComponent(capExt())}&t=${encodeURIComponent(TOKEN)}`;
   $("dsZip").href = zipUrl(false); $("dsZipCaps").href = zipUrl(true);
   for (const id of ["dsZip", "dsZipCaps"]) $(id).style.display = S.imageFolder ? "" : "none";
-  $("capFolder").textContent = S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
-    "Choose the training folder on the Start tab first.";
+  $("capFolder").textContent = (S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
+    "Choose the training folder on the Start tab first.") + subfoldersHint();
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
@@ -7932,8 +7943,11 @@ function podLocalDraw() {
         d.thumbs.length ? d.thumbs.map((src) => el("img", {alt: "", src})) :
           el("span", {class: "dataset-kind", text: d.songs ? "♪" : d.clips ? "▶" : ""})),
       el("div", {class: "dataset-meta"}, el("b", {text: d.name}), el("span", {text: `${what} · ${mb(d.bytes)}`}),
-        el("span", {class: d.captioned >= total ? "ok" : "warn",
-          text: d.captioned >= total ? "all captioned" : `${d.captioned} of ${total} captioned`}),
+        d.sub_items ? el("span", {class: "dataset-subs", text: `+ ${d.sub_items} in ${d.sub_folders} sub-folder` +
+          (d.sub_folders === 1 ? "" : "s") + ((S.values || {}).TRAIN_SUBFOLDERS ? " (sent too)" : " (not sent)"),
+          title: "Sent only when Also train on its sub-folders is ticked on the Training tab"}) : null,
+        total ? el("span", {class: d.captioned >= total ? "ok" : "warn",
+          text: d.captioned >= total ? "all captioned" : `${d.captioned} of ${total} captioned`}) : null,
         el("div", {class: "dataset-actions"}, send)));
   }));
   if (!list.length && !S.podLocal.busy && !$("podLocalStatus").textContent)
@@ -7946,9 +7960,11 @@ async function podLocalSend(d) {
   S.podLocal.busy = true;                     // one send at a time: every Send button waits, through a Refresh too
   podLocalDraw();
   try {
-    const files = await api_.local_files(d.path);
+    // its sub-folders go too when Also train on its sub-folders is ticked here (uploadFiles keeps them by rel)
+    const files = await api_.local_files(d.path, !!(S.values || {}).TRAIN_SUBFOLDERS);
     const CHUNK = 2 * 2 ** 20;                 // what one bridge read carries
-    const local = files.map((f) => ({name: f.name, size: f.size, lastModified: f.mtime * 1000,
+    const local = files.map((f) => ({name: f.name.split("/").pop(), rel: d.name + "/" + f.name, size: f.size,
+      lastModified: f.mtime * 1000,
       async read(a, b) {
         const parts = [];
         for (let o = a; o < b; o += CHUNK) {
@@ -8010,11 +8026,21 @@ async function uploadFiles(picked, opts = {}) {
     `train on (${video.slice(0, 3).join(", ")}${video.length > 3 ? ", …" : ""}): convert them to .mp4 first.`);
   if (other.length) notes.push(`Left out (not pictures, clips, songs, captions or zips): ` +
     `${other.slice(0, 5).join(", ")}${other.length > 5 ? ", …" : ""}.`);
+  // its sub-folders are kept only when the Training tab's Also train on its sub-folders is ticked; otherwise every
+  // file goes into the one folder, as before
+  const keepSubs = !!(S.values || {}).TRAIN_SUBFOLDERS;
+  const sub = (f) => {
+    const parts = String(f.webkitRelativePath || f.rel || "").split("/").slice(1, -1).map(tidyName).filter(Boolean);
+    return keepSubs ? parts.join("/") : "";
+  };
   const seen = new Map();
-  for (const f of files) seen.set(f.name, (seen.get(f.name) || 0) + 1);
+  for (const f of files) { const k = (sub(f) ? sub(f) + "/" : "") + f.name; seen.set(k, (seen.get(k) || 0) + 1); }
   const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
   if (dupes.length) notes.push(`More than one file is named ${dupes.slice(0, 3).join(", ")}` +
-    `${dupes.length > 3 ? ", …" : ""} (from different subfolders); they all go into one folder, so the last one is kept.`);
+    `${dupes.length > 3 ? ", …" : ""} (from different subfolders); they all go into one folder, so the last one is kept. ` +
+    "To keep the sub-folders, tick Also train on its sub-folders on the Training tab and upload again.");
+  else if (keepSubs && files.some((f) => sub(f))) notes.push("Its sub-folders are kept, as Also train on its " +
+    "sub-folders is ticked on the Training tab.");
   const name = opts.name !== undefined ? opts.name : $("uploadName").value.trim();
   const say = opts.say || ((t, bad) => { $("uploadStatus").textContent = t; $("uploadStatus").classList.toggle("bad", !!bad); });
   if (!name) return say("Type a name for the new folder first.", true);
@@ -8040,7 +8066,7 @@ async function uploadFiles(picked, opts = {}) {
       inFlight.set(f, 0);
       show(f);
       try {
-        const r = await uploadResumable({folder: name, name: tidyName(f.name)}, f, (sent, note) => {
+        const r = await uploadResumable({folder: sub(f) ? name + "/" + sub(f) : name, name: tidyName(f.name)}, f, (sent, note) => {
           inFlight.set(f, sent);
           show(f, note || (sent >= f.size && f.name.toLowerCase().endsWith(".zip") ? "unpacking…" : ""));
         });

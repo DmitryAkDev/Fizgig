@@ -3491,6 +3491,21 @@ def _move_extras(values):
             {k: f for k, f in files.items() if f and os.path.isfile(f)})
 
 
+def _run_subfolders(folder, values):
+    """[(relative path, folder)] of the run's sub-folders when it trains them (Also train on its sub-folders)."""
+    if not (values or {}).get("TRAIN_SUBFOLDERS"):
+        return []
+    from fizgig.families import launch
+    return launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
+                                      str(values.get("FAMILY_FT_REG_DIR") or "")))
+
+
+def _safe_rel(rel):
+    """A file's path inside a training folder: plain names joined by /, never a way out of it."""
+    parts = str(rel or "").split("/")
+    return bool(parts) and all(_SAFE_FILE.match(p) for p in parts)
+
+
 def _dir_name(d):
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", os.path.basename(os.path.normpath(d))).strip(" .")[:80] or "images"
 
@@ -3647,6 +3662,12 @@ def _move_pack(out_dir, name, state, folder, values):
             if os.path.isfile(p) and (os.path.splitext(b)[1].lower() in exts or
                                       (b.startswith("fizgig_") and b.endswith(".json"))):
                 tf.add(p, arcname=f"images/{b}")
+        for rel, sub in _run_subfolders(folder, values):      # its sub-folders, when the run trains them
+            for p in sorted(glob.glob(os.path.join(glob.escape(sub), "*"))):
+                b = os.path.basename(p)
+                if os.path.isfile(p) and (os.path.splitext(b)[1].lower() in exts or
+                                          (b.startswith("fizgig_") and b.endswith(".json"))):
+                    tf.add(p, arcname=f"images/{rel}/{b}")
         dirs, files = _move_extras(values)
         for k, d in dirs.items():
             for p in sorted(glob.glob(os.path.join(d, "*"))):
@@ -3904,7 +3925,7 @@ def move_in(body):
         # the run's own name (its files are named by it: a space and all); `name` is only for folders
         rec = _mvin[tag] = {"run": str(v.get("LORA_NAME") or body.get("run") or name), "folder": folder,
                             "output_dir": out_dir, "base": base, "unpacked": True, "lead": str(body.get("lead") or ""),
-                            "cap": _caption_ext(v)}
+                            "cap": _caption_ext(v), "values": {"TRAIN_SUBFOLDERS": bool(v.get("TRAIN_SUBFOLDERS"))}}
         _mvin_save()
     state = os.path.join(rec["output_dir"], os.path.basename(str(body.get("state") or "")))
     if not os.path.isdir(state):
@@ -4017,7 +4038,8 @@ def move_out(body):
                 continue                     # only the newest state: the one it carries on from
             files.append({"name": rel, "size": os.path.getsize(p)})
     # captions and exclusions changed here: the training folder's, and the run's other folders'
-    for prefix, d in [("images/", rec["folder"])] + [(f"dirs/{k}/", d) for k, d in (rec.get("dirs") or {}).items()]:
+    subs = [(f"images/{rel}/", d) for rel, d in _run_subfolders(rec["folder"], rec.get("values") or {})]
+    for prefix, d in [("images/", rec["folder"])] + subs + [(f"dirs/{k}/", d) for k, d in (rec.get("dirs") or {}).items()]:
         for p in sorted(glob.glob(os.path.join(d, "*"))):
             b = os.path.basename(p)
             if os.path.isfile(p) and (b.lower().endswith(rec.get("cap") or ".txt")
@@ -4033,7 +4055,7 @@ def move_piece(tag, name, offset=0, n=PIECE):
         raise ValueError("That run isn't on this computer.")
     name = str(name or "")
     if name.startswith("images/"):          # a caption or the dataset's own json, from its training folder here
-        p = os.path.join(rec["folder"], name[7:]) if _SAFE_FILE.match(name[7:]) else None
+        p = os.path.join(rec["folder"], *name[7:].split("/")) if _safe_rel(name[7:]) else None
     elif name.startswith("dirs/"):          # ... or from one of its other folders here
         _d, k, b = (name.split("/", 2) + ["", ""])[:3]
         d = (rec.get("dirs") or {}).get(k)
@@ -4078,7 +4100,8 @@ def _back_work(now):
 
         def dest_of(n):
             if n.startswith("images/"):
-                return os.path.join(folder_here, n[7:]) if folder_here and _SAFE_FILE.match(n[7:]) else None
+                return (os.path.join(folder_here, *n[7:].split("/")) if folder_here and _safe_rel(n[7:])
+                        else None)
             if n.startswith("dirs/"):            # a caption from one of its other folders: back into that folder
                 _d, k, b = (n.split("/", 2) + ["", ""])[:3]
                 return os.path.join(dirs_here[k], b) if dirs_here.get(k) and _SAFE_FILE.match(b) else None

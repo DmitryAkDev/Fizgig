@@ -92,8 +92,29 @@ def caption_state(output_dir):
     return queued, applied
 
 
-def read_caption(folder, key, ext):
-    p = os.path.join(folder or "", os.path.basename(key) + ext)
+def folders(run):
+    """{key prefix: folder} the run's trainer wrote (loss_log/folders.json: sub-folders, other subjects), else the
+    run's training folder alone."""
+    try:
+        with open(os.path.join(run.get("output_dir") or "", "loss_log", "folders.json"), encoding="utf-8") as f:
+            got = json.load(f)
+        if isinstance(got, dict) and got:
+            return {str(k): str(v) for k, v in got.items()}
+    except (OSError, ValueError):
+        pass
+    return {"": run.get("image_folder") or ""}
+
+
+def _where(run, key):
+    """(folder, name in it) of a training key."""
+    from fizgig.training.loss_logger import where
+    _p, folder, name = where(key, folders(run))
+    return (folder, name) if folder is not None else (run.get("image_folder") or "", os.path.basename(str(key)))
+
+
+def read_caption(run, key, ext):
+    folder, name = _where(run, key)
+    p = os.path.join(folder or "", name + ext)
     try:
         from fizgig.web.captions import read_text
         return read_text(p).strip(), True                 # a BOM dropped, Windows-1252 and UTF-16 read right
@@ -108,11 +129,11 @@ def save_caption(run, key, caption, ext):
     caption = str(caption or "").strip()
     if not caption:
         raise ValueError("The caption is empty - not saved.")
-    key = os.path.basename(str(key))
-    folder = run.get("image_folder") or ""
+    key = str(key)
+    folder, name = _where(run, key)
     wrote, queued = False, False
     if os.path.isdir(folder):
-        p = os.path.join(folder, key + ext)
+        p = os.path.join(folder, name + ext)
         tmp = p + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             f.write(caption)
@@ -143,18 +164,21 @@ def save_caption(run, key, caption, ext):
     return {"wrote": wrote, "queued": queued}
 
 
-def image_paths(folder, keys):
-    """{key: picture path} - a key is the picture's name without its extension, in the run's training folder."""
-    out = {}
-    try:
-        names = os.listdir(folder or "")
-    except OSError:
-        return out
-    want = set(keys)
-    for n in names:
-        stem, ext = os.path.splitext(n)
-        if ext.lower() in _IMAGES and stem in want and stem not in out:
-            out[stem] = os.path.join(folder, n)
+def image_paths(run, keys):
+    """{key: picture path} - a key is its folder's prefix + the picture's name without its extension."""
+    out, by = {}, {}
+    for k in keys:
+        folder, name = _where(run, k)
+        by.setdefault(folder, {})[name] = k
+    for folder, want in by.items():
+        try:
+            names = os.listdir(folder or "")
+        except OSError:
+            continue
+        for n in names:
+            stem, ext = os.path.splitext(n)
+            if ext.lower() in _IMAGES and stem in want and want[stem] not in out:
+                out[want[stem]] = os.path.join(folder, n)
     return out
 
 

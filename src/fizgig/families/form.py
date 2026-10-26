@@ -54,7 +54,7 @@ DEFAULTS = {
     "FAMILY_MP_MANUAL": False, "FAMILY_MP_FACECROPS_FIRST": True, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
-    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "",
+    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "CAPTION_TRIGGER_WORD": "",
     "RECAPTION_FIRST": "Training caption (viewpoint-aware)", "RECAPTION_SECOND": "Exhaustive detail", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
@@ -257,6 +257,7 @@ def form(desc):
              "note"),
         _row("FAMILY_KIND", "Kind of training", "radio", choices=[label for _, label in ks], default=ks[0][1],
              sets={label: kind_sets(desc, k) for k, label in ks if kind_sets(desc, k)}) if len(ks) > 1 else None,
+        _row("TRAIN_SUBFOLDERS", "Also train on its sub-folders", "check", SUBFOLDERS_HINT, default=False),
         _row("LEARNING_RATE", "Learning Rate", default=DEFAULTS["LEARNING_RATE"]),
     ]
     if desc.adaptive_lr:
@@ -818,6 +819,51 @@ def _kind(desc, values):
     return next((k for k, lab in kinds(desc) if lab == label or k == label), "standard")
 
 
+SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are used. On: the pictures in its "
+                   "sub-folders are trained on too, at any depth, each sub-folder as its own set with its own captions "
+                   "and cache, so a big dataset can stay organised. Every picture trains once an epoch, wherever it "
+                   "is. Image Prep and Captions work on one folder at a time: to caption or mask a sub-folder, choose "
+                   "it as the training folder on the Start tab.")
+
+
+def subfolders_note(desc, values, image_folder):
+    """The tick's line: what it will train (on), or what it is leaving out (off)."""
+    if not image_folder or not os.path.isdir(image_folder):
+        return ""
+    subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), launch.ft_reg_dir(desc, values)))
+    if not subs:
+        return "This training folder has no sub-folders with pictures." if values.get("TRAIN_SUBFOLDERS") else ""
+    ext = _str(values.get("DATASET_CAPTION_EXT")) or ".txt"
+    counts = [(rel, launch._media_count(f), _uncaptioned(f, ext)) for rel, f in subs]
+    more = sum(n for _r, n, _u in counts)
+    if not values.get("TRAIN_SUBFOLDERS"):
+        return (f"{len(subs)} sub-folder{'s' if len(subs) != 1 else ''} with {more:,} more picture"
+                f"{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} not trained on. Tick this to include them.")
+    own = launch._media_count(image_folder)
+    parts = ([f"(training folder) {own:,}"] if own else []) + [
+        f"{rel} {n:,}" + (f" ({u:,} without a caption)" if u else "") for rel, n, u in counts]
+    shown = " · ".join(parts[:12]) + (f" · and {len(parts) - 12} more folders" if len(parts) > 12 else "")
+    return f"Training on {len(parts)} folders, {own + more:,} pictures: {shown}"
+
+
+def _str(x):
+    return "" if x is None else str(x).strip()
+
+
+def _uncaptioned(folder, ext):
+    """Training items in a folder with no caption beside them."""
+    from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+    from fizgig.dataset.masks import is_mask_file
+    exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return 0
+    caps = {os.path.splitext(n)[0] for n in names if n.lower().endswith(ext.lower())}
+    return sum(1 for n in names if os.path.splitext(n)[1].lower() in exts and not is_mask_file(n)
+               and os.path.splitext(n)[0] not in caps)
+
+
 def state(desc, values, image_folder="", captioner="", speed_file=False, checkpoint_file=False, base_file="",
           checkpoint_path="", look_file=False, look_fetch=("", None)):
     """What the current values hide, grey out or note (see the module docstring), and force: values the page sets
@@ -842,6 +888,12 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not captioner or not values.get("KREA2_AUTO_RECAPTION"):
         hidden |= {"RECAPTION_FIRST", "RECAPTION_SECOND"}
     kind = _kind(desc, values)
+    # Also train on its sub-folders: a plain LoRA or a fine-tune (Subjects 2-4, DOP and Isolation keep one folder per
+    # subject; an edit or a slider pairs files)
+    if kind in ("edit", "slider") or values.get("FAMILY_MULTICONCEPT") or values.get("FAMILY_DOP")             or values.get("FAMILY_MULTI_PERSON"):
+        hidden.add("TRAIN_SUBFOLDERS")
+    else:
+        notes["TRAIN_SUBFOLDERS"] = subfolders_note(desc, values, image_folder)
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
             "prompts" if values.get("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")}, "prompts")
@@ -1293,6 +1345,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         extra_folders=([s(d) for d, _t, _c in CONCEPT_ROWS[:concept_count(v) - 1]]
                        if b("FAMILY_MULTICONCEPT") and desc.multi_concept and kind not in ("edit", "slider") else []),
         concept_balance=b("FAMILY_CONCEPT_BALANCE"),
+        subfolders=b("TRAIN_SUBFOLDERS"),
         FAMILY_OPTIONS=_option_values(desc, v),
     )
     return d
