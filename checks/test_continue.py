@@ -76,6 +76,16 @@ def test_queues_behind_a_run_training_here(run):
         server._run.update(state="idle")
 
 
+def test_queued_continue_edited_on_the_queue(run):
+    # Edit on the queue: its settings, saved back with __continue, are what it carries on with
+    rec = history.get(run["id"])
+    item = {"family": "krea2", "image_folder": rec["image_folder"],
+            "values": {**rec["values"], "MAX_TRAIN_EPOCHS": "20", "__continue": run["id"]}}
+    ok, _why = server._queue_starter(item)
+    assert ok and run["started"][0][1]["MAX_TRAIN_EPOCHS"] == "20" and "__continue" not in run["started"][0][1]
+    assert run["started"][0][2]["resume"] == run["newest"]
+
+
 def test_nothing_left_to_continue_from(run, tmp_path):
     import shutil
     for d in os.listdir(run["out"]):

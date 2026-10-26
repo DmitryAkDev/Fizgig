@@ -1386,15 +1386,16 @@ def _continue_point(rec):
             "unit": "epoch"}
 
 
-def _continue_run(run_id, more="", queue_ok=True):
+def _continue_run(run_id, more="", queue_ok=True, values=None):
     """Continue on Runs & outputs: the run trains on from its newest save, with its own settings and into its own
     record. more: the epochs (a fine-tune: rotations) to train to, for a run that already trained all it was set to.
-    A run training here now: it goes on the queue instead, and continues when its turn comes."""
+    values: the settings to carry on with in place of the run's (a queued Continue edited on the queue). A run
+    training here now: it goes on the queue instead, and continues when its turn comes."""
     rec = history.get(run_id)
     pt = _continue_point(rec)
     if pt is None:
         return {"error": "Nothing to continue from: this run's saved state isn't there any more."}
-    values = dict(rec.get("values") or {})
+    values = {k: v for k, v in (values or rec.get("values") or {}).items() if not str(k).startswith("__")}
     if str(more or "").strip():
         try:
             values[pt["key"]] = str(int(str(more).strip()))
@@ -1524,7 +1525,7 @@ def _queue_starter(item):
         return False, "wait: captions are being made - the next run starts when they finish"
     try:
         cid = (item.get("values") or {}).get("__continue")
-        r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False) if cid else
+        r = (_continue_run(cid, item["values"].get("__more") or "", queue_ok=False, values=item["values"]) if cid else
              _start(item["family"], item["values"], item.get("image_folder") or ""))
     except Exception as e:
         return False, str(e)
@@ -2973,7 +2974,9 @@ class Handler(BaseHTTPRequestHandler):
             it = webqueue.get((qs.get("id") or [""])[0])
             if it is None:
                 return self.json({"error": "That run has left the queue."}, 404)
-            return self.json({k: it.get(k) for k in ("id", "family", "values", "image_folder", "lora")})
+            return self.json({**{k: it.get(k) for k in ("id", "family", "image_folder", "lora")},
+                              "values": {k: v for k, v in (it.get("values") or {}).items() if not str(k).startswith("__")},
+                              "continues": bool((it.get("values") or {}).get("__continue"))})
         if path == "/api/runs/loss":                 # a run's loss by step (the loss graph); live=1: the run going now
             from fizgig.training import step_log
             if (qs.get("live") or [""])[0] == "1":
@@ -3564,6 +3567,27 @@ class Handler(BaseHTTPRequestHandler):
                                       f"The run going now saves as {lora} in that folder - give this one another LoRA "
                                       "name."}, 400)
                 if editing:
+                    was = (webqueue.get(editing) or {}).get("values") or {}
+                    if was.get("__continue"):            # a queued Continue stays one: on from the same run's save
+                        rec = history.get(was["__continue"])
+                        pt = _continue_point(rec)
+                        if pt is None:
+                            return self.json({"error": "That run's saved state isn't there any more, so it can't "
+                                                       "continue. Remove it from the queue."}, 400)
+                        if (fam != rec.get("family") or lora.lower() != str(rec.get("lora") or "").lower()
+                                or os.path.normcase(os.path.abspath(out_dir)) !=
+                                os.path.normcase(os.path.abspath(rec.get("output_dir") or "."))):
+                            return self.json({"error": "This queued run continues " + str(rec.get("lora")) + ": keep "
+                                              "its model, LoRA name and output folder. For a new run, use Add to "
+                                              "queue instead."}, 400)
+                        try:
+                            to = int(str(vals.get(pt["key"]) or "0").strip())
+                        except ValueError:
+                            to = 0
+                        if pt["kind"] == "state" and to <= pt["done"]:
+                            return self.json({"error": f"It's saved at epoch {pt['done']}: set Max Train Epochs above "
+                                                       f"{pt['done']} for it to train on."}, 400)
+                        vals = {**vals, "__continue": was["__continue"]}
                     if not webqueue.update(editing, fam, vals, folder, lora, out_dir):
                         return self.json({"error": "That run has left the queue - add this as a new one instead."},
                                          400)

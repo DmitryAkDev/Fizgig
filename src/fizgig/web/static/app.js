@@ -1723,10 +1723,6 @@ function renderWebQueue(q) {
         onclick: () => api("/api/queue/move", {id: it.id, delta: -1}).then(pollRun)}),
       el("button", {class: "btn btn-sm", text: "↓", title: "Later", disabled: i === items.length - 1,
         onclick: () => api("/api/queue/move", {id: it.id, delta: 1}).then(pollRun)}),
-      // a Continue has nothing to edit (it carries on with the run's own settings): greyed, saying why
-      it.continues ? el("button", {class: "btn btn-sm", text: "Edit", disabled: true,
-        title: "A Continue carries on with the run's own settings, so there's nothing to edit. To train it with other " +
-          "settings, remove it here and use Start again with these settings on the run instead."}) :
       el("button", {class: "btn btn-sm", text: "Edit",
         title: "Load its settings into the form on the Training tab; Save to queue puts them back in its place",
         onclick: async () => {
@@ -1734,7 +1730,8 @@ function renderWebQueue(q) {
             await loadIntoForm(await api("/api/queue/item?id=" + encodeURIComponent(it.id)));
             queueEditing({id: it.id, n: i + 1});
             showTab("training");
-            $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.`;
+            $("runStatus").textContent = `Editing queued run ${i + 1} (${it.lora}): change what you like, then Save to queue.` +
+              (it.continues ? " It still continues from its last save, so keep its LoRA name and output folder." : "");
           } catch (e) { $("runStatus").textContent = e.message; }
         }}),
       el("button", {class: "btn btn-sm", text: "Remove", onclick: () => {
