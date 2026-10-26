@@ -2447,7 +2447,7 @@ async function loadRuns() {
       }}) : null;
     // per-image loss (a family with the loss watch, when the run kept its log)
     const ilBox = el("div", {class: "il-box", style: "display:none"});
-    const ilBtn = run.image_loss ? el("button", {class: "btn btn-sm", text: "Per-image loss",
+    const ilBtn = run.image_loss ? el("button", {class: "btn btn-sm btn-lilac", text: "Per-image loss",
       title: "Each training image's loss by epoch, against the rest of the dataset - which images are hard, which are being learned, and what the loss watch decided about each.",
       onclick: async () => {
         if (ilBox.style.display !== "none") { ilBox.style.display = "none"; return; }
