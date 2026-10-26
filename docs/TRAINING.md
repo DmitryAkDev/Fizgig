@@ -43,7 +43,7 @@ A training folder is read at its top level only. Tick **Also train on its sub-fo
 - The **look-outlier warm-up** reads each folder's own Look Filter scores (`fizgig_look_scores.json`, from a scan of that folder). Pictures moved into a sub-folder's `excluded_by_look` are left out.
 - Pause and Resume carry all of it on, and **Load settings from last train** brings the tick back.
 
-**Fine-tunes** train every folder in the tree, which is the main use: a dataset of thousands of pictures sorted into folders. A regularisation folder kept inside the training folder is used only as the regularisation set, never as training pictures.
+**Fine-tunes** train every folder in the tree, which is the main use: a dataset of thousands of pictures sorted into folders. If the folder you picked for **Regularisation images** sits inside your training folder, its photos are not trained as your own pictures: they are only used as regularisation images, as they would be from any other folder.
 
 **On a pod or another computer** the tick decides what goes:
 - **Upload a folder** on the Start tab keeps the sub-folders as they are when it is ticked. Unticked, the files of the sub-folders all go into the one new folder.
