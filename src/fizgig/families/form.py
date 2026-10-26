@@ -54,7 +54,8 @@ DEFAULTS = {
     "FAMILY_MP_MANUAL": False, "FAMILY_MP_FACECROPS_FIRST": True, "FAMILY_SUBJECT_KIND": "From its captions", "FAMILY_SUBJECT_KIND2": "From its captions",
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
-    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "", "KREA2_WARMUP_LOOK": False,
+    "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "CAPTION_TRIGGER_WORD": "",
+    "RECAPTION_FIRST": "Training caption (viewpoint-aware)", "RECAPTION_SECOND": "Exhaustive detail", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
@@ -83,6 +84,15 @@ TRAINING_OPEN = ("output", "params")         # the Training tab's cards open whe
 def _row(key, label, kind="entry", hint="", choices=(), default=None, **extra):
     return {"key": key, "label": label, "kind": kind, "hint": hint, "choices": list(choices),
             "default": DEFAULTS.get(key, "") if default is None else default, **extra}
+
+
+def _recaption_choices():
+    from fizgig.krea2.caption_text import RECAPTION_CHOICES      # text only: no torch to load
+    return RECAPTION_CHOICES
+
+
+def _recaption_key(label, default):
+    return next((k for k, lab in _recaption_choices() if lab == label), default)
 
 
 def _optimizers():
@@ -322,6 +332,14 @@ def form(desc):
                  "epochs)", "check", "A stuck image gets a new caption written from what is in it, and a fresh start; "
                  "a second try goes into more detail. Still stuck after that, it is left out of training - edit its "
                  "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
+            _row("RECAPTION_FIRST", "First try uses", "choice",
+                 "The Captions tab's instruction for that task, as you've edited it there. The defaults are written "
+                 "for a person (viewpoint, whether the face shows): for a style or a concept, set both tries to suit "
+                 "your LoRA, e.g. Style, or Custom with your own instruction.",
+                 [label for _key, label in _recaption_choices()]),
+            _row("RECAPTION_SECOND", "Second try uses", "choice",
+                 "Used when the first new caption didn't help. Set separately from the first try.",
+                 [label for _key, label in _recaption_choices()]),
             _row("CAPTION_TRIGGER_WORD", "Trigger word", hint="Used by Auto-recaption (below): it adds this word at the "
                  "end of a new caption. The training folder's word, the same as the Captions tab's."),
         ]
@@ -819,6 +837,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             hidden.add("SAMPLE_STEPS")
     if not captioner:
         hidden |= {"KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
+    if not captioner or not values.get("KREA2_AUTO_RECAPTION"):
+        hidden |= {"RECAPTION_FIRST", "RECAPTION_SECOND"}
     kind = _kind(desc, values)
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
@@ -995,7 +1015,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
         hidden |= {"TARGET_LAYERS", "TRAINING_BLOCKS", "NETWORK_TYPE", "LOKR_FACTOR"}   # a slider is always a LoRA
     if kind == "slider":         # the trainer turns these off for a slider: a slider step has two targets, not one
         hidden |= {"ADAPTIVE_LR", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX", "FAMILY_EMA", "KREA2_LOSS_WATCH",
-                   "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD"}
+                   "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "CAPTION_TRIGGER_WORD",
+                   "RECAPTION_FIRST", "RECAPTION_SECOND"}
     if kind == "finetune":       # the model itself trains: no LoRA (rank, alpha), every noise level, its own continue
         hidden |= {"MIN_TIMESTEP", "MAX_TIMESTEP", "NETWORK_DIM", "NETWORK_ALPHA", "RESUME_TRAINING"}
     if str(values.get("TARGET_LAYERS") or "") != "Custom":   # the block picker is Model Area's Custom
@@ -1253,6 +1274,8 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                     "recaption": b("KREA2_AUTO_RECAPTION") and desc.loss_watch},
         captioner=captioner, caption_trigger=s("CAPTION_TRIGGER_WORD"),
         caption_overrides=caption_overrides,
+        recaption_tasks=(_recaption_key(s("RECAPTION_FIRST"), "training"),
+                         _recaption_key(s("RECAPTION_SECOND"), "exhaustive")),
         samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "later": b("SAMPLE_LATER"),
                  "until": s("SAMPLE_UNTIL_EPOCH"), "after": s("SAMPLE_EVERY_AFTER"), "width": s("SAMPLE_WIDTH"),
                  "height": s("SAMPLE_HEIGHT"), "steps": s("SAMPLE_STEPS"), "cfg": s("SAMPLE_CFG_SCALE") or

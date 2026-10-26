@@ -54,7 +54,7 @@ class Watch:
     def __init__(self, output_dir, group, user_config, driver, *, log=False, per_image_lr=False, auto_recaption=False,
                  warmup_look=False, resume=False, start_epoch=0, te_path=None, trigger_word=None,
                  trigger_position="start", recaption_instruction=None, recaption_instruction_detailed=None,
-                 captioner_path=None):
+                 captioner_path=None, recaption_task=None, recaption_task_detailed=None):
         from fizgig.training.loss_logger import PerImageLossWatch, is_enabled as env_on
         self.output_dir, self.group, self.driver, self.te_path = output_dir, group, driver, te_path
         self.trigger_word, self.trigger_position = trigger_word, trigger_position
@@ -82,11 +82,11 @@ class Watch:
         if auto_recaption:
             logger.info(f"[auto-recaption] ON - stuck images re-captioned from {self.image_dir}"
                         + (f" (trigger: '{trigger_word}')" if trigger_word else ""))
-            logger.info("[auto-recaption] first try: " + ("your edited \"Training caption\" instruction"
-                        if recaption_instruction else "the shipped \"Training caption\" instruction")
-                        + "; second try: " + ("your edited \"Exhaustive detail\" instruction"
-                        if recaption_instruction_detailed else "the shipped \"Exhaustive detail\" instruction")
-                        + " (Captions tab)")
+            first = recaption_task or ("an instruction given on the command line" if recaption_instruction
+                                       else '"Training caption" (as shipped)')
+            second = recaption_task_detailed or ("an instruction given on the command line"
+                                                 if recaption_instruction_detailed else '"Exhaustive detail" (as shipped)')
+            logger.info(f"[auto-recaption] first try: {first}; second try: {second} (Captions tab instructions)")
         self.watch = PerImageLossWatch(output_dir, apply_lr=per_image_lr, write_jsonl=True,
                                        dataset_dir=self.image_dir, caption_ext=self.caption_ext,
                                        family=self.driver.description.key)
@@ -271,7 +271,8 @@ class Watch:
             for k, img, attempt in auto:
                 try:
                     instr = (self.instr_detailed if attempt >= 2 else self.instr) or None
-                    cap = generate_caption(enc, img, detailed=attempt >= 2, instruction=instr)
+                    # 160 tokens on the first try: room for the Detailed and Style tasks (a caption ends where it ends)
+                    cap = generate_caption(enc, img, detailed=attempt >= 2, instruction=instr, max_new_tokens=160)
                     if self.trigger_word:
                         cap = (f"{cap}, {self.trigger_word}" if str(self.trigger_position) == "end"
                                else f"{self.trigger_word}, {cap}")

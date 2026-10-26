@@ -18,6 +18,7 @@ FAMILY_EDIT, ...) plus the values the app reads from its other tabs, all lower c
     recache                     unless its picture size changed (Target Megapixels): then they run, and keep what fits
     loss_watch                  {"detect", "per_image_lr", "warmup", "recaption": bool}
     captioner, caption_trigger, caption_overrides   auto-recaption: model path, trigger word, edited instructions
+    recaption_tasks             auto-recaption's (first try, second try) Captions tab task keys
     keep_checkpointing          a helper is set to train a share: gradient checkpointing stays on (both halves match)
     samples                     {"enabled", "every", "width", "height", "steps", "cfg", "negative", "seed",
                                  "at_first": ..., "prompts": [lines as typed on the Samples tab]}
@@ -748,11 +749,13 @@ def train_command(desc, inputs, plan):
             trig = _s(st.get("caption_trigger"))
             if trig and trig.lower() != "trigger_word":
                 cmd += ["--trigger_word", trig]      # leads each AI caption, as the Captions tab writes it
+            from fizgig.krea2.caption_text import RECAPTION_DEFAULTS, recaption_instruction
             ovr = st.get("caption_overrides") or {}
-            for key, flag in (("training", "--recaption_instruction"), ("exhaustive", "--recaption_instruction_detailed")):
-                instr = str(ovr.get(key, "") or "").strip()
-                if instr:
-                    cmd += [flag, instr]
+            tasks = tuple(st.get("recaption_tasks") or RECAPTION_DEFAULTS)
+            for key, (flag, task_flag) in zip(tasks, (("--recaption_instruction", "--recaption_task"),
+                                                      ("--recaption_instruction_detailed", "--recaption_task_detailed"))):
+                label, instr, edited = recaption_instruction(key, ovr)
+                cmd += [flag, instr, task_flag, f'"{label}"' + (" (your edit)" if edited else " (as shipped)")]
     elif any(lw.get(key) for key, _ in watch):
         plan.console.append("[loss-watch] per-image features skipped - they need Batch Size 1.\n")
     if any(lw.get(key) for key, _ in watch) and "--text_encoder" not in cmd:
