@@ -2359,8 +2359,10 @@ async function loadRuns() {
         alertRow.textContent = x.queued ? "A run is training now: this one is on the queue, and continues when its " +
           "turn comes." : `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
         pollRun();
-        if (!x.queued) showTab("training");
-        else loadRuns();
+        if (!x.queued) {                    // to the run card itself, as the sidebar's run opens it
+          showTab("training");
+          setTimeout(() => document.querySelector(".run-card").scrollIntoView({behavior: "smooth", block: "start"}), 50);
+        } else loadRuns();
       } catch (e) { alertRow.textContent = e.message; }
     };
     const contAsk = (why) => {
