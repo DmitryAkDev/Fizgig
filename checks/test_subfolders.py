@@ -158,3 +158,13 @@ def test_an_upload_keeps_its_subfolder_and_answers_with_the_top_folder(tmp_path,
     for bad in ("probe/../evil", "probe//x", "../x"):
         with pytest.raises(ValueError):
             server._save_upload(bad, "x.txt", io.BytesIO(b"hi"), 2)
+
+
+def test_a_finetunes_regularisation_folder_inside_is_never_a_subfolder(tree):
+    desc = get_family("krea2")
+    reg = str(tree / "outfits" / "blue")
+    v = {"FAMILY_KIND": dict(form.kinds(desc))["finetune"], "TRAIN_SUBFOLDERS": True, "FAMILY_FT_REG_DIR": reg,
+         "LORA_OUTPUT_DIR": str(tree / "out")}
+    assert form.subfolders_note(desc, v, str(tree))[0].startswith("Training on 2 folders")
+    toml = launch.dataset_toml(desc, _st(tree, FAMILY_FT=True, FAMILY_FT_REG_DIR=reg))
+    assert 'item_prefix = "outfits/blue/"' not in toml and 'item_prefix = "reg:"' in toml and "is_reg = true" in toml
