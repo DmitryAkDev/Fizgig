@@ -827,23 +827,32 @@ SUBFOLDERS_HINT = ("Off: only the pictures directly in the training folder are u
 
 
 def subfolders_note(desc, values, image_folder):
-    """The tick's line: what it will train (on), or what it is leaving out (off)."""
+    """(the tick's line, its Show all folders / Hide the folders button or None): what it will train and which
+    folders still need captions (on), or what it is leaving out (off)."""
     if not image_folder or not os.path.isdir(image_folder):
-        return ""
+        return "", None
     subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), launch.ft_reg_dir(desc, values)))
     if not subs:
-        return "This training folder has no sub-folders with pictures." if values.get("TRAIN_SUBFOLDERS") else ""
+        return ("This training folder has no sub-folders with pictures." if values.get("TRAIN_SUBFOLDERS") else ""), None
     ext = _str(values.get("DATASET_CAPTION_EXT")) or ".txt"
     counts = [(rel, launch._media_count(f), _uncaptioned(f, ext)) for rel, f in subs]
     more = sum(n for _r, n, _u in counts)
     if not values.get("TRAIN_SUBFOLDERS"):
         return (f"{len(subs)} sub-folder{'s' if len(subs) != 1 else ''} with {more:,} more picture"
-                f"{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} not trained on. Tick this to include them.")
+                f"{'s' if more != 1 else ''} {'is' if more == 1 else 'are'} not trained on. Tick this to include "
+                f"them."), None
     own = launch._media_count(image_folder)
-    parts = ([f"(training folder) {own:,}"] if own else []) + [
-        f"{rel} {n:,}" + (f" ({u:,} without a caption)" if u else "") for rel, n, u in counts]
-    shown = " · ".join(parts[:12]) + (f" · and {len(parts) - 12} more folders" if len(parts) > 12 else "")
-    return f"Training on {len(parts)} folders, {own + more:,} pictures: {shown}"
+    rows = ([("the training folder", own, _uncaptioned(image_folder, ext))] if own else []) + counts
+    line = f"Training on {len(rows)} folders, {own + more:,} pictures."
+    bare = [(rel, u) for rel, _n, u in rows if u]
+    if bare:      # Start refuses a run with uncaptioned pictures: these come first
+        line += (" Not captioned yet, so Start will refuse them: "
+                 + " · ".join(f"{rel} ({u:,})" for rel, u in bare[:8])
+                 + (f" · and {len(bare) - 8} more folders" if len(bare) > 8 else "") + ".")
+    show = bool(values.get("_SUBFOLDER_LIST"))
+    if show:
+        line += " All folders: " + " · ".join(f"{rel} {n:,}" for rel, n, _u in rows) + "."
+    return line, {"label": "Hide the folders" if show else "Show all folders", "values": {"_SUBFOLDER_LIST": not show}}
 
 
 def _str(x):
@@ -893,7 +902,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if kind in ("edit", "slider") or values.get("FAMILY_MULTICONCEPT") or values.get("FAMILY_DOP")             or values.get("FAMILY_MULTI_PERSON"):
         hidden.add("TRAIN_SUBFOLDERS")
     else:
-        notes["TRAIN_SUBFOLDERS"] = subfolders_note(desc, values, image_folder)
+        notes["TRAIN_SUBFOLDERS"], act = subfolders_note(desc, values, image_folder)
+        if act:
+            actions["TRAIN_SUBFOLDERS"] = act
     if desc.masked_training:
         prompt_slider = kind == "slider" and launch.slider_on(desc, {"FAMILY_SLIDER": True, "FAMILY_SLIDER_SOURCE": (
             "prompts" if values.get("FAMILY_SLIDER_SOURCE") == "Prompts" else "pairs")}, "prompts")

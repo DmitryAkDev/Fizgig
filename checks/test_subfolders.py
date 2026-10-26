@@ -83,9 +83,15 @@ def test_tick_hidden_with_subjects_dop_isolation_edit_slider():
 def test_the_tick_says_what_it_leaves_out_and_what_it_trains(tree):
     desc = get_family("krea2")
     v = {"LORA_OUTPUT_DIR": str(tree / "out")}
-    assert "2 sub-folders with 2 more pictures are not trained on" in form.subfolders_note(desc, v, str(tree))
-    on = form.subfolders_note(desc, {**v, "TRAIN_SUBFOLDERS": True}, str(tree))
-    assert on.startswith("Training on 3 folders, 3 pictures") and "outfits/red 1" in on
+    off, act = form.subfolders_note(desc, v, str(tree))
+    assert "2 sub-folders with 2 more pictures are not trained on" in off and act is None
+    _pic(str(tree / "outfits" / "blue" / "c.png"), caption=None)
+    on, act = form.subfolders_note(desc, {**v, "TRAIN_SUBFOLDERS": True}, str(tree))
+    assert on.startswith("Training on 3 folders, 4 pictures.") and "Start will refuse them: outfits/blue (1)" in on
+    assert "outfits/red" not in on and act["label"] == "Show all folders"            # the list waits for the button
+    full, act = form.subfolders_note(desc, {**v, "TRAIN_SUBFOLDERS": True, **act["values"]}, str(tree))
+    assert "All folders: the training folder 1 · outfits/blue 2 · outfits/red 1." in full
+    assert act["label"] == "Hide the folders"
 
 
 def test_where_takes_the_longest_prefix_and_refuses_unknown_folders():
