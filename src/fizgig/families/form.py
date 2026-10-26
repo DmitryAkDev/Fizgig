@@ -831,7 +831,9 @@ def subfolders_note(desc, values, image_folder):
     folders still need captions (on), or what it is leaving out (off)."""
     if not image_folder or not os.path.isdir(image_folder):
         return "", None
-    subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), launch.ft_reg_dir(desc, values)))
+    # the form's values name the kind of training (a label), not FAMILY_FT: a fine-tune's regularisation folder
+    reg = _str(values.get("FAMILY_FT_REG_DIR")) if desc.finetune and _kind(desc, values) == "finetune" else ""
+    subs = launch.subfolders(image_folder, (_str(values.get("LORA_OUTPUT_DIR")), reg))
     if not subs:
         return ("This training folder has no sub-folders with pictures." if values.get("TRAIN_SUBFOLDERS") else ""), None
     ext = _str(values.get("DATASET_CAPTION_EXT")) or ".txt"
