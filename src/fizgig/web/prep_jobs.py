@@ -379,7 +379,9 @@ def start_masks(folder, kind, subject_only=False, overwrite=False, sam=None):
                  + (f", {c['kept']} already there kept" if c["kept"] else "")
                  + (f", {c['no_person']} picture(s) with nothing to mask" if c["no_person"] else "")
                  + (f", {c['skipped']} skipped" if c["skipped"] else "")
-                 + ". Check them on the Captions tab (Show mask); paint over any that are wrong.\n")
+                 + ". Check them on the Captions tab (Show mask); paint over any that are wrong.\n"
+                 + ("To remake the ones kept, tick Replace masks already there and press Make masks again.\n"
+                    if c["kept"] else ""))
             end = "done"
         except Exception as e:
             _log(f"\nERROR: making masks failed — {type(e).__name__}: {e}\n")
