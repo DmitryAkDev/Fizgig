@@ -412,7 +412,9 @@ def form(desc):
     # the on/off tiles together at the bottom of the card, under every plain box (Adaptive LR stays beside its Min/Max)
     TILES = ("KREA2_LOSS_WATCH", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK", "KREA2_AUTO_RECAPTION", "FAMILY_FAST_ID",
              "FAMILY_TRAINING_ADAPTER")
-    params = [r for r in params if not (r and r["key"] in TILES)] + [r for r in params if r and r["key"] in TILES]
+    UNDER = ("RECAPTION_FIRST", "RECAPTION_SECOND")      # Auto-recaption's pickers, straight under the tiles
+    params = ([r for r in params if not (r and r["key"] in TILES + UNDER)] + [r for r in params if r and r["key"] in TILES]
+              + [r for r in params if r and r["key"] in UNDER])
     add("params", "Training Parameters", "training", params)
     if desc.masked_training:
         add("masks", "Masked training", "training", [
