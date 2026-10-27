@@ -49,18 +49,18 @@
     // a tip under the loading line, a random one each start
     (function () {
       var tips = [
-        "Preferences → Theme has eight looks for Fizgig, from Light n’ Orange to Seventies and Synthwave.",
-        "Colour-blind, low vision or sensitive to light? Preferences → Theme has Colour-blind safe, High contrast and Dim.",
-        "Each device keeps its own theme: your phone can look different from this computer.",
-        "Pause saves the run at the end of the epoch and frees the GPU; Resume carries on from there.",
-        "Start again with these settings, on any run in Runs & outputs, puts back its model, folder and settings.",
-        "Judge a run by its previews, not its loss: two runs with the same loss can look very different.",
-        "Studio tweaks a finished LoRA block by block on a live preview and saves the result as a new LoRA.",
-        "The Look Consistency Filter on Image Prep finds faces that don't match the rest. It moves them aside, never deletes.",
-        "Masked training learns the person, not the room around them: make the masks on the Image Prep tab.",
-        "LoRA Royale puts your epochs side by side, so you can pick the best one by eye.",
-        "A Context LoRA trains your new LoRA with another one active, so the two work together.",
-        "Watch a run from your phone: set a password in Preferences → Web UI and open Fizgig's address there."
+        "Preferences → Theme: eight looks for Fizgig.",
+        "Colour-blind safe, High contrast and Dim: Preferences → Theme.",
+        "Each device keeps its own theme.",
+        "Pause frees the GPU; Resume carries on.",
+        "Runs & outputs: Start again with these settings.",
+        "Judge a run by its previews, not its loss.",
+        "Studio fixes a finished LoRA block by block.",
+        "Image Prep's Look Filter finds faces that don't match.",
+        "Masked training learns the person, not the room.",
+        "LoRA Royale: pick the best epoch by eye.",
+        "Context LoRA: train alongside another LoRA.",
+        "Watch a run from your phone: Preferences → Web UI."
       ];
       document.getElementById("bootTip").textContent = "Tip: " + tips[Math.floor(Math.random() * tips.length)];
     })();
