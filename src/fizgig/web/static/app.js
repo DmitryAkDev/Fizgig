@@ -4,6 +4,15 @@
 
 const TOKEN = document.querySelector('meta[name="fizgig-token"]').content;
 const $ = (id) => document.getElementById(id);
+// a colour of the theme (style.css :root), for what CSS can't colour itself: a canvas. themeColor("--accent", 0.5)
+// is it half see-through.
+function themeColor(name, alpha = 1) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const h = /^#([0-9a-f]{6})$/i.exec(v);
+  if (alpha >= 1 || !h) return v;
+  const n = parseInt(h[1], 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
 const el = (tag, attrs = {}, ...kids) => {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -51,6 +60,8 @@ document.addEventListener("error", (e) => {
 
 // ---- start-up ----------------------------------------------------------------------------------------------
 async function boot() {
+  // the phone's browser bar takes the theme's page colour (the meta's own value covers the first paint)
+  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
   try { S.schema = await api("/api/schema"); } catch (e) { if (e.message === "login") return; throw e; }
   // Fizgig was updated while this web UI kept running the old server: some new parts won't work until it restarts
   $("outdatedBanner").style.display = S.schema.outdated ? "" : "none";
@@ -2008,18 +2019,18 @@ async function likenessShow(dir, items, run, view) {
   g.font = "11px sans-serif"; g.lineWidth = 1;
   const bands = d.thresholds || {match: 0.45, borderline: 0.30};
   for (const band of [bands.borderline, bands.match]) {         // the badge colour bands, for orientation
-    g.strokeStyle = "#34495E"; g.fillStyle = "#7F8C8D";
+    g.strokeStyle = themeColor("--chart-band"); g.fillStyle = themeColor("--chart-label");
     g.beginPath(); g.moveTo(L, y(band)); g.lineTo(W - R, y(band)); g.stroke();
     g.fillText(Math.round(band * 100) + "%", 8, y(band) + 4);
   }
-  g.strokeStyle = "#3498DB"; g.lineWidth = 2; g.beginPath();
+  g.strokeStyle = themeColor("--chart-line"); g.lineWidth = 2; g.beginPath();
   avgs.forEach((v, i) => (i ? g.lineTo(x(i), y(v)) : g.moveTo(x(i), y(v))));
   g.stroke();
   const every = Math.max(1, Math.ceil(epochs.length / 40));
   avgs.forEach((v, i) => {
-    g.fillStyle = i === best ? "#27AE60" : "#3498DB";
+    g.fillStyle = themeColor(i === best ? "--good-strong" : "--chart-line");
     g.beginPath(); g.arc(x(i), y(v), i === best ? 5 : 3.5, 0, Math.PI * 2); g.fill();
-    if (i % every === 0 || i === best) { g.fillStyle = "#95A5A6"; g.fillText(epochs[i], x(i) - 6, H - 6); }
+    if (i % every === 0 || i === best) { g.fillStyle = themeColor("--chart-axis"); g.fillText(epochs[i], x(i) - 6, H - 6); }
   });
 }
 async function likenessPicker() {
@@ -2117,6 +2128,7 @@ function rvPlay() {
   S.rv.timer = setTimeout(tick, Number($("rvSpeed").value));
 }
 function rvDraw(g, im, fr, W, H) {
+  // the video's own frames (shown here and exported): fixed colours, not the theme's
   g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
   const sc = Math.min(W / im.naturalWidth, H / im.naturalHeight), dw = im.naturalWidth * sc, dh = im.naturalHeight * sc;
   g.drawImage(im, (W - dw) / 2, (H - dh) / 2, dw, dh);
@@ -2502,15 +2514,15 @@ async function loadRuns() {
 // ---- per-image loss: each image's residual by epoch (its loss minus the dataset's mean at the same noise level, the
 // loss watch's own measure) with the watch's verdict - the desktop's Problem Images colours and words
 const IL_VERDICTS = {
-  excluded: ["#7F8C8D", "Excluded from training - two AI captions couldn't fix it. Edit the caption to re-admit it, or remove it from the dataset."],
-  stuck: ["#E74C3C", "Stuck - persistently hard, not improving. Review this image and its caption."],
-  suspect: ["#D35400", "Suspect - extremely hard from the start; slowed while the trend confirms. Worth a caption check now."],
-  watch: ["#E67E22", "Watching - looked stuck this epoch; needs more epochs to confirm."],
-  warmup: ["#8E7CC3", "Look-filter outlier easing in on an LR ramp; releases early once it starts improving."],
-  exhausted: ["#16A085", "Fully mined - improved a lot, then plateaued. Caption is fine; LR eased to prevent overbake."],
-  learning: ["#5B9BD5", "Learning - hard but improving. Leave it alone."],
-  mid: ["#95A5A6", "Normal."],
-  easy: ["#70AD47", "Learned - consistently easy. Gets a gentle x1.1 boost."]};
+  excluded: ["var(--verdict-excluded)", "Excluded from training - two AI captions couldn't fix it. Edit the caption to re-admit it, or remove it from the dataset."],
+  stuck: ["var(--verdict-stuck)", "Stuck - persistently hard, not improving. Review this image and its caption."],
+  suspect: ["var(--verdict-suspect)", "Suspect - extremely hard from the start; slowed while the trend confirms. Worth a caption check now."],
+  watch: ["var(--verdict-watch)", "Watching - looked stuck this epoch; needs more epochs to confirm."],
+  warmup: ["var(--verdict-warmup)", "Look-filter outlier easing in on an LR ramp; releases early once it starts improving."],
+  exhausted: ["var(--verdict-exhausted)", "Fully mined - improved a lot, then plateaued. Caption is fine; LR eased to prevent overbake."],
+  learning: ["var(--verdict-learning)", "Learning - hard but improving. Leave it alone."],
+  mid: ["var(--verdict-mid)", "Normal."],
+  easy: ["var(--verdict-easy)", "Learned - consistently easy. Gets a gentle x1.1 boost."]};
 const IL_ORDER = ["excluded", "stuck", "suspect", "watch", "warmup", "exhausted", "learning", "mid", "easy"];
 const IL_PROBLEMS = new Set(["excluded", "stuck", "suspect", "watch"]);
 const IL_PAGE = 48;
@@ -2573,7 +2585,7 @@ function imageLossTile(im, ymax, run, live) {
   zero.setAttribute("class", "il-zero");
   const line = document.createElementNS(ns, "polyline");
   line.setAttribute("points", pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" "));
-  line.setAttribute("stroke", col);
+  line.style.stroke = col;
   const t = document.createElementNS(ns, "title");
   t.textContent = pts.map((p) => `epoch ${p[0]}: ${p[1] >= 0 ? "+" : ""}${p[1].toFixed(4)}`).join("\n");
   svg.append(zero, line, t);
@@ -3991,18 +4003,19 @@ function meLayers() {
   }
   const t = m.tint.getContext("2d");
   t.globalCompositeOperation = "copy"; t.drawImage(m.mask, 0, 0);
-  t.globalCompositeOperation = "source-in"; t.fillStyle = "rgb(90,170,255)"; t.fillRect(0, 0, w, h);
+  t.globalCompositeOperation = "source-in"; t.fillStyle = themeColor("--mask-tint"); t.fillRect(0, 0, w, h);
   t.globalCompositeOperation = "source-over";
   const d = m.dim.getContext("2d");
-  d.globalCompositeOperation = "copy"; d.fillStyle = "#000"; d.fillRect(0, 0, w, h);
+  d.globalCompositeOperation = "copy"; d.fillStyle = themeColor("--mask-dim"); d.fillRect(0, 0, w, h);
   d.globalCompositeOperation = "destination-out"; d.drawImage(m.mask, 0, 0);
   d.globalCompositeOperation = "source-over";
   return [m.tint, m.dim];
 }
+// the mask's own pixels stay white (learned) and black (not): they are the mask, not the theme
 function meDraw() {
   const m = meState(), cv = $("meCanvas"), c = cv.getContext("2d");
   c.setTransform(1, 0, 0, 1, 0, 0);
-  c.fillStyle = "#0b0e12"; c.fillRect(0, 0, cv.width, cv.height);
+  c.fillStyle = themeColor("--mask-canvas-bg"); c.fillRect(0, 0, cv.width, cv.height);
   if (!m.pic || !m.mask) return;
   c.setTransform(m.zoom, 0, 0, m.zoom, m.ox, m.oy);
   c.imageSmoothingEnabled = m.zoom < 2;
@@ -4021,13 +4034,13 @@ function meDraw() {
   if (m.samAt) {                                       // SAM at work: a ring pulsing at the click
     const ph = (performance.now() % 1000) / 1000;
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.strokeStyle = `rgba(90,170,255,${1 - ph})`; c.lineWidth = 3;
+    c.strokeStyle = themeColor("--mask-tint", 1 - ph); c.lineWidth = 3;
     c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 6 + ph * 22, 0, Math.PI * 2); c.stroke();
-    c.fillStyle = "rgb(90,170,255)"; c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
+    c.fillStyle = themeColor("--mask-tint"); c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
   }
   if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.strokeStyle = "rgba(255,255,255,.9)"; c.lineWidth = 1;
+    c.strokeStyle = themeColor("--mask-brush", 0.9); c.lineWidth = 1;
     c.beginPath(); c.arc(m.cursor[0], m.cursor[1], Number($("meSize").value) / 2, 0, Math.PI * 2); c.stroke();
   }
 }
@@ -4449,7 +4462,7 @@ function lookRender() {
   $("lookMove").disabled = !S.prep.marked.size;
   for (const x of rows.slice(S.prep.page * LOOK_PAGE, (S.prep.page + 1) * LOOK_PAGE)) {
     const marked = S.prep.marked.has(x.path);
-    const tile = el("button", {class: "look-tile" + (marked ? " marked" : ""), style: `--verdict:${x.colour}`,
+    const tile = el("button", {class: "look-tile" + (marked ? " marked" : ""), style: `--verdict:var(--look-${x.verdict.replace(" ", "-")})`,
       title: x.blurb, onclick: () => { S.prep.marked.has(x.path) ? S.prep.marked.delete(x.path) : S.prep.marked.add(x.path); lookRender(); }},
       el("img", {loading: "lazy", src: thumbOf(x.path), alt: ""}),
       el("span", {class: "look-name", text: x.name}),
@@ -4749,11 +4762,11 @@ function studioCrop(path, initial, ok, cancel) {
     const src = () => [box.x0, box.y0, box.x1, box.y1].map((v, i) => Math.min(i % 2 ? sh : sw, Math.max(0, Math.round(v / scale))));
     const draw = () => {
       ctx.clearRect(0, 0, dw, dh); ctx.drawImage(img, 0, 0, dw, dh);
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillStyle = themeColor("--shadow", 0.55);
       ctx.fillRect(0, 0, dw, box.y0); ctx.fillRect(0, box.y1, dw, dh - box.y1);
       ctx.fillRect(0, box.y0, box.x0, box.y1 - box.y0); ctx.fillRect(box.x1, box.y0, dw - box.x1, box.y1 - box.y0);
-      ctx.strokeStyle = "#3B9FD8"; ctx.lineWidth = 2; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
-      ctx.fillStyle = "#3B9FD8";
+      ctx.strokeStyle = themeColor("--highlight-blue"); ctx.lineWidth = 2; ctx.strokeRect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
+      ctx.fillStyle = themeColor("--highlight-blue");
       for (const [hx, hy] of [[box.x0, box.y0], [box.x1, box.y0], [box.x0, box.y1], [box.x1, box.y1]])
         ctx.fillRect(hx - HANDLE, hy - HANDLE, HANDLE * 2, HANDLE * 2);
       const r = src();
@@ -5010,8 +5023,8 @@ function songDraw() {
   if (!cv || $("stSong").style.display === "none") return;
   const w = cv.clientWidth || 600, h = cv.height;
   if (cv.width !== w) cv.width = w;
-  const g = cv.getContext("2d"), css = getComputedStyle(document.documentElement);
-  const accent = (css.getPropertyValue("--accent") || "#3B9FD8").trim(), blue = "#4FA3E0", muted = "#6B7685";
+  const g = cv.getContext("2d");
+  const accent = themeColor("--accent"), blue = themeColor("--song-cursor"), muted = themeColor("--song-muted");
   g.clearRect(0, 0, w, h);
   const side = songStripSide(), pk = side && S.song.peaks[side], d = songDur();
   const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
@@ -5025,9 +5038,9 @@ function songDraw() {
     let p = 0, r = 0;
     for (let i = i0; i < i1; i++) { p = Math.max(p, pk.pk[i]); r = Math.max(r, pk.rms[i]); }
     const played = px < x;
-    g.fillStyle = played ? "rgb(70,110,170)" : "rgb(52,62,82)";
+    g.fillStyle = themeColor(played ? "--song-peak-played" : "--song-peak");
     g.fillRect(px, mid - p * mid * 0.92, 1, 2 * p * mid * 0.92);
-    g.fillStyle = played ? "rgb(140,190,250)" : "rgb(82,98,124)";
+    g.fillStyle = themeColor(played ? "--song-rms-played" : "--song-rms");
     g.fillRect(px, mid - r * mid * 0.92, 1, 2 * r * mid * 0.92);
   }
   const drag = S.song.drag;
@@ -5074,7 +5087,7 @@ function songGlowSet(id, level) {
   S.song.glow[id] = level;
   const box = document.querySelector(`#stBlocks .st-block[data-id="${CSS.escape(id)}"]`);
   const lab = box && box._rows && box._rows[0].querySelector(".st-label");
-  if (lab) lab.style.background = level ? `rgba(237, 125, 49, ${(0.85 * level / 8).toFixed(3)})` : "";
+  if (lab) lab.style.background = level ? themeColor("--cat-details", (0.85 * level / 8).toFixed(3)) : "";
 }
 
 function wireSong() {
@@ -6046,9 +6059,11 @@ async function studioPoll() {
   $("stProfile").style.display = pr ? "" : "none";
   if (pr) {
     $("stProfileLine").textContent = `${pr.lora_name} · profiled ${pr.created} · most active blocks:`;
-    const col = {"Style+Comp": "#5B9BD5", "Style/ID": "#5BB3A6", Identity: "#70AD47", "ID/Detail": "#B8A547", Details: "#ED7D31"};
+    const col = {"Style+Comp": "style-comp", "Style/ID": "style-id", Identity: "identity", "ID/Detail": "id-detail", Details: "details",
+      style_composition: "style-comp", style_ident_overlap: "style-id", identity: "identity", ident_details_overlap: "id-detail",
+      details: "details"};
     $("stPills").replaceChildren(...pr.blocks.map((b) => el("span", {class: "st-pill",
-      style: `background:${({style_composition: "#5B9BD5", style_ident_overlap: "#5BB3A6", identity: "#70AD47", ident_details_overlap: "#B8A547", details: "#ED7D31"})[b.category] || col[b.category] || "#8A96A8"}`,
+      style: `background:var(--cat-${col[b.category] || "none"})`,
       text: `${b.name}  ${Number(b.pct).toFixed(1)}%`})));
     $("stReport").style.display = pr.report ? "" : "none";
     $("stReport").href = `/api/studio/report?t=${encodeURIComponent(TOKEN)}`;
@@ -6849,11 +6864,9 @@ function rmCurveAt([dir, shape, v], x) {
 }
 function rmDrawCurves() {
   const cv = $("rmCurves"), g = cv.getContext("2d");
-  const css = getComputedStyle(document.documentElement);
-  const col = (n, d) => (css.getPropertyValue(n) || d).trim() || d;
-  const W = cv.width, H = cv.height, x0 = 36, y0 = 12, x1 = W - 12, y1 = H - 26;
+    const W = cv.width, H = cv.height, x0 = 36, y0 = 12, x1 = W - 12, y1 = H - 26;
   g.clearRect(0, 0, W, H);
-  g.strokeStyle = col("--border", "#3a3a3a"); g.fillStyle = col("--text-secondary", "#999"); g.lineWidth = 1;
+  g.strokeStyle = themeColor("--border"); g.fillStyle = themeColor("--text-secondary"); g.lineWidth = 1;
   g.font = "9px sans-serif"; g.textAlign = "right"; g.textBaseline = "middle";
   for (let i = 0; i < 5; i++) {
     const y = y0 + (y1 - y0) * i / 4;
@@ -6872,16 +6885,16 @@ function rmDrawCurves() {
     }
     g.stroke(); g.setLineDash([]);
   };
-  const accent = col("--accent", "#3B9FD8");
+  const accent = themeColor("--accent");
   line(rmCurve("Fc"), accent);
   g.textBaseline = "top"; g.fillStyle = accent;
   g.textAlign = "left"; g.fillText("reference frame 1", x0 + 4, y1 + 6);
   g.textAlign = "right"; g.fillText("last frame", x1 - 4, y1 + 6);
   if ($("rmScOn").checked) {
-    line(rmCurve("Sc"), "#E0A030", [4, 3]);
-    g.fillStyle = "#E0A030"; g.textAlign = "center"; g.fillText("step curve: first step → last step", (x0 + x1) / 2, y1 + 6);
+    line(rmCurve("Sc"), themeColor("--chart-curve"), [4, 3]);
+    g.fillStyle = themeColor("--chart-curve"); g.textAlign = "center"; g.fillText("step curve: first step → last step", (x0 + x1) / 2, y1 + 6);
   }
-  g.fillStyle = col("--text-secondary", "#999"); g.textAlign = "right"; g.fillText("reference strength", x1 - 4, y0 + 2);
+  g.fillStyle = themeColor("--text-secondary"); g.textAlign = "right"; g.fillText("reference strength", x1 - 4, y0 + 2);
 }
 function rmFill(id, values, labels) {
   const sel = $(id);
