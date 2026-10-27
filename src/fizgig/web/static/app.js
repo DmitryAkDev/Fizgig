@@ -7908,7 +7908,9 @@ function showAbout(a) {
           say.textContent = " Starting again on the newest Fizgig: the page reloads when it's back.";
           for (let i = 0; i < 200; i++) {
             await new Promise((res) => setTimeout(res, 3000));
-            const b = await api("/api/about").catch(() => null);
+            const r = await fetch("/api/about", {headers: {"X-Fizgig-Token": TOKEN}}).catch(() => null);
+            if (r && r.status === 403) return location.reload();     // started again: a new page token, a new page
+            const b = r && r.ok ? await r.json().catch(() => null) : null;
             if (b && b.commit !== a.commit) return location.reload();
             if (b && b.pod_version && b.pod_version.state === "failed") { say.textContent = " " + b.pod_version.error; return; }
           }

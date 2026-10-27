@@ -314,8 +314,10 @@ _MATCH_JS = r"""
   var wait = function () {
     if (Date.now() - t0 > 10 * 60 * 1000) return give("It didn't come back on this computer's Fizgig within 10 minutes.");
     fetch('/api/about', {credentials: 'same-origin', headers: {'X-Fizgig-Token': tok()}}).then(function (r) {
+      if (r.status === 403) { location.reload(); return null; }   // started again: a new page token, a new page
       if (!r.ok) throw new Error(r.status); return r.json();
     }).then(function (d) {
+      if (!d) return;
       if (d.commit === mine) return location.reload();
       var v = d.pod_version || {};
       if (v.state === 'failed') return give(v.error);
