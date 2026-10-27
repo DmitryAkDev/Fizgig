@@ -65,8 +65,6 @@ document.addEventListener("error", (e) => {
 
 // ---- start-up ----------------------------------------------------------------------------------------------
 async function boot() {
-  // the phone's browser bar takes the theme's page colour (the meta's own value covers the first paint)
-  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
   try { S.schema = await api("/api/schema"); } catch (e) { if (e.message === "login") return; throw e; }
   // Fizgig was updated while this web UI kept running the old server: some new parts won't work until it restarts
   $("outdatedBanner").style.display = S.schema.outdated ? "" : "none";
@@ -8640,6 +8638,39 @@ function wire() {
 // the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()
 $("loginButton").addEventListener("click", login);
 $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
+// ---- the theme: the sidebar's palette button. Each device keeps its own (a phone can differ from the desktop);
+// index.html sets it before the page paints. A theme is a :root[data-theme] block in style.css.
+const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
+  {key: "white-hot", swatch: "white-hot", name: "White Hot", say: "white, orange"}];
+function applyTheme(key) {
+  if (key) document.documentElement.dataset.theme = key;
+  else delete document.documentElement.dataset.theme;
+  try { key ? localStorage.setItem("fizgig.theme", key) : localStorage.removeItem("fizgig.theme"); } catch (e) {}
+  // the phone's browser bar takes the page colour (the meta's own value covers the first paint)
+  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
+  window.dispatchEvent(new Event("resize"));      // the canvases draw again in the new colours
+}
+function wireTheme() {
+  const btn = $("themeBtn"), menu = $("themeMenu");
+  const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
+  const render = () => {
+    const now = document.documentElement.dataset.theme || "";
+    menu.replaceChildren(...THEMES.map((t) => el("button", {class: t.key === now ? "on" : "", title: t.say,
+      onclick: () => { applyTheme(t.key); close(); }},
+      el("span", {class: "theme-swatch", style: `--sw-bg:var(--swatch-${t.swatch}-bg);--sw-accent:var(--swatch-${t.swatch}-accent)`}),
+      el("span", {text: t.name}))));
+  };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!menu.hidden) return close();
+    render(); menu.hidden = false; btn.setAttribute("aria-expanded", "true");
+  });
+  document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
+}
+wireTheme();
+
 boot().catch((e) => {             // a start that fails says so, rather than sitting on "Starting Fizgig…"
   if (e && e.message === "login") return;
   $("bootCoverText").textContent = "Fizgig didn't finish starting: " + (e && e.message || e) +

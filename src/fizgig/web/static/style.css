@@ -20,6 +20,7 @@
   --text-muted: #66778A;       /* Hints */
   --text-on-color: #FFFFFF;    /* On an accent, status or brand colour */
   --text-on-light: #10151C;    /* On a light or bright colour */
+  --text-on-subtle: var(--text-on-color); /* On --accent-subtle (the open tab, a picked option) */
   /* Accent and lines */
   --accent: #3B82F6;
   --accent-hover: #60A5FA;
@@ -67,6 +68,9 @@
   --youtube-hover: #990000;
   --win-close: #E81123;        /* The window's close button */
   --app-bar: #5B21B6;          /* The app window's bar over a pod's page */
+  /* The theme picker's swatches: each theme's page and accent */
+  --swatch-fizgig-bg: #12161D; --swatch-fizgig-accent: #3B82F6;
+  --swatch-white-hot-bg: #FFFFFF; --swatch-white-hot-accent: #F25C05;
 
   /* ---- Derived: follow the theme by themselves ---- */
   --bg-header: var(--bg-side);
@@ -1364,8 +1368,8 @@ body { font-size: 13.5px; background: var(--bg-deep); }
   overflow-y: auto; }
 .side-brand { display: flex; align-items: center; gap: 10px; padding: 2px 8px 14px; }
 .side-brand img { width: 30px; height: 30px; border-radius: 8px; }
-.side-brand span { font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.15; }
-.side-brand small { display: block; font-size: 11px; font-weight: 500; color: var(--text-muted); margin-top: 3px; }
+.side-brand > span { font-size: 16px; font-weight: 700; color: var(--text-primary); line-height: 1.15; }
+.side-brand small { display: block; white-space: nowrap; font-size: 11px; font-weight: 500; color: var(--text-muted); margin-top: 3px; }
 .tab-bar-scroller { flex-direction: column; align-items: stretch; height: auto; padding: 0; overflow: visible; gap: 2px;
   flex: 0 0 auto; }
 .side-label { font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
@@ -1374,7 +1378,7 @@ body { font-size: 13.5px; background: var(--bg-deep); }
   border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 13.5px;
   font-weight: 600; text-align: left; white-space: normal; transition: background .12s, color .12s; }
 .tab-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-.tab-item.active { background: var(--accent-subtle); color: var(--text-on-color); border: none; box-shadow: inset 3px 0 0 var(--accent); }
+.tab-item.active { background: var(--accent-subtle); color: var(--text-on-subtle); border: none; box-shadow: inset 3px 0 0 var(--accent); }
 .tab-item i { flex: 0 0 18px; width: 18px; height: 18px; background: currentColor; opacity: .9;
   -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
 .tab-item[data-tab="start"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 10.5 12 3l9 7.5V21H3z'/%3E%3Cpath d='M9 21v-7h6v7'/%3E%3C/svg%3E"); }
@@ -1481,7 +1485,7 @@ input[type="checkbox"] { -webkit-appearance: none; appearance: none; width: 32px
   border-radius: 999px; background: var(--checkbox-off); position: relative; cursor: pointer; transition: background .15s;
   vertical-align: middle; margin: 0 8px 0 0; border: none; }
 input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
-  border-radius: 50%; background: var(--text-primary); transition: transform .15s; }
+  border-radius: 50%; background: var(--text-on-color); transition: transform .15s; }
 input[type="checkbox"]:checked { background: var(--accent); }
 input[type="checkbox"]:checked::after { transform: translateX(14px); }
 .checkbox-label { display: flex; align-items: center; gap: 0; }
@@ -1577,7 +1581,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
   color: var(--text-secondary); transition: background .12s, border-color .12s, color .12s; }
 .section-card[id^="sec-"] .form-row.kind-radio .radio-row label:hover { border-color: var(--accent); color: var(--text-primary); }
 .section-card[id^="sec-"] .form-row.kind-radio .radio-row label:has(input:checked) { background: var(--accent-subtle);
-  border-color: var(--accent); color: var(--text-on-color); }
+  border-color: var(--accent); color: var(--text-on-subtle); }
 .section-card[id^="sec-"] .form-row.kind-radio .radio-row input[type="radio"] { position: absolute; opacity: 0;
   width: 1px; height: 1px; }
 /* a note: a callout across the card */
@@ -2427,3 +2431,48 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .me-saved[data-state="unsaved"] { color: var(--warning); }
 .me-saved[data-state="saved"] { color: var(--success); }
 .me-saved[data-state="none"] { color: var(--text-muted); font-weight: 400; }
+
+/* ==========================================================================
+   White Hot: a white, flat world with one hot colour, orange. Only the theme's colours change; the fixed groups
+   (over pictures, brands) and the derived shades follow by themselves.
+   ========================================================================== */
+:root[data-theme="white-hot"] {
+  color-scheme: light;
+  --bg-deep: #ECECEC; --bg-side: #FFFFFF; --bg-surface: #FFFFFF; --bg-raised: #F4F4F4; --bg-hover: #E6E6E6;
+  --bg-inset: #F6F6F6; --overlay: #F2F2F2; --shadow: #000000;
+  --text-primary: #111111; --text-secondary: #5C5C5C; --text-explain: #333333; --text-muted: #8C8C8C;
+  --text-on-color: #FFFFFF; --text-on-light: #111111; --text-on-subtle: var(--text-primary);
+  --accent: #F25C05; --accent-hover: #FF7A26; --accent-subtle: #FFE6D5; --accent-text: #D04A00; --accent-text-hover: #A33A00;
+  --border: #DADADA; --border-strong: #A0A0A0;
+  --success: #059669; --success-text: #047857; --warning: #D97706; --warning-strong: #B45309;
+  --warning-text: #A15C07; --warning-text-soft: #7A4A06; --danger: #DC2626; --danger-strong: #B91C1C;
+  --danger-text: #B91C1C; --gold: #D4A106;
+  --special-strong: #1F1F1F; --special: #4A4A4A; --special-soft: #7A7A7A; --special-text: #2A2A2A; --special-light: #111111;
+  --data-blue: #3F7FBF; --data-teal: #3A9488; --data-green: #4E8F2A; --data-olive: #9A8A2A; --data-orange: #E0661A;
+  --radius: 4px; --radius-sm: 2px;
+}
+
+/* White Hot's news card: white, with the one hot mark */
+:root[data-theme="white-hot"] .section-card.news-card { background: var(--bg-surface); border-color: var(--border);
+  border-left-color: var(--accent); box-shadow: none; }
+:root[data-theme="white-hot"] .section-card.news-card > .card-title::before { background: var(--accent);
+  box-shadow: 0 0 8px var(--accent); }
+
+/* the theme picker: a palette button beside the name in the sidebar, a small menu under it */
+.side-brand { position: relative; }
+.theme-btn { margin-left: auto; flex: 0 0 30px; width: 30px; height: 30px; display: flex; align-items: center;
+  justify-content: center; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-surface);
+  color: var(--text-secondary); cursor: pointer; padding: 0; }
+.theme-btn:hover, .theme-btn[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }
+.theme-btn i { width: 17px; height: 17px; background: currentColor;
+  -webkit-mask: var(--palette) center / contain no-repeat; mask: var(--palette) center / contain no-repeat;
+  --palette: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z'/%3E%3Ccircle cx='7.5' cy='11' r='1.2'/%3E%3Ccircle cx='10.5' cy='7' r='1.2'/%3E%3Ccircle cx='15' cy='7.5' r='1.2'/%3E%3C/svg%3E"); }
+.theme-menu { position: absolute; top: 40px; right: 8px; z-index: 1600; min-width: 180px; padding: 6px;
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--shadow) 35%, transparent); }
+.theme-menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 9px; border: 0;
+  border-radius: var(--radius-sm); background: none; color: var(--text-primary); font: inherit; cursor: pointer; text-align: left; }
+.theme-menu button:hover { background: var(--bg-hover); }
+.theme-menu button.on { color: var(--accent-text); font-weight: 700; }
+.theme-swatch { flex: 0 0 26px; height: 16px; border-radius: 3px; border: 1px solid var(--border-strong);
+  background: linear-gradient(90deg, var(--sw-bg) 0 60%, var(--sw-accent) 60% 100%); }

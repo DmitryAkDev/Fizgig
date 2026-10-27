@@ -14,6 +14,10 @@
   <meta name="apple-mobile-web-app-title" content="Fizgig">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <script>
+    // the theme this device picked, before the page paints (sidebar palette button; app.js THEMES)
+    try { var t = localStorage.getItem("fizgig.theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+  <script>
     // a pod's proxy can fail one request just after the pod comes up: the page then arrived without its styles.
     // A stylesheet or script that fails is fetched again, a little later each time.
     function fizgigRetry(el) {
@@ -45,7 +49,9 @@
     <main class="notebook-container">
       <aside class="tab-strip-row">
         <div class="side-brand"><img src="/icon.png" alt="" onerror="this.style.display='none'">
-          <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span></div>
+          <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span>
+          <button class="theme-btn" id="themeBtn" title="Theme" aria-haspopup="true" aria-expanded="false"><i></i></button>
+          <div class="theme-menu" id="themeMenu" hidden></div></div>
         <button class="tabs-toggle" id="tabsToggle" aria-expanded="false" aria-controls="tabs"
           title="The tabs"><span class="tabs-toggle-icon">☰</span><span id="tabsToggleName">1. Start</span>
           <span class="tabs-toggle-caret">▾</span></button>
