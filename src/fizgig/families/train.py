@@ -1580,7 +1580,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 else:
                     lat = driver.generate(dit, n_c, slider_bank_res, slider_bank_res, steps=desc.preview_steps,
                                           seed=seed + 1000 + i, cfg=sample_cfg_scale,
-                                          **({"neg_cond": slider_neg} if slider_neg is not None else {}))
+                                          # on the GPU with the prompt: SDXL joins the two before moving them
+                                          **({"neg_cond": {k: v[0].to(device) for k, v in slider_neg.items()}}
+                                             if slider_neg is not None else {}))
                 bank.append(driver.practice_latent(vae, lat, slider_bank_res))
         if use_speed:
             net.set_enabled(SPEED, False)
