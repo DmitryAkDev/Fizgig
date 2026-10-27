@@ -97,7 +97,8 @@ async function boot() {
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
-  $("bootCover").classList.add("done");    // the forms are there: the page is usable
+  // the forms are there: the page is usable. The cover stays at least 3.5 s from the page opening, so its tip can be read
+  setTimeout(() => $("bootCover").classList.add("done"), Math.max(0, 3500 - performance.now()));
   newsCard();
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
