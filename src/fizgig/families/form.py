@@ -517,13 +517,13 @@ def form(desc):
                  hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
                       f"thing you asked for (a frown can turn into a different, older man). Start on "
                       f"{desc.slider_guidance:g}. You can change the prompts and this while it trains, on the Run card."),
-            _row("FAMILY_SLIDER_ANCHORS", "5. Leave these alone (optional)", "text",
-                 hint="Prompts the dial must not change, one a line. For a hair-length dial meant for women, \"a photo "
+            _row("FAMILY_SLIDER_ANCHORS", *pn.get("FAMILY_SLIDER_ANCHORS", ("5. Leave these alone (optional)", None))[:1],
+                 "text", hint=pn.get("FAMILY_SLIDER_ANCHORS", (None, None))[1] or "Prompts the dial must not change, one a line. For a hair-length dial meant for women, \"a photo "
                       "of a man\" keeps men's hair as it is; for a smile dial, \"a photo of a dog\" keeps it to people. "
                       "Each step checks one of them in turn, and the previews show the first one beside the dial, so "
                       "you can see it stay put. Each one makes a step about half as long again. Empty = none."),
-            _row("FAMILY_SLIDER_ANCHOR_WEIGHT", "6. How firmly", default="1",
-                 hint="How much keeping them as they are counts against the dial itself. 1 is equal weight; higher "
+            _row("FAMILY_SLIDER_ANCHOR_WEIGHT", pn.get("FAMILY_SLIDER_ANCHOR_WEIGHT", ("6. How firmly",))[0],
+                 default="1", hint=pn.get("FAMILY_SLIDER_ANCHOR_WEIGHT", (None, None))[1] or "How much keeping them as they are counts against the dial itself. 1 is equal weight; higher "
                       "holds them tighter but can weaken the dial; lower lets a little of the change through."),
             _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check",
                  hint="Allows use at a much higher range of strengths. Affects fine detail less than a regular slider "
