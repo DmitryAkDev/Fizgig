@@ -8644,7 +8644,9 @@ const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
   {key: "light-orange", swatch: "light-orange", name: "Light n’ Orange", say: "white, orange"},
   {key: "seventies", swatch: "seventies", name: "Seventies", say: "brown, orange"},
   {key: "synthwave", swatch: "synthwave", name: "Synthwave", say: "purple, pink"},
-  {key: "graphite", swatch: "graphite", name: "Graphite", say: "grey, teal"}];
+  {key: "graphite", swatch: "graphite", name: "Graphite", say: "grey, teal"},
+  {key: "colour-safe", swatch: "colour-safe", name: "Colour-blind safe", say: "red-green colour blindness: no red against green"},
+  {key: "high-contrast", swatch: "high-contrast", name: "High contrast", say: "low vision: black, white, yellow"}];
 function applyTheme(key) {
   if (key) document.documentElement.dataset.theme = key;
   else delete document.documentElement.dataset.theme;

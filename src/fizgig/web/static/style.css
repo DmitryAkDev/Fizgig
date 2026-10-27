@@ -74,6 +74,8 @@
   --swatch-seventies-bg: #2B1D14; --swatch-seventies-accent: #D9661A;
   --swatch-synthwave-bg: #140B24; --swatch-synthwave-accent: #FF2E97;
   --swatch-graphite-bg: #161616; --swatch-graphite-accent: #0D9488;
+  --swatch-colour-safe-bg: #12161D; --swatch-colour-safe-accent: #E69F00;
+  --swatch-high-contrast-bg: #000000; --swatch-high-contrast-accent: #FFD400;
 
   /* ---- Derived: follow the theme by themselves ---- */
   --bg-header: var(--bg-side);
@@ -2504,6 +2506,38 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --accent: #0D9488; --accent-hover: #14B8A6; --accent-subtle: #134E4A; --accent-text: #5EEAD4; --accent-text-hover: #99F6E4;
   --border: #303030; --border-strong: #8A8A8A;
 }
+
+/* Colour-blind safe (red-green: deuteranopia, protanopia): the Fizgig look, with good / bad / middling and the chart
+   and block colours moved off red-against-green onto the Okabe-Ito colours: blue for good, vermilion for bad,
+   yellow for middling */
+:root[data-theme="colour-safe"] {
+  --accent: #2F8FD8; --accent-hover: #56B4E9; --accent-text: #8CCBF2; --accent-text-hover: #BFE3F8;
+  --success: #3A9AD9; --success-text: #8CCBF2;
+  --warning: #E69F00; --warning-strong: #C58800; --warning-text: #F5C55A; --warning-text-soft: #F8D88F;
+  --danger: #D55E00; --danger-strong: #B34E00; --danger-text: #F5A56B; --gold: #F0E442;
+  --special-strong: #A8578A; --special: #CC79A7; --special-soft: #D89BBE; --special-text: #E5B5D0; --special-light: #F0D3E3;
+  --data-blue: #0072B2; --data-teal: #56B4E9; --data-green: #009E73; --data-olive: #F0E442; --data-orange: #D55E00;
+}
+
+/* High contrast (low vision): black, white text, a bright yellow accent with black text on it, heavier lines */
+:root[data-theme="high-contrast"] {
+  --bg-deep: #000000; --bg-side: #000000; --bg-surface: #000000; --bg-raised: #141414; --bg-hover: #2A2A2A;
+  --bg-inset: #000000; --overlay: #000000; --shadow: #000000;
+  --text-primary: #FFFFFF; --text-secondary: #F0F0F0; --text-explain: #FFFFFF; --text-muted: #CFCFCF;
+  --text-on-color: #000000; --text-on-light: #000000; --text-on-subtle: #FFFFFF;
+  --accent: #FFD400; --accent-hover: #FFE45C; --accent-subtle: #4D4000; --accent-text: #FFE45C; --accent-text-hover: #FFF0A0;
+  --border: #FFFFFF; --border-strong: #FFFFFF; --checkbox-off: #8A8A8A;
+  --success: #3DDC84; --success-text: #7DFFB0; --warning: #FFA500; --warning-strong: #FF8C00;
+  --warning-text: #FFC966; --warning-text-soft: #FFD98F; --danger: #FF6B6B; --danger-strong: #FF4A4A;
+  --danger-text: #FF9B9B; --gold: #FFE45C;
+  --special-strong: #C9A8FF; --special: #D6BBFF; --special-soft: #E2CEFF; --special-text: #EBDDFF; --special-light: #F5EEFF;
+  --data-blue: #6CB4FF; --data-teal: #4DE8D8; --data-green: #7DFF7D; --data-olive: #FFE45C; --data-orange: #FF9E4D;
+}
+/* High contrast's brand buttons keep white text; links are underlined; a clear focus ring */
+:root[data-theme="high-contrast"] .runpod-btn, :root[data-theme="high-contrast"] .runpod-btn:hover,
+:root[data-theme="high-contrast"] .runpod-btn:visited, :root[data-theme="high-contrast"] .sec-video-play { color: var(--pic-text); }
+:root[data-theme="high-contrast"] a { text-decoration: underline; }
+:root[data-theme="high-contrast"] :focus-visible { outline: 3px solid var(--accent) !important; outline-offset: 2px; }
 
 /* the theme picker: a palette button beside the name in the sidebar, a small menu under it */
 .side-brand { position: relative; }
