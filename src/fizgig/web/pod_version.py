@@ -3,8 +3,8 @@ this computer's Fizgig (the app window on a pod's page, or a pod it has as a hel
 it asks the pod to switch to its own: the pod checks out that commit and starts its web UI again (the pod's start-up
 script runs it in a loop, so it comes straight back). The commit is kept on the volume (PIN), so every later start
 of the pod comes back to it - the start-up script still updates to master first, and this file's boot() moves it on
-to the pinned commit before the web UI binds its port. A pod set to a version of its own (FIZGIG_REF other than
-master) is left alone. Only a pod switches: another computer's Fizgig is never changed.
+to the pinned commit before the web UI binds its port. A pod set to a release of its own (FIZGIG_REF v8.9.92) is left
+alone. Only a pod switches: another computer's Fizgig is never changed.
 
 Nothing switches while the pod is busy (a run, a download, captions, a helper's job, a move): a restart would cut it
 off. The computer asks again on its next look."""
@@ -35,8 +35,9 @@ def head() -> str:
 
 
 def allowed() -> bool:
-    """A pod following master (the template's): one set to its own version keeps it."""
-    return on_pod() and str(os.environ.get("FIZGIG_REF") or "master").strip() in ("", "master")
+    """A pod following a branch (the template's master): one set to a release of its own (FIZGIG_REF v8.9.92) keeps
+    it."""
+    return on_pod() and not re.fullmatch(r"v\d+(\.\d+)*", str(os.environ.get("FIZGIG_REF") or "master").strip())
 
 
 def pinned() -> dict:
