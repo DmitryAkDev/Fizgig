@@ -431,12 +431,12 @@ def form(desc):
                  "0.1 keeps a little of the background, so the LoRA still knows your subject sits in a scene. "
                  "0 ignores it completely - then a very small mask trains hard on a few spots.", launch.MASK_FLOORS),
             _row("MASK_PRIOR", "Outside the mask, keep the model's own picture (prior preservation)", "choice",
-                 "Off: outside the mask the LoRA still learns a little of your photos (as much as the setting "
-                 "above).\n"
+                 "Off: outside the mask the LoRA still learns a little of your photos (as much as How much outside "
+                 "the mask counts says).\n"
                  "0.5, 1 or 2: outside the mask it learns to draw what the model itself would, so backgrounds and the "
                  "model's look stay its own. The higher the number, the firmer.\n"
-                 "With the setting above at 0: still worth it. 0 stops the outside learning your photos; this keeps "
-                 "it to the model's own picture.\n"
+                 "With How much outside the mask counts at 0: worth turning on too. That 0 stops the outside learning "
+                 "your photos; this teaches it the model's own picture instead.\n"
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
         ])
