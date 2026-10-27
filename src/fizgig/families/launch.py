@@ -476,6 +476,12 @@ def problems(desc, inputs):
                 raise ValueError
         except (TypeError, ValueError):
             errors.append("Slider push strength must be a number above 0")
+        if _s(inputs.get("FAMILY_SLIDER_ANCHORS")):
+            try:
+                if float(_s(inputs.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1") <= 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append("Slider anchor strength must be a number above 0")
     need = [f for f in desc.model_files if f.required]
     if desc.training_adapter and inputs.get("FAMILY_TRAINING_ADAPTER", True):
         need += [f for f in desc.model_files if f.pref_key == desc.training_adapter]
@@ -856,6 +862,10 @@ def train_command(desc, inputs, plan):
             cmd += ["--slider_prompts", base, f"{base} {_s(st.get('FAMILY_SLIDER_POS'))}",
                     f"{base} {_s(st.get('FAMILY_SLIDER_NEG'))}",       # the user's own comma, if any
                     "--slider_guidance", _s(st.get("FAMILY_SLIDER_GUIDANCE")) or f"{desc.slider_guidance:g}"]
+            anchors = [a.strip() for a in str(st.get("FAMILY_SLIDER_ANCHORS") or "").splitlines() if a.strip()]
+            if anchors:                  # prompts the dial must leave alone (#252)
+                cmd += ["--slider_anchors", *anchors,
+                        "--slider_anchor_weight", _s(st.get("FAMILY_SLIDER_ANCHOR_WEIGHT")) or "1"]
             try:        # the practice pictures (and so the training) at Target Megapixels, a square on the 16 px grid
                 side = int((float(st.get("megapixels")) * 1_000_000) ** 0.5) // 16 * 16
                 if side >= 256:

@@ -63,7 +63,8 @@ DEFAULTS = {
     "FAMILY_EDIT_DIR": "", "FAMILY_EDIT_REF": "", "FAMILY_EDIT_CAPTION": "",
     "FAMILY_EDIT_PICTURES": launch.EDIT_PHOTO_ONLY, "FAMILY_EDIT_EXTRAS_DIR": "",
     "FAMILY_SLIDER_SOURCE": "pairs", "FAMILY_SLIDER_DIR": "", "FAMILY_SLIDER_CAPTION": "",
-    "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ULTRA": False,
+    "FAMILY_SLIDER_BASE": "", "FAMILY_SLIDER_POS": "", "FAMILY_SLIDER_NEG": "", "FAMILY_SLIDER_ANCHORS": "",
+    "FAMILY_SLIDER_ANCHOR_WEIGHT": "1", "FAMILY_SLIDER_ULTRA": False,
     "FAMILY_FT_ROTATIONS": "10", "FAMILY_FT_SAVE_EVERY": "1", "FAMILY_FT_ROTATE_EVERY": "1",
     "FAMILY_FT_FUSED": True, "FAMILY_FT_REG_DIR": "", "FAMILY_FT_REG_MULT": "0.2",
     "DATASET_MEGAPIXELS": "0.25", "DATASET_CAPTION_EXT": ".txt", "ENABLE_BUCKET": True, "BUCKET_NO_UPSCALE": True,
@@ -516,6 +517,14 @@ def form(desc):
                  hint="How hard the ends are pushed apart. Higher gives a stronger dial but changes more than the one "
                       f"thing you asked for (a frown can turn into a different, older man). Start on "
                       f"{desc.slider_guidance:g}. You can change the prompts and this while it trains, on the Run card."),
+            _row("FAMILY_SLIDER_ANCHORS", "5. Leave these alone (optional)", "text",
+                 hint="Prompts the dial must not change, one a line. For a hair-length dial meant for women, \"a photo "
+                      "of a man\" keeps men's hair as it is; for a smile dial, \"a photo of a dog\" keeps it to people. "
+                      "Each step checks one of them in turn, and the previews show the first one beside the dial, so "
+                      "you can see it stay put. Each one makes a step about half as long again. Empty = none."),
+            _row("FAMILY_SLIDER_ANCHOR_WEIGHT", "6. How firmly", default="1",
+                 hint="How much keeping them as they are counts against the dial itself. 1 is equal weight; higher "
+                      "holds them tighter but can weaken the dial; lower lets a little of the change through."),
             _row("FAMILY_SLIDER_ULTRA", "Ultra mode", "check",
                  hint="Allows use at a much higher range of strengths. Affects fine detail less than a regular slider "
                       "LoRA. Best for sliders from prompts; with photo pairs, best when the change is compositional "
@@ -1069,7 +1078,7 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     pairs = (values.get("FAMILY_SLIDER_SOURCE") or SLIDER_SOURCES[srcs[0]]) != "Prompts" if len(srcs) > 1 \
         else srcs[0] == "pairs"
     hidden |= ({"FAMILY_SLIDER_BASE", "FAMILY_SLIDER_POS", "FAMILY_SLIDER_NEG", "FAMILY_SLIDER_GUIDANCE",
-                "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
+                "FAMILY_SLIDER_ANCHORS", "FAMILY_SLIDER_ANCHOR_WEIGHT", "_slider_help_prompts"} if pairs else {"_slider_plus_dir", "FAMILY_SLIDER_DIR", "FAMILY_SLIDER_CAPTION",
                                                        "_slider_help_pairs"})
     if pairs:
         notes["_slider_plus_dir"] = image_folder or "Not chosen yet - pick it on the Start tab"

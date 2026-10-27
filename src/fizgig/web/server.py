@@ -970,7 +970,7 @@ _RESUME_SAMPLE_KEYS = ("SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_H
 # SLIDER_LIVE / SLIDER_LIVE_APPLIED - named here so the server never imports torch)
 SLIDER_LIVE, SLIDER_LIVE_APPLIED = ".slider_prompts.json", ".slider_prompts_applied.json"
 _SLIDER_LIVE_KEYS = {"base": "FAMILY_SLIDER_BASE", "pos": "FAMILY_SLIDER_POS", "neg": "FAMILY_SLIDER_NEG",
-                     "guidance": "FAMILY_SLIDER_GUIDANCE"}
+                     "guidance": "FAMILY_SLIDER_GUIDANCE", "anchors": "FAMILY_SLIDER_ANCHORS"}
 
 
 def _prompt_slider_run(run) -> bool:
@@ -991,7 +991,9 @@ def _slider_live_status(run):
     v, out = run.get("values") or {}, run.get("output_dir") or ""
     want = _read_json(os.path.join(out, SLIDER_LIVE)) if out else {}
     got = _read_json(os.path.join(out, SLIDER_LIVE_APPLIED)) if out else {}
-    same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
+    lines = lambda x: [s.strip() for s in (x.splitlines() if isinstance(x, str) else (x or [])) if str(s).strip()]
+    same = lambda a, b: all(str(a.get(k) or "") == str(b.get(k) or "") for k in ("base", "pos", "neg")) and \
+        lines(a.get("anchors")) == lines(b.get("anchors")) and         float(a.get("guidance") or 0) == float(b.get("guidance") or 0)
     return {**{k: str(v.get(key) or "") for k, key in _SLIDER_LIVE_KEYS.items()}, "epoch": got.get("epoch"),
             "waiting": bool(want) and not (got and same(want, got))}
 
@@ -3722,8 +3724,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "Fill in all three: what the picture is, and what each end adds."}, 400)
                 if g <= 0:
                     return self.json({"error": "Push strength must be a number above 0."}, 400)
-                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g})
-                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}"}.items()}
+                anchors = [a.strip() for a in str(b.get("anchors") or "").splitlines() if a.strip()]
+                _write_json(os.path.join(run["output_dir"], SLIDER_LIVE), {**new, "guidance": g, "anchors": anchors})
+                changes = {_SLIDER_LIVE_KEYS[k]: v for k, v in {**new, "guidance": f"{g:g}",
+                                                                 "anchors": "\n".join(anchors)}.items()}
                 with _lock:                              # a Pause and Resume, or Start again, keeps them
                     if isinstance(_run.get("values"), dict):
                         _run["values"].update(changes)

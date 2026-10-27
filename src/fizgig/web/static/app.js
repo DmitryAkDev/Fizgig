@@ -1643,13 +1643,13 @@ async function moveOpen() {
 }
 
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
-const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance"};
+const SL_FIELDS = {base: "slBase", pos: "slPos", neg: "slNeg", guidance: "slGuidance", anchors: "slAnchors"};
 S.sl = {shown: null, edited: false};
 function sliderLiveDraw(sl) {
   const box = $("sliderLive");
   box.style.display = sl ? "" : "none";
   if (!sl) { S.sl = {shown: null, edited: false}; return; }
-  const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance]);
+  const now = JSON.stringify([sl.base, sl.pos, sl.neg, sl.guidance, sl.anchors]);
   if (!S.sl.edited && S.sl.shown !== now) {           // the run's prompts, unless you're part-way through an edit
     for (const [k, id] of Object.entries(SL_FIELDS)) $(id).value = sl[k];
     S.sl.shown = now;
