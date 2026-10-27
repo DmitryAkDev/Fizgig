@@ -71,6 +71,9 @@
   /* The theme picker's swatches: each theme's page and accent */
   --swatch-fizgig-bg: #12161D; --swatch-fizgig-accent: #3B82F6;
   --swatch-light-orange-bg: #FFFFFF; --swatch-light-orange-accent: #F25C05;
+  --swatch-seventies-bg: #2B1D14; --swatch-seventies-accent: #D9661A;
+  --swatch-synthwave-bg: #140B24; --swatch-synthwave-accent: #FF2E97;
+  --swatch-graphite-bg: #161616; --swatch-graphite-accent: #0D9488;
 
   /* ---- Derived: follow the theme by themselves ---- */
   --bg-header: var(--bg-side);
@@ -2457,6 +2460,46 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   border-left-color: var(--accent); box-shadow: none; }
 :root[data-theme="light-orange"] .section-card.news-card > .card-title::before { background: var(--accent);
   box-shadow: 0 0 8px var(--accent); }
+
+/* Seventies: chocolate brown, cream text, burnt orange, harvest gold and a dusty teal; rounder corners */
+:root[data-theme="seventies"] {
+  --bg-deep: #2B1D14; --bg-side: #22170F; --bg-surface: #3A281B; --bg-raised: #45301F; --bg-hover: #503824;
+  --bg-inset: #1F150E; --overlay: #1A110B; --shadow: #000000;
+  --text-primary: #F5E6C8; --text-secondary: #C9A97F; --text-explain: #E2CBA4; --text-muted: #8C6E4E;
+  --text-on-color: #FFF7E8; --text-on-light: #2B1D14;
+  --accent: #D9661A; --accent-hover: #EE8233; --accent-subtle: #5C3317; --accent-text: #F2A65A; --accent-text-hover: #F8C68F;
+  --border: #4F3825; --border-strong: #9C7B57;
+  --success: #7FA33A; --success-text: #B5D46E; --warning: #E5A82E; --warning-strong: #C88A14;
+  --warning-text: #F2CB6B; --warning-text-soft: #F2D9A0; --danger: #C8452B; --danger-strong: #A83620;
+  --danger-text: #F09A82; --gold: #E5B83A;
+  --special-strong: #2E7F7A; --special: #4FA39C; --special-soft: #7CB8B0; --special-text: #9ED4CC; --special-light: #C2E8E2;
+  --data-blue: #6A9FB5; --data-teal: #5FA89A; --data-green: #8FA34A; --data-olive: #C4A23A; --data-orange: #E0701F;
+  --radius: 16px; --radius-sm: 10px;
+}
+
+/* Synthwave: night purple, hot pink, neon cyan */
+:root[data-theme="synthwave"] {
+  --bg-deep: #140B24; --bg-side: #0F0820; --bg-surface: #1E1236; --bg-raised: #281846; --bg-hover: #301D52;
+  --bg-inset: #0D0719; --overlay: #0A0614; --shadow: #000000;
+  --text-primary: #F4EAFF; --text-secondary: #B49AD6; --text-explain: #D9C8F0; --text-muted: #7A639B;
+  --text-on-color: #FFFFFF; --text-on-light: #140B24;
+  --accent: #FF2E97; --accent-hover: #FF5CAE; --accent-subtle: #4A1640; --accent-text: #FF8AC8; --accent-text-hover: #FFB8DD;
+  --border: #36235A; --border-strong: #8C74B4;
+  --success: #1FC48C; --success-text: #8AF5CF; --warning: #FFB000; --warning-strong: #E09400;
+  --warning-text: #FFD36B; --warning-text-soft: #FFE0A0; --danger: #FF4D5E; --danger-strong: #E0303F;
+  --danger-text: #FF9AA4; --gold: #FFD23F;
+  --special-strong: #0891B2; --special: #22D3EE; --special-soft: #67D8EA; --special-text: #A5F3FC; --special-light: #CFFAFE;
+  --data-blue: #4D8DFF; --data-teal: #22D3EE; --data-green: #2EE6A6; --data-olive: #E6D04D; --data-orange: #FF8A3D;
+}
+
+/* Graphite: plain neutral greys, a teal accent */
+:root[data-theme="graphite"] {
+  --bg-deep: #161616; --bg-side: #111111; --bg-surface: #1E1E1E; --bg-raised: #262626; --bg-hover: #2E2E2E;
+  --bg-inset: #121212; --overlay: #0C0C0C; --shadow: #000000;
+  --text-primary: #EDEDED; --text-secondary: #A3A3A3; --text-explain: #CFCFCF; --text-muted: #707070;
+  --accent: #0D9488; --accent-hover: #14B8A6; --accent-subtle: #134E4A; --accent-text: #5EEAD4; --accent-text-hover: #99F6E4;
+  --border: #303030; --border-strong: #8A8A8A;
+}
 
 /* the theme picker: a palette button beside the name in the sidebar, a small menu under it */
 .side-brand { position: relative; }
