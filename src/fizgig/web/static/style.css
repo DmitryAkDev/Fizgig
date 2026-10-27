@@ -2461,21 +2461,25 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 :root[data-theme="light-orange"] .section-card.news-card > .card-title::before { background: var(--accent);
   box-shadow: 0 0 8px var(--accent); }
 
-/* Seventies: chocolate brown, cream text, burnt orange, harvest gold and a dusty teal; rounder corners */
+/* Seventies: chocolate brown and burnt orange, cream text, harvest gold; rounder corners */
 :root[data-theme="seventies"] {
-  --bg-deep: #2B1D14; --bg-side: #22170F; --bg-surface: #3A281B; --bg-raised: #45301F; --bg-hover: #503824;
+  --bg-deep: #2B1D14; --bg-side: #22170F; --bg-surface: #3A2618; --bg-raised: #4A2E1A; --bg-hover: #5A3519;
   --bg-inset: #1F150E; --overlay: #1A110B; --shadow: #000000;
-  --text-primary: #F5E6C8; --text-secondary: #C9A97F; --text-explain: #E2CBA4; --text-muted: #8C6E4E;
+  --text-primary: #F5E6C8; --text-secondary: #E39A55; --text-explain: #E8CFA6; --text-muted: #A8784A;
   --text-on-color: #FFF7E8; --text-on-light: #2B1D14;
-  --accent: #D9661A; --accent-hover: #EE8233; --accent-subtle: #5C3317; --accent-text: #F2A65A; --accent-text-hover: #F8C68F;
-  --border: #4F3825; --border-strong: #9C7B57;
+  --accent: #D9661A; --accent-hover: #EE8233; --accent-subtle: #7A3A12; --accent-text: #F29B4A; --accent-text-hover: #F8C68F;
+  --border: #7A4320; --border-strong: #C9783A;
   --success: #7FA33A; --success-text: #B5D46E; --warning: #E5A82E; --warning-strong: #C88A14;
   --warning-text: #F2CB6B; --warning-text-soft: #F2D9A0; --danger: #C8452B; --danger-strong: #A83620;
   --danger-text: #F09A82; --gold: #E5B83A;
-  --special-strong: #2E7F7A; --special: #4FA39C; --special-soft: #7CB8B0; --special-text: #9ED4CC; --special-light: #C2E8E2;
+  --special-strong: #C2501A; --special: #E0701F; --special-soft: #E89A5A; --special-text: #F2A65A; --special-light: #F8C68F;
   --data-blue: #6A9FB5; --data-teal: #5FA89A; --data-green: #8FA34A; --data-olive: #C4A23A; --data-orange: #E0701F;
   --radius: 16px; --radius-sm: 10px;
 }
+/* Seventies' orange on the brown: titles, the sidebar's edge, a stripe across the top of each card */
+:root[data-theme="seventies"] h1, :root[data-theme="seventies"] .card-title { color: var(--accent-text); }
+:root[data-theme="seventies"] .tab-strip-row { border-right: 3px solid var(--accent); }
+:root[data-theme="seventies"] .section-card { border-top: 4px solid var(--accent); }
 
 /* Synthwave: night purple, hot pink, neon cyan */
 :root[data-theme="synthwave"] {
