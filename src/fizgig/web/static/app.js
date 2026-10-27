@@ -8638,7 +8638,7 @@ function wire() {
 // the login box works before anything else: a page that needs a login stops boot() at its first request, before wire()
 $("loginButton").addEventListener("click", login);
 $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") login(); });
-// ---- the theme: the sidebar's palette button. Each device keeps its own (a phone can differ from the desktop);
+// ---- the theme: the Theme card at the top of Preferences. Each device keeps its own (a phone can differ from the desktop);
 // index.html sets it before the page paints. A theme is a :root[data-theme] block in style.css.
 const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
   {key: "light-orange", swatch: "light-orange", name: "Light n’ Orange", say: "white, orange"},
@@ -8646,7 +8646,8 @@ const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
   {key: "synthwave", swatch: "synthwave", name: "Synthwave", say: "purple, pink"},
   {key: "graphite", swatch: "graphite", name: "Graphite", say: "grey, teal"},
   {key: "colour-safe", swatch: "colour-safe", name: "Colour-blind safe", say: "red-green colour blindness: no red against green"},
-  {key: "high-contrast", swatch: "high-contrast", name: "High contrast", say: "low vision: black, white, yellow"}];
+  {key: "high-contrast", swatch: "high-contrast", name: "High contrast", say: "low vision: black, white, yellow"},
+  {key: "dim", swatch: "dim", name: "Dim", say: "light sensitivity, migraine: low glare, soft warm greys"}];
 function applyTheme(key) {
   if (key) document.documentElement.dataset.theme = key;
   else delete document.documentElement.dataset.theme;
@@ -8656,22 +8657,14 @@ function applyTheme(key) {
   window.dispatchEvent(new Event("resize"));      // the canvases draw again in the new colours
 }
 function wireTheme() {
-  const btn = $("themeBtn"), menu = $("themeMenu");
-  const close = () => { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); };
   const render = () => {
     const now = document.documentElement.dataset.theme || "";
-    menu.replaceChildren(...THEMES.map((t) => el("button", {class: t.key === now ? "on" : "", title: t.say,
-      onclick: () => { applyTheme(t.key); close(); }},
+    $("themePick").replaceChildren(...THEMES.map((t) => el("button", {class: t.key === now ? "on" : "",
+      "aria-pressed": String(t.key === now), onclick: () => { applyTheme(t.key); render(); }},
       el("span", {class: "theme-swatch", style: `--sw-bg:var(--swatch-${t.swatch}-bg);--sw-accent:var(--swatch-${t.swatch}-accent)`}),
-      el("span", {text: t.name}))));
+      el("span", {class: "theme-name", text: t.name}), el("small", {text: t.say}))));
   };
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!menu.hidden) return close();
-    render(); menu.hidden = false; btn.setAttribute("aria-expanded", "true");
-  });
-  document.addEventListener("click", (e) => { if (!menu.hidden && !menu.contains(e.target)) close(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  render();
   document.querySelector('meta[name="theme-color"]').content = themeColor("--bg-deep");
 }
 wireTheme();

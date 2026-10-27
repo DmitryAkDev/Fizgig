@@ -49,9 +49,7 @@
     <main class="notebook-container">
       <aside class="tab-strip-row">
         <div class="side-brand"><img src="/icon.png" alt="" onerror="this.style.display='none'">
-          <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span>
-          <button class="theme-btn" id="themeBtn" title="Theme" aria-haspopup="true" aria-expanded="false"><i></i></button>
-          <div class="theme-menu" id="themeMenu" hidden></div></div>
+          <span>Fizgig<small>LoRA &amp; Fine-tune Studio</small></span></div>
         <button class="tabs-toggle" id="tabsToggle" aria-expanded="false" aria-controls="tabs"
           title="The tabs"><span class="tabs-toggle-icon">☰</span><span id="tabsToggleName">1. Start</span>
           <span class="tabs-toggle-caret">▾</span></button>
@@ -1756,6 +1754,11 @@
           <div class="tab-banner">
             <h1>Preferences</h1>
             <p>Where each model's files are on this machine. A path saves when you leave its box.</p>
+          </div>
+          <div class="section-card">
+            <div class="card-title"><span>Theme</span></div>
+            <div class="card-desc">How Fizgig looks on this device: a phone or another computer keeps its own.</div>
+            <div class="card-content"><div class="theme-pick" id="themePick"></div></div>
           </div>
           <div id="prefsForm"></div>
         </section>
