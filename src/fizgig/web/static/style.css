@@ -2479,10 +2479,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --data-blue: #6A9FB5; --data-teal: #5FA89A; --data-green: #8FA34A; --data-olive: #C4A23A; --data-orange: #E0701F;
   --radius: 16px; --radius-sm: 10px;
 }
-/* Seventies' orange on the brown: titles, the sidebar's edge, a stripe across the top of each card */
+/* Seventies' orange on the brown: titles, the sidebar's edge, the top edge of each card (colours only, the same widths) */
 :root[data-theme="seventies"] h1, :root[data-theme="seventies"] .card-title { color: var(--accent-text); }
-:root[data-theme="seventies"] .tab-strip-row { border-right: 3px solid var(--accent); }
-:root[data-theme="seventies"] .section-card { border-top: 4px solid var(--accent); }
+:root[data-theme="seventies"] .tab-strip-row { border-right-color: var(--accent); }
+:root[data-theme="seventies"] .section-card { border-top-color: var(--accent); }
 
 /* Synthwave: night purple, hot pink, neon cyan */
 :root[data-theme="synthwave"] {
