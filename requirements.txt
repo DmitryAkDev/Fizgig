@@ -1,4 +1,5 @@
 # Fizgig - Independent Klein 9B LoRA Trainer
+# (pod_version deps test: this line is removed again)
 
 # PyTorch with CUDA 12.8 (supports RTX 30xx / 40xx / 50xx Blackwell)
 # Requires NVIDIA driver 555+ on Windows, 550+ on Linux.
