@@ -722,10 +722,10 @@ def song_peaks(path, bins=2000):
 
 
 # ---- what the page draws for a model (the desktop tab's layout, from the family's description) ----------------
-# the colours are the theme's (style.css :root --cat-*)
-CAT_COLOR = {"style_composition": "var(--cat-style-comp)", "style_ident_overlap": "var(--cat-style-id)",
-             "identity": "var(--cat-identity)", "ident_details_overlap": "var(--cat-id-detail)",
-             "details": "var(--cat-details)", "look": "var(--cat-look)"}
+# the colours are the theme's (style.css :root --data-*)
+CAT_COLOR = {"style_composition": "var(--data-blue)", "style_ident_overlap": "var(--data-teal)",
+             "identity": "var(--data-green)", "ident_details_overlap": "var(--data-olive)",
+             "details": "var(--data-orange)", "look": "var(--data-blue)"}
 CAT_SHORT = {"style_composition": "Style+Comp", "style_ident_overlap": "Style/ID", "identity": "Identity",
              "ident_details_overlap": "ID/Detail", "details": "Details", "look": "Look"}
 # Klein's (category_masters) built-in presets: which categories stay ticked

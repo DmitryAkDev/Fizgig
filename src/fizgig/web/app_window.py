@@ -209,7 +209,7 @@ _BLOCK_JS = r"""
   var a = document.createElement('button');
   a.textContent = 'Open anyway';
   a.title = "Use it as it is: most of it works, something newer than this computer's Fizgig may not";
-  a.style.cssText = 'margin-left:10px;background:none;color:var(--text-primary, #F0F4F8);border:1px solid var(--app-bar-line, #6B7280);border-radius:999px;' +
+  a.style.cssText = 'margin-left:10px;background:none;color:var(--text-primary, #F0F4F8);border:1px solid var(--text-muted, #6B7280);border-radius:999px;' +
     'padding:6px 16px;cursor:pointer;font:600 14px Segoe UI,system-ui,sans-serif';
   a.onclick = function () { o.remove(); };
   c.appendChild(h); c.appendChild(p); c.appendChild(b); c.appendChild(a); o.appendChild(c);
@@ -226,13 +226,13 @@ _NOTE_JS = r"""
   n.id = 'fizgigBuildNote';
   n.style.cssText = 'position:fixed;top:52px;left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;' +
     'align-items:center;gap:8px;max-width:70vw;padding:6px 8px 6px 14px;border-radius:10px;background:var(--app-note-bg, #3A2A08);' +
-    'border:1px solid var(--warning, #F59E0B);color:var(--warn-text, #FCD34D);font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px color-mix(in srgb, var(--shadow, #000) 45%, transparent)';
+    'border:1px solid var(--warning, #F59E0B);color:var(--warning-text, #FCD34D);font:12.5px Segoe UI,system-ui,sans-serif;box-shadow:0 2px 10px color-mix(in srgb, var(--shadow, #000) 45%, transparent)';
   var t = document.createElement('span');
   t.textContent = text;
   var x = document.createElement('button');
   x.textContent = '✕';
   x.title = 'Hide this';
-  x.style.cssText = 'background:none;color:var(--warn-text, #FCD34D);border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
+  x.style.cssText = 'background:none;color:var(--warning-text, #FCD34D);border:0;cursor:pointer;font:13px Segoe UI,system-ui,sans-serif';
   var sp = document.getElementById('fizgigAppBarSpace');
   x.onclick = function () { n.remove(); if (sp) sp.style.height = '54px'; };
   n.appendChild(t); n.appendChild(x);
