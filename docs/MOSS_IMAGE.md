@@ -33,8 +33,8 @@ python -m fizgig.scripts.fetch_models --family moss_image
 
 | Preset | Rank | Learning rate | Epochs | Size |
 |---|---|---|---|---|
+| **MOSS-Image Fast** (the default) | 16 | 1e-4 | 70 | 0.25 MP |
 | **MOSS-Image Standard** | 32 | 1e-4 | 70 | 1 MP |
-| **MOSS-Image Fast** | 16 | 1e-4 | 70 | 0.25 MP |
 | **MOSS-Image Style** | 16 | 5e-5 | 50 | 1 MP |
 | **MOSS-Image Slider** | 8 | 2e-4 | 20 | 1 MP |
 | **MOSS-Image Fine-tune** | — | 1e-5 | rotations | 1 MP |
