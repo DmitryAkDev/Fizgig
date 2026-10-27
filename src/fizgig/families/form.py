@@ -435,8 +435,6 @@ def form(desc):
                  "the mask counts says).\n"
                  "0.5, 1 or 2: outside the mask it learns to draw what the model itself would, so backgrounds and the "
                  "model's look stay its own. The higher the number, the firmer.\n"
-                 "With How much outside the mask counts at 0: worth turning on too. That 0 stops the outside learning "
-                 "your photos; this teaches it the model's own picture instead.\n"
                  "Speed: each step takes up to about half as long again.",
                  launch.MASK_PRIORS, hint_labels=True),                 # one spaced line per choice, name in bold
         ])
