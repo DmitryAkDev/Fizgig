@@ -43,7 +43,28 @@
   </header>
   <!-- over the page until its forms are built: a slow start looks like a start, not a broken page (#249) -->
   <div class="boot-cover" id="bootCover"><span class="me-spin boot-spin"></span>
-    <span id="bootCoverText">Starting Fizgig…</span></div>
+    <span id="bootCoverText">Starting Fizgig…</span>
+    <p class="boot-tip" id="bootTip"></p></div>
+  <script>
+    // a tip under the loading line, a random one each start
+    (function () {
+      var tips = [
+        "Preferences → Theme has eight looks for Fizgig, from Light n’ Orange to Seventies and Synthwave.",
+        "Colour-blind, low vision or sensitive to light? Preferences → Theme has Colour-blind safe, High contrast and Dim.",
+        "Each device keeps its own theme: your phone can look different from this computer.",
+        "Pause Training saves at the end of the epoch and frees the GPU; Resume carries on from there.",
+        "Load settings from last train, on the Training tab, puts back exactly what your last run used.",
+        "Judge a run by its previews, not its loss: two runs with the same loss can look very different.",
+        "Studio tweaks a finished LoRA block by block on a live preview and saves the result as a new LoRA.",
+        "The Look Consistency Filter on Image Prep finds faces that don't match the rest. It moves them aside, never deletes.",
+        "Masked training learns the person, not the room around them: make the masks on the Image Prep tab.",
+        "LoRA Royale puts your epochs side by side, so you can pick the best one by eye.",
+        "A Context LoRA trains your new LoRA with another one active, so the two work together.",
+        "Watch a run from your phone: set a password in Preferences → Web UI and open Fizgig's address there."
+      ];
+      document.getElementById("bootTip").textContent = "Tip: " + tips[Math.floor(Math.random() * tips.length)];
+    })();
+  </script>
 
   <div class="app-window-body">
     <main class="notebook-container">

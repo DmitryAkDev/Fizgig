@@ -2431,6 +2431,7 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   align-items: center; justify-content: center; gap: 14px; color: var(--text-secondary); font-size: 11pt; }
 .boot-cover.done { display: none; }
 .boot-spin { width: 28px; height: 28px; border-width: 3px; }
+.boot-tip { max-width: 520px; margin: 10px 16px 0; text-align: center; color: var(--text-muted); font-size: 10pt; line-height: 1.45; }
 .me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }
 
 .me-saved { font-size: 9.5pt; font-weight: 600; }
