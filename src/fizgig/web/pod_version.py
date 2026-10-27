@@ -135,7 +135,7 @@ def match(commit, by="", auto=False) -> dict:
         return {"busy": f"{pin['by']} put it on its Fizgig {int((time.time() - float(pin['at'])) / 60)} minutes ago: "
                         "open the pod from this computer to switch it to this one's."}
     with _lock:
-        if _st["state"] == "switching":
+        if _st["state"] == "switching" and time.time() - _st["at"] < 15 * 60:   # else it never came back: again
             return {"switching": True}
         _st.update(state="switching", commit=commit, error="", at=time.time())
     threading.Thread(target=_switch, args=(commit, by), daemon=True, name="pod-version").start()

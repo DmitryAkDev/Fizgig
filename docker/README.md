@@ -28,6 +28,10 @@ Close the tab whenever you like: the run carries on, and you can come back from 
 
 ---
 
+## The same Fizgig as your computer
+
+When your own Fizgig opens a pod (in its app window, or a pod on its Pods tab), it puts the pod on the same version as your computer, so the two always work together: moving a run, helpers and the app window need that. The pod switches in a few seconds (a minute or two when that version needs other packages) and keeps the version at every start after that. It never switches while it's busy (a run, a download, captions, a move); it does once it's free. A pod set to a release with `FIZGIG_REF` (below) keeps its own version. The pod's **About** box says which computer's version it runs, and **Use the newest Fizgig** there puts it back on the newest.
+
 ## Keep a pod on one version
 
 **A pod runs the newest Fizgig each time it starts.** That is how it gets updates: stop and start it, or restart it, and it's up to date. In the middle of a job you may want it to stay exactly as it is. Set the environment variable `FIZGIG_REF` to a release's version, and the pod runs that version at every start until you change it:
