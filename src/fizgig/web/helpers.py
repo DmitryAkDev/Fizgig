@@ -826,6 +826,8 @@ def _check_loop():
                 if r.get("pod") and r.get("state") == "ready" and r.get("build") not in ("", "same", None) and \
                         _lead["mine"]:
                     _match_pod(h, lv, _lead["mine"])
+                elif r.get("pod") and r.get("state") == "busy" and r.get("build") not in ("", "same", None):
+                    lv["match"] = "It switches to this computer's Fizgig once its run is done"
                 elif r.get("build") in ("", "same"):
                     lv["match"] = ""
             if _local.get("uuid") and _local_clash():

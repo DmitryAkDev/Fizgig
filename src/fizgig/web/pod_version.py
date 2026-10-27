@@ -132,7 +132,8 @@ def match(commit, by="", auto=False) -> dict:
         return {"busy": f"It switches once it's free: {why}."}
     pin = pinned()
     if auto and pin.get("by") and pin["by"] != by and time.time() - float(pin.get("at") or 0) < 30 * 60:
-        return {"busy": f"{pin['by']} put it on its Fizgig {int((time.time() - float(pin['at'])) / 60)} minutes ago: "
+        mins = max(1, int((time.time() - float(pin["at"])) / 60))
+        return {"busy": f"{pin['by']} put it on its Fizgig {mins} minute{'s' if mins > 1 else ''} ago: "
                         "open the pod from this computer to switch it to this one's."}
     with _lock:
         if _st["state"] == "switching" and time.time() - _st["at"] < 15 * 60:   # else it never came back: again

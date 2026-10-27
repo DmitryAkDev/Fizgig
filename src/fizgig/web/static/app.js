@@ -7528,6 +7528,8 @@ function helpActivity(h) {
   const a = h.activity;
   if (h.state === "login") return ["Its password changed or its login ran out: add it again with its password", "warn", null];
   if (h.state === "away") return ["Not answering: is it on, awake and running Fizgig?", "muted", null];
+  if (h.build && h.build !== "same" && h.match && h.state === "busy") return [`Training its own run (${h.training}). ` +
+    h.match, "muted", null];
   if (h.build && h.build !== "same" && h.match) return [h.match.startsWith("Switching") ? h.match + "…" :
     `Another Fizgig version there. ${h.match}`, h.match.startsWith("Switching") ? "muted" : "warn", null];
   if (h.build && h.build !== "same") return [{mine: "Newer Fizgig there: update this computer to use it",
