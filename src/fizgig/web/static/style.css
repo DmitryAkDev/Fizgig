@@ -70,7 +70,7 @@
   --app-bar: #5B21B6;          /* The app window's bar over a pod's page */
   /* The theme picker's swatches: each theme's page and accent */
   --swatch-fizgig-bg: #12161D; --swatch-fizgig-accent: #3B82F6;
-  --swatch-white-hot-bg: #FFFFFF; --swatch-white-hot-accent: #F25C05;
+  --swatch-light-orange-bg: #FFFFFF; --swatch-light-orange-accent: #F25C05;
 
   /* ---- Derived: follow the theme by themselves ---- */
   --bg-header: var(--bg-side);
@@ -2433,10 +2433,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
 .me-saved[data-state="none"] { color: var(--text-muted); font-weight: 400; }
 
 /* ==========================================================================
-   White Hot: a white, flat world with one hot colour, orange. Only the theme's colours change; the fixed groups
+   Light n’ Orange: a white, flat world with one hot colour, orange. Only the theme's colours change; the fixed groups
    (over pictures, brands) and the derived shades follow by themselves.
    ========================================================================== */
-:root[data-theme="white-hot"] {
+:root[data-theme="light-orange"] {
   color-scheme: light;
   --bg-deep: #ECECEC; --bg-side: #FFFFFF; --bg-surface: #FFFFFF; --bg-raised: #F4F4F4; --bg-hover: #E6E6E6;
   --bg-inset: #F6F6F6; --overlay: #F2F2F2; --shadow: #000000;
@@ -2452,10 +2452,10 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   --radius: 4px; --radius-sm: 2px;
 }
 
-/* White Hot's news card: white, with the one hot mark */
-:root[data-theme="white-hot"] .section-card.news-card { background: var(--bg-surface); border-color: var(--border);
+/* Light n’ Orange's news card: white, with the one hot mark */
+:root[data-theme="light-orange"] .section-card.news-card { background: var(--bg-surface); border-color: var(--border);
   border-left-color: var(--accent); box-shadow: none; }
-:root[data-theme="white-hot"] .section-card.news-card > .card-title::before { background: var(--accent);
+:root[data-theme="light-orange"] .section-card.news-card > .card-title::before { background: var(--accent);
   box-shadow: 0 0 8px var(--accent); }
 
 /* the theme picker: a palette button beside the name in the sidebar, a small menu under it */

@@ -8641,7 +8641,7 @@ $("loginPassword").addEventListener("keydown", (e) => { if (e.key === "Enter") l
 // ---- the theme: the sidebar's palette button. Each device keeps its own (a phone can differ from the desktop);
 // index.html sets it before the page paints. A theme is a :root[data-theme] block in style.css.
 const THEMES = [{key: "", swatch: "fizgig", name: "Fizgig", say: "dark, blue"},
-  {key: "white-hot", swatch: "white-hot", name: "White Hot", say: "white, orange"}];
+  {key: "light-orange", swatch: "light-orange", name: "Light n’ Orange", say: "white, orange"}];
 function applyTheme(key) {
   if (key) document.documentElement.dataset.theme = key;
   else delete document.documentElement.dataset.theme;
