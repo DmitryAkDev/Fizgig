@@ -3842,6 +3842,11 @@ async function maskInfo() {
   S.prep.maskOpts = r;
   maskShow(r);
 }
+// A model download's failure, for the hint beside its button: an expired Hugging Face login reads as itself.
+function downloadFailedText(err) {
+  return /^Your Hugging Face login/.test(err || "") ? ` ${err}` : ` The download failed: ${err}`;
+}
+
 // SAM 3.1 on the masks card: words instead of the person finder's choices; its file is downloaded from here
 function maskSamShow(r) {
   const on = $("maskSam").checked, sam = r.sam || {}, f = sam.fetch || {};
@@ -3866,7 +3871,7 @@ function maskSamShow(r) {
     st.replaceChildren(el("button", {class: "btn btn-primary",
       text: f.state === "failed" ? "Try the download again" : `Download SAM 3.1 (${sam.gb || 1.75} GB)`, onclick: async () => {
         await api("/api/masks/sam_fetch", {}).catch((e) => { st.textContent = e.message; });
-        maskInfo(); }}), el("span", {class: "field-hint", text: f.state === "failed" ? ` The download failed: ${f.error}` :
+        maskInfo(); }}), el("span", {class: "field-hint", text: f.state === "failed" ? downloadFailedText(f.error) :
         " Needed once, before the first masks."}));
   }
   $("maskSamPreview").disabled = !on || !sam.path || !r.pictures || S.prep.running;
