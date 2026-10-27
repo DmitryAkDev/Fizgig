@@ -2,5 +2,6 @@ pytest>=8
 numpy
 pillow
 safetensors
+tqdm                # families/train.py (the slider anchor checks import it)
 # torch: CPU is enough. If it isn't installed yet:
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
