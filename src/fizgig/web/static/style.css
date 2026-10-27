@@ -2431,7 +2431,12 @@ a.pick-pill-vast:hover { border-color: var(--success); }
   align-items: center; justify-content: center; gap: 14px; color: var(--text-secondary); font-size: 11pt; }
 .boot-cover.done { display: none; }
 .boot-spin { width: 28px; height: 28px; border-width: 3px; }
-.boot-tip { max-width: 520px; margin: 10px 16px 0; text-align: center; color: var(--text-muted); font-size: 10pt; line-height: 1.45; }
+.boot-tip { display: flex; align-items: center; gap: 10px; max-width: calc(100% - 32px); margin: 18px 16px 0;
+  padding: 8px 16px 8px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-surface);
+  color: var(--text-explain); font-size: 10.5pt; animation: boot-tip-in .5s ease-out .15s both; }
+.boot-tip b { flex: none; padding: 2px 9px; border-radius: 999px; background: var(--accent-subtle); color: var(--accent-text);
+  font-size: 8pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+@keyframes boot-tip-in { from { opacity: 0; transform: translateY(6px); } }
 .me-stage canvas { display: block; width: 100%; touch-action: none; cursor: none; }
 
 .me-saved { font-size: 9.5pt; font-weight: 600; }

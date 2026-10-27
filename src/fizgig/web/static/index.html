@@ -44,7 +44,7 @@
   <!-- over the page until its forms are built: a slow start looks like a start, not a broken page (#249) -->
   <div class="boot-cover" id="bootCover"><span class="me-spin boot-spin"></span>
     <span id="bootCoverText">Starting Fizgig…</span>
-    <p class="boot-tip" id="bootTip"></p></div>
+    <p class="boot-tip"><b>Tip</b><span id="bootTip"></span></p></div>
   <script>
     // a tip under the loading line, a random one each start
     (function () {
@@ -62,7 +62,7 @@
         "Context LoRA: train alongside another LoRA.",
         "Watch a run from your phone: Preferences → Web UI."
       ];
-      document.getElementById("bootTip").textContent = "Tip: " + tips[Math.floor(Math.random() * tips.length)];
+      document.getElementById("bootTip").textContent = tips[Math.floor(Math.random() * tips.length)];
     })();
   </script>
 
