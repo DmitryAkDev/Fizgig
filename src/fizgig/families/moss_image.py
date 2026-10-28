@@ -320,7 +320,8 @@ MOSS_IMAGE = FamilyDescription(
         FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="60:7:30:15:2",
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
-                          "fine detail are refined. Empty = the model's own schedule, about 11%.",
+                          "fine detail are refined. Empty = the model's own schedule, about 11%. In a fine-tune, "
+                          "the epochs in a Split or Slide are rotations.",
                      # Slide, not a sudden drop: on a hard dataset likeness dipped two epochs after a drop from 75
                      # to 40. Of eight Slide runs there, 60 until epoch 7 easing to 30 by epoch 15, with every 2nd
                      # epoch after back at 60 (the tick, on by default), led from epoch 12 and still held 71% at

@@ -197,6 +197,11 @@ class MOSSImageDriver(FamilyDriver):
                                    ("proj.k.weight", "proj.qkv.weight", 1, 3),
                                    ("proj.v.weight", "proj.qkv.weight", 2, 3)))
 
+    def ft_cycle(self, cycle, offset, total):
+        # a fine-tune's Clean-end share counts rotations, not epochs: with several windows each epoch trains one, so
+        # an epoch-counted Split / Slide gave each window a different share, and its epochs moved with the card
+        self._ft_cycle = max(1, int(cycle))
+
     # ---- encoding -------------------------------------------------------------------------------
     @torch.no_grad()
     def encode_images(self, vae, images):
@@ -251,7 +256,8 @@ class MOSSImageDriver(FamilyDriver):
             first, until, rest = parts[:3]
             end = parts[3] if len(parts) >= 4 else until
             every = int(parts[4]) if len(parts) == 5 else 0
-            e = self.epoch
+            cyc = getattr(self, "_ft_cycle", 0)
+            e = -(-self.epoch // cyc) if cyc else self.epoch      # a fine-tune: the rotation this epoch is in
             share = first if e <= until else rest if e >= end else first + (rest - first) * (e - until) / (end - until)
             if every > 0 and e > end and (e - end) % every == 0:
                 share = first                     # a refresh epoch at the first share
@@ -259,7 +265,9 @@ class MOSSImageDriver(FamilyDriver):
         cached = getattr(self, "_mu_cached", None)
         if cached is None or cached[0] != pct:
             cached = self._mu_cached = (pct, mu_for_clean_share(pct))
-            logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5) from epoch {self.epoch}, "
+            cyc = getattr(self, "_ft_cycle", 0)
+            when = f"rotation {-(-self.epoch // cyc)} (epoch {self.epoch})" if cyc else f"epoch {self.epoch}"
+            logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5) from {when}, "
                         f"Z mean {cached[1]:.2f} (reference -1.09, about 11%)")
         return cached[1]
 
