@@ -2108,14 +2108,18 @@ def remember_folder(path):
     key = os.path.normcase(os.path.abspath(path))
     old = [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
            and os.path.normcase(os.path.abspath(p)) != key]
-    update_last_used({"recent_folders": [path] + old[:RECENT_KEEP - 1]})
+    update_last_used({"recent_folders": [path] + old[:RECENT_KEEP - 1],      # picked again: on the list again
+                      "hidden_folders": [h for h in (d.get("hidden_folders") or []) if h != key]})
 
 
 def forget_folder(path):
+    """The tile's x: off Your training data (its files stay). Hidden, not only dropped from the recent ones - a past
+    run's training folder came straight back from the run history (#266) - until it's picked again."""
     key = os.path.normcase(os.path.abspath(str(path or "")))
     d = load_last_used()
     update_last_used({"recent_folders": [p for p in (d.get("recent_folders") or []) if isinstance(p, str)
-                                         and os.path.normcase(os.path.abspath(p)) != key]})
+                                         and os.path.normcase(os.path.abspath(p)) != key],
+                      "hidden_folders": [h for h in (d.get("hidden_folders") or []) if h != key] + [key]})
 
 
 def _elsewhere_folders(root) -> list:
@@ -2128,7 +2132,7 @@ def _elsewhere_folders(root) -> list:
     except Exception:
         pass
     inside = os.path.normcase(os.path.abspath(root)) + os.sep
-    seen, out = set(), []
+    seen, out = set(d.get("hidden_folders") or []), []          # the ones taken off the list (forget_folder)
     for p in cand:
         if not isinstance(p, str) or not p.strip():
             continue
