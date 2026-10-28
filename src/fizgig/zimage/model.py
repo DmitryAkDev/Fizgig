@@ -275,6 +275,12 @@ class ZImageTransformer2DModel(nn.Module):
         self.offloader = ModelOffloader("zimage", list(self.layers), n, num_blocks, supports_backward,
                                         torch.device(device))
 
+    def disable_block_swap(self):
+        if self.offloader is not None:
+            self.offloader.remove_hooks()
+        self.offloader = None
+        self.blocks_to_swap = 0
+
     def move_to_device_except_swap_blocks(self, device):
         """Everything to `device` except the swapped layers' weights (the model is assumed to be on CPU)."""
         layers = self.layers
