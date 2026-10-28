@@ -236,14 +236,15 @@ class MOSSImageDriver(FamilyDriver):
             sigma = min(max(math.ceil(T * s / T_CUTOFF), 1), T) / T
         return min_t + (max_t - min_t) * sigma
 
-    def _t_mu(self):
-        """lownoise_pct=P (the share of steps below sigma 0.5) moves the curve's centre; unset = the reference's.
-        Split, "A:N:B": A% for the first N epochs, then B%. Slide, "A:H:B:E": A% until epoch H, then sliding in a
-        straight line to B% by epoch E (and B% after); "A:H:B:E:R": and every R epochs after E, one epoch at A%
-        again."""
+    def _share(self, epoch):
+        """(the Clean-end share for 1-based `epoch` as typed / computed, "" = the reference schedule; whether the epoch
+        trains at half the LR). lownoise_pct=P: one share. Split, "A:N:B": A% for the first N epochs, then B%. Slide,
+        "A:H:B:E": A% until epoch H, then sliding in a straight line to B% by epoch E (and B% after); "A:H:B:E:R": and
+        every R epochs after E, one epoch at A% again - and in that alternating phase the epochs at the lower of the
+        two shares train at half the LR (A or B first): they reset structure, but at the full rate they cost likeness
+        each time (Peter, 28 Oct 2026)."""
         pct = str(self.options.get("lownoise_pct", "") or "").replace("%", "").strip()
-        if not pct:
-            return T_MU
+        half = False
         if ":" in pct:
             try:
                 parts = [float(x) for x in pct.split(":")]
@@ -258,18 +259,31 @@ class MOSSImageDriver(FamilyDriver):
             end = parts[3] if len(parts) >= 4 else until
             every = int(parts[4]) if len(parts) == 5 else 0
             cyc = getattr(self, "_ft_cycle", 0)
-            e = -(-self.epoch // cyc) if cyc else self.epoch      # a fine-tune: the rotation this epoch is in
+            e = -(-int(epoch) // cyc) if cyc else int(epoch)      # a fine-tune: the rotation this epoch is in
             share = first if e <= until else rest if e >= end else first + (rest - first) * (e - until) / (end - until)
-            if every > 0 and e > end and (e - end) % every == 0:
-                share = first                     # a refresh epoch at the first share
+            if every > 0 and e > end:
+                share = first if (e - end) % every == 0 else rest     # a refresh epoch at the first share
+                half = first != rest and share == min(first, rest)
             pct = f"{round(share, 2):g}"
+        return pct, half
+
+    def step_policy(self, batch, epoch):
+        return False, (0.5 if self._share(epoch)[1] else 1.0)
+
+    def _t_mu(self):
+        """The timestep curve's centre for the epoch: lownoise_pct (_share) moves it so that share of steps lands
+        below sigma 0.5; unset = the reference's."""
+        pct, half = self._share(self.epoch)
+        if not pct:
+            return T_MU
         cached = getattr(self, "_mu_cached", None)
-        if cached is None or cached[0] != pct:
-            cached = self._mu_cached = (pct, mu_for_clean_share(pct))
+        if cached is None or cached[0] != (pct, half):
+            cached = self._mu_cached = ((pct, half), mu_for_clean_share(pct))
             cyc = getattr(self, "_ft_cycle", 0)
             when = f"rotation {-(-self.epoch // cyc)} (epoch {self.epoch})" if cyc else f"epoch {self.epoch}"
             logger.info(f"MOSS-Image: {pct}% of training steps at the clean end (sigma < 0.5) from {when}, "
-                        f"Z mean {cached[1]:.2f} (reference -1.09, about 11%)")
+                        f"Z mean {cached[1]:.2f} (reference -1.09, about 11%)"
+                        + (" - at half the learning rate (the lower share, after the slide)" if half else ""))
         return cached[1]
 
     def _forward(self, dit, xt, t, cond):

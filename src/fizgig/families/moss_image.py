@@ -341,7 +341,8 @@ MOSS_IMAGE = FamilyDescription(
                                 "later epoch. 60 until epoch 7, sliding to 30 by epoch 15, works well with datasets of "
                                 "up to about 55 images; with many more, start sliding from 60 earlier. Ticked: after "
                                 "the slide, every few epochs one epoch goes back to the first share, which keeps "
-                                "likeness from fading on a small dataset at the lower share.",
+                                "likeness from fading on a small dataset at the lower share; the epochs at the lower "
+                                "of the two shares then train at half the learning rate.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),
