@@ -479,7 +479,7 @@ function splitRow(r, wrap) {
     else if (m === "Slide") {          // the refresh tick adds its "every N" as a fifth number
       mem.slide = [sFirst, sHold, sRest, sBy].map((i) => i.value.trim());
       mem.every = sEvery.value.trim() || mem.every || "3";
-      sFirstEcho.textContent = sFirst.value;     // "one epoch at 75%" follows the first box
+      refreshEcho();
       sEvery.disabled = !sTick.checked;
       onValue(r, [...mem.slide, ...(sTick.checked ? [mem.every] : [])].join(":"));
     }
@@ -489,7 +489,15 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
   const sTick = el("input", {type: "checkbox", onchange: write});
-  const sFirstEcho = el("span");                   // "one epoch at 75%": the first share, as typed
+  const sFirstEcho = el("span");                   // "one epoch at 60%, the others at 45%"
+  // the alternating phase as the driver runs it (moss_image/driver.py _t_mu): a refresh epoch at the first share,
+  // the others at the second, the lower of the two lifted to their midpoint
+  const refreshEcho = () => {
+    const a = parseFloat(sFirst.value), b = parseFloat(sRest.value);
+    if (!(isFinite(a) && isFinite(b))) { sFirstEcho.textContent = `${sFirst.value}${unit}`; return; }
+    const mid = Math.round((a + b) / 2 * 100) / 100;
+    sFirstEcho.textContent = `${Math.max(a, mid)}${unit}, the others at ${Math.max(b, mid)}${unit}`;
+  };
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,
@@ -504,12 +512,12 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, rest, el("span", {text: unit})));
   const lineSlide = el("div", {class: "cad-line"},
     el("span", {class: "cad-pair"}, sFirst, el("span", {text: unit + " until epoch"})),
-    el("span", {class: "cad-pair"}, sHold, el("span", {text: "then down to"})),
+    el("span", {class: "cad-pair"}, sHold, el("span", {text: "then slides to"})),
     el("span", {class: "cad-pair"}, sRest, el("span", {text: unit + " by epoch"})),
     el("span", {class: "cad-pair"}, sBy));
   const lineRefresh = (r.slide || []).length > 4 ? el("div", {class: "cad-line"},
     el("label", {class: "cad-tick"}, sTick, el("span", {text: "then every"})),
-    el("span", {class: "cad-pair"}, sEvery, el("span", {}, "epochs, one epoch at ", sFirstEcho, unit))) : null;
+    el("span", {class: "cad-pair"}, sEvery, el("span", {}, "epochs, one epoch at ", sFirstEcho))) : null;
   const hintOne = el("div", {class: "field-hint", text: r.hint});
   const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
   const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
@@ -524,7 +532,7 @@ function splitRow(r, wrap) {
       if (p.length === 5) mem.every = p[4];
       sEvery.value = mem.every || (r.slide || [])[4] || "3";
       sEvery.disabled = !sTick.checked;
-      sFirstEcho.textContent = sFirst.value;
+      refreshEcho();
     }
     else { one.value = S.values[r.key] ?? ""; mem.single = one.value; }
     for (const [node, on] of [[lineOne, m === "Single"], [hintOne, m === "Single"], [lineSplit, m === "Split"],
