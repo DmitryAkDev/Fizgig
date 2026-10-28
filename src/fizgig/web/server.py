@@ -1419,6 +1419,23 @@ def _oom_note(run_id):
             "swap (Memory & Precision, on the Training tab), and close other programs that use the GPU.\n")
 
 
+def _run_form(rec, values=None):
+    """A run's model, training folder and settings as the Training tab loads them (Start again; a Continue that
+    started, with the settings it carries on with, so the tab shows the run training and not the one before)."""
+    if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):
+        return {"family": refmod.KEY, "values": {k: v for k, v in (values or rec.get("values") or {}).items()
+                                                 if not str(k).startswith("__")},
+                "image_folder": rec.get("image_folder") or ""}
+    desc = get_family(rec.get("family", "")) if rec else None
+    if desc is None:
+        return {"error": "That run's model isn't available here."}
+    vals = values or rec.get("values") or {}
+    if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
+        mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
+        vals = {**form.apply_preset(desc, {}, vals, whole=True), **{k: v for k, v in vals.items() if k in mk}}
+    return {"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""}
+
+
 def _continue_run(run_id, more="", queue_ok=True, values=None):
     """Continue on Runs & outputs: the run trains on from its newest save, with its own settings and into its own
     record. more: the epochs (a fine-tune: rotations) to train to, for a run that already trained all it was set to.
@@ -1455,10 +1472,16 @@ def _continue_run(run_id, more="", queue_ok=True, values=None):
         return {"ok": True, "queued": True}
     note = f"=== Continuing {rec.get('lora')} from {os.path.basename(pt['path'])}: to {target} {unit} ==="
     if pt["kind"] == "ft":
-        return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
+        r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", ft_continue={
             "continue": cont, "rotations": left}, note=note, carry=run_id))
-    return _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
-                           carry=run_id))
+    else:
+        r = _resumed(_start(rec["family"], values, rec.get("image_folder") or "", resume=pt["path"], note=note,
+                            carry=run_id))
+    if isinstance(r, dict) and not r.get("error") and not r.get("problems"):
+        f = _run_form(rec, values)            # the Training tab then shows this run's settings (it kept the last ones)
+        if not f.get("error"):
+            r = {**r, "form": f}
+    return r
 
 
 LOG_CLEAR = "\x00clear\n"      # in the log where a run starts: the page's console begins again from there
@@ -3721,20 +3744,8 @@ class Handler(BaseHTTPRequestHandler):
                 r = _continue_run(str(b.get("id") or ""), str(b.get("more") or ""))
                 return self.json(r, 400 if r.get("error") and not r.get("need") else 200)
             if path == "/api/runs/settings":            # Start again with these settings
-                rec = history.get(str(b.get("id") or ""))
-                if rec and rec.get("family") in (refmod.KEY, refmod.LABEL):
-                    return self.json({"family": refmod.KEY, "values": {k: v for k, v in (rec.get("values") or {}).items()
-                                                                        if not str(k).startswith("__")},
-                                      "image_folder": rec.get("image_folder") or ""})
-                desc = get_family(rec.get("family", "")) if rec else None
-                if desc is None:
-                    return self.json({"error": "That run's model isn't available here."}, 400)
-                vals = rec.get("values") or {}
-                if rec.get("source") == "desktop":       # the desktop's settings, as a preset applies them, with the
-                    mk = {o.key for o in desc.options if o.tab == "model"}   # Base Model card's options beside them
-                    vals = {**form.apply_preset(desc, {}, vals, whole=True),
-                            **{k: v for k, v in vals.items() if k in mk}}
-                return self.json({"family": desc.key, "values": vals, "image_folder": rec.get("image_folder") or ""})
+                r = _run_form(history.get(str(b.get("id") or "")))
+                return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/plan":
                 _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
                 return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}

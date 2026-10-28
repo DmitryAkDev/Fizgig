@@ -2476,6 +2476,7 @@ async function loadRuns() {
         if (x.need) { contAsk(x.error); return; }
         if (x.problems) { alertRow.textContent = x.problems.join(" "); return; }
         contBox.style.display = "none";
+        if (x.form) await loadIntoForm(x.form);   // the tab shows the run going on, not the settings before it
         alertRow.textContent = x.queued ? "A run is training now: this one is on the queue, and continues when its " +
           "turn comes." : `Continuing ${run.lora || "the run"}: it's on the Training tab.`;
         pollRun();
