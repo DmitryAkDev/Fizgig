@@ -22,7 +22,9 @@ _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ff
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 
-_LORA_SHARE = "60:7:30:15:2"
+# a LoRA's: 60 until epoch 7, 30 from epoch 8, then 60 with every 3rd epoch at 30 (half LR) - led 60:7:30:15:2 by about
+# 0.05 ArcFace from epoch 9 to 20 on a 53-photo dataset (Peter's test1 / test3, 28 Oct 2026)
+_LORA_SHARE = "60:7:30:8:3"
 # a fine-tune's Clean-end share starts on the model's own schedule (about 11%) so the body and the model's knowledge
 # hold, then slides to 30: at 60 a fine-tune's plain "a woman" turned into the subject from epoch 10, even with DOP
 # (Peter, 28 Oct 2026, #223)
@@ -44,8 +46,8 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, then 60% with every 2nd at 30%
-        # (Peter, 20 Oct 2026: the clear winner of eight runs on the dataset that struggled); every preset sets it
+        # the Clean-end share: Slide, 60% until epoch 7, 30% from epoch 8, then 60% with every 3rd at 30% (_LORA_SHARE);
+        # every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
@@ -326,7 +328,7 @@ MOSS_IMAGE = FamilyDescription(
                           "layers breaks anatomy. Uses less VRAM, so a fine-tune fits a smaller card, but on Base "
                           "it may cost quality or slow convergence.",
                      section="after", summary="attention only"),
-        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default="60:7:30:15:2",
+        FamilyOption("MOSS_LOWNOISE_PCT", "Clean-end share", kind="entry", tokens="lownoise_pct={}", default=_LORA_SHARE,
                      width=8, suffix="% of steps",
                      hint="The share of training steps on nearly-clean images (noise below half), where faces and "
                           "fine detail are refined. Empty = the model's own schedule, about 11%. In a fine-tune, "
@@ -334,12 +336,12 @@ MOSS_IMAGE = FamilyDescription(
                      # Slide, not a sudden drop: on a hard dataset likeness dipped two epochs after a drop from 75
                      # to 40. Of eight Slide runs there, 60 until epoch 7 easing to 30 by epoch 15, with every 2nd
                      # epoch after back at 60 (the tick, on by default), led from epoch 12 and still held 71% at
-                     # epoch 60 (Peter, 20 Oct 2026)
-                     slide=("60", "7", "30", "15", "2"),
+                     # epoch 60 (Peter, 20 Oct 2026); 60:7:30:8:3 then led it from epoch 9 (28 Oct 2026)
+                     slide=tuple(_LORA_SHARE.split(":")),
                      single="40",             # one value for the whole run: 40 beat 30 (Peter, 20 Oct 2026)
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
-                                "later epoch. 60 until epoch 7, sliding to 30 by epoch 15, works well with datasets of "
-                                "up to about 55 images; with many more, start sliding from 60 earlier. Ticked: after "
+                                "later epoch. 60 until epoch 7, then 30 from epoch 8, works well with datasets of up to "
+                                "about 55 images; with many more, drop from 60 earlier. Ticked: after "
                                 "the slide, training runs at the higher of the two shares, which keeps likeness from "
                                 "fading on a small dataset, and every Nth epoch at the lower share, at half the "
                                 "learning rate.",
@@ -351,7 +353,7 @@ MOSS_IMAGE = FamilyDescription(
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
          "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
-         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, sliding to 30% by epoch 15, and every 2nd epoch after that at 60%; the reference is about 11%); the "
+         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, 30% at epoch 8, then 60% with every 3rd epoch at 30%; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "
