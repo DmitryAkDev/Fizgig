@@ -57,7 +57,8 @@ python -m fizgig.scripts.fetch_models --family moss_image
 
 A full fine-tune trains the model itself rather than a LoRA (Training tab, **Fine-tune**; the **MOSS-Image Fine-tune** preset is LR 1e-5). The general guide is [FINETUNE.md](FINETUNE.md).
 
-- **Fine-tune Base.** SFT has already been taken a long way in one direction. Clean-end share applies to a fine-tune as it does to a LoRA.
+- **Fine-tune Base.** SFT has already been taken a long way in one direction.
+- **Clean-end share for a fine-tune:** picking **Fine-tune** (or the preset) sets its own Slide, `11:4:30:8:2`: the model's own schedule (about 11%) until epoch 4, so body shape and the model's knowledge hold, then sliding to 30% by epoch 8, and after that every 2nd epoch at 20.5% and the others at 30%. A fine-tune has no rank to limit it, and at the LoRA's 60% a plain "a woman" prompt had turned into the trained person by epoch 10, even with DOP. In a fine-tune the Slide's epochs are rotations. Picking a LoRA again puts the LoRA's Slide back.
 - **What fits, at 1 MP.** Measured on real fine-tunes: training the whole model at once peaked at **12.6 GB** (all parts) and **8.3 GB** (Train attention only); a preview peaked at 9.9 GB, under training. Fizgig plans from these figures:
 
 | Card | Base (all parts) | Train attention only |

@@ -22,6 +22,13 @@ _MODULES = ("proj.q", "proj.k", "proj.v", "proj.o", "proj.ffn_up_gate", "proj.ff
 _NEGATIVE = "worst quality, bad anatomy, watermark, jpeg artifact"
 
 
+_LORA_SHARE = "60:7:30:15:2"
+# a fine-tune's Clean-end share starts on the model's own schedule (about 11%) so the body and the model's knowledge
+# hold, then slides to 30: at 60 a fine-tune's plain "a woman" turned into the subject from epoch 10, even with DOP
+# (Peter, 28 Oct 2026, #223)
+_FT_SHARE = "11:4:30:8:2"
+
+
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=False):
     # Not yet trained on MOSS-Image (the driver was built without a GPU): Flux 3's preset shape (Krea 2's values,
     # families/flux3.py), at 1 MP (the last pretraining stage's area), with fused AdamW as CHECKLIST.md asks for LoRA presets. EMA 0.98, the
@@ -40,7 +47,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, after that every 2nd epoch at
         # 60% and the others at 45% (the lower share lifted to the midpoint, Peter 28 Oct 2026)
         # (Peter, 20 Oct 2026: the clear winner of eight runs on the dataset that struggled); every preset sets it
-        "MOSS_LOWNOISE_PCT": "60:7:30:15:2",
+        "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
     }
 
@@ -190,6 +197,8 @@ MOSS_IMAGE = FamilyDescription(
     # measured yet (ABILITIES.md: keep it where it measures faster)
     finetune=True,                    # driver.ft_spec: every block's six Linears on an NF4 trunk
     ft_learning_rate=1e-5,            # FINETUNE.md's default; the report's pretraining LR was 5e-5 (Muon + AdamW)
+    kind_values=(("finetune", (("MOSS_LOWNOISE_PCT", _FT_SHARE),)), ("standard", (("MOSS_LOWNOISE_PCT", _LORA_SHARE),)),
+                 ("slider", (("MOSS_LOWNOISE_PCT", _LORA_SHARE),))),
     slider_training=True,             # photo pairs (training_loss diff weighting) or prompts (noise_latents / predict)
     # edit_training stays off: the released checkpoints don't condition on reference images (report section 8: "does
     # not directly condition on reference images or support image editing"; pipeline docstring: defaults are "not

@@ -154,10 +154,11 @@ def model_keys(desc):
 
 def kind_sets(desc, kind):
     """What picking a kind of training also sets (the desktop's _family_kind_chosen): Fine-tune takes the family's
-    fine-tune learning rate with Adaptive LR off."""
+    fine-tune learning rate with Adaptive LR off; a family's kind_values come too."""
+    out = dict(dict(getattr(desc, "kind_values", ()) or ()).get(kind, ()))
     if kind == "finetune":
-        return {"LEARNING_RATE": f"{desc.ft_learning_rate:g}", "ADAPTIVE_LR": False}
-    return {}
+        out.update(LEARNING_RATE=f"{desc.ft_learning_rate:g}", ADAPTIVE_LR=False)
+    return out
 
 
 # what each kind is, under the choice (the desktop's _KIND_HINTS; a family words its own in kind_notes)
