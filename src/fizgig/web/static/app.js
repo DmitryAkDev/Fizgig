@@ -489,8 +489,11 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
   const sTick = el("input", {type: "checkbox", onchange: write});
-  const sFirstEcho = el("span");                   // "one epoch at 30%": the lower of the two shares, as typed
+  const sFirstEcho = el("span");                   // "epoch at 30%": the lower of the two shares, as typed
+  const sNth = el("span");                         // "every 2nd epoch": the box's ordinal ending
   const refreshEcho = () => {
+    const n = parseInt(sEvery.value, 10);
+    sNth.textContent = isNaN(n) ? "th" : n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th";
     const a = parseFloat(sFirst.value), b = parseFloat(sRest.value);
     sFirstEcho.textContent = `${isNaN(a) || isNaN(b) ? sRest.value : a <= b ? sFirst.value : sRest.value}${unit}`;
   };
@@ -513,7 +516,7 @@ function splitRow(r, wrap) {
     el("span", {class: "cad-pair"}, sBy));
   const lineRefresh = (r.slide || []).length > 4 ? el("div", {class: "cad-line"},
     el("label", {class: "cad-tick"}, sTick, el("span", {text: "then every"})),
-    el("span", {class: "cad-pair"}, sEvery, el("span", {}, "epochs, one epoch at ", sFirstEcho))) : null;
+    el("span", {class: "cad-pair"}, sEvery, el("span", {}, sNth, " epoch at ", sFirstEcho))) : null;
   const hintOne = el("div", {class: "field-hint", text: r.hint});
   const hintSplit = el("div", {class: "field-hint", text: r.split_hint || r.hint});
   const hintSlide = el("div", {class: "field-hint", text: r.slide_hint || r.hint});
