@@ -621,10 +621,69 @@ function promptLines(r, wrap) {
     line("", last).focus(); renumber(); save();
   }});
   wrap.append(el("span", {class: "field-label", text: r.label + ":"}), list, add, sync);
+  if (r.key === "SAMPLE_PROMPT") wrap.append(promptSetsBar(r, draw));
   if (r.hint) wrap.append(el("div", {class: "field-hint", text: r.hint}));
   wrap.append(el("div", {class: "field-hint row-note", id: "note_" + r.key}));
   draw();
   return wrap;
+}
+
+// the Samples tab's prompt sets (#267): saved prompts, shared by every model, loaded in place of the ones here (a
+// change goes to the run going now as any edit does, while Change the previews of the run going now is ticked)
+function promptSetsBar(r, draw) {
+  const pick = el("select", {"aria-label": "Prompt set"});
+  const ask = el("div"), msg = el("span", {class: "field-hint"});
+  const load = el("button", {class: "btn btn-sm", text: "Load", onclick: async () => {
+    try {
+      const d = await api("/api/prompt_set", {name: pick.value});
+      onValue(r, d.prompts); draw();
+      msg.textContent = `Loaded ${pick.value}: ${d.prompts.split("\n").length} prompt(s).`;
+    } catch (e) { msg.textContent = e.message; }
+  }});
+  const del = el("button", {class: "btn btn-sm", text: "Delete", onclick: () => {
+    const name = pick.value;
+    ask.replaceChildren(el("div", {class: "field-row"}, el("span", {class: "field-hint", text: `Delete the set ${name}?`}),
+      el("button", {class: "btn btn-sm btn-danger", text: "Delete", onclick: async () => {
+        try { fill((await api("/api/prompt_set/delete", {name})).sets); msg.textContent = `Deleted ${name}.`; }
+        catch (e) { msg.textContent = e.message; }
+        ask.replaceChildren();
+      }}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => ask.replaceChildren()})));
+  }});
+  const fill = (sets, chosen) => {
+    pick.replaceChildren(el("option", {value: "", text: sets.length ? "Choose a set…" : "No saved sets yet"}),
+      ...sets.map((n) => el("option", {value: n, text: n})));
+    pick.value = sets.includes(chosen) ? chosen : "";
+    load.disabled = del.disabled = !pick.value;
+  };
+  pick.addEventListener("change", () => { load.disabled = del.disabled = !pick.value; ask.replaceChildren(); });
+  const saveAs = el("button", {class: "btn btn-sm", text: "Save as set…", onclick: () => {
+    if (ask.childNodes.length) { ask.replaceChildren(); return; }
+    const name = el("input", {type: "text", class: "w-path", placeholder: "A name for these prompts", value: pick.value});
+    const note = el("span", {class: "field-hint"});
+    const save = async (overwrite) => {
+      const n = name.value.trim();
+      if (!n) { note.textContent = "Type a name first."; return; }
+      try {
+        const d = await api("/api/prompt_set/save", {name: n, prompts: S.values[r.key] || "", overwrite: !!overwrite});
+        if (d.exists) {
+          note.replaceChildren(document.createTextNode(`There's a set called ${n} already. `),
+            el("button", {class: "btn btn-sm btn-danger", text: "Replace it", onclick: () => save(true)}));
+          return;
+        }
+        fill(d.sets, n); ask.replaceChildren();
+        msg.textContent = `Saved ${n}: every model's Samples tab can load it.`;
+      } catch (e) { note.textContent = e.message; }
+    };
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") save(false); });
+    ask.replaceChildren(el("div", {class: "field-row"}, name,
+      el("button", {class: "btn btn-sm btn-primary", text: "Save", onclick: () => save(false)}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => ask.replaceChildren()}), note));
+    name.focus();
+  }});
+  api("/api/prompt_sets").then((d) => fill(d.sets)).catch(() => fill([]));
+  return el("div", {}, el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Prompt sets:"}), pick,
+    load, saveAs, del, msg), ask);
 }
 
 // Model Area to Train > Custom: the model's blocks as ticks (All / None / an area's blocks), as the desktop's

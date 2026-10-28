@@ -438,6 +438,25 @@ def user_presets(desc) -> list:
         return []
 
 
+PROMPT_SETS_DIR = os.path.join(PRESETS_DIR, "sample_prompts")
+
+
+def prompt_sets() -> list:
+    """The Samples tab's saved prompt sets, shared by every model (presets/sample_prompts/<name>.txt, one prompt a
+    line), by name (#267)."""
+    try:
+        return sorted((f[:-4] for f in os.listdir(PROMPT_SETS_DIR) if f.endswith(".txt")), key=str.lower)
+    except OSError:
+        return []
+
+
+def prompt_set_path(name) -> str:
+    name = str(name or "").strip()
+    if not name or any(c in name for c in '<>:"/\\|?*') or name.startswith("."):
+        raise ValueError('A set\'s name can\'t be empty or hold < > : " / \\ | ? *')
+    return os.path.join(PROMPT_SETS_DIR, name + ".txt")
+
+
 def _code_stamp():
     """The newest change to the web UI's server code (and the shared modules it runs): a page served after an update
     while this server still runs the old code is told to restart it."""
@@ -2767,6 +2786,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": "unknown family"}, 400)
             built = [n for n, _ in (desc.presets or ())]
             return self.json({"builtin": built, "user": [n for n in user_presets(desc) if n not in built]})
+        if path == "/api/prompt_sets":           # the Samples tab's saved prompt sets
+            return self.json({"sets": prompt_sets()})
         if path == "/api/studio/families":
             return self.json({"families": [{"key": d.key, "name": d.display_name} for d in studio.families()]})
         if path == "/api/studio/layout":
@@ -3562,6 +3583,31 @@ class Handler(BaseHTTPRequestHandler):
                               {k: v for k, v in vals.items() if not str(k).startswith("__") and k != "H3_TRAIN_BASE"},
                               f, indent=4)
                 return self.json({"ok": True, "user": user_presets(desc)})
+            if path in ("/api/prompt_set", "/api/prompt_set/save", "/api/prompt_set/delete"):
+                try:
+                    p = prompt_set_path(b.get("name"))
+                except ValueError as e:
+                    return self.json({"error": str(e)}, 400)
+                if path == "/api/prompt_set/save":
+                    lines = [ln.rstrip() for ln in str(b.get("prompts") or "").splitlines()]
+                    if not any(lines):
+                        return self.json({"error": "Type a prompt first."}, 400)
+                    if os.path.exists(p) and not b.get("overwrite"):
+                        return self.json({"exists": True})
+                    os.makedirs(PROMPT_SETS_DIR, exist_ok=True)
+                    with open(p, "w", encoding="utf-8") as f:
+                        f.write("\n".join(ln for ln in lines if ln.strip()) + "\n")
+                elif path == "/api/prompt_set/delete":
+                    if os.path.isfile(p):
+                        os.remove(p)
+                else:
+                    try:
+                        with open(p, encoding="utf-8") as f:
+                            return self.json({"prompts": "\n".join(ln.rstrip() for ln in f.read().splitlines()
+                                                                   if ln.strip())})
+                    except OSError:
+                        return self.json({"error": "That set's file can't be read."}, 400)
+                return self.json({"ok": True, "sets": prompt_sets()})
             if path == "/api/preset":
                 desc = _preset_family(b.get("family", ""))
                 preset = dict(desc.presets or ()).get(b.get("name")) if desc else None
