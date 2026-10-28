@@ -63,9 +63,9 @@ def is_8b_file(path) -> bool:
             head = json.loads(f.read(n))
     except (OSError, ValueError, struct.error):
         return False
-    # the captioner reads bf16 and fp8 (scaled) files; ComfyUI's int8 ConvRot / w4a8 builds (comfy_quant keys) it
+    # the captioner reads bf16 and fp8 (scaled) files; ComfyUI's int8 ConvRot / w4a8 builds (int8 / uint8 weights) it
     # doesn't, so those don't count and the 8B is downloaded instead
-    if any(k.endswith(".comfy_quant") for k in head):
+    if any(isinstance(v, dict) and k.endswith(".weight") and v.get("dtype") in ("I8", "U8") for k, v in head.items()):
         return False
     return any(k.endswith("embed_tokens.weight") and v.get("shape", [0])[-1] == 4096 for k, v in head.items()
                if isinstance(v, dict))
