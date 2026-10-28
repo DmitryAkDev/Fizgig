@@ -48,6 +48,23 @@ FLORENCE_REVISIONS = {
 FLORENCE_CODE_REVISIONS = {"MiaoshouAI/Florence-2-base-PromptGen": "f6c1a25888ffc1d945ee8a1a77ac833c7303d46e"}
 FLORENCE_TASKS = ["<CAPTION>", "<DETAILED_CAPTION>", "<MORE_DETAILED_CAPTION>"]
 QWEN_MODEL = "Qwen3-VL 4B (Krea 2 text encoder)"
+# the bigger captioner (#270): Qwen Image 2.1's text encoder, Qwen3-VL-8B - the same family, twice the size, its own LM
+# head. Its file is downloaded the first time it is picked (Comfy-Org's fp8 build) unless Qwen 2.1's is already set
+QWEN8_MODEL = "Qwen3-VL 8B (bigger, more detailed)"
+QWEN_MODELS = (QWEN_MODEL, QWEN8_MODEL)
+
+
+def is_8b_file(path) -> bool:
+    """A Qwen3-VL-8B checkpoint (hidden size 4096), from the safetensors header alone."""
+    import struct
+    try:
+        with open(path, "rb") as f:
+            n = struct.unpack("<Q", f.read(8))[0]
+            head = json.loads(f.read(n))
+    except (OSError, ValueError, struct.error):
+        return False
+    return any(k.endswith("embed_tokens.weight") and v.get("shape", [0])[-1] == 4096 for k, v in head.items()
+               if isinstance(v, dict))
 CUSTOM_TASK = "Custom…"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
 
@@ -99,9 +116,9 @@ def _overrides(prefs):
     return out
 
 
-def options(prefs, captioner):
-    """Models (Qwen3-VL first when its file is set), each model's tasks, and each Qwen task's instruction (the edited
-    one if there is one), its shipped text and its suggested length."""
+def options(prefs, captioner, captioner_8b=""):
+    """Models (Qwen3-VL first when its file is set; the 8B always, as it downloads itself), each model's tasks, and
+    each Qwen task's instruction (the edited one if there is one), its shipped text and its suggested length."""
     tasks, default = _tasks()
     ovr = _overrides(prefs)
     qwen = []
@@ -111,11 +128,12 @@ def options(prefs, captioner):
     custom_builtin = tasks[default][1]
     qwen.append({"key": "custom", "label": CUSTOM_TASK, "tokens": tasks[default][2], "builtin": custom_builtin,
                  "instruction": str(ovr.get("custom") or "").strip() or custom_builtin, "edited": bool(ovr.get("custom"))})
-    models = FLORENCE_MODELS + ([QWEN_MODEL] if captioner else [])          # the desktop's order
-    return {"models": models, "default_model": QWEN_MODEL if captioner else models[0], "qwen_model": QWEN_MODEL,
-            "qwen_tasks": qwen,
+    models = FLORENCE_MODELS + ([QWEN_MODEL] if captioner else []) + [QWEN8_MODEL]     # the desktop's order
+    big = prefs.get("caption_qwen_size") == "8b"
+    return {"models": models, "default_model": QWEN8_MODEL if big else QWEN_MODEL if captioner else models[0],
+            "qwen_model": QWEN_MODEL, "qwen_models": list(QWEN_MODELS), "qwen_tasks": qwen,
             "default_qwen_task": tasks[default][0], "florence_tasks": FLORENCE_TASKS,
-            "qwen_available": bool(captioner)}
+            "qwen_available": True, "qwen4_available": bool(captioner), "qwen8_downloaded": bool(captioner_8b)}
 
 
 def instruction_override(prefs, key, text):
@@ -213,7 +231,7 @@ def find_replace(folder, find, replace, apply, ext=".txt"):
 
 # ---- the AI worker -------------------------------------------------------------------------------------------
 def _worker_config(model, captioner, clips):
-    cfg = {"backend": "qwen" if model == QWEN_MODEL else "florence", "include_video": bool(clips)}
+    cfg = {"backend": "qwen" if model in QWEN_MODELS else "florence", "include_video": bool(clips)}
     if cfg["backend"] == "qwen":
         cfg["text_encoder"] = captioner
     else:
@@ -278,6 +296,8 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         raise ValueError("A captioning job is already running. Stop it first.")
     if model == QWEN_MODEL and not captioner:
         raise ValueError("Qwen3-VL needs the Krea 2 text encoder set in Preferences.")
+    if model == QWEN8_MODEL and not captioner:
+        raise ValueError("Qwen3-VL 8B isn't downloaded yet.")
     images = [p for p in (only or media_files(folder, clips, photos)) if os.path.isfile(p)]
     if not images and not only:
         raise ValueError("Nothing here for the AI to caption: this model trains on recordings. Use Static Caption All "
@@ -289,7 +309,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         raise ValueError("Every file already has a caption. Tick Overwrite to caption them again."
                          if not only else "That file isn't there any more.")
     os.makedirs(JOB_DIR, exist_ok=True)
-    key = (model, captioner if model == QWEN_MODEL else "", bool(clips))
+    key = (model, captioner if model in QWEN_MODELS else "", bool(clips))
     with _lock:
         alive = _st["proc"] is not None and _st["proc"].poll() is None
         same = alive and _st["key"] == key
@@ -316,7 +336,7 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
         pass
     job = {"list_file": list_file, "max_new_tokens": int(max_tokens or 120), "trigger": trigger.strip(),
            "stop_file": stop_file, "caption_ext": ext}
-    if model == QWEN_MODEL:
+    if model in QWEN_MODELS:
         instr = os.path.join(JOB_DIR, "instruction.txt")
         with open(instr, "w", encoding="utf-8") as f:
             f.write(instruction.strip())

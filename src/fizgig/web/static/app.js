@@ -6432,7 +6432,7 @@ function capSettings() {
     skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
-const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
+const qwenOn = () => !!S.cap.opts && (S.cap.opts.qwen_models || [S.cap.opts.qwen_model]).includes($("capModel").value);
 const qwenTask = () => (S.cap.opts.qwen_tasks || []).find((t) => t.label === $("capTask").value);
 
 async function loadCaptionOptions() {
@@ -6442,11 +6442,13 @@ async function loadCaptionOptions() {
   model.innerHTML = "";
   for (const m of o.models) model.append(el("option", {value: m, text: m}));
   model.value = o.models.includes(saved.model) ? saved.model : o.default_model;
-  $("capModelHint").textContent = o.qwen_available ?
+  $("capModelHint").textContent = (o.qwen4_available ?
     "Qwen3-VL (the Krea 2 text encoder from Preferences) follows an instruction you can edit and writes the best " +
-    "training captions. Florence-2 downloads itself the first time." :
-    "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL, which writes better training captions. " +
-    "Florence-2 downloads itself the first time.";
+    "training captions." :
+    "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL 4B, which writes better training captions.") +
+    " Qwen3-VL 8B is the bigger model of the same family (Qwen Image 2.1's text encoder): more detailed captions, " +
+    "a little slower" + (o.qwen8_downloaded ? "." : ", downloaded for you the first time you use it (about 10.6 GB).") +
+    " Auto-recaption uses the Qwen3-VL you last captioned with here. Florence-2 downloads itself the first time.";
   if (S.trigger !== undefined) $("capTrigger").value = S.trigger;      // the training folder's word
   if (saved.overwrite !== undefined) $("capOverwrite").checked = saved.overwrite;
   if (saved.skipCjk !== undefined) $("capSkipCjk").checked = saved.skipCjk;
@@ -6518,6 +6520,17 @@ function capJobBody(extra = {}) {
 async function capRun(path, body) {
   try {
     const r = await api(path, body);
+    if (r.fetching !== undefined) {          // Qwen3-VL 8B, picked the first time: its download, then the job itself
+      clearTimeout(S.cap.fetchTimer);
+      if (r.fetching === "failed") {
+        $("capStatus").textContent = "Couldn't download Qwen3-VL 8B: check you're online, then press it again.";
+        return r;
+      }
+      $("capStatus").textContent = `Downloading Qwen3-VL 8B: ${r.got.toFixed(1)} of ${r.of.toFixed(1)} GB. ` +
+        "Captioning starts when it's here.";
+      S.cap.fetchTimer = setTimeout(() => capRun(path, body), 3000);
+      return r;
+    }
     if (r.error) $("capStatus").textContent = r.error;
     pollCaptions();
     return r;
