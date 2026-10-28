@@ -1161,8 +1161,9 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
                 f"The {desc.preview_speed().name} applies to previews on the training model: untick "
                 f"\"{desc.preview_checkpoint_tick.split(' (')[0]}\" to use it.")
     if desc.preview_look() is not None:
-        # the SFT look LoRA: on previews of the training model only; its file comes down the first time it's ticked
-        # (look_fetch: that download's state)
+        # the preview look LoRA (MOSS-Image's SFT look, Z-Image Base's Turbo look): on previews of the training model
+        # only; its file comes down the first time it's ticked (look_fetch: that download's state)
+        look_name = desc.preview_look().label.split(" (")[0]
         if desc.train_preview_checkpoint and checkpoint_file and values.get("SAMPLE_CHECKPOINT", True):
             disabled.add("FAMILY_PREVIEW_LOOK")
             notes["FAMILY_PREVIEW_LOOK"] = (
@@ -1172,8 +1173,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
             state, gb = look_fetch
             if state == "running":
                 got = f"{gb[0] * 1024:.0f} MB" if gb and gb[0] < 1 else f"{gb[0]:.1f} GB" if gb else ""
-                notes["FAMILY_PREVIEW_LOOK"] = (f"Downloading the SFT look LoRA: {got} of {gb[1]:.1f} GB. "
-                                                if gb else "Downloading the SFT look LoRA. ") + \
+                notes["FAMILY_PREVIEW_LOOK"] = (f"Downloading the {look_name}: {got} of {gb[1]:.1f} GB. "
+                                                if gb else f"Downloading the {look_name}. ") + \
                     "A run that's going picks it up at its next preview."
                 poll = True
             elif state == "failed" and not look_file:

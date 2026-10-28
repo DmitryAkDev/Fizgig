@@ -5,14 +5,19 @@ LoRAs train on Turbo itself with a frozen training adapter (off for previews and
 distilled to 8 steps, and a plain LoRA on it undoes the distillation (blurry, washed-out renders at 8 steps).
 Sources: the model card, Tongyi's reference code, ComfyUI's implementation, AI-Toolkit's adapter card, Oct 2026.
 """
-from fizgig.families.description import FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
+import dataclasses
+
+from fizgig.families.description import GENERAL_NEGATIVE, FamilyDescription, LoRAFormat, ModelFile, SamplingSettings
 
 _COMFY = "Comfy-Org/z_image_turbo"
 _CARD = "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
 _OSTRIS = "ostris/zimage_turbo_training_adapter"
+_BASE_COMFY = "Comfy-Org/z_image"
+_BASE_CARD = "https://huggingface.co/Tongyi-MAI/Z-Image"
+_LOOK = "ShootTheSound/Fizgig-Z-Image-Turbo-Look-LoRA"
 
 
-def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False):
+def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, adapter=True):
     # Qwen Image 2.1's preset set (Peter, 7 Oct 2026: "Qwen is a good model for the presets across the various modes"):
     # 0.5 MP, 30 epochs saved every epoch; adaptive=(min, max) turns Adaptive LR on (the run starts at the geometric
     # midpoint and the LR box is ignored), None trains flat at lr. Fused AdamW, as the driver guide asks of LoRA presets.
@@ -23,7 +28,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False):
         "ADAPTIVE_LR": adaptive is not None, "ADAPTIVE_LR_MIN": lo, "ADAPTIVE_LR_MAX": hi,
         "OPTIMIZER_TYPE": "adamw", "GRADIENT_ACCUMULATION": 1, "MAX_GRAD_NORM": 1.0,
         "DATASET_MEGAPIXELS": mp, "BLOCKS_SWAP": "Auto (detect from GPU)",
-        "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": True,
+        "FAMILY_PRECISION": "Auto (fits your free VRAM)", "FAMILY_TRAINING_ADAPTER": adapter,
         "FAMILY_EMA": "0.98 (recommended)",
         "KREA2_LOSS_WATCH": True, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": False, "FAMILY_SLIDER": slider, "FAMILY_FAST_ID": False,
@@ -174,3 +179,76 @@ ZIMAGE = FamilyDescription(
          "tokens only, at most 512.", "Tongyi-MAI/Z-Image src/zimage/pipeline.py"),
     ),
 )
+
+
+def _base_presets():
+    # Turbo's modes and values without the training adapter (Base is not distilled, so there is nothing to keep)
+    out = []
+    for name, p in ZIMAGE.presets:
+        p = {k: v for k, v in p.items() if k != "FAMILY_TRAINING_ADAPTER"}
+        out.append((name.replace("Z-Image Turbo", "Z-Image Base"), p))
+    return tuple(out)
+
+
+# Z-Image Base (Tongyi-MAI's undistilled Z-Image, 28 Jan 2026): the same S3-DiT as Turbo (transformer/config.json
+# identical), so the same driver, VAE and text encoder. Trained on directly with no adapter (#261); previews sample it
+# as ComfyUI's template does: 25 steps, CFG 4, shift 3, with a negative prompt. The Turbo look LoRA (Turbo minus Base,
+# the later layers at a higher rank, at 1.5) gives Base previews Turbo's look.
+ZIMAGE_BASE = dataclasses.replace(
+    ZIMAGE,
+    key="zimage_base",
+    arch_id="zimagebase",
+    display_name="Z-Image Base",
+    gui_label="Z-Image Base",
+    lora_name_suffix="zib",
+    aliases=("z-image-base", "zimage-base", "zib"),
+    model_files=(
+        ModelFile("zimage_base_dit", "Z-Image Base DiT", True, _BASE_COMFY,
+                  "split_files/diffusion_models/z_image_bf16.safetensors", 12.31, role="dit",
+                  hint="Z-Image Base bf16 (ComfyUI's single file) - trained on and previewed with. Tongyi's "
+                       "undistilled Z-Image: the one to train on, with CFG and negative prompts."),
+        ModelFile("zimage_base_vae", "FLUX.1 VAE", True, _BASE_COMFY, "split_files/vae/ae.safetensors", 0.34,
+                  role="vae", hint="The FLUX.1 autoencoder (ae.safetensors), the same file as Z-Image Turbo's."),
+        ModelFile("zimage_base_text_encoder", "Qwen3-4B text encoder", True, _BASE_COMFY,
+                  "split_files/text_encoders/qwen_3_4b.safetensors", 8.04, role="text_encoder",
+                  hint="The same file as Z-Image Turbo's. Used for caching only, then unloaded before training."),
+        # Turbo minus Base, extracted at a low rank for the early layers and a high one for the later layers (where
+        # the look lives), as MOSS-Image's SFT look LoRA; downloaded the first time the Samples tick is on
+        ModelFile("zimage_base_turbo_look_lora", "Turbo look LoRA (optional)", False, _LOOK,
+                  "z_image_turbo_look_lora.safetensors", 2.0, role="look_lora", bulk_fetch=False, fetch_on_use=True,
+                  hint="Optional. Fizgig's Turbo look LoRA: previews on your Base get much of Turbo's look. "
+                       "Downloaded for you the first time you tick \"Give Base previews the Turbo look\" on the "
+                       "Samples tab. Previews only, never training.",
+                  download_note="Apache-2.0"),
+    ),
+    prefs_title="Model Paths (Z-Image Base)",
+    modelspec_arch="Z-Image",
+    training_adapter="",
+    training_adapter_note="",
+    helper_files=(("Tongyi-MAI/Z-Image", ("tokenizer/*", "vae/config.json")),),
+    sampling=(
+        SamplingSettings("Base", steps=25, cfg=4.0, sampler="euler", scheduler="simple", options=(("shift", 3.0),),
+                         negative_prompt=True,
+                         note="25 steps, CFG 4, shift 3 (ComfyUI's template; it samples res_multistep). The model "
+                              "card gives 28-50 steps at guidance 3-5.",
+                         source=f"{_BASE_CARD}; Comfy-Org workflow_templates image_z_image.json"),
+    ),
+    preview_steps=25,
+    preview_cfg=4.0,
+    preview_negative=GENERAL_NEGATIVE,
+    samples_cfg_free=False,
+    preview_look_tick="Give Base previews the Turbo look (Turbo look LoRA)",
+    preview_look_hint="The Turbo look LoRA gives previews of your Base much of Turbo's look, so you see the LoRA "
+                      "closer to how most people use Z-Image. Previews only, never training. Downloaded for you the "
+                      "first time.",
+    preview_look_strength=1.5,
+    preview_labels=(("look", "Previewed on the Base with the Turbo look LoRA."),
+                    ("base", "Previewed on the Base model.")),
+    notes=(
+        ("Z-Image Base trains as Turbo does, without the training adapter: it is the undistilled model.",
+         _BASE_CARD),
+        ("Text: Qwen3-4B, the chat template with thinking on and the generation prompt, hidden_states[-2], real "
+         "tokens only, at most 512.", "Tongyi-MAI/Z-Image src/zimage/pipeline.py"),
+    ),
+)
+ZIMAGE_BASE = dataclasses.replace(ZIMAGE_BASE, presets=_base_presets())
