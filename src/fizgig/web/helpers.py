@@ -3634,7 +3634,10 @@ def move_start(hid, now=False):
     if lv.get("state") != "ready":
         raise ValueError(f"{h.get('name')} can't take it: {why or 'it is not ready yet'}.")
     if lv.get("build") not in (None, "", "same"):
-        raise ValueError(f"{h.get('name')} runs another Fizgig version ({lv['build']}): both need the same one.")
+        word = {"mine": "a newer Fizgig than this computer", "theirs": "an older Fizgig than this computer"}.get(
+            lv["build"], "another Fizgig version")
+        how = (lv.get("match") or "") if lv.get("pod") else "Update the older one, then Move."
+        raise ValueError(f"{h.get('name')} runs {word}, and both need the same one. {how}".strip())
     s = _srv()
     with s._lock:
         r = {k: s._run.get(k) for k in ("state", "stage", "family", "values", "lora", "output_dir", "resume_mode")}
