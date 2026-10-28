@@ -4314,7 +4314,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not rendered:
                     raise ValueError("Render some epochs first.")
                 if path == "/api/royale/score":
-                    return self.json(royale.score(st["gen"], rendered, str(b.get("ref") or "")))
+                    return self.json(royale.score(st["gen"], rendered, [str(r) for r in b.get("refs") or []]))
                 folder = str(b.get("out_dir") or "").strip() or default_output_dir()
                 if path == "/api/royale/export":
                     return self.json(royale.export(rendered, folder, run, b.get("format") or "MP4",

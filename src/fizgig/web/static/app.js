@@ -2038,15 +2038,27 @@ async function likenessShow(dir, items, run, view) {
   });
 }
 async function likenessPicker() {
-  const folder = S.imageFolder || "";
+  S.lik.mode = "gallery";
+  await likGridShow(S.imageFolder || "", (S.lik.data && S.lik.data.baselines) || []);
+}
+// the 3-photo picker, for the Samples gallery (exactly 3, from the training images) or LoRA Royale (1-3, any folder)
+async function likGridShow(folder, picked) {
+  const royale = S.lik.mode === "royale";
+  S.lik.folder = folder; S.lik.paths = {};
+  $("likTitle").textContent = `Likeness: pick ${royale ? "up to " : ""}3 photos of your subject`;
+  $("likFrom").textContent = royale ? "this folder" : "the training images";
   $("likFolder").textContent = folder || "no training image folder set on the Start tab";
-  S.lik.picked = [...((S.lik.data && S.lik.data.baselines) || [])];
+  $("likFolderPick").style.display = royale ? "" : "none";
+  $("likClear").style.display = royale ? "none" : "";
+  $("likStart").textContent = royale ? "Use these" : "Start scoring";
+  S.lik.picked = [...picked];
   const grid = $("likGrid");
   grid.innerHTML = "";
   $("likModal").classList.add("active");
   if (!folder) return;
   const r = await api(`/api/captions?folder=${encodeURIComponent(folder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   for (const it of r.items.filter((x) => LIK_PICS.test(x.name))) {
+    S.lik.paths[it.name] = it.path;
     const fig = el("figure", {title: it.name, onclick: () => {
       const i = S.lik.picked.indexOf(it.name);
       if (i >= 0) S.lik.picked.splice(i, 1);
@@ -2056,7 +2068,7 @@ async function likenessPicker() {
     fig.dataset.name = it.name;
     grid.append(fig);
   }
-  if (!grid.children.length) grid.append(el("div", {class: "field-hint", text: "No pictures in the training image folder."}));
+  if (!grid.children.length) grid.append(el("div", {class: "field-hint", text: `No pictures in ${royale ? "this" : "the training image"} folder.`}));
   likenessMarks();
 }
 function likenessMarks() {
@@ -2066,7 +2078,7 @@ function likenessMarks() {
     f.querySelector(".lik-num")?.remove();
     if (i >= 0) f.append(el("span", {class: "lik-num", text: String(i + 1)}));
   }
-  $("likStart").disabled = S.lik.picked.length !== 3;
+  $("likStart").disabled = S.lik.mode === "royale" ? !S.lik.picked.length : S.lik.picked.length !== 3;
   $("likPickStatus").textContent = `${S.lik.picked.length}/3 selected`;
 }
 async function likenessSet(names) {
@@ -2652,7 +2664,7 @@ function ryRemember() {
     single: v("rySingle"), cmp: v("ryCPrompts"),
     family: v("ryFamily"), folder: v("ryFolder"), prompt: v("ryPrompt"),
     seed: v("rySeed"), ref: v("ryRef"), refStr: v("ryRefStr"), w: v("ryW"), h: v("ryH"), max: v("ryMax"),
-    like: v("ryLikeRef"), out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
+    like: S.ry.likeRefs || [], out: v("ryOut"), fmt: v("ryFmt"), speed: v("rySpeed")})); } catch (e) { /* private */ }
 }
 const ryLabel = (l) => (String(l).match(/^\d+$/) ? `Epoch ${l}` : String(l));
 
@@ -2661,7 +2673,9 @@ async function royaleOpen() {
     S.ry.wired = true;
     const sv = rySaved();
     for (const [id, k] of [["ryFolder", "folder"], ["ryPrompt", "prompt"], ["rySeed", "seed"], ["ryRef", "ref"],
-      ["ryRefStr", "refStr"], ["ryLikeRef", "like"], ["ryOut", "out"]]) if (sv[k] != null) $(id).value = sv[k];
+      ["ryRefStr", "refStr"], ["ryOut", "out"]]) if (sv[k] != null) $(id).value = sv[k];
+    S.ry.likeRefs = Array.isArray(sv.like) ? sv.like.slice(0, 3) : sv.like ? [sv.like] : [];
+    ryLikeShow();
     for (const [id, k] of [["ryW", "w"], ["ryH", "h"], ["ryMax", "max"], ["ryFmt", "fmt"], ["rySpeed", "speed"]])
       if (sv[k]) $(id).value = sv[k]; else if (id === "ryW" || id === "ryH") $(id).value = "512";
     await royaleFamily(sv.family);
@@ -2984,10 +2998,10 @@ async function royaleScore() {
   $("ryLikeStatus").textContent = "Scoring… (the first run loads the face model)";
   $("ryLikePeak").textContent = "";
   try {
-    const r = await api("/api/royale/score", {ref: $("ryLikeRef").value.trim()});
+    const r = await api("/api/royale/score", {refs: S.ry.likeRefs || []});
     S.ry.scores = r.scores; S.ry.best = r.best;
     royaleGrid();
-    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject image."; $("ryBest").disabled = true; return; }
+    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject photos."; $("ryBest").disabled = true; return; }
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
@@ -2995,6 +3009,14 @@ async function royaleScore() {
     $("ryLikePeak").textContent = arcPeak(r.embedder).replace("72%", "0.72 (72%)");
     royaleBest();
   } catch (e) { $("ryLikeStatus").textContent = e.message; }
+}
+
+// the Likeness score card's chosen photos, as thumbnails
+function ryLikeShow() {
+  const refs = S.ry.likeRefs || [];
+  $("ryLikeRefs").replaceChildren(...(refs.length ? refs.map((p) => el("img", {title: p, alt: "",
+    src: `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURIComponent(TOKEN)}`}))
+    : [el("span", {class: "field-hint", text: "None chosen"})]));
 }
 
 function royaleBest() {
@@ -3024,8 +3046,13 @@ function wireRoyale() {
     $("ryFolder").value = p; royaleScan(); remember(); }));
   $("ryRefPick").addEventListener("click", () => pick($("ryRef").value || refStart(), false, (p) => { $("ryRef").value = p; remember(); }));
   $("ryRefClear").addEventListener("click", () => { $("ryRef").value = ""; remember(); });
-  $("ryLikePick").addEventListener("click", () => pick($("ryLikeRef").value || refStart(), false, (p) => { $("ryLikeRef").value = p; remember(); }));
-  $("ryLikeClear").addEventListener("click", () => { $("ryLikeRef").value = ""; remember(); });
+  $("ryLikePick").addEventListener("click", () => {      // the Samples gallery's picker, from the photos' folder
+    const refs = S.ry.likeRefs || [], dir = (p) => p.replace(/[\\/][^\\/]*$/, "");
+    const folder = refs.length ? dir(refs[0]) : refStart() || "";
+    S.lik.mode = "royale";
+    likGridShow(folder, refs.filter((p) => dir(p) === folder).map((p) => p.split(/[\\/]/).pop()));
+  });
+  $("ryLikeClear").addEventListener("click", () => { S.ry.likeRefs = []; ryLikeShow(); remember(); });
   $("ryOutPick").addEventListener("click", () => pick($("ryOut").value, true, (p) => { $("ryOut").value = p; remember(); }));
   $("ryRender").addEventListener("click", royaleRender);
   $("ryStop").addEventListener("click", () => api("/api/royale/cancel", {}).then(royalePoll));
@@ -8592,7 +8619,13 @@ function wire() {
   });
   new MutationObserver(() => { if (!$("rvModal").classList.contains("active")) rvStop(); })
     .observe($("rvModal"), {attributes: true, attributeFilter: ["class"]});
-  $("likStart").addEventListener("click", held($("likStart"), () => likenessSet(S.lik.picked)));
+  $("likStart").addEventListener("click", held($("likStart"), async () => {
+    if (S.lik.mode !== "royale") return likenessSet(S.lik.picked);
+    S.ry.likeRefs = S.lik.picked.map((n) => S.lik.paths[n]).filter(Boolean);
+    ryLikeShow(); ryRemember();
+    $("likModal").classList.remove("active");
+  }));
+  $("likFolderPick").addEventListener("click", () => pick(S.lik.folder || refStart(), true, (p) => likGridShow(p, [])));
   $("likClear").addEventListener("click", () => likenessSet([]));
   document.querySelectorAll("#galleryView button").forEach((b) => b.addEventListener("click", () => {
     S.galleryView = b.dataset.view; loadGallery(); }));
