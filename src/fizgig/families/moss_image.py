@@ -44,7 +44,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, every 2nd epoch after at 60%
+        # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, then 60% with every 2nd at 30%
         # (Peter, 20 Oct 2026: the clear winner of eight runs on the dataset that struggled); every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
@@ -340,9 +340,9 @@ MOSS_IMAGE = FamilyDescription(
                      slide_hint="Slide: one share until an epoch, then sliding a few points an epoch to another by a "
                                 "later epoch. 60 until epoch 7, sliding to 30 by epoch 15, works well with datasets of "
                                 "up to about 55 images; with many more, start sliding from 60 earlier. Ticked: after "
-                                "the slide, every few epochs one epoch goes back to the first share, which keeps "
-                                "likeness from fading on a small dataset at the lower share; the epochs at the lower "
-                                "of the two shares then train at half the learning rate.",
+                                "the slide, training runs at the higher of the two shares, which keeps likeness from "
+                                "fading on a small dataset, and every few epochs one epoch at the lower share, at "
+                                "half the learning rate.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),

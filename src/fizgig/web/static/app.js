@@ -489,8 +489,11 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
   const sTick = el("input", {type: "checkbox", onchange: write});
-  const sFirstEcho = el("span");                   // "one epoch at 75%": the first share, as typed
-  const refreshEcho = () => { sFirstEcho.textContent = `${sFirst.value}${unit}`; };
+  const sFirstEcho = el("span");                   // "one epoch at 30%": the lower of the two shares, as typed
+  const refreshEcho = () => {
+    const a = parseFloat(sFirst.value), b = parseFloat(sRest.value);
+    sFirstEcho.textContent = `${isNaN(a) || isNaN(b) ? sRest.value : a <= b ? sFirst.value : sRest.value}${unit}`;
+  };
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,

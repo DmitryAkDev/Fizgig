@@ -240,9 +240,8 @@ class MOSSImageDriver(FamilyDriver):
         """(the Clean-end share for 1-based `epoch` as typed / computed, "" = the reference schedule; whether the epoch
         trains at half the LR). lownoise_pct=P: one share. Split, "A:N:B": A% for the first N epochs, then B%. Slide,
         "A:H:B:E": A% until epoch H, then sliding in a straight line to B% by epoch E (and B% after); "A:H:B:E:R": and
-        every R epochs after E, one epoch at A% again - and in that alternating phase the epochs at the lower of the
-        two shares train at half the LR (A or B first): they reset structure, but at the full rate they cost likeness
-        each time (Peter, 28 Oct 2026)."""
+        after E, the higher of A and B, with every Rth epoch at the lower one, at half the LR (A or B first): those
+        epochs reset structure, but at the full rate they cost likeness each time (Peter, 28 Oct 2026)."""
         pct = str(self.options.get("lownoise_pct", "") or "").replace("%", "").strip()
         half = False
         if ":" in pct:
@@ -253,8 +252,8 @@ class MOSSImageDriver(FamilyDriver):
             except ValueError:
                 raise RuntimeError(f"Clean-end share '{pct}': give share:epochs:share (75:5:40 = 75% for the first 5 "
                                    "epochs, then 40%) or share:epoch:share:epoch (75:6:40:10 = 75% until epoch 6, "
-                                   "then slides to 40% by epoch 10; a fifth number R = every R epochs after that, one "
-                                   "epoch at the first share)") from None
+                                   "then slides to 40% by epoch 10; a fifth number R = after that, the higher share, "
+                                   "with every Rth epoch at the lower one)") from None
             first, until, rest = parts[:3]
             end = parts[3] if len(parts) >= 4 else until
             every = int(parts[4]) if len(parts) == 5 else 0
@@ -262,8 +261,9 @@ class MOSSImageDriver(FamilyDriver):
             e = -(-int(epoch) // cyc) if cyc else int(epoch)      # a fine-tune: the rotation this epoch is in
             share = first if e <= until else rest if e >= end else first + (rest - first) * (e - until) / (end - until)
             if every > 0 and e > end:
-                share = first if (e - end) % every == 0 else rest     # a refresh epoch at the first share
-                half = first != rest and share == min(first, rest)
+                refresh = (e - end) % every == 0      # the refresh epoch is at the lower share, the rest at the higher
+                share = min(first, rest) if refresh else max(first, rest)
+                half = first != rest and refresh
             pct = f"{round(share, 2):g}"
         return pct, half
 
