@@ -150,12 +150,10 @@ class ZImageDriver(FamilyDriver):
                   cap_weights=weights if any(w is not None for w in weights) else None)
         return -torch.stack([o.float() for o in out]).squeeze(2)
 
-    def _sample_sigma(self, n, generator, min_t, max_t):
-        # train_shift (--family_option, not on the Training tab): the shift of the training schedule, the model's 3 by
-        # default; Z-Image Base's diffusers scheduler says 6, ComfyUI samples it at 3
-        shift = float(getattr(self, "options", {}).get("train_shift", P.DEFAULT_SHIFT))
+    @staticmethod
+    def _sample_sigma(n, generator, min_t, max_t):
         s = torch.sigmoid(torch.randn(n, generator=generator))
-        s = shift * s / (1 + (shift - 1) * s)
+        s = P.DEFAULT_SHIFT * s / (1 + (P.DEFAULT_SHIFT - 1) * s)
         return min_t + (max_t - min_t) * s
 
     # ---- training -------------------------------------------------------------------------------

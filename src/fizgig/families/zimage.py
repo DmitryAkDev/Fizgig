@@ -14,7 +14,6 @@ _CARD = "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
 _OSTRIS = "ostris/zimage_turbo_training_adapter"
 _BASE_COMFY = "Comfy-Org/z_image"
 _BASE_CARD = "https://huggingface.co/Tongyi-MAI/Z-Image"
-_LOOK = "ShootTheSound/Fizgig-Z-Image-Turbo-Look-LoRA"
 
 
 def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="0.5", slider=False, adapter=True):
@@ -194,8 +193,7 @@ def _base_presets():
 # identical), so the same driver, VAE and text encoder. Trained on directly with no adapter (#261). Previews render on
 # Turbo by default (the Samples tick), as people generate on Turbo, not Base (Peter, 29 Oct 2026); with it off they
 # render on the Base as ComfyUI's template does (25 steps, CFG 4, shift 3, a negative prompt - Peter's pick over Tongyi's
-# reference schedule, shift 6 and guidance 4 = CFG 5), optionally with the Turbo look LoRA (Turbo minus Base, the later
-# layers at a higher rank, at 1.5) instead of loading Turbo.
+# reference schedule, shift 6 and guidance 4 = CFG 5).
 ZIMAGE_BASE = dataclasses.replace(
     ZIMAGE,
     key="zimage_base",
@@ -222,15 +220,6 @@ ZIMAGE_BASE = dataclasses.replace(
                   hint="Z-Image Turbo, the model most people generate with: training samples, Studio and LoRA Royale "
                        "render your Base LoRA on it (8 steps, no CFG). Never trained. The same file as Z-Image "
                        "Turbo's DiT. Untick it on the Samples tab for samples on the Base."),
-        # Turbo minus Base, extracted at a low rank for the early layers and a high one for the later layers (where
-        # the look lives), as MOSS-Image's SFT look LoRA; downloaded the first time the Samples tick is on
-        ModelFile("zimage_base_turbo_look_lora", "Turbo look LoRA (optional)", False, _LOOK,
-                  "z_image_turbo_look_lora.safetensors", 2.0, role="look_lora", bulk_fetch=False, fetch_on_use=True,
-                  hint="Optional. Fizgig's Turbo look LoRA: previews on your Base (the Turbo tick off) get much "
-                       "of Turbo's look without loading Turbo. "
-                       "Downloaded for you the first time you tick \"Give Base previews the Turbo look\" on the "
-                       "Samples tab. Previews only, never training.",
-                  download_note="Apache-2.0"),
     ),
     prefs_title="Model Paths (Z-Image Base)",
     modelspec_arch="Z-Image",
@@ -259,14 +248,8 @@ ZIMAGE_BASE = dataclasses.replace(
         "Z-Image Turbo", steps=8, cfg=1.0, sampler="euler", scheduler="simple", options=(("shift", 3.0),),
         note="Turbo's own: 8 steps, no CFG, shift 3.", source=f"{_CARD}; Comfy-Org workflow_templates "
                                                               "image_z_image_turbo.json"),
-    workbench_render_choice=True,     # Studio / Royale / Profiler: Turbo, or the Samples tab's Base and look
-    preview_look_tick="Give Base previews the Turbo look (Turbo look LoRA)",
-    preview_look_hint="For previews on your Base (the Turbo tick above off): the Turbo look LoRA gives them much of "
-                      "Turbo's look, without loading Turbo. Previews only, never training. Downloaded for you the "
-                      "first time.",
-    preview_look_strength=1.5,
+    workbench_render_choice=True,     # Studio / Royale / Profiler: Turbo, or the Samples tab's Base
     preview_labels=(("checkpoint", "Previewed on Z-Image Turbo."),
-                    ("look", "Previewed on the Base with the Turbo look LoRA."),
                     ("base", "Previewed on the Base model. For a read closer to how people use it, preview on "
                              "Turbo.")),
     notes=(
