@@ -240,7 +240,7 @@ class MOSSImageDriver(FamilyDriver):
         """lownoise_pct=P (the share of steps below sigma 0.5) moves the curve's centre; unset = the reference's.
         Split, "A:N:B": A% for the first N epochs, then B%. Slide, "A:H:B:E": A% until epoch H, then sliding in a
         straight line to B% by epoch E (and B% after); "A:H:B:E:R": and every R epochs after E, one epoch at A%
-        again, with the lower of the two at their midpoint after E (A first or B first)."""
+        again."""
         pct = str(self.options.get("lownoise_pct", "") or "").replace("%", "").strip()
         if not pct:
             return T_MU
@@ -253,19 +253,15 @@ class MOSSImageDriver(FamilyDriver):
                 raise RuntimeError(f"Clean-end share '{pct}': give share:epochs:share (75:5:40 = 75% for the first 5 "
                                    "epochs, then 40%) or share:epoch:share:epoch (75:6:40:10 = 75% until epoch 6, "
                                    "then slides to 40% by epoch 10; a fifth number R = every R epochs after that, one "
-                                   "epoch at the first share and the lower share halfway between the two)") from None
+                                   "epoch at the first share)") from None
             first, until, rest = parts[:3]
             end = parts[3] if len(parts) >= 4 else until
             every = int(parts[4]) if len(parts) == 5 else 0
             cyc = getattr(self, "_ft_cycle", 0)
             e = -(-self.epoch // cyc) if cyc else self.epoch      # a fine-tune: the rotation this epoch is in
             share = first if e <= until else rest if e >= end else first + (rest - first) * (e - until) / (end - until)
-            if every > 0 and e > end:
-                # the alternating phase: a refresh epoch at the first share, the others at the second, and the
-                # lower of the two lifted to their midpoint - the low epochs reset structure but cost likeness
-                # each time, at the full drop (Peter, 28 Oct 2026)
-                share = first if (e - end) % every == 0 else rest
-                share = max(share, (first + rest) / 2)
+            if every > 0 and e > end and (e - end) % every == 0:
+                share = first                     # a refresh epoch at the first share
             pct = f"{round(share, 2):g}"
         cached = getattr(self, "_mu_cached", None)
         if cached is None or cached[0] != pct:

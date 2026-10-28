@@ -489,15 +489,8 @@ function splitRow(r, wrap) {
   const one = box(), first = box(), until = box(), rest = box();
   const sFirst = box(), sHold = box(), sRest = box(), sBy = box(), sEvery = box();
   const sTick = el("input", {type: "checkbox", onchange: write});
-  const sFirstEcho = el("span");                   // "one epoch at 60%, the others at 45%"
-  // the alternating phase as the driver runs it (moss_image/driver.py _t_mu): a refresh epoch at the first share,
-  // the others at the second, the lower of the two lifted to their midpoint
-  const refreshEcho = () => {
-    const a = parseFloat(sFirst.value), b = parseFloat(sRest.value);
-    if (!(isFinite(a) && isFinite(b))) { sFirstEcho.textContent = `${sFirst.value}${unit}`; return; }
-    const mid = Math.round((a + b) / 2 * 100) / 100;
-    sFirstEcho.textContent = `${Math.max(a, mid)}${unit}, the others at ${Math.max(b, mid)}${unit}`;
-  };
+  const sFirstEcho = el("span");                   // "one epoch at 75%": the first share, as typed
+  const refreshEcho = () => { sFirstEcho.textContent = `${sFirst.value}${unit}`; };
   const pills = el("div", {class: "radio-row"});
   for (const c of ["Single", ...(r.split ? ["Split"] : []), ...(r.slide ? ["Slide"] : [])]) {
     pills.append(el("label", {class: "checkbox-label"}, el("input", {type: "radio", name: "split_" + r.key, value: c,

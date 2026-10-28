@@ -44,8 +44,7 @@ def _preset(rank, lr=1e-4, adaptive=None, epochs=30, mp="1.0", slider=False, ft=
         "KREA2_LOSS_WATCH": False, "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False,
         "KREA2_WARMUP_LOOK": False, "FAMILY_FT": ft, "FAMILY_EDIT": False, "FAMILY_SLIDER": slider,
         "FAMILY_FAST_ID": False, "FAMILY_SLIDER_GUIDANCE": "3",
-        # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, after that every 2nd epoch at
-        # 60% and the others at 45% (the lower share lifted to the midpoint, Peter 28 Oct 2026)
+        # the Clean-end share: Slide, 60% until epoch 7, sliding to 30% by epoch 15, every 2nd epoch after at 60%
         # (Peter, 20 Oct 2026: the clear winner of eight runs on the dataset that struggled); every preset sets it
         "MOSS_LOWNOISE_PCT": _FT_SHARE if ft else _LORA_SHARE,
         **({"FAMILY_FT_ROTATIONS": "10"} if ft else {}),
@@ -342,8 +341,7 @@ MOSS_IMAGE = FamilyDescription(
                                 "later epoch. 60 until epoch 7, sliding to 30 by epoch 15, works well with datasets of "
                                 "up to about 55 images; with many more, start sliding from 60 earlier. Ticked: after "
                                 "the slide, every few epochs one epoch goes back to the first share, which keeps "
-                                "likeness from fading on a small dataset at the lower share; the lower of the two "
-                                "shares is then halfway between them (60 and 30: the other epochs at 45).",
+                                "likeness from fading on a small dataset at the lower share.",
                      warn="Experimental figure.",
                      warn_link="https://www.reddit.com/r/StableDiffusion/comments/1x9khtm/a_potential_fix_for_moss_training_issues/", summary="clean-end {}%", featured=True),
     ),
@@ -352,7 +350,7 @@ MOSS_IMAGE = FamilyDescription(
     notes=(
         ("Training timesteps follow the released weights' last pretraining interval: sigma = 1 - sigmoid(Z), "
          "Z ~ N(-1.09, 0.95^2), truncated at 0.95 and rescaled onto the 1000-step grid, mixed with 1% uniform (Fizgig's "
-         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, sliding to 30% by epoch 15, and after that every 2nd epoch at 60% and the others at 45%; the reference is about 11%); the "
+         "Clean-end share moves the curve's centre: by default 60% of steps below sigma 0.5 until epoch 7, sliding to 30% by epoch 15, and every 2nd epoch after that at 60%; the reference is about 11%); the "
          "DiT is told 1000 * sigma; loss is the unweighted per-token MSE on noise - x0.",
          f"{_REPORT} Appendix A.2, eq. 3-4, Table 6"),
         ("Text conditioning: Qwen3.5-9B's final hidden state through the chat template with an open <think> block, "
