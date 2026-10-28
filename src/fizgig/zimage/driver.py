@@ -98,10 +98,12 @@ class ZImageDriver(FamilyDriver):
                   cap_weights=weights if any(w is not None for w in weights) else None)
         return -torch.stack([o.float() for o in out]).squeeze(2)
 
-    @staticmethod
-    def _sample_sigma(n, generator, min_t, max_t):
+    def _sample_sigma(self, n, generator, min_t, max_t):
+        # train_shift (--family_option, not on the Training tab): the shift of the training schedule, the model's 3 by
+        # default; Z-Image Base's diffusers scheduler says 6, ComfyUI samples it at 3
+        shift = float(getattr(self, "options", {}).get("train_shift", P.DEFAULT_SHIFT))
         s = torch.sigmoid(torch.randn(n, generator=generator))
-        s = P.DEFAULT_SHIFT * s / (1 + (P.DEFAULT_SHIFT - 1) * s)
+        s = shift * s / (1 + (shift - 1) * s)
         return min_t + (max_t - min_t) * s
 
     # ---- training -------------------------------------------------------------------------------
@@ -155,7 +157,9 @@ class ZImageDriver(FamilyDriver):
                  noise=None, on_step=None, refs=None):
         device = next(dit.parameters()).device
         x = (noise if noise is not None else self.initial_noise(seed, width, height)).to(device, torch.float32)
-        shift = float(dict(options).get("shift", P.DEFAULT_SHIFT))
+        # the family's own schedule when the caller gives none (training previews): Turbo's shift 3, Base's 6
+        own = self.description.default_sampling() if getattr(self, "description", None) is not None else None
+        shift = float(dict(options).get("shift", dict(own.options if own else ()).get("shift", P.DEFAULT_SHIFT)))
         sig = (torch.tensor(list(sigmas) + [0.0]) if sigmas is not None and len(sigmas) == steps
                else P.sigmas(steps, shift))
         cap = [_cap(cond)]

@@ -192,8 +192,8 @@ def _base_presets():
 
 # Z-Image Base (Tongyi-MAI's undistilled Z-Image, 28 Jan 2026): the same S3-DiT as Turbo (transformer/config.json
 # identical), so the same driver, VAE and text encoder. Trained on directly with no adapter (#261); previews sample it
-# as ComfyUI's template does: 25 steps, CFG 4, shift 3, with a negative prompt. The Turbo look LoRA (Turbo minus Base,
-# the later layers at a higher rank, at 1.5) gives Base previews Turbo's look.
+# as Tongyi's reference does (shift 6, guidance 4 = Fizgig CFG 5, a negative prompt) at 30 steps. The Turbo look LoRA
+# (Turbo minus Base, the later layers at a higher rank, at 1.5) gives Base previews Turbo's look.
 ZIMAGE_BASE = dataclasses.replace(
     ZIMAGE,
     key="zimage_base",
@@ -227,14 +227,17 @@ ZIMAGE_BASE = dataclasses.replace(
     training_adapter_note="",
     helper_files=(("Tongyi-MAI/Z-Image", ("tokenizer/*", "vae/config.json")),),
     sampling=(
-        SamplingSettings("Base", steps=25, cfg=4.0, sampler="euler", scheduler="simple", options=(("shift", 3.0),),
+        # the reference: scheduler_config.json shift 6.0 (static), guidance 4 in pos + g * (pos - neg) = CFG 5 here,
+        # 50 steps (the card: 28-50, guidance 3-5). ComfyUI's template samples shift 3, CFG 4, 25 steps res_multistep
+        SamplingSettings("Base", steps=30, cfg=5.0, sampler="euler", scheduler="simple", options=(("shift", 6.0),),
                          negative_prompt=True,
-                         note="25 steps, CFG 4, shift 3 (ComfyUI's template; it samples res_multistep). The model "
-                              "card gives 28-50 steps at guidance 3-5.",
-                         source=f"{_BASE_CARD}; Comfy-Org workflow_templates image_z_image.json"),
+                         note="30 steps, CFG 5, shift 6: Tongyi's reference schedule and guidance (its guidance 4), "
+                              "at 30 of the card's 28-50 steps for quicker previews.",
+                         source=f"{_BASE_CARD}; Tongyi-MAI/Z-Image scheduler/scheduler_config.json; diffusers "
+                                "pipeline_z_image.py"),
     ),
-    preview_steps=25,
-    preview_cfg=4.0,
+    preview_steps=30,
+    preview_cfg=5.0,
     preview_negative=GENERAL_NEGATIVE,
     samples_cfg_free=False,
     preview_look_tick="Give Base previews the Turbo look (Turbo look LoRA)",

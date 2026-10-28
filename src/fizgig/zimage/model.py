@@ -49,7 +49,8 @@ class TimestepEmbedder(nn.Module):
 
     def forward(self, t):
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
-        return self.mlp(t_freq.to(self.mlp[0].weight.dtype))
+        first = self.mlp[0]                   # a LoRA on it wraps the Linear (LoRALinear keeps it as .base)
+        return self.mlp(t_freq.to(getattr(first, "base", first).weight.dtype))
 
 
 class RMSNorm(nn.Module):
