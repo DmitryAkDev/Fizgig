@@ -298,15 +298,16 @@ def _load_qwen3_vl_model(
             f"Qwen3-VL text encoder checkpoint did not match the model: missing={missing[:10]}, unexpected={unexpected[:10]}"
         )
 
+    # Never cast an fp8 model to dtype — that would convert the weights straight back to bf16 and
+    # throw away the whole point. The unquantised parts (vision tower, norms, embeddings) are
+    # already stored in the target dtype anyway. Cast before placing: a streamed model can't be
+    # moved or cast once its layers are offloaded.
+    if dtype is not None and not prequant:
+        model.to(dtype)
     if stream:
         _stream_layers(model, device, room)
     else:
         model.to(device)
-    # Never cast an fp8 model to dtype — that would convert the weights straight back to bf16 and
-    # throw away the whole point. The unquantised parts (vision tower, norms, embeddings) are
-    # already stored in the target dtype anyway.
-    if dtype is not None and not prequant:
-        model.to(dtype)
     return model.eval().requires_grad_(False)
 
 
