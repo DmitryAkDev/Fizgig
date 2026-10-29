@@ -226,6 +226,9 @@ ZIMAGE_BASE = dataclasses.replace(
     training_adapter="",
     training_adapter_note="",
     helper_files=(("Tongyi-MAI/Z-Image", ("tokenizer/*", "vae/config.json")),),
+    # off for Base: over 25 CFG steps the int8 attention kernel's approximation grows into another picture (17-33/255
+    # from the training preview, which renders the plain way, and ComfyUI); without it they are identical (29 Oct 2026)
+    int8_attention=False,
     sampling=(
         # ComfyUI's template (ModelSamplingAuraFlow 3, KSampler 25 steps CFG 4 res_multistep simple). The reference's
         # scheduler_config.json says shift 6.0 and its guidance 4 (pos + g * (pos - neg)) is CFG 5 here, 28-50 steps
