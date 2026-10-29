@@ -208,15 +208,17 @@ ZIMAGE_BASE = dataclasses.replace(
                   hint="Z-Image Base bf16 (ComfyUI's single file) - trained on. Tongyi's undistilled Z-Image: "
                        "the one to train on."),
         ModelFile("zimage_base_vae", "FLUX.1 VAE", True, _BASE_COMFY, "split_files/vae/ae.safetensors", 0.34,
-                  role="vae", hint="The FLUX.1 autoencoder (ae.safetensors), the same file as Z-Image Turbo's."),
+                  role="vae", hint="The FLUX.1 autoencoder (ae.safetensors), the same file as Z-Image Turbo's.",
+                  same_as="zimage_vae"),
         ModelFile("zimage_base_text_encoder", "Qwen3-4B text encoder", True, _BASE_COMFY,
                   "split_files/text_encoders/qwen_3_4b.safetensors", 8.04, role="text_encoder",
-                  hint="The same file as Z-Image Turbo's. Used for caching only, then unloaded before training."),
+                  hint="The same file as Z-Image Turbo's. Used for caching only, then unloaded before training.",
+                  same_as="zimage_text_encoder"),
         # the samples' model: a Base LoRA previewed where people use it (the Samples tick, on by default); never
         # trained. The same file as Z-Image Turbo's own DiT
         ModelFile("zimage_base_turbo_dit", "Z-Image Turbo DiT (previews)", False, _COMFY,
                   "split_files/diffusion_models/z_image_turbo_bf16.safetensors", 12.31, role="preview_dit",
-                  fetch_optional=False,
+                  fetch_optional=False, same_as="zimage_dit",
                   hint="Z-Image Turbo, the model most people generate with: training samples, Studio and LoRA Royale "
                        "render your Base LoRA on it (8 steps, no CFG). Never trained. The same file as Z-Image "
                        "Turbo's DiT. Untick it on the Samples tab for samples on the Base."),

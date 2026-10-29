@@ -65,6 +65,10 @@ class ModelFile:
     # a part that ships inside another model file (a single-file checkpoint's VAE / text encoders): the pref key of
     # that file, used when this row is left empty - the row stays as an optional override (e.g. a fixed VAE)
     inside: str = ""
+    # another family's Preferences row for the same file (Z-Image Base's VAE / text encoder / Turbo DiT are Z-Image
+    # Turbo's): Download models for me links this row to that file when it is set and on disk, instead of fetching a
+    # second copy into the models folder
+    same_as: str = ""
 
     @property
     def fetch_is_optional(self) -> bool:
