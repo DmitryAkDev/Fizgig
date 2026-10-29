@@ -946,7 +946,7 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
     name = str(values.get("LORA_NAME") or "").strip() or "my_lora"
     out_dir = str(values.get("LORA_OUTPUT_DIR") or "").strip() or default_output_dir()
     values.update(LORA_OUTPUT_DIR=out_dir, DATASET_CONFIG=os.path.join(DATASET_DIR, f"{_safe(name)}_web.toml"))
-    captioner = pref_path(prefs, "krea2_text_encoder")
+    captioner = captioner_for(prefs)
     raw_ovr = prefs.get("caption_qwen_instructions")
     inputs = form.inputs(
         desc, values, models={**{k: pref_path(prefs, k) for k in form.model_keys(desc)}, **(models or {})},
@@ -2501,6 +2501,27 @@ def _fetch_watch(proc):
             _fetch["state"] = "done" if code == 0 else "failed"
 
 
+def captioner_for(prefs) -> str:
+    """The captioner (the Captions tab's Qwen3-VL and auto-recaption): the secondary captioning model when that row is
+    set to a file it can read (#270), else the Krea 2 text encoder."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if sec and os.path.isfile(sec) and not captions.captioner_problem(sec):
+        return sec
+    return pref_path(prefs, "krea2_text_encoder")
+
+
+def secondary_captioner_note(prefs) -> str:
+    """The secondary captioning row's line for Preferences: what captions, or why the file set there can't."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if not sec:
+        return ""
+    if not os.path.isfile(sec):
+        return "That file isn't there: captioning uses the Krea 2 text encoder."
+    why = captions.captioner_problem(sec)
+    return (f"Not used - {why}. Captioning uses the Krea 2 text encoder." if why
+            else f"Captioning (the Captions tab and auto-recaption) uses {os.path.basename(sec)}.")
+
+
 def _caption_gpu_check(need_gb):
     """With a run training, a caption job only starts when the card has room for it beside the run (what the job
     needs + 3 GB)."""
@@ -2729,6 +2750,10 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "captioner": {"path": str(p.get(captions.SECONDARY_PREF) or ""),
+                                            "note": secondary_captioner_note(p),
+                                            "links": [{"label": lab, "href": f"https://huggingface.co/{r}/blob/main/{f}"}
+                                                      for lab, r, f in captions.SECONDARY_LINKS]},
                               "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "file_manager": pod_stop.file_manager(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
@@ -2799,9 +2824,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": str(e)}, 400)
         if path == "/api/captions/options":
             p = load_prefs()
-            cap = pref_path(p, "krea2_text_encoder")
+            cap = captioner_for(p)
+            sec = pref_path(p, captions.SECONDARY_PREF)
             desc = get_family((qs.get("family") or [""])[0])
-            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else ""),
+            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else "",
+                                                 cap if cap and cap == sec else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/presets":               # a model's presets: the built-in ones, then the ones you saved
             desc = _preset_family((qs.get("family") or [""])[0])
@@ -3556,7 +3583,7 @@ class Handler(BaseHTTPRequestHandler):
                 if desc is None:
                     return self.json({"error": "unknown family"}, 400)
                 prefs = load_prefs()
-                cap = pref_path(prefs, "krea2_text_encoder")
+                cap = captioner_for(prefs)
                 sp = desc.preview_speed()
                 spf = pref_path(prefs, sp.pref_key) if sp is not None and sp.pref_key else ""
                 ck = desc.preview_checkpoint()
@@ -3897,7 +3924,7 @@ class Handler(BaseHTTPRequestHandler):
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden"} | render_keys
+                    "input_dataset_dir", "welcome_v8_hidden", captions.SECONDARY_PREF} | render_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
@@ -3950,7 +3977,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
-                cap = pref_path(prefs, "krea2_text_encoder")
+                cap = captioner_for(prefs)
                 model = str(b.get("model") or "")
                 _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
                 only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) ==
