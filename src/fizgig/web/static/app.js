@@ -72,6 +72,7 @@ async function boot() {
   S.uploadRoot = await api("/api/upload/root").catch(() => null);   // before the forms: where Choose… starts
   const pr = await api("/api/prefs");
   S.prefs = pr.models || {};
+  S.captioner = pr.captioner;              // the secondary captioning model's row
   S.webPort = pr.web_port;
   S.portNow = pr.port_now;
   S.onPod = pr.on_pod;
@@ -918,6 +919,7 @@ function renderPrefs() {
   host.append(outputFolderCard());
   host.append(foldersCard());
   host.append(inferenceCard());
+  host.append(captionerCard());
   const gpuCard = gpuPickCard();
   if (gpuCard) host.append(gpuCard);
   S.fetchRows = {};
@@ -979,6 +981,36 @@ function renderPrefs() {
       el("div", {class: "field-hint", text: "Puts the folders and inference settings above back to Fizgig's defaults. " +
         "Model files, the web password and the RunPod key are kept."}))));
   paintFetch();
+}
+
+// the secondary captioning model (#270): set, it captions everything (the Captions tab and auto-recaption);
+// empty, the Krea 2 text encoder does. Plain Hugging Face links to the builds Fizgig reads - nothing downloads itself
+function captionerCard() {
+  const c = S.captioner || {path: "", note: "", links: []};
+  const input = el("input", {type: "text", class: "w-path", value: c.path || "", placeholder: "Empty = the Krea 2 text encoder"});
+  const note = el("div", {class: "field-hint", text: c.note || ""});
+  const save = async () => {
+    try {
+      await api("/api/prefs", {changes: {captioner_secondary: input.value.trim()}});
+      S.captioner = (await api("/api/prefs")).captioner || c;
+      note.textContent = S.captioner.note || "";
+      captionModelsChanged();
+    } catch (e) { note.textContent = e.message; }
+  };
+  input.addEventListener("change", save);
+  const row = el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Secondary captioning model:"}),
+    input, el("button", {class: "btn", text: "Choose…", title: "Pick from what is on the machine running Fizgig",
+      onclick: () => pick(input.value, false, (p) => { input.value = p; save(); })}),
+    ...(c.links || []).map((l) => el("a", {class: "btn", target: "_blank", rel: "noopener", href: l.href,
+      text: l.label.split(" (")[0], title: l.label})));
+  return el("div", {class: "section-card"}, el("div", {class: "card-title"}, el("span", {text: "Captioning model"})),
+    el("div", {class: "card-content"}, el("div", {class: "pref-file"}, row,
+      el("div", {class: "field-hint", text: "Optional. Qwen3-VL 8B, the bigger model of the family the Krea 2 text " +
+        "encoder belongs to (it's Qwen Image 2.1's text encoder): more detailed captions. Download a build from the " +
+        "links and choose it here; from then on it does all captioning - the Captions tab and auto-recaption. Empty " +
+        "the box to go back to the Krea 2 text encoder. " + (c.links || []).map((l) => l.label).join(" · ") +
+        ". On a card with less VRAM than it needs, it keeps what fits and streams the rest from system RAM (slower)."}),
+      note)));
 }
 
 // a folder setting the two apps share (prefs.json): a box, Choose…, saved when it changes
@@ -6432,7 +6464,7 @@ function capSettings() {
     skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
-const qwenOn = () => !!S.cap.opts && (S.cap.opts.qwen_models || [S.cap.opts.qwen_model]).includes($("capModel").value);
+const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
 const qwenTask = () => (S.cap.opts.qwen_tasks || []).find((t) => t.label === $("capTask").value);
 
 async function loadCaptionOptions() {
@@ -6442,13 +6474,14 @@ async function loadCaptionOptions() {
   model.innerHTML = "";
   for (const m of o.models) model.append(el("option", {value: m, text: m}));
   model.value = o.models.includes(saved.model) ? saved.model : o.default_model;
-  $("capModelHint").textContent = (o.qwen4_available ?
+  $("capModelHint").textContent = o.secondary ?
+    `Qwen3-VL captions with your secondary captioning model (${o.secondary}, set in Preferences), following an ` +
+    "instruction you can edit. Empty that row in Preferences to caption with the Krea 2 text encoder again. " +
+    "Florence-2 downloads itself the first time." : o.qwen_available ?
     "Qwen3-VL (the Krea 2 text encoder from Preferences) follows an instruction you can edit and writes the best " +
-    "training captions." :
-    "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL 4B, which writes better training captions.") +
-    " Qwen3-VL 8B is the bigger model of the same family (Qwen Image 2.1's text encoder): more detailed captions, " +
-    "a little slower" + (o.qwen8_downloaded ? "." : ", downloaded for you the first time you use it (about 10.6 GB).") +
-    " Auto-recaption uses the Qwen3-VL you last captioned with here. Florence-2 downloads itself the first time.";
+    "training captions. Florence-2 downloads itself the first time." :
+    "Set the Krea 2 text encoder in Preferences to caption with Qwen3-VL, which writes better training captions. " +
+    "Florence-2 downloads itself the first time.";
   if (S.trigger !== undefined) $("capTrigger").value = S.trigger;      // the training folder's word
   if (saved.overwrite !== undefined) $("capOverwrite").checked = saved.overwrite;
   if (saved.skipCjk !== undefined) $("capSkipCjk").checked = saved.skipCjk;
@@ -6520,17 +6553,6 @@ function capJobBody(extra = {}) {
 async function capRun(path, body) {
   try {
     const r = await api(path, body);
-    if (r.fetching !== undefined) {          // Qwen3-VL 8B, picked the first time: its download, then the job itself
-      clearTimeout(S.cap.fetchTimer);
-      if (r.fetching === "failed") {
-        $("capStatus").textContent = "Couldn't download Qwen3-VL 8B: check you're online, then press it again.";
-        return r;
-      }
-      $("capStatus").textContent = `Downloading Qwen3-VL 8B: ${r.got.toFixed(1)} of ${r.of.toFixed(1)} GB. ` +
-        "Captioning starts when it's here.";
-      S.cap.fetchTimer = setTimeout(() => capRun(path, body), 3000);
-      return r;
-    }
     if (r.error) $("capStatus").textContent = r.error;
     pollCaptions();
     return r;

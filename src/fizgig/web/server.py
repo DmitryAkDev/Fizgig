@@ -34,7 +34,6 @@ from urllib.parse import parse_qs, urlparse
 from fizgig.dataset.masks import is_mask_file, mask_for_stem
 from fizgig.families import form, launch
 from fizgig.families.registry import get as get_family, training_families
-from fizgig.families.description import ModelFile
 from fizgig.web import captions, history
 from fizgig.web import queue as webqueue
 from fizgig.web import prep_jobs
@@ -2502,27 +2501,25 @@ def _fetch_watch(proc):
             _fetch["state"] = "done" if code == 0 else "failed"
 
 
-# the bigger captioner's file (#270), downloaded the first time it is picked on the Captions tab
-CAPTIONER_8B = ModelFile("captioner_8b_text_encoder", "Qwen3-VL-8B captioner", False, "Comfy-Org/Qwen3-VL",
-                         "text_encoders/qwen3vl_8b_fp8_scaled.safetensors", 10.59, fetch_on_use=True)
-
-
-def captioner_8b(prefs) -> str:
-    """The Qwen3-VL-8B file to caption with: its own download, else Qwen Image 2.1's text encoder when that is the
-    8B, else "" (not here yet)."""
-    for key in (CAPTIONER_8B.pref_key, "qwen21_text_encoder"):
-        p = pref_path(prefs, key)
-        if p and os.path.isfile(p) and (key == CAPTIONER_8B.pref_key or captions.is_8b_file(p)):
-            return p
-    return ""
-
-
 def captioner_for(prefs) -> str:
-    """The captioner auto-recaption uses: the Qwen3-VL the Captions tab last captioned with (the 8B once picked
-    there and downloaded), else the Krea 2 text encoder."""
-    if prefs.get("caption_qwen_size") == "8b" and captioner_8b(prefs):
-        return captioner_8b(prefs)
+    """The captioner (the Captions tab's Qwen3-VL and auto-recaption): the secondary captioning model when that row is
+    set to a file it can read (#270), else the Krea 2 text encoder."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if sec and os.path.isfile(sec) and not captions.captioner_problem(sec):
+        return sec
     return pref_path(prefs, "krea2_text_encoder")
+
+
+def secondary_captioner_note(prefs) -> str:
+    """The secondary captioning row's line for Preferences: what captions, or why the file set there can't."""
+    sec = pref_path(prefs, captions.SECONDARY_PREF)
+    if not sec:
+        return ""
+    if not os.path.isfile(sec):
+        return "That file isn't there: captioning uses the Krea 2 text encoder."
+    why = captions.captioner_problem(sec)
+    return (f"Not used - {why}. Captioning uses the Krea 2 text encoder." if why
+            else f"Captioning (the Captions tab and auto-recaption) uses {os.path.basename(sec)}.")
 
 
 def _caption_gpu_check(need_gb):
@@ -2753,6 +2750,10 @@ class Handler(BaseHTTPRequestHandler):
                                          for k in form.model_keys(d)},
                               "cache_dir": str(p.get("cache_dir") or ""),
                               "settings": {k: str(p.get(k) or "") for k in SETTING_PREFS},
+                              "captioner": {"path": str(p.get(captions.SECONDARY_PREF) or ""),
+                                            "note": secondary_captioner_note(p),
+                                            "links": [{"label": lab, "href": f"https://huggingface.co/{r}/blob/main/{f}"}
+                                                      for lab, r, f in captions.SECONDARY_LINKS]},
                               "abs": {k: pref_path(p, k) for k in ("profiles_dir", "cache_dir")},
                               "lora_output_dir": str(p.get("lora_output_dir") or ""), "output_default": default_output_dir(),
                               "web_port": saved_port(p), "port_now": self.server.server_address[1], "on_pod": on_pod(), "file_manager": pod_stop.file_manager(), "host_name": socket.gethostname(), "port_fixed": getattr(self, "port_fixed", False),
@@ -2823,9 +2824,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"error": str(e)}, 400)
         if path == "/api/captions/options":
             p = load_prefs()
-            cap = pref_path(p, "krea2_text_encoder")
+            cap = captioner_for(p)
+            sec = pref_path(p, captions.SECONDARY_PREF)
             desc = get_family((qs.get("family") or [""])[0])
-            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else "", captioner_8b(p)),
+            return self.json({**captions.options(p, cap if cap and os.path.isfile(cap) else "",
+                                                 cap if cap and cap == sec else ""),
                               "song_words": getattr(desc, "song_captions", "") if desc is not None else ""})
         if path == "/api/presets":               # a model's presets: the built-in ones, then the ones you saved
             desc = _preset_family((qs.get("family") or [""])[0])
@@ -3921,7 +3924,7 @@ class Handler(BaseHTTPRequestHandler):
                 render_keys = {f"workbench_render_{d.key}" for d in training_families()
                                if getattr(d, "workbench_render_choice", False)}
                 allowed = {k for d in training_families() for k in form.model_keys(d)} | set(SETTING_PREFS) | {
-                    "input_dataset_dir", "welcome_v8_hidden"} | render_keys
+                    "input_dataset_dir", "welcome_v8_hidden", captions.SECONDARY_PREF} | render_keys
                 ch = b.get("changes") or {}
                 ch = {k: v for k, v in ch.items() if k not in render_keys or v in ("checkpoint", "samples")}
                 if b.get("reset"):                      # Reset to defaults: the settings, never the model files
@@ -3974,17 +3977,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"ok": True})
             if path == "/api/captions/ai":
                 prefs, folder, clips, photos, _ = _caption_args(b)
-                cap = pref_path(prefs, "krea2_text_encoder")
+                cap = captioner_for(prefs)
                 model = str(b.get("model") or "")
-                if model == captions.QWEN8_MODEL:
-                    cap = captioner_8b(prefs)
-                    if not cap:                      # the first time it's picked: its own download, then captioning
-                        state = _fetch_on_use(CAPTIONER_8B)
-                        return self.json({"fetching": state, "of": CAPTIONER_8B.size_gb,
-                                          "got": round(_on_use_gb(CAPTIONER_8B), 2)})
-                if model in captions.QWEN_MODELS:    # auto-recaption follows the Qwen3-VL picked here
-                    update_prefs({"caption_qwen_size": "8b" if model == captions.QWEN8_MODEL else "4b"})
-                _caption_gpu_check(8.0 if model in captions.QWEN_MODELS else 2.5)
+                _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
                 only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) ==
                         os.path.abspath(folder)]
                 return self.json(captions.ai_captions(
