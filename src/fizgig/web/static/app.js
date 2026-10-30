@@ -272,7 +272,25 @@ function renderSections(tab, host) {
         el("span", {class: "sec-video-text"}, el("b", {text: sec.help.text}),
           el("span", {class: "sec-video-sub", text: sec.help.sub || "Watch on YouTube"}))));
     }
-    for (const r of sec.rows) body.append(renderRow(r));
+    // a group's rows (form.py ROW_GROUPS) in one box where its first row is, side by side; their hints behind ?
+    const groups = {};
+    for (const r of sec.rows) {
+      const row = renderRow(r);
+      if (!r || !r.group) { body.append(row); continue; }
+      let g = groups[r.group];
+      if (!g) {
+        const inner = el("div", {class: "form-group-rows"}), help = el("div", {class: "form-group-help"});
+        const q = el("button", {class: "form-group-q", text: "?", title: "What these do",
+          onclick: () => help.classList.toggle("open")});
+        const box = el("div", {class: "form-group", "data-group": r.group},
+          el("div", {class: "form-group-head"}, el("span", {text: r.group_label}), q), inner, help);
+        g = groups[r.group] = {box, inner, help, q};
+        body.append(box);
+      }
+      g.inner.append(row);
+      if (r.hint) g.help.append(el("div", {}, el("b", {text: r.label.replace(/:$/, "") + ": "}), r.hint));
+    }
+    for (const g of Object.values(groups)) if (!g.help.children.length) g.q.remove();
     if (sec.id === "subjects" && !S.family.startsWith("acestep")) body.append(triggerCheckBlock());
     const card = el("div", {class: "section-card", id: "sec-" + sec.id, "data-section": sec.id}, head, body);
     show();
@@ -414,7 +432,8 @@ function renderRow(r) {
     }
     wrap.append(h);
   } else if (r.hint) {                            // a hint of several lines keeps its line breaks
-    const h = el("div", {class: "field-hint", text: r.hint});
+    const h = el("div", {class: "field-hint row-hint", text: r.hint, title: "Click to read it all",
+      onclick: () => h.classList.toggle("open")});
     if (r.hint.includes("\n")) h.style.whiteSpace = "pre-line";
     wrap.append(h);
   }
@@ -774,6 +793,9 @@ async function refreshState() {
   document.querySelectorAll(".form-row[data-key]").forEach((row) => {
     const k = row.dataset.key;
     row.style.display = hidden.has(k) ? "none" : "";
+    const grp = row.closest(".form-group");         // a box shows while any of its rows does
+    if (grp) grp.style.display = [...grp.querySelectorAll(".form-row[data-key]")]
+      .some((x) => !hidden.has(x.dataset.key)) ? "" : "none";
     // a label the state renumbers (the Edit pairs steps when an extra-pictures folder joins), else the form's own
     const lab = row.querySelector(".field-label"), rowDef = (S.fam.form.sections.flatMap((s) => s.rows)
       .find((r) => r && r.key === k));

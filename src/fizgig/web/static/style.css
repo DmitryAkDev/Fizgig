@@ -1212,6 +1212,26 @@ input[type="range"] {
 .captions-table .cap-name { max-width: 180px; overflow-wrap: anywhere; }
 .captions-table .cap-num { white-space: nowrap; color: var(--text-secondary); }
 .captions-table textarea.cap-cell-text { width: 100%; min-width: 260px; max-width: none; resize: vertical; }
+/* the Training tab's grouped rows (form.py ROW_GROUPS): one box each, rows side by side, hints behind ? */
+.form-group { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 10px;
+  background: color-mix(in srgb, var(--bg-inset) 55%, transparent); align-self: start; }
+.form-group-head { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 9.5pt;
+  color: var(--text-secondary); margin-bottom: 6px; }
+.form-group-q { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border); background: none;
+  color: var(--text-secondary); font-size: 8.5pt; line-height: 1; cursor: pointer; padding: 0; }
+.form-group-q:hover { color: var(--text-primary); border-color: var(--accent); }
+.form-group-rows { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: flex-end; }
+.section-card[id^="sec-"] .form-group-rows > .form-row { flex: 1 1 140px; min-width: 120px; margin: 0; }
+.form-group-rows > .form-row.kind-wide { flex: 3 1 320px; }
+.section-card[id^="sec-"] .form-group-rows > .form-row.kind-check { flex: 0 1 auto; padding: 4px 0; border: none;
+  background: none; align-self: flex-end; }
+.section-card[id^="sec-"] .form-group-rows .row-hint { display: none; }
+.form-group-help { display: none; margin-top: 8px; font-size: 9pt; color: var(--text-secondary); }
+.form-group-help.open { display: flex; flex-direction: column; gap: 4px; }
+/* a long hint under a box: two lines, the rest on a click */
+.row-hint:not(.open) { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  cursor: pointer; }
+.section-card .card-content > .form-row { align-self: start; }
 /* the Training tab's Run summary (app.js runSummary) */
 .run-summary .rs-body { display: flex; flex-direction: column; gap: 10px; }
 .rs-section { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--bg-inset); }

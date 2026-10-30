@@ -38,6 +38,15 @@ KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo 
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
 CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
+# rows that belong together, drawn as one box each on the Training tab (app.js renderSection): the box sits where its
+# first row is, its rows side by side, their hints behind its ?
+ROW_GROUPS = (
+    ("lr", "Learning rate", ("LEARNING_RATE", "ADAPTIVE_LR", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX")),
+    ("network", "Network", ("NETWORK_TYPE", "NETWORK_DIM", "NETWORK_ALPHA", "LOKR_FACTOR")),
+    ("length", "Length", ("MAX_TRAIN_EPOCHS", "SEED")),
+    ("size", "Picture size", ("DATASET_MEGAPIXELS", "CLIP_MEGAPIXELS", "STAGE_MP", "STAGE_UNTIL")),
+    ("context", "Context LoRA", ("CONTEXT_LORA_PATH", "CONTEXT_LORA_STRENGTH")),
+)
 STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
 STAGE_UNTILS = ("20%", "30%", "50%")
 STAGE_HINT = ("Trains the first part of the run at this smaller size, then the full Target Megapixels: those epochs "
@@ -758,6 +767,11 @@ def form(desc):
     first = next((sec for sec in sections if sec["tab"] == "training" and sec["id"] not in order), None)
     if first:
         first["extras"] = True               # the divider goes above it
+    where = {k: (g, label) for g, label, keys in ROW_GROUPS for k in keys}
+    for sec in sections:                     # each grouped row says its box
+        for r in sec["rows"]:
+            if r and r["key"] in where:
+                r["group"], r["group_label"] = where[r["key"]]
     return {"sections": sections, "presets": [{"name": n, "values": dict(v)} for n, v in (desc.presets or ())]}
 
 
@@ -978,14 +992,14 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     if not values.get("ADAPTIVE_LR") or kind in ("slider", "finetune"):   # these train at the Learning Rate box
         hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
     else:
-        disabled.add("LEARNING_RATE")
+        hidden.add("LEARNING_RATE")          # Adaptive LR on: Min and Max in its place (the box is ignored)
     if kind == "finetune":       # a fine-tune trains at its own fixed rate: no Adaptive LR, on any model
         hidden.add("ADAPTIVE_LR")
     if str(values.get("OPTIMIZER_TYPE", "")) == "automagic3":
         disabled |= {"ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK"}
         force.update({k: False for k in ("ADAPTIVE_LR", "KREA2_PER_IMAGE_LR", "KREA2_WARMUP_LOOK") if values.get(k)})
         if values.get("ADAPTIVE_LR"):            # turned off now: as it shows with Adaptive LR off
-            disabled.discard("LEARNING_RATE")
+            hidden.discard("LEARNING_RATE")
             hidden |= {"ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"}
         notes["OPTIMIZER_TYPE"] = "automagic3 sets its own learning rate: Adaptive LR, per-image LR and the look " \
                                   "warm-up are off."
