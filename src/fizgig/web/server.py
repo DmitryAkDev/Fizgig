@@ -3558,9 +3558,9 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/helper/share_start":
                     return self.json(helpers.share_start(b))
                 if path == "/api/helpers/move":           # this computer's run: carry on training on a helper
-                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now"))))
+                    return self.json(helpers.move_start(str(b.get("id") or ""), bool(b.get("now")), b.get("home", True) is not False))
                 if path == "/api/helpers/move_back":      # a run moved to a helper: back here, to carry on training
-                    return self.json(helpers.move_back(bool(b.get("now"))))
+                    return self.json(helpers.move_back(bool(b.get("now")), bool(b.get("delete"))))
                 if path == "/api/helpers/move_clear":
                     return self.json(helpers.move_clear(bool(b.get("here"))))
                 if path == "/api/helper/move_in":         # a run moving here from another computer

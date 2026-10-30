@@ -1753,6 +1753,7 @@ def _home_loop():
                 continue
             st = _home.setdefault(url, {"text": "Looking for its checkpoints"})
             try:
+                _home_active[url] = True
                 nxt[url] = time.time() + _home_once(url, row, st)
             except PermissionError:
                 st["text"] = "Its login ran out: type its password, then tick this again"
@@ -1761,6 +1762,8 @@ def _home_loop():
                 logger.info(f"[helpers] bringing {url}'s checkpoints home: {_plain(e)}")
                 st["text"] = f"Couldn't bring them all home just now ({_plain(e)}): trying again in a minute"
                 nxt[url] = time.time() + 60
+            finally:
+                _home_active[url] = False
             done_at = float(_home_rows().get(url, {}).get("finished_at") or 0)
             if row.get("delete") and done_at and time.time() - done_at > HOME_GIVE_UP and not st.get("deleted"):
                 _home_give_up(url, st, "Not everything came home within 15 minutes of its run finishing")
@@ -1797,6 +1800,8 @@ def _home_once(url, row, st):
     # brought back as Bring its LoRAs here does, which also closes the move
     moved = (_mv.get("state") in ("moved", "back") and _norm(_mv.get("url") or "x") == url
              and _mv.get("run") == name and _mv.get("remote_out") == out)
+    if _mv.get("state") == "back" and _norm(_mv.get("url") or "x") == url:
+        return 10                            # being brought back: the bring-back fetches the rest
     from fizgig.web import pod_stop, pods
     key, pid = pod_stop.api_key(_srv().load_prefs()), pods.parse(url).get("id")
     # the pod's own stop is held while this computer works on it: 30 minutes, asked again each look, so if this
@@ -1812,10 +1817,12 @@ def _home_once(url, row, st):
         _home_row(url, finished_at=0, finished_run="")
     want = [i for i in c.call("/api/checkpoints?dir=" + urllib.parse.quote(out)).get("items") or []
             if i.get("run") in (name, name + ".safetensors") and _SAFE_FILE.match(str(i.get("name") or "")) and i["name"].endswith(".safetensors")]
-    dest = _mv["out_dir"] if moved else row["dest"]
+    dest = _mv["out_dir"] if moved else _moved_dest(url, name, out) or row["dest"]
     st["folder"] = dest
     os.makedirs(dest, exist_ok=True)
     for n, i in enumerate(want):
+        if _mv.get("state") == "back" and _norm(_mv.get("url") or "x") == url:
+            return 10                        # the bring-back started: it fetches the rest
         d = os.path.join(dest, i["name"])
         # its saved time travels with it: a re-run there under the same name comes home again
         if os.path.isfile(d) and os.path.getsize(d) == int(i["size"]) and abs(os.path.getmtime(d) - float(i["time"])) < 2:
@@ -3597,7 +3604,15 @@ def moved_in_waiting(out_dir):
 
 
 def move_status():
-    return {k: v for k, v in _mv.items() if k not in ("cookie", "values")} if _mv.get("state") else None
+    if not _mv.get("state"):
+        return None
+    out = {k: v for k, v in _mv.items() if k not in ("cookie", "values")}
+    row = _home_rows().get(_norm(_mv.get("url") or "x")) if _mv.get("url") else None
+    if row and row.get("move"):              # its files coming home as they're saved: how far that has got
+        out["home_text"] = (_home.get(_norm(_mv["url"])) or {}).get("text") or ""
+    from fizgig.web import pods
+    out["pod"] = bool(pods.parse(_mv.get("url") or "").get("id"))
+    return out
 
 
 def move_busy():
@@ -3644,6 +3659,54 @@ def move_clear(here=False):
     return {"ok": True}
 
 
+_home_active = {}         # pod url -> True while the bring-home loop is fetching from it
+
+
+def _moved_record(url, run, remote_out, out_dir):
+    """Which run of this computer's went to `url`, so what comes home from it later (Help another Fizgig with
+    this GPU, after the move is over too) goes into its own output folder, not a pod's folder of its own."""
+    rec = dict(_srv().load_prefs().get("helper_moved_runs") or {})
+    rec[_norm(url)] = {"run": run, "remote_out": remote_out, "out_dir": out_dir, "at": time.time()}
+    _srv().update_prefs({"helper_moved_runs": rec})
+
+
+def _moved_dest(url, run, remote_out):
+    """This computer's output folder for a run that was moved to `url` from here, or ""."""
+    r = (_srv().load_prefs().get("helper_moved_runs") or {}).get(_norm(url)) or {}
+    return r.get("out_dir") or "" if r.get("run") == run and r.get("remote_out") == remote_out else ""
+
+
+def _home_for_move(url, out_dir):
+    """A moved run's checkpoints and previews, home as they're saved (the bring-home loop)."""
+    rows = _home_rows()
+    rows[_norm(url)] = {**rows.get(_norm(url), {}), "on": True, "previews": True, "move": True, "dest": out_dir}
+    _srv().update_prefs({"helper_bring_home": rows})
+    ensure_home()
+
+
+def _back_done(url, to, delete, ok):
+    """A run brought back: its move's bring-home row goes, and with Delete the pod ticked, the pod - everything
+    of the run is here now."""
+    u = _norm(url) if url else ""
+    rows = _home_rows()
+    if u in rows and rows[u].get("move"):
+        rows.pop(u, None)
+        _home.pop(u, None)
+        _srv().update_prefs({"helper_bring_home": rows})
+    if not (delete and ok and u):
+        return
+    from fizgig.web import pod_stop, pods
+    s = _srv()
+    try:
+        pods.terminate(pod_stop.api_key(s.load_prefs()), pods.parse(u)["id"])
+    except Exception as e:
+        s.append_log(f"[move] Everything is back, but {to} couldn't be deleted ({_plain(e)}): delete it on RunPod.\n")
+        return
+    s.update_prefs({"app_pods": [p for p in pods.saved(s.load_prefs()) if _norm(p["url"]) != u],
+                    "helpers": [h for h in _helpers() if _norm(h.get("url") or "x") != u]})
+    s.append_log(f"[move] Everything is back from {to}, so the pod was deleted.\n")
+
+
 def _abandon_later(c, tag, hours=12):
     """Carry on here while the other computer was away: it's told to stop its copy once it answers again, so the
     run never trains in two places (a deleted pod never answers: given up after `hours`)."""
@@ -3673,7 +3736,7 @@ def _mv_client():
     return Client(_mv["url"], (h or {}).get("cookie", "") or _mv.get("cookie", ""))
 
 
-def move_start(hid, now=False):
+def move_start(hid, now=False, home=True):
     if _mv.get("state") in ("moving", "back", "moved"):
         raise ValueError("This run is already moving, or training elsewhere.")
     h = next((x for x in _helpers() if x.get("id") == hid), None)
@@ -3708,7 +3771,7 @@ def move_start(hid, now=False):
         raise ValueError("It hasn't saved yet, so it can't move now: move it at the end of this epoch instead.")
     _mv.clear()
     _mv.update(state="moving", hid=hid, to=h.get("name") or h["url"], url=h["url"], run=r["lora"],
-               out_dir=r["output_dir"], error="", text="Getting ready to move", progress=None)
+               out_dir=r["output_dir"], error="", text="Getting ready to move", progress=None, home=bool(home))
     threading.Thread(target=_move_work, args=(h, now), daemon=True, name="helpers-move").start()
     return {"ok": True}
 
@@ -3725,6 +3788,31 @@ def _move_shas(out_dir, name, setup):
     if "--dit" in args[:-1]:
         shas["dit"] = _sha(args[args.index("--dit") + 1])
     return shas
+
+
+_LIVE_KEYS = {"seed": "SAMPLE_SEED", "width": "SAMPLE_WIDTH", "height": "SAMPLE_HEIGHT", "steps": "SAMPLE_STEPS",
+              "cfg": "SAMPLE_CFG_SCALE", "turbo": "FAMILY_TURBO_STRENGTH", "every": "SAMPLE_EVERY_N_EPOCHS",
+              "until": "SAMPLE_UNTIL_EPOCH", "after": "SAMPLE_EVERY_AFTER"}
+
+
+def _with_live_previews(out_dir, values):
+    """The run's settings with the Samples tab's live change in them (Change the previews of the run going now:
+    <out_dir>/.sample_override.json), so its previews look the same wherever it goes next - the file itself is
+    this computer's (its paths) and a start clears it."""
+    ov = _read(os.path.join(out_dir or "", ".sample_override.json"), {}) or {}
+    if not ov.get("prompts"):
+        return values
+    v = dict(values, SAMPLE_PROMPT="\n".join(ov["prompts"]))
+    for k, key in _LIVE_KEYS.items():
+        if ov.get(k) is not None:
+            v[key] = str(ov[k])
+    if "until" in ov or "after" in ov:       # Then preview less often: until / after 0 = off
+        v["SAMPLE_LATER"] = bool(int(ov.get("until") or 0) and int(ov.get("after") or 0))
+    if "look" in ov:                         # the SFT look tick: a path here, so only whether it's on
+        v["FAMILY_PREVIEW_LOOK"] = bool(ov["look"])
+    if "checkpoint" in ov:                   # the preview-model tick (Qwen's Turbo)
+        v["SAMPLE_CHECKPOINT"] = bool(ov["checkpoint"])
+    return v
 
 
 def _move_pack(out_dir, name, state, folder, values):
@@ -3803,6 +3891,7 @@ def _move_work(h, now):
         with s._lock:
             fam, values, folder, state = (s._run["family"], dict(s._run["values"] or {}), s._run["image_folder"],
                                           s._run["resume"])
+        values = _with_live_previews(out_dir, values)    # its previews as they are now, not as it started
         if not state or not os.path.isdir(state):
             raise ValueError("its saved state isn't there")
         setup = _read(os.path.join(out_dir, SHARE_DIR, "setup.json"), {}) or {}
@@ -3847,7 +3936,11 @@ def _move_work(h, now):
             time.sleep(5)
         _write(os.path.join(out_dir, MOVED_FILE), {"url": _mv["url"], "to": to, "tag": tag, "run": name,
                                                    "remote_out": a.get("output_dir") or "", "at": time.time(),
-                                                   "family": fam, "values": values, "image_folder": folder})
+                                                   "family": fam, "values": values, "image_folder": folder,
+                                                   "home": bool(_mv.get("home"))})
+        _moved_record(_mv["url"], name, a.get("output_dir") or "", out_dir)
+        if _mv.get("home"):                  # its checkpoints and previews come home as they're saved, queued
+            _home_for_move(_mv["url"], out_dir)
         with s._lock:
             s._run["state"] = "moved"
         _mv.update(state="moved", tag=tag, remote_out=a.get("output_dir") or "", remote=None, family=fam,
@@ -4149,15 +4242,22 @@ def move_piece(tag, name, offset=0, n=PIECE):
 
 
 # ---- bringing it back -----------------------------------------------------------------------------------------------
-def move_back(now=False):
+def move_back(now=False, delete=False):
     if _mv.get("state") != "moved":
         raise ValueError("No run of this computer's is training elsewhere.")
+    if delete:
+        from fizgig.web import pod_stop, pods
+        if not pods.parse(_mv.get("url") or "").get("id"):
+            delete = False                   # another computer: never deleted
+        elif not pod_stop.api_key(_srv().load_prefs()):
+            raise ValueError("Deleting the pod needs your RunPod API key: add it on the Pods tab, or untick Delete "
+                             "the pod.")
     s = _srv()
     with s._lock:
         busy = s._run["proc"] is not None and s._run["proc"].poll() is None
     if busy:
         raise ValueError("Something is training here: stop it first.")
-    _mv.update(state="back", error="")
+    _mv.update(state="back", error="", delete_after=bool(delete))
     threading.Thread(target=_back_work, args=(now,), daemon=True, name="helpers-move-back").start()
     return {"ok": True}
 
@@ -4166,8 +4266,15 @@ def _back_work(now):
     s = _srv()
     to, tag, out_dir, name = _mv["to"], _mv["tag"], _mv["out_dir"], _mv["run"]
     folder_here = _mv.get("image_folder") or ""
+    url, delete = _mv.get("url") or "", bool(_mv.get("delete_after"))
+    state = ""
     try:
         c = _mv_client()
+        for _n in range(600):                # the file it's bringing home now (it stops after that one)
+            if not _home_active.get(_norm(url)):
+                break
+            _mv_say(f"Finishing the checkpoint on its way home from {to}", log=False)
+            time.sleep(1)
         _mv_say(f"Asking {to} to pause it" + (" now" if now else " at the end of this epoch"))
         while True:
             a = _again(lambda: c.call("/api/helper/move_out", {"tag": tag, "now": now}, timeout=90))
@@ -4236,6 +4343,7 @@ def _back_work(now):
             s.history.end(hid, "finished", {"epoch": rem.get("epochs") or rem.get("epoch"),
                                             "total_epochs": rem.get("epochs")} if rem.get("epoch") else None)
             s.append_log(f"[move] {name} finished on {to}: its LoRAs and previews are here now.\n")
+            _back_done(url, to, delete, True)
             return
         with s._lock:
             s._run.update(state="paused", resume=state, resume_mode="state", family=fam, values=values,
@@ -4248,6 +4356,7 @@ def _back_work(now):
             s._record_pause(out_dir)
             with s._lock:
                 s._run["state"] = "paused"
+        _back_done(url, to, delete, True)
     except Exception as e:
         logger.warning(f"[move] back from {to}: {e}")
         _mv.update(state="moved", error=_plain(e))

@@ -1703,12 +1703,19 @@ function moveDraw(mv) {
         `Training on ${mv.to}` + (rm.epoch ? `: epoch ${rm.epoch} of ${rm.epochs}` : rm.stage ? `: ${rm.stage}` : "") +
         (rm.eta ? ` · ${rm.eta} left` : "") : `On ${mv.to}.`;
     if (mv.error) say += ` (${mv.error})`;
+    if (mv.home_text) say += ` Coming home as they're saved: ${mv.home_text}.`;
+    if (S.moveDelete === undefined) S.moveDelete = true;
+    const del = () => !!(mv.pod && S.moveDelete);
     kids.push(el("button", {class: "btn btn-sm btn-primary", text: rm.state === "completed" ? "Bring its LoRAs here" : "Bring it back",
       title: "Paused there at the end of its epoch, its new checkpoints, previews and saved state brought here, and it carries on here",
-      onclick: go("/api/helpers/move_back", {now: false})}));
+      onclick: () => go("/api/helpers/move_back", {now: false, delete: del()})()}));
     if (rm.state === "running") kids.push(el("button", {class: "btn btn-sm", text: "Bring it back now",
       title: "Stopped there now and brought back from its last save (the epochs since it are trained again here)",
-      onclick: go("/api/helpers/move_back", {now: true})}));
+      onclick: () => go("/api/helpers/move_back", {now: true, delete: del()})()}));
+    if (mv.pod) kids.push(el("label", {class: "checkbox-label", title: "Once the run and everything it made are here, the " +
+      "pod is deleted on RunPod, so it stops billing. Untick it to keep the pod (its files stay on it)."},
+      el("input", {type: "checkbox", ...(S.moveDelete ? {checked: true} : {}),
+        onchange: (e) => { S.moveDelete = e.target.checked; }}), ` Delete the pod once it's all here`));
     // as the Pods tab's Open: in the app window it switches over there (a pod logs you in); in a browser, a new tab
     if (mv.url) kids.push(el("button", {class: "btn btn-sm", text: inApp() ? `Open ${mv.to}` : `Open ${mv.to} ↗`,
       onclick: () => podOpen({url: mv.url, name: mv.to})}));
@@ -1743,9 +1750,10 @@ async function moveOpen() {
   }
   const pick = el("select", {class: "w-combo"}, ...ready.map((h) => el("option", {value: h.id,
     text: `${h.name}${h.gpu ? ` (${h.gpu}${h.vram ? `, ${h.vram} GB` : ""})` : ""}`})));
+  const home = el("input", {type: "checkbox", checked: true});
   const send = (now) => async () => {
     try {
-      await api("/api/helpers/move", {id: pick.value, now});
+      await api("/api/helpers/move", {id: pick.value, now, home: home.checked});
       S.moveOpen = false;
     } catch (e) { showProblems([e.message]); }
     pollRun();
@@ -1761,7 +1769,10 @@ async function moveOpen() {
       ...(running ? [el("button", {class: "btn btn-sm", text: "Now",
         title: "Stopped now and moved from its last save (the epochs since it are trained again there)",
         onclick: send(true)})] : []),
-      el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})));
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: close})),
+    el("label", {class: "checkbox-label", title: "Each checkpoint and preview comes back to this run's folder here as " +
+      "it's saved there, one after another (a slow link just queues them), so bringing the run back only has the " +
+      "last few to fetch."}, home, " Bring its checkpoints and previews back here as they're saved"));
 }
 
 // ---- a prompt slider's live prompts: edited here while it trains, taken by the trainer at its next epoch boundary
@@ -7960,6 +7971,12 @@ function helpDraw() {
 // a pod's run brought home as it saves (its previews too), and the pod deleted once that's all here and checked
 function helpHome(o, pw) {
   const hm = o.home || {};
+  // this computer's own run, moved there: the move brings it home (the run card), not these
+  const mv = S.run && S.run.move;
+  if (mv && ["moved", "back"].includes(mv.state) && mv.url && mv.url.replace(/\/$/, "") === o.url.replace(/\/$/, ""))
+    return el("div", {class: "helper-link helper-home"}, el("span", {class: "field-hint", text:
+      `${mv.run} moved here from this computer, so its move handles it: on the run card, its checkpoints and ` +
+      "previews come back as they're saved, and Bring it back can delete the pod."}));
   const tick = (text, on, body, title) => {
     const box = el("input", {type: "checkbox", ...(on ? {checked: true} : {})});
     box.addEventListener("change", () => helpCall("/api/helpers/home", {url: o.url, password: pw.value,
