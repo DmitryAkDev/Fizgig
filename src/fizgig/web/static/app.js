@@ -4582,8 +4582,10 @@ async function prepSummary() {
   $("prepTest").disabled = !faceOn || !S.prep.opts.face_tools;
   // Detail crops leave the pictures alone and use no face: no face rows, no originals choice, the size is the crop's
   const crops = p.mode === "Detail Crops (Style)";
-  for (const id of ["prepOriginals", "prepSizingNote", "prepChars", "prepTestRow"]) $(id).style.display = crops ? "none" : "";
-  document.querySelectorAll(".prep-face").forEach((r) => { r.style.display = crops ? "none" : ""; });
+  for (const id of ["prepOriginals", "prepSizingNote", "prepChars"]) $(id).style.display = crops ? "none" : "";
+  // the face row and the face test only for the modes that make face close-ups
+  $("prepTestRow").style.display = faceOn ? "" : "none";
+  document.querySelectorAll(".prep-face").forEach((r) => { r.style.display = faceOn ? "" : "none"; });
   if (crops) $("prepNoFaces").style.display = "none";
   else $("prepNoFaces").style.display = S.prep.opts.face_tools ? "none" : "";
   const side = Math.floor(Math.sqrt(p.mp * 1e6) / 16) * 16;
