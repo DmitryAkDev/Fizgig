@@ -417,6 +417,8 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
         # likeness rows show only where a group has a face score (block_profile's faces test): the explanations follow
         faced = any(trig.get(w, {}).get("score") is not None for w, _, _ in abl["windows"])
         photos = bool(abl.get("photos"))                                # subject photos were given
+        why = ("No face was found in the renders" if abl["gain"].get("trigger") is None else    # faces, little gain
+               "The LoRA barely moves the faces toward your subject photos")
         parts.append('<div class="card"><h2>Each group of blocks on its own</h2><p class="lead">Each picture is '
                      "the LoRA with <b>only this group switched on</b>. " + (
                      "The percentages are shares of what the whole "
@@ -425,7 +427,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                      "without the trigger 31% as like your subject as the whole LoRA does. This section shows where "
                      "likeness and bleed come from." if faced else
                      "<i>Changes the picture by 40%</i> means these blocks alone move the picture 40% as far as the "
-                     "whole LoRA does." + (" No face was found in the renders, so likeness and bleed aren't shown."
+                     "whole LoRA does." + (f" {why}, so likeness and bleed aren't shown."
                      if photos else " Add subject photos (a person LoRA) to also see likeness and bleed.")) + "</p>"
                      f'<div class="grid">{"".join(head + cells)}</div></div>')
         cells = []
@@ -475,7 +477,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                      f'{len(abl["seeds"])} seed(s) · {abl["size"][0]}×{abl["size"][1]}. '
                      + (f"Likeness and bleed are measured by face recognition "
                         f"({_html.escape(str(abl.get('embedder') or 'ArcFace'))}) against your subject photos. "
-                        if faced else "No face was found in the renders, so only picture change is measured. "
+                        if faced else f"{why}, so only picture change is measured. "
                         if photos else "No subject photos, so only picture change is measured. ")
                      + "Groups overlap in what they do, so "
                      "the percentages don't add up to 100%; anything under 10% either way is within "

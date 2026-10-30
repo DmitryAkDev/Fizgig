@@ -221,7 +221,7 @@ def _run_sample_prompt(lora, trig):
     from fizgig.families.form import _kind
     name = re.sub(r"-\d{6}$", "", os.path.splitext(os.path.basename(lora))[0])       # an epoch file: its run's name
     try:
-        run = next((r for r in reversed(history.runs()) if history._same_run(r, name, os.path.dirname(lora))), None)
+        run = next((r for r in history.runs() if history._same_run(r, name, os.path.dirname(lora))), None)
     except Exception:
         run = None
     vals = (run or {}).get("values") or {}
