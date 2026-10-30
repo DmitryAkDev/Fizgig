@@ -41,8 +41,9 @@ CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
 STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
 STAGE_UNTILS = ("20%", "30%", "50%")
 STAGE_HINT = ("Trains the first part of the run at this smaller size, then the full Target Megapixels: those epochs "
-              "run faster. Below Target Megapixels only; standard LoRAs (not edits, sliders or fine-tunes). Caching "
-              "makes the smaller size's cache too.")
+              "run faster (about a fifth less training time at 0.25 MP for the first 30%). Likeness arrives a little "
+              "later than training at the full size throughout, so allow a few more epochs. Below Target Megapixels "
+              "only; standard LoRAs (not edits, sliders or fine-tunes). Caching makes the smaller size's cache too.")
 CAPTION_DROPOUT_HINT = ("Trains this share of steps with no caption, so the LoRA leans less on the trigger word and "
                         "the caption's exact words. 0.05 is the usual choice.")
 
