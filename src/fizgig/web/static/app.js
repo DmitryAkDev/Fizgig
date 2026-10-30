@@ -4098,7 +4098,8 @@ const thumbOf = (p) => `/api/thumb?path=${encodeURIComponent(p)}&t=${encodeURICo
 const prepSettings = () => ({
   mode: (document.querySelector('input[name="prepMode"]:checked') || {}).value || "Auto Prep (Face Crops)",
   mp: $("prepMp").value || "1.0", face: $("prepFace").value || "Largest Face", padding: $("prepPadding").value || "20",
-  replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1"});
+  replace: (document.querySelector('input[name="prepReplace"]:checked') || {}).value === "1",
+  crops_only: $("prepCropsOnly").checked});
 const savePrepSoon = debounce(() => { S.prepSaved = prepSettings(); api("/api/state", {prep: S.prepSaved}).catch(() => {}); }, 600);
 
 async function loadPrep() {
@@ -4113,6 +4114,7 @@ async function loadPrep() {
     const mode = saved.mode || "Auto Prep (Face Crops)";
     document.querySelectorAll('input[name="prepMode"]').forEach((r) => { r.checked = r.value === mode; });
     document.querySelectorAll('input[name="prepReplace"]').forEach((r) => { r.checked = r.value === (saved.replace ? "1" : "0"); });
+    $("prepCropsOnly").checked = !!saved.crops_only;
     $("prepNoFaces").style.display = o.face_tools ? "none" : "";
     faceSettingsShow(o.face_settings);
   }
@@ -4583,6 +4585,7 @@ async function prepSummary() {
   // Detail crops leave the pictures alone and use no face: no face rows, no originals choice, the size is the crop's
   const crops = p.mode === "Detail Crops (Style)";
   for (const id of ["prepOriginals", "prepSizingNote", "prepChars"]) $(id).style.display = crops ? "none" : "";
+  for (const id of ["prepCropsOnlyRow", "prepCropsOnlyHint"]) $(id).style.display = crops ? "" : "none";
   // the face row and the face test only for the modes that make face close-ups
   $("prepTestRow").style.display = faceOn ? "" : "none";
   document.querySelectorAll(".prep-face").forEach((r) => { r.style.display = faceOn ? "" : "none"; });
@@ -4592,7 +4595,8 @@ async function prepSummary() {
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
-    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
+    `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&crops_only=${p.crops_only ? 1 : 0}` +
+    `&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
   if (!r) return;
   $("prepAudioOnly").style.display = r.audio_only ? "" : "none";
   $("prepMain").style.display = r.audio_only ? "none" : "";
@@ -4884,7 +4888,7 @@ function presetSaveOpen() {
 function wirePrep() {
   document.querySelectorAll('input[name="prepMode"], input[name="prepReplace"]').forEach((r) =>
     r.addEventListener("change", () => { prepSummary(); savePrepSoon(); }));
-  for (const id of ["prepMp", "prepFace", "prepPadding"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
+  for (const id of ["prepMp", "prepFace", "prepPadding", "prepCropsOnly"]) $(id).addEventListener("change", () => { prepSummary(); savePrepSoon(); });
   $("prepRun").addEventListener("click", prepRun);
   $("maskRun").addEventListener("click", maskRun);
   meWire();
@@ -8675,6 +8679,7 @@ async function uploadFiles(picked, opts = {}) {
     // its detail crops keep their folders whatever the tick: each size's crops share their pictures' names
     const i = parts.indexOf("fizgig_detail_crops");
     if (i >= 0 && parts.length === i + 2) return parts.slice(i).join("/");
+    if (parts.length === 1 && parts[0] === "detail_masters") return "detail_masters";     // Train on the crops only: their source
     return keepSubs ? parts.join("/") : "";
   };
   const seen = new Map();

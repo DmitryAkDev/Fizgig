@@ -18,6 +18,7 @@ import random
 DIR = "fizgig_detail_crops"            # the folder in a training folder; Fizgig's own, so sub-folders skip it
 SETTINGS = "fizgig_detail_crops.json"   # its switch, in the training folder (fizgig_*.json travels with a move)
 MANIFEST = ".crops.json"               # per size folder: each crop's source picture and box
+MASTERS = "detail_masters"              # Train on the crops only: the full pictures, kept here and not trained
 PICS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
 RULE = 3                                # the spot rule's version: a crop made by an older one is made again
 FLAT = 0.4                              # a spot with under 40% of the detail of the picture's busiest spot counts as flat
@@ -64,20 +65,61 @@ def sizes(folder):
     return [(f"{mp(n):g} MP", os.path.join(root, n)) for n in sorted(names, key=mp) if mp(n) > 0]
 
 
-def pictures(folder):
+def _pics_in(d):
     from fizgig.dataset.masks import is_mask_file
     try:
-        return sorted(n for n in os.listdir(folder) if n.lower().endswith(PICS) and not is_mask_file(n)
-                      and os.path.isfile(os.path.join(folder, n)))
+        return [n for n in os.listdir(d) if n.lower().endswith(PICS) and not is_mask_file(n)
+                and os.path.isfile(os.path.join(d, n))]
     except OSError:
         return []
+
+
+def pictures(folder):
+    """The pictures the crops are cut from: the training folder's, and its detail_masters/ (Train on the crops only)."""
+    return sorted(set(_pics_in(folder)) | set(_pics_in(os.path.join(folder, MASTERS))))
+
+
+def picture_dir(folder, name):
+    """Where a picture is: the training folder, or its detail_masters/."""
+    return folder if os.path.isfile(os.path.join(folder, name)) else os.path.join(folder, MASTERS)
+
+
+def archive(folder, on, log=print):
+    """Train on the crops only (on): the training folder's pictures, with their captions and masks, moved into its
+    detail_masters/ folder, which is never trained (families/launch.py OWN_SUBFOLDERS); off: moved back. Nothing is
+    deleted, and a file that would land on one of the same name stays where it is. Returns how many moved."""
+    import shutil
+    m = os.path.join(folder, MASTERS)
+    src, dst = (folder, m) if on else (m, folder)
+    stems = {os.path.splitext(n)[0] for n in _pics_in(src)}
+    if not stems:
+        return 0
+    os.makedirs(dst, exist_ok=True)
+    moved = 0
+    for n in sorted(os.listdir(src)):
+        stem = os.path.splitext(n)[0]
+        if stem.endswith("-masklabel"):
+            stem = stem[:-len("-masklabel")]
+        if stem not in stems or not os.path.isfile(os.path.join(src, n)):
+            continue
+        if os.path.exists(os.path.join(dst, n)):
+            log(f"[detail crops] {n}: one of that name is already in {os.path.basename(dst) or dst} - left where it is")
+            continue
+        shutil.move(os.path.join(src, n), os.path.join(dst, n))
+        moved += 1
+    if not on:
+        try:
+            os.rmdir(m)                             # empty now: gone
+        except OSError:
+            pass
+    return moved
 
 
 def source(folder, name):
     """The picture to crop from: its full-size original when Image Prep kept one (originals/, originals_2/... - the
     biggest), else the training picture itself."""
     stem = os.path.splitext(name)[0].lower()
-    best, area = os.path.join(folder, name), -1
+    best, area = os.path.join(picture_dir(folder, name), name), -1
     try:
         dirs = [d for d in os.listdir(folder) if d.lower() == "originals" or d.lower().startswith("originals_")]
     except OSError:
@@ -256,7 +298,7 @@ def make(folder, mp, log=print, ext=".txt"):
         gray.thumbnail((256, 256))
         x, y = spot(*centre(stem, w, h, gray), w, h, s)
         im.crop((x, y, x + s, y + s)).save(dst)
-        mk = mask_for_stem(folder, stem)
+        mk = mask_for_stem(picture_dir(folder, n), stem)
         if mk:                                             # masked training: the mask cut at the same spot
             try:
                 m = Image.open(mk)

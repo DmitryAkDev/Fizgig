@@ -3587,6 +3587,9 @@ def _run_subfolders(folder, values):
     if not detail_crops.is_on(folder):
         return subs
     crops = []
+    m = os.path.join(folder, detail_crops.MASTERS)      # Train on the crops only: the pictures crops are cut from
+    if os.path.isdir(m):
+        crops.append((detail_crops.MASTERS, m))
     for k in ("DATASET_MEGAPIXELS", "STAGE_MP"):
         try:
             mp = float(str((values or {}).get(k) or "0").split(" ")[0])

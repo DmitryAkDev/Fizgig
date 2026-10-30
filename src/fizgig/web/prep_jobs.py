@@ -136,7 +136,7 @@ def _log(text):
         _job["log"] = (_job["log"] + text)[-400_000:]
 
 
-def start(folder, mode, mp, face_label, padding, replace):
+def start(folder, mode, mp, face_label, padding, replace, crops_only=False):
     if not folder or not os.path.isdir(folder):
         raise ValueError("Choose the training folder on the Start tab first.")
     if mode not in prep.MODES:
@@ -153,7 +153,8 @@ def start(folder, mode, mp, face_label, padding, replace):
     def work():
         try:
             det = _face_detector() if mode in prep.FACE_MODES else None
-            prep.Prep(_log, det).run(mode, folder, float(mp), face_label, float(padding), bool(replace))
+            prep.Prep(_log, det).run(mode, folder, float(mp), face_label, float(padding), bool(replace),
+                                     bool(crops_only))
             _log("\nDone.\n")
             end = "done"
         except Exception as e:

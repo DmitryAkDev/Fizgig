@@ -140,7 +140,7 @@ def source_stats(folder, max_sample=40):
     return len(files), med[0] * med[1], med
 
 
-def summary(folder, mode, replace, prep_mp, train_mp=None):
+def summary(folder, mode, replace, prep_mp, train_mp=None, crops_only=False):
     """The 'What will happen' card: {lines, warn (prep below training's megapixels), count}."""
     area = target_area(prep_mp)
     n, median_area, median_size = source_stats(folder)
@@ -158,11 +158,15 @@ def summary(folder, mode, replace, prep_mp, train_mp=None):
     elif mode == "Detail Crops (Style)":
         from fizgig.dataset.detail_crops import DIR, side
         s = side(prep_mp)
+        from fizgig.dataset.detail_crops import MASTERS, pictures
+        n = len(pictures(folder))
         sizes = ", ".join(f"{m:g}" for m in crop_sizes(prep_mp))
-        lines = [f"Your {n or ''} pictures stay as they are. Each gets a crop at its own scale (from its full-size "
-                 f"original when there is one) at every size up to {prep_mp:g} MP ({sizes} MP), in {DIR}. From now on "
-                 f"this folder trains its crops too, at the size each run trains at (a size not made here is made at "
-                 f"Start)."]
+        lines = [f"Each of your {n or ''} pictures gets a crop at its own scale (from its full-size original when "
+                 f"there is one) at every size up to {prep_mp:g} MP ({sizes} MP), in {DIR}. "
+                 + (f"Then the pictures, with their captions and masks, move into {MASTERS}, which never trains: "
+                    f"this folder trains its crops only, at the size each run trains at." if crops_only else
+                    f"Your pictures stay as they are, and this folder trains its crops too, at the size each run "
+                    f"trains at.") + " A size not made here is made at Start."]
         if median_size and min(median_size) < s:
             lines.append(f"⚠ Your typical picture (about {median_size[0] * median_size[1] / 1e6:.2g} MP) is too small for "
                          f"a {prep_mp:g} MP crop: those train whole, with no crop. Detail crops work from pictures "
@@ -316,7 +320,8 @@ class Prep:
         return best + 1
 
     # ---- the three modes ----
-    def run(self, mode, folder, prep_mp, face_label="Largest Face", face_padding=20.0, replace=False):
+    def run(self, mode, folder, prep_mp, face_label="Largest Face", face_padding=20.0, replace=False,
+            crops_only=False):
         self._originals = {}
         area = target_area(prep_mp)
         face_mode = face_mode_of(face_label)
@@ -330,6 +335,12 @@ class Prep:
                      f"run trains at. Making them at every size up to {prep_mp:g} MP:\n")
             for mp in crop_sizes(prep_mp):           # every size up to the one picked
                 detail_crops.make(folder, mp, log=lambda t: self.log(t + "\n"))
+            moved = detail_crops.archive(folder, crops_only, log=lambda t: self.log(t + "\n"))
+            if moved:                               # Train on the crops only: the pictures kept in detail_masters/
+                self.log((f"\nTraining on the crops only: {moved} file(s) moved into "
+                          f"{os.path.join(folder, detail_crops.MASTERS)} (kept, never trained)." if crops_only else
+                          f"\nThe pictures train again: {moved} file(s) moved back from "
+                          f"{detail_crops.MASTERS}.") + "\n")
             n = detail_crops.share_captions(folder)
             todo = sum(1 for _l, d in detail_crops.sizes(folder) for c in detail_crops.uncaptioned(d))
             self.log(f"\nThe crops are in {os.path.join(folder, detail_crops.DIR)}, one folder per size"

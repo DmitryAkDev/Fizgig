@@ -1271,6 +1271,11 @@ def dataset_zip(folder, captions_only, ext) -> str:
     files = [(e.path, e.name) for e in sorted(keep, key=lambda e: e.name)]
     from fizgig.dataset import detail_crops
     if detail_crops.is_on(folder):                # its detail crops, in their folders (an upload puts them back there)
+        m = os.path.join(folder, detail_crops.MASTERS)    # and its detail_masters/ (Train on the crops only): their source
+        if os.path.isdir(m):
+            files += [(e.path, f"{detail_crops.MASTERS}/{e.name}") for e in sorted(os.scandir(m), key=lambda e: e.name)
+                      if e.is_file() and (e.name.lower().endswith(ext) or (not captions_only and
+                                                                           os.path.splitext(e.name)[1].lower() in MEDIA))]
         for _label, d in detail_crops.sizes(folder):
             sub = f"{detail_crops.DIR}/{os.path.basename(d)}/"
             files += [(e.path, sub + e.name) for e in sorted(os.scandir(d), key=lambda e: e.name) if e.is_file()
@@ -2448,6 +2453,9 @@ def _finish_upload(name, ext, dest, tmp, single):
                                                                                                parts[-2]):
                         into, key = os.path.join(dest, parts[-3], parts[-2]), "/".join(parts[-3:-1] + [base])
                         os.makedirs(into, exist_ok=True)
+                    elif len(parts) >= 2 and parts[-2] == "detail_masters":   # Train on the crops only: the pictures kept
+                        into, key = os.path.join(dest, "detail_masters"), "detail_masters/" + base
+                        os.makedirs(into, exist_ok=True)
                     if key in saved or os.path.exists(os.path.join(into, base)):
                         replaced.append(key)
                     with z.open(info) as src, open(os.path.join(into, base), "wb") as out:
@@ -3138,7 +3146,8 @@ class Handler(BaseHTTPRequestHandler):
                 train = float(g("train_mp")) if g("train_mp") else None
             except ValueError:
                 mp, train = 1.0, None
-            r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train)
+            r = _prep.summary(folder, g("mode", _prep.MODES[0]), g("replace") == "1", mp, train,
+                              g("crops_only") == "1")
             try:
                 names = os.listdir(folder)
             except OSError:
@@ -4287,7 +4296,8 @@ class Handler(BaseHTTPRequestHandler):
                     if path == "/api/prep/run":
                         return self.json(prep_jobs.start(folder, str(b.get("mode") or ""), b.get("mp") or 1.0,
                                                          str(b.get("face") or "Largest Face"),
-                                                         b.get("padding") or 20, bool(b.get("replace"))))
+                                                         b.get("padding") or 20, bool(b.get("replace")),
+                                                         bool(b.get("crops_only"))))
                     if path == "/api/look/scan":
                         return self.json(prep_jobs.look_scan(folder, b.get("baselines") or []))
                     if path == "/api/masks/edit/save":
