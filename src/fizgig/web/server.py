@@ -1528,6 +1528,9 @@ def _start_one(family_key, values, image_folder, resume, ft_continue, note, mode
         studio.stop_worker()
     if captions.status()["state"] in ("loading", "running", "translating"):
         return {"error": "Captions are being made (Captions tab). Stop that first, then start the run."}
+    from fizgig.web import tools
+    if tools.holding_gpu():                     # a profile part-way: refused like captions, not thrown away
+        return {"error": "The Profiler is rendering on the GPU. Wait for it, or Stop it, then start the run."}
     captions.unload()                                     # the run gets the GPU memory the caption model held
     from fizgig.web import helpers
     helpers.share_stop_all()       # this computer's own run comes first: a share it trains for another stops there
