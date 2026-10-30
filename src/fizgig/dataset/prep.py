@@ -157,8 +157,9 @@ def summary(folder, mode, replace, prep_mp, train_mp=None):
                  f"full-size original when there is one), in {DIR}/{size_name(prep_mp)}. From now on this folder "
                  f"trains its crops too: each run makes its own at Start, at the size it trains at."]
         if median_size and min(median_size) < s:
-            lines.append(f"⚠ Your typical picture ({median_size[0]}×{median_size[1]}) is smaller than a {prep_mp:g} MP crop: "
-                         f"those train whole, with no crop. Detail crops work from pictures bigger than training size.")
+            lines.append(f"⚠ Your typical picture (about {median_size[0] * median_size[1] / 1e6:.2g} MP) is too small for "
+                         f"a {prep_mp:g} MP crop: those train whole, with no crop. Detail crops work from pictures "
+                         f"bigger than training size.")
         return {"lines": [" ".join(lines[0].split())] + lines[1:], "warn": "", "count": n}
     else:
         what = f"{count} → {sized}"
