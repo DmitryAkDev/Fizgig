@@ -1,6 +1,7 @@
 """The Detail crops stage (families/launch.py, before caching): each size the run trains at gets its crops
-(dataset/detail_crops.py), and the crops with no caption yet are captioned with the Qwen3-VL captioner and the
-Captions tab's Style instruction, trigger word first - a crop someone captioned by hand is left as it is.
+(dataset/detail_crops.py). A crop with no caption gets the same picture's caption from another size; a picture with
+none at any size is captioned once, at its largest crop, with the Qwen3-VL captioner and the Captions tab's Style
+instruction (trigger word first), and that caption goes to every size. A crop someone captioned is left as it is.
 
     python -m fizgig.scripts.detail_crops --folder <training folder> --mp 1.0 [--mp 0.25] --captioner <file>
         --instruction_file <file> [--trigger zwxem] [--ext .txt]"""
@@ -24,9 +25,13 @@ def main():
     ap.add_argument("--ext", default=".txt")
     ap.add_argument("--max_new_tokens", type=int, default=160)
     a = ap.parse_args()
-    todo = []
     for mp in a.mp:
-        todo += detail_crops.make(a.folder, mp, log=lambda t: print(t, flush=True), ext=a.ext)
+        detail_crops.make(a.folder, mp, log=lambda t: print(t, flush=True), ext=a.ext)
+    # one caption per picture: copied from another size when one has it, else written for its largest crop
+    n = detail_crops.share_captions(a.folder, a.ext)
+    if n:
+        print(f"[detail crops] {n} caption(s) copied from the same crops at another size", flush=True)
+    todo = detail_crops.to_caption(a.folder, a.ext)
     if not todo:
         print("[detail crops] every crop has its caption", flush=True)
         return 0
@@ -53,6 +58,9 @@ def main():
     del state.model
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+    n = detail_crops.share_captions(a.folder, a.ext)
+    if n:
+        print(f"[detail crops] {n} caption(s) copied to the same crops at the other sizes", flush=True)
     return 0
 
 

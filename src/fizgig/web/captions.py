@@ -288,6 +288,57 @@ def _worker_config(model, captioner, clips):
     return cfg
 
 
+def _crop_dir(folder):
+    """A detail crop size folder (<training folder>/fizgig_detail_crops/<size>mp)?"""
+    from fizgig.dataset import detail_crops
+    return os.path.basename(os.path.dirname(os.path.normpath(folder or ""))) == detail_crops.DIR
+
+
+def _crop_targets(folder, images, overwrite, ext):
+    """(the crops to caption, [(crop captioned, [the same crop at other sizes])], captions copied now) for a caption
+    job on a detail crop folder: each picture is captioned once, at the largest size it has a crop, and that caption
+    goes to every size. Without overwrite, a picture already captioned at another size has that caption copied now."""
+    from fizgig.dataset import detail_crops
+    root = os.path.dirname(os.path.dirname(os.path.normpath(folder)))
+    dirs = [d for _label, d in detail_crops.sizes(root)][::-1]          # largest first
+    todo, copies, copied = [], [], 0
+    for p in images:
+        name = os.path.basename(p)
+        stem = os.path.splitext(name)[0]
+        have = [d for d in dirs if os.path.isfile(os.path.join(d, name))]
+        if not have:
+            continue
+        others = [os.path.join(d, name) for d in have[1:]]
+        caps = [os.path.join(d, stem + ext) for d in have if os.path.isfile(os.path.join(d, stem + ext))]
+        if not overwrite and caps:                # captioned at another size already: copy that one
+            copied += _copy_crop_captions([(os.path.splitext(caps[0])[0] + os.path.splitext(name)[1],
+                                            [os.path.join(d, name) for d in have
+                                             if not os.path.isfile(os.path.join(d, stem + ext))])], ext, 0)
+            continue
+        todo.append(os.path.join(have[0], name))
+        copies.append((os.path.join(have[0], name), others))
+    return todo, copies, copied
+
+
+def _copy_crop_captions(copies, ext, since):
+    """Each captioned crop's caption to the same crop at its other sizes (since: only captions written from then)."""
+    import shutil
+    n = 0
+    for src, others in copies:
+        cap = os.path.splitext(src)[0] + ext
+        try:
+            if os.path.getmtime(cap) < since:
+                continue                          # the job didn't get to it (stopped, or it failed)
+        except OSError:
+            continue
+        for o in others:
+            dst = os.path.splitext(o)[0] + ext
+            if os.path.normcase(dst) != os.path.normcase(cap):
+                shutil.copyfile(cap, dst)
+                n += 1
+    return n
+
+
 def _reader(proc):
     for line in proc.stdout:
         line = line.rstrip()
@@ -307,10 +358,17 @@ def _reader(proc):
                 _st["ok"] += 1
             elif line.startswith("FAIL: "):
                 _st["fail"] += 1
+            copies = ()
             if line in ("DONE", "STOPPED"):
                 _st["state"] = "loaded"
                 _st["job"] = ""
+                copies, _st["copies"] = _st.get("copies") or (), []
+                ext, since = _st.get("copies_ext") or ".txt", _st.get("started") or 0
         _log(line)
+        if copies:                                # detail crops: the new captions to the other sizes
+            n = _copy_crop_captions(copies, ext, since)
+            if n:
+                _log(f"Copied {n} caption(s) to the same crops at the other sizes")
     with _lock:
         if _st["proc"] is proc:
             _st.update(proc=None, key=None, state="idle", job="", model="")
@@ -348,6 +406,13 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
                          "No pictures or clips in the training folder.")
     if not only and not overwrite:
         images = [p for p in images if not os.path.exists(os.path.splitext(p)[0] + ext)]
+    copies = []
+    if _crop_dir(folder):                         # detail crops: one caption per picture, made at its largest size
+        images, copies, copied = _crop_targets(folder, images, overwrite or bool(only), ext)
+        if copied:
+            _log(f"Copied {copied} caption(s) from the same crops at another size")
+        if not images and copied:
+            return {"files": 0, "copied": copied}
     if not images:
         raise ValueError("Every file already has a caption. Tick Overwrite to caption them again."
                          if not only else "That file isn't there any more.")
@@ -390,7 +455,8 @@ def ai_captions(prefs, captioner, folder, model, task_label, instruction, max_to
     with open(job_path, "w", encoding="utf-8") as f:
         json.dump(job, f)
     with _lock:
-        _st.update(job="re-caption" if only else "captions", done=0, total=len(images), ok=0, fail=0)
+        _st.update(job="re-caption" if only else "captions", done=0, total=len(images), ok=0, fail=0,
+                   copies=copies, copies_ext=ext, started=time.time())
         if _st["state"] == "loaded":
             _st["state"] = "running"                  # busy from now: a second job waits for this one
         ready, proc = _st["ready"], _st["proc"]

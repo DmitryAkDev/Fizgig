@@ -29,6 +29,11 @@ MEGAPIXELS = ["0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", 
 FACE_TARGETS = ["Largest Face", "Largest Male Face", "Largest Female Face"]
 
 
+def crop_sizes(prep_mp):
+    """Detail crops' sizes for Image Prep: every Target megapixels from the smallest up to the one picked."""
+    return [float(m) for m in MEGAPIXELS if float(m) <= float(prep_mp) + 1e-9]
+
+
 def bucket_step():
     """The resolution grid training buckets on (RESOLUTION_STEPS), so prep and bucketing can never drift apart."""
     try:
@@ -151,11 +156,13 @@ def summary(folder, mode, replace, prep_mp, train_mp=None):
     elif mode == "Face Crop Only":
         what = f"{count} → replaced by just the cropped face from each photo, saved as PNG"
     elif mode == "Detail Crops (Style)":
-        from fizgig.dataset.detail_crops import DIR, side, size_name
+        from fizgig.dataset.detail_crops import DIR, side
         s = side(prep_mp)
-        lines = [f"Your {n or ''} pictures stay as they are. Each gets one {prep_mp:g} MP crop at its own scale (from its "
-                 f"full-size original when there is one), in {DIR}/{size_name(prep_mp)}. From now on this folder "
-                 f"trains its crops too: each run makes its own at Start, at the size it trains at."]
+        sizes = ", ".join(f"{m:g}" for m in crop_sizes(prep_mp))
+        lines = [f"Your {n or ''} pictures stay as they are. Each gets a crop at its own scale (from its full-size "
+                 f"original when there is one) at every size up to {prep_mp:g} MP ({sizes} MP), in {DIR}. From now on "
+                 f"this folder trains its crops too, at the size each run trains at (a size not made here is made at "
+                 f"Start)."]
         if median_size and min(median_size) < s:
             lines.append(f"⚠ Your typical picture (about {median_size[0] * median_size[1] / 1e6:.2g} MP) is too small for "
                          f"a {prep_mp:g} MP crop: those train whole, with no crop. Detail crops work from pictures "
@@ -319,12 +326,17 @@ class Prep:
         if mode == "Detail Crops (Style)":           # the folder switched to detail crops, and this size's made now
             from fizgig.dataset import detail_crops
             detail_crops.switch(folder, True)
-            self.log("Mode: Detail crops (for a style)\n\nThis folder now trains detail crops too: each picture's "
-                     "crop at the size each run trains at, made at Start (captioned there with the Style task).\n")
-            todo = detail_crops.make(folder, prep_mp, log=lambda t: self.log(t + "\n"))
-            self.log(f"\nThe {prep_mp:g} MP crops are in {detail_crops.size_dir(folder, prep_mp)}"
-                     + (f"; {len(todo)} have no caption yet - caption them on the Captions tab (Show: detail crops), "
-                        "or Start captions them" if todo else "") + ".\n")
+            self.log(f"Mode: Detail crops (for a style)\n\nThis folder now trains detail crops too, at the size each "
+                     f"run trains at. Making them at every size up to {prep_mp:g} MP:\n")
+            for mp in crop_sizes(prep_mp):           # every size up to the one picked
+                detail_crops.make(folder, mp, log=lambda t: self.log(t + "\n"))
+            n = detail_crops.share_captions(folder)
+            todo = sum(1 for _l, d in detail_crops.sizes(folder) for c in detail_crops.uncaptioned(d))
+            self.log(f"\nThe crops are in {os.path.join(folder, detail_crops.DIR)}, one folder per size"
+                     + (f"; {n} caption(s) copied from another size" if n else "")
+                     + (f"; {todo} have no caption yet - caption them on the Captions tab (Show: detail crops; the "
+                        "largest size is captioned and copied to the others), or Start captions them" if todo else "")
+                     + ".\n")
             return
         if mode == "Auto Prep (Face Crops)":
             self.auto_prep(folder, folder, area, face_mode, face_padding, replace)

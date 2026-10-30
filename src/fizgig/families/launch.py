@@ -674,13 +674,14 @@ def detail_crops_problem(desc, inputs):
     if _s(inputs.get("captioner")) and os.path.isfile(_s(inputs.get("captioner"))):
         return ""
     folder, ext = _s(inputs.get("image_folder")), _s(inputs.get("caption_ext")) or ".txt"
-    for mp in detail_crop_sizes(desc, inputs):
-        d = detail_crops.size_dir(folder, mp)
-        pics = detail_crops.pictures(folder)
-        have = {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)} if os.path.isdir(d) else set()
-        if any(os.path.splitext(n)[0] not in have for n in pics):
-            return ("Detail crops need captions, written by the captioner: set the Krea 2 text encoder (or a secondary "
-                    "captioning model) in Preferences, or switch Detail crops off for this folder in Image Prep.")
+    if not detail_crop_sizes(desc, inputs):
+        return ""
+    have = set()                         # a picture's crop captioned at any size: the Detail crops stage copies it
+    for _label, d in detail_crops.sizes(folder):
+        have |= {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)}
+    if any(os.path.splitext(n)[0] not in have for n in detail_crops.pictures(folder)):
+        return ("Detail crops need captions, written by the captioner: set the Krea 2 text encoder (or a secondary "
+                "captioning model) in Preferences, or switch Detail crops off for this folder in Image Prep.")
     return ""
 
 

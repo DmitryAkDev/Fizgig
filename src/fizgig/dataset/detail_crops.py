@@ -136,6 +136,47 @@ def spot(cx, cy, w, h, s):
     return min(max(0, round(cx - s / 2)), w - s), min(max(0, round(cy - s / 2)), h - s)
 
 
+def uncaptioned(d, ext=".txt"):
+    """The crops in one size folder with no caption yet."""
+    from fizgig.dataset.masks import is_mask_file
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return []
+    have = {os.path.splitext(n)[0] for n in names if n.endswith(ext)}
+    return [os.path.join(d, n) for n in sorted(names) if n.lower().endswith(".png") and not is_mask_file(n)
+            and os.path.splitext(n)[0] not in have]
+
+
+def share_captions(folder, ext=".txt"):
+    """A crop with no caption gets the same picture's caption from another size, the largest that has one: every
+    size is cut around the same spot, so one caption fits them all. Returns how many were copied."""
+    import shutil
+    dirs = [d for _label, d in sizes(folder)][::-1]       # largest first
+    n = 0
+    for d in dirs:
+        for c in uncaptioned(d, ext):
+            stem = os.path.splitext(os.path.basename(c))[0]
+            src = next((os.path.join(o, stem + ext) for o in dirs if os.path.isfile(os.path.join(o, stem + ext))), "")
+            if src:
+                shutil.copyfile(src, os.path.join(d, stem + ext))
+                n += 1
+    return n
+
+
+def to_caption(folder, ext=".txt"):
+    """The crops a captioner should write after share_captions: each picture with no caption at any size, once, at
+    the largest size it has a crop (share_captions then copies it to the rest)."""
+    out, seen = [], set()
+    for _label, d in sizes(folder)[::-1]:                 # largest first
+        for c in uncaptioned(d, ext):
+            stem = os.path.splitext(os.path.basename(c))[0]
+            if stem not in seen:
+                seen.add(stem)
+                out.append(c)
+    return out
+
+
 def make(folder, mp, log=print, ext=".txt"):
     """The crops for one size, made where missing or out of date (the picture changed). A picture smaller than the
     crop has none (it trains whole). A crop whose picture left the folder goes, with its caption. Returns the crops with
