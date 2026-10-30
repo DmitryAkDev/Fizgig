@@ -235,6 +235,8 @@ Fizgig is open source under the **[Apache License 2.0](LICENSE)** — free to us
 
 The **Automagic v3 optimizer**, the Krea 2 **MMDiT backbone and flow-matching sampler**, and Ostris's MiniMax H3 **training adapter** all come from **[@ostris](https://github.com/ostris)** — the first two from [AI-Toolkit](https://github.com/ostris/ai-toolkit) under the MIT licence, the adapter downloaded as a model rather than bundled. The default H3 training adapter comes from **[circlestone-labs](https://huggingface.co/circlestone-labs)**, also downloaded as a model. Anima's model code is adapted from kohya-ss's [sd-scripts](https://github.com/kohya-ss/sd-scripts) under the Apache licence, Z-Image's from Tongyi-MAI's [reference implementation](https://github.com/Tongyi-MAI/Z-Image), and Flux 3 Image Klein's from Black Forest Labs' [reference implementation](https://github.com/black-forest-labs/flux-3-image-klein), both Apache too.
 
+A few features came from looking at other trainers: starting a run at a smaller size, the run summary, the sidebar's disk and job meters and the captions table were inspired by [ZenTrainer](https://github.com/Nynxz/ZenTrainer) by @Nynxz.
+
 Copyright © 2026 Peter Neill.
 
 Model weights are **not** covered by this license — each model carries its own terms from its publisher (see the Download links in Preferences).
