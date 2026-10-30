@@ -1578,6 +1578,10 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
+    if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
+    S.wasTraining = training();
+  }
   const ps = S.run.pod_stop || {};
   $("podStopBar").style.display = ps.counting || ps.note ? "" : "none";
   $("podStopKeep").textContent = ps.counting ? "Keep the pod running" : "OK";      // a result note: dismissed
@@ -1977,7 +1981,7 @@ function previewFigure(it, prompts, eager, byEpoch) {
   const prompt = it.idx == null ? "" : (own && own[it.idx]) || (prompts ? prompts[it.idx] : "");
   return withMode(el("figure", {class: "gallery-item", title: it.name}, mediaFor(it, eager && eager.has(it)),
     el("figcaption", {}, el("b", {text: previewLabel(it)}), prompt ? el("span", {class: "preview-prompt", text: prompt, title: prompt}) : null,
-      el("span", {class: "preview-file", text: it.name}))), it);
+      el("span", {class: "preview-file", text: it.name}), it.lora ? studioButton(it.lora, it.family) : null)), it);
 }
 // the family's line on how this preview was made (the run's record), shown over it in the lightbox
 function withMode(fig, it) {
@@ -2045,7 +2049,7 @@ async function loadGallery() {
   document.querySelectorAll("#galleryView button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   // redrawn only when something changed (a new preview, another run or view), and never under a clip or song that
   // is playing - the 15 s refresh used to rebuild the gallery and stop it
-  const sig = [run, view, ...g.items.map((it) => it.name + "@" + it.time)].join("|");
+  const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time)].join("|");
   const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
   if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) { likenessShow(dir, g.items, run, view); return; }
   host.innerHTML = "";
@@ -2055,7 +2059,8 @@ async function loadGallery() {
   const top = epochs.length ? Math.max(...epochs) : null;
   const eager = new Set((top != null ? g.items.filter((it) => it.epoch === top) : g.items.slice(0, 3)).slice(0, 8));
   if (view === "grid" && g.items.length) host.append(previewGrid(g.items, g.prompts || [], eager));
-  else for (const it of g.items.slice(0, 120)) host.append(previewFigure(it, g.prompts || [], eager, g.epoch_prompts));
+  else for (const it of g.items.slice(0, 120))
+    host.append(previewFigure(withLora(it, g.loras, S.fam && S.fam.key), g.prompts || [], eager, g.epoch_prompts));
   S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
   const others = g.runs.filter((r) => r !== run).length;
@@ -2319,6 +2324,7 @@ async function loadCheckpoints() {
       el("span", {class: "checkpoint-name", text: it.name}),
       el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune (whole model)" : "LoRA"} · ` +
         `${size(it.size)} · ${new Date(it.time * 1000).toLocaleString()}`}),
+      it.kind === "finetune" ? null : studioButton(it.path, S.fam && S.fam.key),
       el("a", {class: "btn btn-sm btn-primary", href, download: it.name, text: "Download"})));
   }
   const others = r.items.length - mine.length;
@@ -3792,12 +3798,13 @@ async function runFiles(run) {
       .catch(() => ({items: [], prompts: []})),
     api("/api/checkpoints?dir=" + encodeURIComponent(run.output_dir)).catch(() => ({items: []}))]);
   const shots = g.items.slice(0, 12);
-  if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(it, g.prompts, null, g.epoch_prompts))));
+  if (shots.length) out.push(el("div", {class: "gallery run-gallery"}, shots.map((it) => previewFigure(withLora(it, g.loras, run.family), g.prompts, null, g.epoch_prompts))));
   const size = (b) => b >= 2 ** 30 ? (b / 2 ** 30).toFixed(1) + " GB" : (b / 2 ** 20).toFixed(0) + " MB";
   const ckpts = c.items.filter((it) => it.run === run.lora);
   if (ckpts.length) out.push(el("div", {class: "checkpoint-list"}, ckpts.map((it) => el("div", {class: "checkpoint-row"},
     el("span", {class: "checkpoint-name", text: it.name}),
     el("span", {class: "field-hint", text: `${it.kind === "finetune" ? "Fine-tune" : "LoRA"} · ${size(it.size)}`}),
+    it.kind === "finetune" ? null : studioButton(it.path, run.family),
     el("a", {class: "btn btn-sm btn-primary", download: it.name, text: "Download",
       href: `/api/download?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`})))));
   if (!out.length) out.push(el("div", {class: "field-hint", text: "Nothing saved by this run in " + run.output_dir + "."}));
@@ -4726,7 +4733,36 @@ async function studioOpen() {
     S.st.familiesLoaded = true;
     await studioFamily(sv.res, sv.w, sv.h);
   }
+  if (S.st.openWith) await studioTake();
   studioPoll();
+}
+
+// a LoRA row's Studio button: the LoRA as the primary, on the model its file is for (from its key names; the run's
+// model when the file can't tell), on the Studio tab. Nothing loads until Start.
+function studioButton(path, family) {
+  if (training()) return null;                    // Studio's model would share the card with the run
+  return el("button", {class: "btn btn-sm", text: "Studio", title: "Open this LoRA in Studio, on the model it was trained for",
+    onclick: () => { S.st.openWith = {path, family}; showTab("studio"); }});
+}
+
+function training() { return !!(S.run && (S.run.running || ["starting", "running", "pausing"].includes(S.run.state))); }
+// a preview with the LoRA its epoch saved (the server's loras map), for its Studio button
+function withLora(it, loras, family) {
+  return it.epoch != null && loras && loras[String(it.epoch)] ? {...it, lora: loras[String(it.epoch)], family} : it;
+}
+
+async function studioTake() {
+  const {path, family} = S.st.openWith;
+  S.st.openWith = null;
+  let key = "";
+  try { key = (await api("/api/studio/lorafamily?path=" + encodeURIComponent(path))).key; } catch (e) { /* the run's */ }
+  const has = (k) => k && [...$("stFamily").options].some((o) => o.value === k);
+  const fam = has(key) ? key : has(family) ? family : "";
+  if (!fam) { $("stStatus").textContent = "Studio doesn't work on this LoRA's model."; return; }
+  if (fam !== $("stFamily").value) { $("stFamily").value = fam; await studioFamily(); }
+  $("stPrimary").value = path;
+  stRemember();
+  $("stStatus").textContent = `${path.split(/[\\/]/).pop()} is the primary LoRA.`;
 }
 
 async function studioFamily(res, w, h) {

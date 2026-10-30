@@ -3333,9 +3333,28 @@ class Handler(BaseHTTPRequestHandler):
             mode = None
         newest = by_epoch[max(by_epoch, key=int)] if by_epoch else None
         return self.json({"items": out[:1000] if run else out[:300], "runs": runs, "epoch_prompts": by_epoch,
+                          "loras": self._epoch_loras(os.path.dirname(folder.rstrip("\\/")), run, infos) if run else {},
                           "preview_mode": mode if isinstance(mode, dict) else None,
                           "preview_labels": preview_labels(mode),
                           "prompts": newest or (run_prompts(os.path.dirname(folder.rstrip("\\/")), run) if run else [])})
+
+    @staticmethod
+    def _epoch_loras(out_dir, run, infos):
+        """{epoch: the LoRA file saved at it} for a run's previews: <run>-NNNNNN.safetensors, and the run's final
+        <run>.safetensors for its last previewed epoch when that one has no numbered file (fine-tunes left out)."""
+        found = {}
+        try:
+            for e in os.scandir(out_dir):
+                m = _CKPT.match(e.name[:-len(".safetensors")]) if e.name.lower().endswith(".safetensors") else None
+                if m and m.group(1) == run and m.group(2):
+                    found[int(m.group(2))] = e.path
+        except OSError:
+            return {}
+        epochs = [i["epoch"] for i in infos.values() if i and i.get("run") == run and i.get("epoch") is not None]
+        final = os.path.join(out_dir, run + ".safetensors")
+        if epochs and max(epochs) not in found and os.path.isfile(final):
+            found[max(epochs)] = final
+        return {str(k): p for k, p in found.items() if _checkpoint_kind(p) != "finetune"}
 
     def _checkpoints(self, folder):
         """The run's saved LoRAs / checkpoints in its output folder, newest first."""
