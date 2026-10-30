@@ -2295,6 +2295,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 except OSError:
                     pass
 
+    last_gn = [None]
+
     def _update():
         nonlocal pending
         if ftr is not None and ftr.fused is not None:
@@ -2303,6 +2305,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
             return
         if max_grad_norm:
             pre = torch.nn.utils.clip_grad_norm_(params, max_grad_norm)
+            last_gn[0] = float(pre)        # the run card's Grad norm
             if adaptive is not None and adaptive.clip_signal:
                 adaptive.record_clip(pre, max_grad_norm)
         m = sum(lr_acc) / len(lr_acc) if lr_acc else 1.0
@@ -2657,7 +2660,10 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                     previews(epoch + 1)
                     progress.start_t += time.time() - _tp
             watch.observe(epoch + 1, global_step, batch, _info.get("t", 0.5), loss.item())
-            progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}", refresh=False)
+            # the run card's Learning: loss, the step's learning rate (Adaptive LR's, Automagic's) and grad norm
+            progress.set_postfix(avr_loss=f"{recorder.moving_average:.4f}",
+                                 lr=f"{float(optimizer.param_groups[0]['lr']):.2e}" if optimizer is not None else "-",
+                                 **({"gn": f"{last_gn[0]:.3f}"} if last_gn[0] is not None else {}), refresh=False)
             progress.update(1)
 
         if pending:                        # a partial group: settle the optimizer before the epoch-end work

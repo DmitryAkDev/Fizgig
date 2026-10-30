@@ -1727,7 +1727,7 @@ def _progress_dict(upd):
     return {"epoch": upd.get("epoch"), "total_epochs": upd.get("total_epochs"), "step": step, "total_steps": total,
             "speed": upd.get("speed_text") or "", "loss": upd.get("average_loss_text") or "",
             "eta": upd.get("eta_text") or "", "percent": 100.0 * min(step, total) / total if total else 0.0,
-            "note": ""}
+            "note": "", "lr": upd.get("lr_text") or "", "grad_norm": upd.get("grad_norm_text") or ""}
 
 
 def _run_stages(stages, out_dir):
@@ -1738,6 +1738,8 @@ def _run_stages(stages, out_dir):
         _run["progress"] = None
         tracker = TrainingProgressTracker((_run.get("values") or {}).get("MAX_TRAIN_EPOCHS", 1))
         _run["started_at"] = time.time()
+        _run["training_at"] = None             # the Training stage's start (the run summary's Training time)
+        _stats["vram_peak"] = 0                # this run's peak, not the server's
     for stage in stages:
         with _lock:
             if _run["state"] == "stopped":
@@ -1745,6 +1747,8 @@ def _run_stages(stages, out_dir):
                 webqueue.on_run_ended("stopped", _run.get("lora"), _queue_starter)
                 return
             _run["stage"] = stage.name
+            if stage.name == "Training" and not _run.get("training_at"):
+                _run["training_at"] = time.time()
             if str((_run.get("progress") or {}).get("note") or "").startswith("Caching"):
                 _run["progress"] = None          # the last stage's cache count isn't this stage's
         append_log(f"\n▶ {stage.name}\n")

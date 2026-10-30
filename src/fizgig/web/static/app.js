@@ -1605,6 +1605,7 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
   resumeMarks();
+  runSummary();
   if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
     if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
     S.wasTraining = training();
@@ -1966,6 +1967,7 @@ function followLog() {
 async function pollStats() {
   let s;
   try { s = await api("/api/stats"); } catch (e) { return; }     // the server restarts
+  S.stats = s;
   const gb = (b) => (b / 2 ** 30).toFixed(1);
   const meter = (label, value, frac, warn) => el("div", {class: "meter" + (warn ? " warn" : "")},
     el("div", {class: "meter-head"}, el("span", {text: label}), el("span", {text: value})),
@@ -1998,6 +2000,68 @@ async function pollStats() {
     m.addEventListener("click", () => showTab(j.tab));
     host.append(m);
   }
+}
+
+// ---- the Training tab's Run summary: time, learning and the run's own setup (its values, not the form's)
+function runSummary() {
+  const box = $("runSummary"), r = S.run || {};
+  if (!r.lora || !r.values || r.stage === undefined && !r.started_at) { box.style.display = "none"; return; }
+  const v = r.values, p = r.progress || {}, s = S.stats || {};
+  const live = r.running || ["starting", "running", "pausing"].includes(r.state);
+  const dur = (sec) => { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+    return h ? `${h}h ${m}m` : `${m}m ${sec % 60}s`; };
+  const end = live ? Date.now() / 1000 : (r.ended_at && r.ended_at > r.started_at ? r.ended_at : null);
+  const cell = (k, val) => el("div", {class: "rs-cell"}, el("span", {class: "rs-key", text: k}),
+    el("span", {class: "rs-val", text: val == null || val === "" ? "-" : String(val)}));
+  const sec = (title, cells, extra) => {
+    const open = !(S.rsShut || {})[title];
+    const head = el("div", {class: "rs-head"}, el("span", {text: title}), ...(extra ? [extra] : []),
+      el("button", {class: "rs-fold", text: open ? "⌃" : "⌄", title: open ? "Fold" : "Open", onclick: () => {
+        S.rsShut = {...(S.rsShut || {}), [title]: open}; runSummary(); }}));
+    return el("div", {class: "rs-section"}, head, open ? el("div", {class: "rs-grid"}, ...cells.filter(Boolean)) : null);
+  };
+  const gb = (b) => b ? `${(b / 2 ** 30).toFixed(1)} GB` : "";
+  const time = sec("Time", [
+    cell("Training", r.training_at && end ? dur(end - r.training_at) : ""),
+    cell("Total", r.started_at && end ? dur(end - r.started_at) : ""),
+    cell("Speed", p.speed), cell("Epoch", p.epoch ? `${p.epoch} of ${p.total_epochs}` : ""),
+    cell("Peak VRAM", live ? gb(s.vram_peak) : ""), cell(live ? "Time left" : "Steps",
+      live ? p.eta : (p.total_steps ? `${p.step} of ${p.total_steps}` : "")),
+  ]);
+  const lk = S.likeSummary;
+  const learning = sec("Learning", [
+    cell("Learning rate", p.lr), cell("Grad norm", p.grad_norm), cell("Loss", p.loss),
+    lk ? cell("Likeness", `${Math.round(lk.now * 100)}% (epoch ${lk.epoch})` +
+      (lk.bestEpoch !== lk.epoch ? ` · best ${Math.round(lk.best * 100)}% at ${lk.bestEpoch}` : "")) : null,
+  ]);
+  const fam = (S.schema.families.find((f) => f.key === r.family) || {}).display_name || r.family;
+  const yes = (k) => v[k] === true || v[k] === "1" || v[k] === "true";
+  const first = (x) => String(x == null ? "" : x).split(" (")[0];
+  const net = [String(v.NETWORK_TYPE || "LoRA").split(" ")[0], v.NETWORK_DIM ? `rank ${v.NETWORK_DIM}` : "",
+    v.NETWORK_ALPHA && v.NETWORK_ALPHA !== v.NETWORK_DIM ? `alpha ${v.NETWORK_ALPHA}` : "",
+    yes("MASKED_TRAINING") ? "masked" : "", v.FAMILY_EMA && !/^off/i.test(v.FAMILY_EMA) ? `EMA ${first(v.FAMILY_EMA)}` : "",
+    v.CAPTION_DROPOUT && !/^off/i.test(v.CAPTION_DROPOUT) ? `caption dropout ${first(v.CAPTION_DROPOUT)}` : ""];
+  const spec = el("button", {class: "rs-spec", text: S.rsSpec ? "Hide full spec" : "{ } Full spec",
+    title: "Every setting this run started with", onclick: () => { S.rsSpec = !S.rsSpec; runSummary(); }});
+  const setup = sec("Setup", [
+    cell("Model", fam + (v.FAMILY_PRECISION ? ` · ${first(v.FAMILY_PRECISION)}` : "")),
+    cell("Dataset", String(r.image_folder || "").split(/[\\/]/).filter(Boolean).pop()),
+    cell("Training", [v.MAX_TRAIN_EPOCHS ? `${v.MAX_TRAIN_EPOCHS} epochs` : "", p.total_steps ? `${p.total_steps} steps` : "",
+      "batch 1", v.DATASET_MEGAPIXELS ? `${v.DATASET_MEGAPIXELS} MP` : "",
+      v.STAGE_MP && v.STAGE_MP !== "Off" ? `${v.STAGE_MP} MP for the first ${v.STAGE_UNTIL || "30%"}` : ""].filter(Boolean).join(" · ")),
+    cell("Optimizer", [v.OPTIMIZER_TYPE, yes("ADAPTIVE_LR") ? `Adaptive LR ${v.ADAPTIVE_LR_MIN} to ${v.ADAPTIVE_LR_MAX}` :
+      v.LEARNING_RATE ? `from ${v.LEARNING_RATE}` : ""].filter(Boolean).join(" · ")),
+    cell("Network", net.filter(Boolean).join(" · ")),
+    cell("Memory", [v.BLOCKS_SWAP ? `block swap ${first(v.BLOCKS_SWAP)}` : "",
+      v.GRADIENT_ACCUMULATION && String(v.GRADIENT_ACCUMULATION) !== "1" ? `accumulation ${v.GRADIENT_ACCUMULATION}` : ""]
+      .filter(Boolean).join(" · ")),
+  ], spec);
+  const full = S.rsSpec ? el("pre", {class: "rs-full", text: Object.keys(v).sort()
+    .filter((k) => v[k] !== "" && v[k] != null && !k.startsWith("_"))
+    .map((k) => `${k} = ${typeof v[k] === "object" ? JSON.stringify(v[k]) : v[k]}`).join("\n")}) : null;
+  box.replaceChildren(el("div", {class: "card-title"}, el("span", {text: `Run summary: ${r.lora}`})),
+    el("div", {class: "card-content rs-body"}, time, learning, setup, ...(full ? [full] : [])));
+  box.style.display = "";
 }
 
 // the sidebar run card's loss line: the run card's own loss, smoothed, about 60 points
@@ -2178,6 +2242,8 @@ async function likenessShow(dir, items, run, view) {
   let best = 0;
   avgs.forEach((v, i) => { if (v > avgs[best]) best = i; });
   const bestEpoch = epochs.length ? epochs[best] : null;
+  if (run === (S.run && S.run.lora)) S.likeSummary = epochs.length ?      // the run summary's Likeness
+    {now: avgs[avgs.length - 1], epoch: epochs[epochs.length - 1], best: avgs[best], bestEpoch} : null;
   // a badge on every scored picture (the best epoch's outlined)
   for (const fig of document.querySelectorAll("#gallery .gallery-item")) {
     fig.querySelector(".lik-badge")?.remove();
