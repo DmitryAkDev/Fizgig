@@ -6696,10 +6696,12 @@ function wireStudio() {
 let CAP_PAGE = 12;                         // Per page (the desktop's sizes), remembered with the tab's settings
 S.cap = {page: 0, items: [], opts: null, lastState: ""};
 
-// the folder the Captions tab works on: the training folder, or one of its detail crop sizes (Show)
+// the folder the Captions tab works on (its tools take the folder's largest detail crops in too, server side)
 function capFolder() {
-  return S.capShow && S.capShowFor === S.imageFolder ? S.capShow : S.imageFolder;
+  return S.imageFolder;
 }
+// the folder one listed file is in: the training folder, or its largest detail crop folder
+const capItemFolder = (it) => it.path.slice(0, it.path.length - it.name.length - 1);
 
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
@@ -6821,9 +6823,9 @@ async function captionsLive() {
   const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
     .catch(() => null);
   if (!r || !r.items) return;
-  const now = new Map(r.items.map((i) => [i.name, i]));
+  const now = new Map(r.items.map((i) => [i.path, i]));
   for (const it of S.cap.items) {
-    const n = now.get(it.name);
+    const n = now.get(it.path);
     if (!n || (n.caption ?? "") === (it.caption ?? "")) continue;
     const ta = it._ta, untouched = !ta || (document.activeElement !== ta && ta.value === (it.caption ?? ""));
     if (!untouched) continue;
@@ -6882,20 +6884,13 @@ async function loadCaptions() {
     `&ext=${encodeURIComponent(capExt())}&t=${encodeURIComponent(TOKEN)}`;
   $("dsZip").href = zipUrl(false); $("dsZipCaps").href = zipUrl(true);
   for (const id of ["dsZip", "dsZipCaps"]) $(id).style.display = S.imageFolder ? "" : "none";
-  $("capFolder").textContent = (S.imageFolder ? `Folder: ${capFolder()}` + (capFolder() !== S.imageFolder ?
-    "  (its detail crops)" : "  (set on the Start tab)") :
+  $("capFolder").textContent = (S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
     "Choose the training folder on the Start tab first.") + subfoldersHint();
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
-  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&root=${encodeURIComponent(S.imageFolder)}` +
+  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}` +
     `&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
-  S.cap.items = r.items;
-  // Show: the pictures, or a detail crop size (they caption, re-caption and edit like any picture)
-  const crops = r.crops || [], sel = $("capShow");
-  $("capShowRow").style.display = crops.length ? "" : "none";
-  sel.replaceChildren(el("option", {value: "", text: "Pictures (the training folder)"}),
-    ...crops.map((c) => el("option", {value: c.path, text: `Detail crops, ${c.label}`})));
-  sel.value = crops.some((c) => c.path === capFolder()) ? capFolder() : "";
+  S.cap.items = r.items;                      // the pictures, then the largest detail crops (it.crop: their folder)
   renderCaptions();
 }
 
@@ -6931,9 +6926,9 @@ function renderCaptions() {
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
     const saveCap = async () => {
-      await api("/api/captions/save", {folder: capFolder(), name: it.name, text: ta.value, ext});
+      await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
       it.caption = ta.value;
-      status.textContent = "Saved";
+      status.textContent = it.crop ? "Saved, at every crop size" : "Saved";
     };
     const save = el("button", {class: "btn btn-sm", text: "Save", onclick: saveCap});
     const kind = it.name.split(".").pop().toLowerCase();
@@ -6950,7 +6945,7 @@ function renderCaptions() {
     const speechRun = kind === "mp4" && !/_mute$/i.test(it.name.replace(/\.[^.]+$/, "")) ? async (say = (t) => { status.textContent = t; }) => {
       say("Transcribing… (the first time downloads Whisper, ~300 MB)");
       try {
-        const r = await api("/api/captions/transcribe", {family: S.family, folder: capFolder(), name: it.name});
+        const r = await api("/api/captions/transcribe", {family: S.family, folder: capItemFolder(it), name: it.name});
         if (!r.text) { say("Whisper heard no words in this clip."); return; }
         const cap = ta.value.trim().replace(/\.$/, "");
         ta.value = (cap ? cap + " " : "") + `saying "${r.text}"`;
@@ -6964,8 +6959,9 @@ function renderCaptions() {
     const media = mediaFor(it);
     const card = el("div", {class: "caption-card"});
     // the big view edits, saves, re-captions and removes the same caption
-    card._cap = {ta, it, save: saveCap, recap: recap ? recapRun : null, speech: speechRun, remove: () => capRemove(it, card, status)};
-    const remove = el("button", {class: "btn btn-sm", text: "Remove",
+    card._cap = {ta, it, save: saveCap, recap: recap ? recapRun : null, speech: speechRun,
+      remove: it.crop ? null : () => capRemove(it, card, status)};
+    const remove = it.crop ? null : el("button", {class: "btn btn-sm", text: "Remove",
       title: "Take it out of the training set: it and its caption move into the folder's removed subfolder (nothing is deleted).",
       onclick: () => capRemove(it, card, status)});
     const size = it.size ? `${it.size[0]}×${it.size[1]} · ${(it.size[0] * it.size[1] / 1e6).toFixed(1)} MP` : "";
@@ -6980,7 +6976,9 @@ function renderCaptions() {
         maskBtn.textContent = on ? "Show picture" : "Show mask";
       }}) : null;
     card.append(media, el("div", {class: "caption-card-body"},
-      el("div", {class: "caption-card-title", text: mediaLabel(it)}),
+      el("div", {class: "caption-card-title", text: mediaLabel(it) + (it.crop ? " · detail crop" : ""),
+        title: it.crop ? "This picture's detail crop (Image Prep's Detail crops), the largest size: its caption is " +
+          "copied to the crop at every other size" : ""}),
       size ? el("div", {class: "field-hint caption-card-size", text: size + (it.mask ? " · has a mask" : "")}) : null, ta,
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
@@ -7008,13 +7006,14 @@ function captionsTable(items, ext) {
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
     ta.addEventListener("change", async () => {  // saved when you leave the box, as typed
       try {
-        await api("/api/captions/save", {folder: capFolder(), name: it.name, text: ta.value, ext});
+        await api("/api/captions/save", {folder: capItemFolder(it), name: it.name, text: ta.value, ext});
         it.caption = ta.value; words.textContent = String(capWords(it));
       } catch (e) { ta.title = e.message; }
     });
     const thumb = it.size ? el("img", {class: "cap-thumb", loading: "lazy",
       src: `/api/thumb?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`}) : el("span", {text: ""});
-    return el("tr", {}, el("td", {}, thumb), el("td", {class: "cap-name", text: mediaLabel(it), title: it.name}),
+    return el("tr", {}, el("td", {}, thumb), el("td", {class: "cap-name", text: mediaLabel(it) +
+      (it.crop ? " · detail crop" : ""), title: it.name}),
       el("td", {}, ta), words,
       el("td", {class: "cap-num", text: it.size ? `${it.size[0]}×${it.size[1]}` : ""}),
       el("td", {class: "cap-num", text: it.mask ? "yes" : ""}));
@@ -7039,7 +7038,7 @@ async function addText(apply) {
 
 async function capRemove(it, card, status) {
   // out of the training set (into removed/), with an Undo on the spot
-  const folder = capFolder();
+  const folder = capItemFolder(it);
   try {
     const r = await api("/api/captions/remove", {folder, name: it.name, ext: $("captionExt").value.trim() || ".txt"});
     S.cap.items = S.cap.items.filter((x) => x !== it);
@@ -7073,9 +7072,6 @@ async function findReplace(apply) {
 
 function wireCaptions() {
   $("captionsReload").addEventListener("click", loadCaptions);
-  $("capShow").addEventListener("change", () => {      // the pictures, or a detail crop size: the whole tab follows
-    S.capShow = $("capShow").value; S.capShowFor = S.imageFolder; S.cap.page = 0; loadCaptions();
-  });
   // the box is the Training tab's Caption Extension (one setting, as in the desktop app): a change here is that
   $("captionExt").addEventListener("change", () => {
     S.values.DATASET_CAPTION_EXT = $("captionExt").value.trim() || ".txt";

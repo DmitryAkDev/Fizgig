@@ -1,7 +1,7 @@
 """The Detail crops stage (families/launch.py, before caching): each size the run trains at gets its crops
-(dataset/detail_crops.py). A crop with no caption gets the same picture's caption from another size; a picture with
-none at any size is captioned once, at its largest crop, with the Qwen3-VL captioner and the Captions tab's Style
-instruction (trigger word first), and that caption goes to every size. A crop someone captioned is left as it is.
+(dataset/detail_crops.py). A picture with no crop caption at any size is captioned once, at its largest crop, with
+the Qwen3-VL captioner and the Captions tab's Style instruction (trigger word first); each picture's caption at its
+largest captioned size is then written over its crop at every other size.
 
     python -m fizgig.scripts.detail_crops --folder <training folder> --mp 1.0 [--mp 0.25] --captioner <file>
         --instruction_file <file> [--trigger zwxem] [--ext .txt]"""

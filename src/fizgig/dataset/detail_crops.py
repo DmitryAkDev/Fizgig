@@ -149,19 +149,50 @@ def uncaptioned(d, ext=".txt"):
 
 
 def share_captions(folder, ext=".txt"):
-    """A crop with no caption gets the same picture's caption from another size, the largest that has one: every
-    size is cut around the same spot, so one caption fits them all. Returns how many were copied."""
-    import shutil
+    """Each picture's crop caption, from the largest size that has one, written over the same crop at every other
+    size: every size is cut around the same spot, so one caption fits them all, and the largest is the one the
+    Captions tab shows and edits. Returns how many caption files changed."""
     dirs = [d for _label, d in sizes(folder)][::-1]       # largest first
-    n = 0
+    stems = set()
     for d in dirs:
-        for c in uncaptioned(d, ext):
-            stem = os.path.splitext(os.path.basename(c))[0]
-            src = next((os.path.join(o, stem + ext) for o in dirs if os.path.isfile(os.path.join(o, stem + ext))), "")
-            if src:
-                shutil.copyfile(src, os.path.join(d, stem + ext))
-                n += 1
+        stems |= {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)}
+    n = 0
+    for stem in stems:
+        src = next((os.path.join(d, stem + ext) for d in dirs if os.path.isfile(os.path.join(d, stem + ext))), "")
+        with open(src, "rb") as f:
+            text = f.read()
+        for d in dirs:
+            dst = os.path.join(d, stem + ext)
+            if dst == src or not os.path.isfile(os.path.join(d, stem + ".png")):
+                continue
+            try:
+                with open(dst, "rb") as f:
+                    if f.read() == text:
+                        continue
+            except OSError:
+                pass
+            with open(dst, "wb") as f:
+                f.write(text)
+            n += 1
     return n
+
+
+def largest(folder):
+    """The training folder's largest detail crop folder, the one the Captions tab shows, or "" (none, or off)."""
+    if not is_on(folder):
+        return ""
+    s = sizes(folder)
+    return s[-1][1] if s else ""
+
+
+def is_crop_dir(d):
+    """A detail crop size folder (<training folder>/fizgig_detail_crops/<size>mp)?"""
+    return os.path.basename(os.path.dirname(os.path.normpath(d or ""))) == DIR
+
+
+def root_of(d):
+    """The training folder a detail crop size folder belongs to."""
+    return os.path.dirname(os.path.dirname(os.path.normpath(d)))
 
 
 def to_caption(folder, ext=".txt"):

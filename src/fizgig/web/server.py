@@ -3336,7 +3336,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(p)
         if path == "/api/captions":
             return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0],
-                                  (qs.get("family") or [""])[0], (qs.get("root") or [""])[0])
+                                  (qs.get("family") or [""])[0])
         return self.json({"error": "not found"}, 404)
 
     def _log_stream(self, since):
@@ -3470,12 +3470,21 @@ class Handler(BaseHTTPRequestHandler):
         return self.json({"items": [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
                                      "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]})
 
-    def _captions(self, folder, ext, family="", root=""):
-        out = []
+    def _captions(self, folder, ext, family=""):
+        from fizgig.dataset import detail_crops
         try:
             names = sorted(os.listdir(folder))
         except OSError:
             return self.json({"items": []})
+        items = self._caption_items(folder, names, ext, family)
+        big = detail_crops.largest(folder)           # its detail crops, after the pictures: the largest size
+        if big:
+            crops = self._caption_items(big, sorted(os.listdir(big)), ext, family)
+            items += [{**it, "crop": os.path.basename(big)} for it in crops]
+        return self.json({"items": items})
+
+    def _caption_items(self, folder, names, ext, family):
+        out = []
         keep = _caption_media_filter(names, family)
         lower = {n.lower(): n for n in names}
         for n in names:
@@ -3491,9 +3500,7 @@ class Handler(BaseHTTPRequestHandler):
             mask = mask_for_stem(folder, stem, lower)        # masked training: the picture's mask, shown on its row
             out.append((n, p, {"caption": text, "size": _media_size(p),
                                **({"mask": os.path.basename(mask)} if mask else {})}))
-        from fizgig.dataset import detail_crops      # the Captions tab's Show: the folder's detail crop sizes
-        return self.json({"items": pair_songs(out),
-                          "crops": [{"label": l, "path": p.replace("\\", "/")} for l, p in detail_crops.sizes(root or folder)]})
+        return pair_songs(out)
 
     # -- POST
     def do_POST(self):
@@ -4109,8 +4116,9 @@ class Handler(BaseHTTPRequestHandler):
                 cap = captioner_for(prefs)
                 model = str(b.get("model") or "")
                 _caption_gpu_check(8.0 if model == captions.QWEN_MODEL else 2.5)
-                only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) ==
-                        os.path.abspath(folder)]
+                from fizgig.dataset import detail_crops     # the folder's files, or its largest detail crops
+                inside = {os.path.abspath(f) for f in captions.with_crops(folder)}
+                only = [p for p in (b.get("only") or []) if os.path.dirname(os.path.abspath(p)) in inside]
                 return self.json(captions.ai_captions(
                     prefs, cap if cap and os.path.isfile(cap) else "", folder, model, str(b.get("task") or ""),
                     str(b.get("instruction") or ""), int(b.get("max_tokens") or 120), str(b.get("trigger") or ""),
@@ -4643,6 +4651,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad folder or file"}, 400)
                 with open(os.path.join(folder, stem + ext), "w", encoding="utf-8") as f:
                     f.write(text)
+                from fizgig.dataset import detail_crops
+                if detail_crops.is_crop_dir(folder):        # a detail crop: the same caption at its other sizes
+                    detail_crops.share_captions(detail_crops.root_of(folder), ext)
                 return self.json({"ok": True})
         except ValueError as e:
             return self.json({"error": str(e)}, 400)
