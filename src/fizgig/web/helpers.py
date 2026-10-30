@@ -456,14 +456,19 @@ def add(url, password):
     url = _norm(url)
     c = Client(url)
     prefs = _srv().load_prefs()
+    key = ""
     if not password and "proxy.runpod.net" in url:
-        # a pod of this account: its password from its RunPod settings
+        # a pod of this account: its password from its RunPod settings, else from its log
         from fizgig.web import pod_stop, pods
-        password = pods.login_password(pod_stop.api_key(prefs), url)
+        key = pod_stop.api_key(prefs)
+        password = pods.login_password(key, url)
     if not password:                     # else the login this computer already has there (helping it, its checkpoints)
         c.cookie = (prefs.get("helper_out_cookies") or {}).get(url, "")
         if not c.cookie and "proxy.runpod.net" in url:
-            raise ValueError("Its password is needed: type it beside the pod.")
+            raise ValueError("Fizgig couldn't find this pod's password. Copy it from the pod's log on RunPod (the "
+                             "line under \"Ready\") and paste it into the box beside the pod." if key else
+                             "Type the pod's password into the box beside it. Or save your RunPod API key on the "
+                             "Pods tab, and Fizgig finds it for you.")
     try:
         if password or not c.cookie:
             c.login(password or "")

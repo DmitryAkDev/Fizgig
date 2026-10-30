@@ -7870,10 +7870,13 @@ function helpDraw() {
   const d = S.help.data || {};
   const hs = d.helpers || [];
   $("helpList").replaceChildren(...hs.map(helpCard));
-  $("helpNote").textContent = hs.length ? "" : "No helpers yet. Add one below: another computer with Fizgig, or a pod.";
+  $("helpNote").textContent = hs.length ? "" : "No helpers yet. Add one in the next card: a pod, or another computer with Fizgig.";
   $("helpFound").replaceChildren(...(d.found || []).map((f) => {
     const [where] = HELP_WHERE[f.where] || [""];
-    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    const pod = /proxy\.runpod\.net/.test(f.url || "");
+    const pw = el("input", {type: "password", class: "w-combo-md", autocomplete: "off",
+      placeholder: pod ? "password: leave empty" : "its password",
+      title: pod ? "Fizgig finds a pod's password itself. Type it only if Fizgig says it couldn't." : ""});
     return el("div", {class: "pod-row"}, el("span", {class: "pod-dot ok"}),
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: f.name}),
         el("div", {class: "field-hint", text: [where, f.gpu, f.vram ? `${f.vram} GB` : ""].filter(Boolean).join(" · ")})),

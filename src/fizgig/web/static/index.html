@@ -1719,10 +1719,12 @@
         <section id="tab-helpers" class="tab-panel">
           <div class="tab-banner">
             <h1>Helpers</h1>
-            <p>Other Fizgigs that take work off this one's GPU: another computer on your network, a pod, or a computer on
-              Tailscale. A helper renders this computer's previews, so training never stops for them, or trains a share
-              of the images alongside it, or takes over a run while you need this computer (Move to… on the run card).
-              (The Pods tab is for using another computer instead of this one.)
+            <p>A helper is another Fizgig that takes work off this computer's GPU. It can be a pod, another computer
+              on your network or on Tailscale, or a second GPU in this computer.</p>
+            <p>A helper can make the previews, so training doesn't stop for them. It can train part of each epoch
+              alongside this computer. Or it can take over a run while you need this computer: use Move to… on the
+              run card.</p>
+            <p>To work on another computer instead of this one, use the Pods tab.
               <a href="https://github.com/shootthesound/Fizgig/blob/master/docs/HELPERS.md"
               target="_blank" rel="noopener">The helpers guide</a></p>
           </div>
@@ -1736,14 +1738,17 @@
           </div>
           <div class="section-card">
             <div class="card-title">Add a helper</div>
-            <div class="card-desc">Computers running Fizgig on your network, and your pods from the Pods tab, are
-              listed below; add any other by its address. A helper needs a web password (its Preferences &gt; Web UI)
-              and the same Fizgig version as this one.</div>
+            <div class="card-desc">Your pods and the computers on your network that run Fizgig are listed below.
+              Press <b>Add as a helper</b> beside one. For anything else, type its address in the last row.<br><br>
+              <b>Passwords.</b> For one of your pods, leave the password box empty: Fizgig finds the password itself,
+              using the RunPod API key saved on the Pods tab. For another computer, type the password set in its
+              Preferences &gt; Web UI.<br><br>
+              A helper must run the same Fizgig version as this computer.</div>
             <div class="card-content">
               <div id="helpLocal" class="pods-list"></div>
               <div id="helpFound" class="pods-list"></div>
               <div class="helper-add">
-                <input type="text" id="helpAddUrl" class="w-path" placeholder="or its address: 192.168.0.20, 100.101.12.7 on Tailscale, or a pod's (port 8081 unless you changed it)" spellcheck="false">
+                <input type="text" id="helpAddUrl" class="w-path" placeholder="Or type its address: 192.168.0.20 on your network, 100.101.12.7 on Tailscale, or a pod's address (port 8081)" spellcheck="false">
                 <input type="password" id="helpAddPw" class="w-combo-md" placeholder="its password" autocomplete="off">
                 <button class="btn btn-primary" id="helpAdd">Add</button>
               </div>
@@ -1755,11 +1760,13 @@
           </div>
           <div class="section-card">
             <div class="card-title">Help another Fizgig with this GPU</div>
-            <div class="card-desc">For a run training on a pod: your GPU renders its previews or trains a share of
-              each epoch, so the pod's time goes on training. A pod can't reach your computer, so this computer
-              connects to it. Starting a run here stops the helping. <b>Its checkpoints</b> brings the run's epochs
-              here to try your own prompts on them in LoRA Royale, and <b>Bring its checkpoints home</b> brings each
-              one here as it's saved (deleting the pod once they're all home, if you tick that).</div>
+            <div class="card-desc">The other way round: a run is training on a pod, and this computer's GPU helps
+              it. Your GPU makes the pod's previews or trains part of each epoch, so the pod's paid time goes on
+              training. This computer connects to the pod, because a pod can't reach your computer. Starting a run
+              here stops the helping.<br><br>
+              <b>Its checkpoints</b> copies the run's saved epochs here, to try your own prompts on them in LoRA
+              Royale. <b>Bring its checkpoints home</b> copies each one here as it's saved, and can delete the pod
+              once they're all here.</div>
             <div class="card-content">
               <div id="helpOut" class="pods-list"></div>
               <div class="field-hint" id="helpOutNote"></div>
