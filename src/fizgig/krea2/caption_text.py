@@ -93,6 +93,32 @@ OBJECT_CAPTION_INSTRUCTION = (
     "proper names, no style or quality commentary."
 )
 
+# The object versions of Short, Detailed and Exhaustive: the person ones' lengths and coverage, with the
+# person fields (face visible, pose, clothing, hair) swapped for what a thing has. Exhaustive is auto-recaption's
+# second try, so an object set escalates the way a person set does.
+OBJECT_SHORT_CAPTION_INSTRUCTION = (
+    "Write one short factual caption for this image — a single clause naming the main subject by "
+    "its specific plain name, how it is placed or what it is doing, and the setting. " + NO_PREAMBLE_RULE +
+    "State only what is visible. No speculation, no proper names, no style commentary."
+)
+
+OBJECT_DETAILED_DESCRIPTION_INSTRUCTION = (
+    "Describe this image in 2-3 factual sentences, starting with the main subject by its specific "
+    "plain name: its shape, colors and materials, how it is placed, the camera viewpoint, the "
+    "lighting, and the setting. " + NO_PREAMBLE_RULE +
+    "State only what is visible — no speculation, no proper names, no style commentary."
+)
+
+OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION = (
+    "Write a detailed factual training caption for this image, 2-4 sentences. Cover: the main "
+    "subject by its specific plain name and exactly how much of it is visible (state the camera "
+    "viewpoint and whether any part is cropped or hidden), its shape and proportions, every visible "
+    "color, material and surface finish, any text, logos or markings on it, how it is placed or "
+    "held, anything touching or blocking it, the lighting and any reflections, and the "
+    "background/setting with its main objects. " + NO_PREAMBLE_RULE +
+    "State only what is visible — no speculation, no style commentary."
+)
+
 # --- style captioning ------------------------------------------------------------------------
 # The identity instructions above are written for a dataset where the subject is a person and the
 # lighting, viewpoint and clothing all VARY — you name them so they stay steerable. A style dataset
@@ -130,12 +156,16 @@ STYLE_CAPTION_INSTRUCTION = (
 # (name the viewpoint, say whether the face is visible), which is what makes a caption safe to
 # train on rather than merely accurate.
 CAPTION_TASKS = {
-    "training":   ("Training caption (viewpoint-aware)", CAPTION_INSTRUCTION, 120),
-    "short":      ("Short caption", SHORT_CAPTION_INSTRUCTION, 60),
-    "detailed":   ("Detailed description", DETAILED_DESCRIPTION_INSTRUCTION, 160),
-    "exhaustive": ("Exhaustive detail", DETAILED_CAPTION_INSTRUCTION, 240),
-    # The four above are the identity path (a person), the common case and auto-recaption's defaults.
-    "object":     ("Training caption for an object or product", OBJECT_CAPTION_INSTRUCTION, 120),
+    # Each length in a pair: the person version (the identity path, the common case and auto-recaption's
+    # defaults), then the object one.
+    "training":   ("Training caption (person or character)", CAPTION_INSTRUCTION, 120),
+    "object":     ("Training caption (object or product)", OBJECT_CAPTION_INSTRUCTION, 120),
+    "short":      ("Short caption (person or character)", SHORT_CAPTION_INSTRUCTION, 60),
+    "object_short": ("Short caption (object or product)", OBJECT_SHORT_CAPTION_INSTRUCTION, 60),
+    "detailed":   ("Detailed description (person or character)", DETAILED_DESCRIPTION_INSTRUCTION, 160),
+    "object_detailed": ("Detailed description (object or product)", OBJECT_DETAILED_DESCRIPTION_INSTRUCTION, 160),
+    "exhaustive": ("Exhaustive detail (person or character)", DETAILED_CAPTION_INSTRUCTION, 240),
+    "object_exhaustive": ("Exhaustive detail (object or product)", OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION, 240),
     # Style last.
     "style":      ("Style — contents only (trigger word names the style)",
                    STYLE_CAPTION_INSTRUCTION, 160),

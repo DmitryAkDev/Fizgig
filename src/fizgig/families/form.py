@@ -55,7 +55,7 @@ DEFAULTS = {
     "FAMILY_SUBJECT_KIND3": "From its captions", "FAMILY_SUBJECT_KIND4": "From its captions",
     "SAVE_STATE_ON_TRAIN_END": True, "KEEP_LAST_N_STATES": "2", "KREA2_LOSS_WATCH": False,
     "KREA2_PER_IMAGE_LR": False, "KREA2_AUTO_RECAPTION": False, "TRAIN_SUBFOLDERS": False, "CAPTION_TRIGGER_WORD": "",
-    "RECAPTION_FIRST": "Training caption (viewpoint-aware)", "RECAPTION_SECOND": "Exhaustive detail", "KREA2_WARMUP_LOOK": False,
+    "RECAPTION_FIRST": "Training caption (person or character)", "RECAPTION_SECOND": "Exhaustive detail (person or character)", "KREA2_WARMUP_LOOK": False,
     "FAMILY_PRECISION": launch.PRECISION_LABELS["auto"], "FAMILY_EMA": "0.98 (recommended)",
     "FAMILY_TRAINING_ADAPTER": True, "FAMILY_KIND": "standard", "FAMILY_FAST_ID": False,
     "FAMILY_MULTICONCEPT": False, "FAMILY_CONCEPT_DIR": "", "FAMILY_CONCEPT_COUNT": "2 subjects",
@@ -337,10 +337,10 @@ def form(desc):
                  "a second try goes into more detail. Still stuck after that, it is left out of training - edit its "
                  "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
             _row("RECAPTION_FIRST", "First try uses", "choice",
-                 "The Captions tab's instruction for that task, as you've edited it there. The defaults are written "
-                 "for a person (viewpoint, whether the face shows): for an object or product, set both tries to "
-                 "Training caption for an object or product; for a style, Style; for anything else, Custom with "
-                 "your own instruction.",
+                 "The Captions tab's instruction for that task, as you've edited it there. The defaults are the "
+                 "person or character versions: for an object or product, pick the (object or product) Training "
+                 "caption here and its Exhaustive detail for the second try; for a style, Style for both; for "
+                 "anything else, Custom with your own instruction.",
                  [label for _key, label in _recaption_choices()]),
             _row("RECAPTION_SECOND", "Second try uses", "choice",
                  "Used when the first new caption didn't help. Set separately from the first try.",
