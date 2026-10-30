@@ -1656,6 +1656,7 @@ input[type="radio"] { accent-color: var(--accent); width: 16px; height: 16px; ma
 .section-card[id^="sec-"] .form-row.kind-radio .radio-row input[type="radio"] { position: absolute; opacity: 0;
   width: 1px; height: 1px; }
 /* a note: a callout across the card */
+.section-card[id^="sec-"] > .card-content > .form-row.kind-note:first-child { margin-top: 8px; }
 .section-card[id^="sec-"] .form-row.kind-note > .field-hint { margin: 0; padding: 9px 12px; border-left: 3px solid var(--accent);
   background: var(--bg-raised); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--text-explain); }
 /* a file or folder: the box, then its buttons on the same line */
