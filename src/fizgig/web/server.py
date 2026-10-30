@@ -218,6 +218,74 @@ def _poll_stats_loop():
         time.sleep(1.0)
 
 
+def _side_extras() -> dict:
+    """The sidebar's monitor beyond the GPU: the drive LoRAs are saved to (the run's, else the output folder in
+    Preferences), the jobs going in the background (captions, a model download, Image Prep, the Profiler, an
+    extraction) and what is loaded on the GPU now (training, Studio, the caption model, a helper's previews)."""
+    with _lock:
+        out_dir = _run["output_dir"] or ""
+        training = _run["lora"] if _run["proc"] is not None and _run["proc"].poll() is None else ""
+    disk = None
+    try:
+        d = out_dir if out_dir and os.path.isdir(out_dir) else default_output_dir()
+        while d and not os.path.isdir(d):        # a folder not made yet: the drive it would be on
+            up = os.path.dirname(d)
+            d = "" if up == d else up
+        u = shutil.disk_usage(d or BASE_DIR)
+        disk = {"used": u.used, "total": u.total, "free": u.free, "where": os.path.splitdrive(d)[0] or d}
+    except OSError:
+        pass
+    jobs, loaded = [], []
+    try:
+        c = captions.status()
+        if c["state"] in ("loading", "running", "translating"):
+            jobs.append({"what": "Translating captions" if c["state"] == "translating" else "Captioning",
+                         "done": c.get("done") or 0, "total": c.get("total") or 0, "tab": "captions"})
+        if c.get("loaded"):
+            loaded.append({"what": "Caption model", "name": c.get("model") or "", "tab": "captions"})
+    except Exception:
+        pass
+    with _lock:
+        f = {k: _fetch.get(k) for k in ("state", "file", "done", "total")}
+        fp = _fetch["proc"]
+    if fp is not None and fp.poll() is None:
+        jobs.append({"what": "Downloading " + (os.path.basename(f.get("file") or "") or "models"),
+                     "done": f.get("done") or 0, "total": f.get("total") or 0, "tab": "prefs"})
+    try:
+        from fizgig.web import prep_jobs
+        if prep_jobs.busy():
+            jobs.append({"what": "Image Prep", "done": 0, "total": 0, "tab": "prep"})
+    except Exception:
+        pass
+    try:
+        from fizgig.web import tools
+        for kind, tab, what in (("profile", "profiler", "Profiling"), ("extract", "extract", "Extracting")):
+            t = tools.status(kind)
+            if t["state"] == "running":
+                p = t.get("progress") or [0, 0]
+                jobs.append({"what": t.get("text") or what, "done": p[0], "total": p[1], "tab": tab})
+    except Exception:
+        pass
+    if training:
+        loaded.append({"what": "Training", "name": training, "tab": "training"})
+    try:
+        st = studio.status()
+        if st.get("state") in ("loading", "ready"):
+            desc = get_family(st.get("family") or "")
+            loaded.append({"what": "Studio", "name": desc.display_name if desc else st.get("family") or "",
+                           "tab": "studio"})
+    except Exception:
+        pass
+    try:
+        from fizgig.web import helpers
+        w = helpers._worker_state()
+        if w.get("state") in ("loading", "ready", "rendering"):
+            loaded.append({"what": "Previews for another computer", "name": "", "tab": "helpers"})
+    except Exception:
+        pass
+    return {"disk": disk, "jobs": jobs, "loaded": loaded}
+
+
 def append_log(text: str):
     with _lock:
         _log_n[0] += 1
@@ -3168,7 +3236,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"state": pods.probe(pods.parse(url)["url"])})
         if path == "/api/stats":
             with _lock:
-                return self.json(dict(_stats))
+                out = dict(_stats)
+            out.update(_side_extras())
+            return self.json(out)
         if path == "/api/run":
             with _lock:
                 r = {k: v for k, v in _run.items() if k != "proc"}

@@ -1967,6 +1967,45 @@ async function pollStats() {
     s.vram[1] && s.vram[0] / s.vram[1] > 0.95));
   host.append(meter("RAM", `${gb(s.ram[0])} / ${gb(s.ram[1])} GB`, s.ram[1] ? s.ram[0] / s.ram[1] : 0,
     s.ram[1] && s.ram[0] / s.ram[1] > 0.95));
+  // the drive LoRAs go to: checkpoints and saved states fill it fast (red under 5% or 20 GB free)
+  const d = s.disk;
+  if (d && d.total) host.append(meter("Disk" + (d.where ? ` ${d.where}` : ""), `${gb(d.free)} GB free`,
+    d.used / d.total, d.free < Math.max(20 * 2 ** 30, d.total * 0.05)));
+  // what's loaded on the GPU now, each a click to its tab
+  for (const m of s.loaded || []) host.append(el("div", {class: "side-loaded", title: `Open the ${m.tab} tab`,
+    onclick: () => showTab(m.tab)}, el("span", {class: "side-loaded-dot"}),
+    el("span", {class: "side-loaded-text", text: m.what + (m.name ? `: ${m.name}` : "")})));
+  // jobs going in the background, wherever you are
+  for (const j of s.jobs || []) {
+    const frac = j.total ? j.done / j.total : 0;
+    const count = !j.total ? "" : j.total > 2 ** 20 ? `${Math.round(100 * frac)}%` : `${j.done} of ${j.total}`;
+    const m = meter(j.what, count, frac, false);
+    m.classList.add("side-job");
+    if (!j.total) m.classList.add("indeterminate");
+    m.title = `Open the ${j.tab} tab`;
+    m.addEventListener("click", () => showTab(j.tab));
+    host.append(m);
+  }
+}
+
+// the sidebar run card's loss line: the run card's own loss, smoothed, about 60 points
+function sideSpark(d) {
+  const box = $("sideRunSpark");
+  if (!box) return;
+  const pts = (d && d.points || []).map((p) => p[2]).filter((v) => isFinite(v));
+  if (pts.length < 3) { box.replaceChildren(); box.style.display = "none"; return; }
+  const sm = [];
+  pts.forEach((v, i) => sm.push(i ? sm[i - 1] * 0.95 + v * 0.05 : v));
+  const step = Math.max(1, Math.floor(sm.length / 60)), ys = sm.filter((_v, i) => i % step === 0);
+  const lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+  const path = ys.map((v, i) => `${i ? "L" : "M"}${(100 * i / (ys.length - 1)).toFixed(1)},${(22 - 20 * (v - lo) / span).toFixed(1)}`).join(" ");
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"), p = document.createElementNS(ns, "path");
+  svg.setAttribute("viewBox", "0 0 100 24"); svg.setAttribute("preserveAspectRatio", "none");
+  p.setAttribute("d", path);
+  svg.append(p);
+  box.replaceChildren(svg);
+  box.style.display = "";
+  box.title = `Loss, smoothed: ${ys[ys.length - 1].toFixed(4)} now`;
 }
 
 // the run's figures (the same from a web run and from a desktop run): the bar, the tiles, the sidebar
@@ -3745,6 +3784,7 @@ async function runLossTick(training) {
   if (training && now - (S.lossAt || 0) < 10000) return;
   S.lossAt = now; S.lossDone = !training;
   const d = await api("/api/runs/loss?live=1").catch(() => null);
+  sideSpark(d);
   const host = $("runLoss");
   if (!d || !d.points || d.points.length < 2) { host.replaceChildren(); return; }
   host.replaceChildren(lossGraph(d));
