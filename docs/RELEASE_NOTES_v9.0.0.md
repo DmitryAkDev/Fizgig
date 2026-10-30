@@ -1,6 +1,6 @@
 # Fizgig 9: Refinements, and Detail crops for styles
 
-Fizgig 8 rebuilt Fizgig as a web app. Some of its tools were made with character LoRAs in mind: likeness scores, face crops, ArcFace. Fizgig 9 trains a style, an object or a concept with the same care, and brings together 63 releases of smoothing since 8.0: an app that explains itself, runs that survive things going wrong, and pods that work like your own computer.
+Fizgig 8 rebuilt Fizgig as a web app. Fizgig 9 brings together the 63 releases of refinements since then: an app that explains itself, runs that survive things going wrong, and pods that work like your own computer. Some of Fizgig's tools were made with character LoRAs in mind (likeness scores, face crops, ArcFace); new in 9, Detail crops and a Style score give a style LoRA the same care.
 
 ## New in 9
 
