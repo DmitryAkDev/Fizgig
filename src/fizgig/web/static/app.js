@@ -4588,9 +4588,7 @@ async function prepSummary() {
   document.querySelectorAll(".prep-face").forEach((r) => { r.style.display = faceOn ? "" : "none"; });
   if (crops) $("prepNoFaces").style.display = "none";
   else $("prepNoFaces").style.display = S.prep.opts.face_tools ? "none" : "";
-  const side = Math.floor(Math.sqrt(p.mp * 1e6) / 16) * 16;
-  $("prepMpHint").textContent = crops ? `MP (crops of ${side}×${side})` :
-    "MP (larger images shrink to fit; smaller are left alone)";
+  $("prepMpHint").textContent = crops ? "MP" : "MP (larger images shrink to fit; smaller are left alone)";
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
