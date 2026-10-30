@@ -61,7 +61,6 @@ MOSS_IMAGE = FamilyDescription(
     display_name="MOSS-Image",
     gui_label="MOSS-Image",
     lora_name_suffix="moss",
-    status_note="MOSS-Image support is new and improving daily: update Fizgig regularly to get the latest fixes.",
     aliases=("moss-image", "mossimage"),
 
     model_files=(
