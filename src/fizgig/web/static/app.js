@@ -4348,9 +4348,11 @@ function meDraw() {
     c.fillStyle = themeColor("--pic-mask"); c.beginPath(); c.arc(m.samAt[0], m.samAt[1], 4, 0, Math.PI * 2); c.fill();
   }
   if (m.cursor && !m.panning && m.tool !== "sam") {    // the brush, its size on screen
+    // drawn as the difference with what's under it (XOR-like), so it shows on white, black and any picture (#271)
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.strokeStyle = themeColor("--pic-text", 0.9); c.lineWidth = 1;
+    c.globalCompositeOperation = "difference"; c.strokeStyle = "#fff"; c.lineWidth = 1.5;
     c.beginPath(); c.arc(m.cursor[0], m.cursor[1], Number($("meSize").value) / 2, 0, Math.PI * 2); c.stroke();
+    c.globalCompositeOperation = "source-over";
   }
 }
 function meAt(e) {
@@ -4383,7 +4385,8 @@ function meDab(x, y) {
   const a = Number($("meStrength").value) / 100;
   const g = c.createRadialGradient(x, y, r * (1 - soft) * 0.999, x, y, r);
   g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(1, "rgba(255,255,255,0)");
-  c.globalCompositeOperation = m.tool === "erase" ? "destination-out" : "source-over";
+  // the Eraser takes away, the Brush adds; a right-click stroke does the other (#271)
+  c.globalCompositeOperation = (m.tool === "erase") !== !!m.flip ? "destination-out" : "source-over";
   c.fillStyle = soft > 0 ? g : `rgba(255,255,255,${a})`;
   c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
   c.globalCompositeOperation = "source-over";
@@ -4462,7 +4465,8 @@ function meWire() {
       if (e.button === 0 || e.button === 2) meSamClick(p, e.button === 2 || e.altKey);
       return;
     }
-    if (e.button !== 0) return;
+    if (e.button !== 0 && e.button !== 2) return;
+    m.flip = e.button === 2;                           // right-click: the Brush erases, the Eraser paints
     mePush(); meDab(p.x, p.y); last = p; m.dirty = true; meStateLine(); meDraw();
   });
   cv.addEventListener("pointermove", (e) => {
@@ -4472,10 +4476,10 @@ function meWire() {
     else if (last) { meStroke(last, p); last = p; }
     meDraw();
   });
-  const up = () => { last = null; pan = null; m.panning = false; meDraw(); };
+  const up = () => { last = null; pan = null; m.panning = false; m.flip = false; meDraw(); };
   cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
   cv.addEventListener("pointerleave", () => { m.cursor = null; meDraw(); });
-  cv.addEventListener("contextmenu", (e) => e.preventDefault());          // right-click is SAM click's "take away"
+  cv.addEventListener("contextmenu", (e) => e.preventDefault());   // right-click: SAM's "take away", the brush's erase
   cv.addEventListener("wheel", (e) => {
     if (!m.mask) return;
     e.preventDefault();
