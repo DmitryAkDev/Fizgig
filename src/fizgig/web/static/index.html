@@ -495,9 +495,14 @@
               <div class="field-row"><span class="field-label">Task:</span>
                 <select id="capTask" class="w-combo-lg"></select>
                 <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div class="field-row" id="capConceptRow" style="display:none"><span class="field-label">The concept is:</span>
+                <input type="text" id="capConcept" class="w-path" placeholder='a few plain words, e.g. "a backflip" or "a double exposure"'></div>
+              <div class="field-hint" id="capConceptHint" style="display:none">Every caption names it in exactly these
+                words, after the trigger word, and describes everything else in the picture. Auto-recaption uses them
+                too when it picks this task.</div>
               <div class="field-hint" id="capTaskHint">Each length comes in two versions: for a person or character
-                (viewpoint, face, pose, clothing), and for an object or product (shape, colours, materials). For a
-                style, pick Style - it leaves the look unnamed so the trigger word carries it; for anything else,
+                (viewpoint, face, pose, clothing), and for an object or product (shape, colours, materials). For a pose,
+                an action or an effect, pick the concept task and say what it is; for a style, pick Style - it leaves the look unnamed so the trigger word carries it; for anything else,
                 Edit instructions.</div>
               <div id="capInstrBox" style="display:none">
                 <div class="field-hint" id="capInstrHint"></div>

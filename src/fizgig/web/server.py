@@ -955,7 +955,8 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         cache_root=pref_path(prefs, "cache_dir"), samples_dir=os.path.join(out_dir, "sample"),
         inference_int8=str(prefs.get("inference_int8", "")).strip() in ("1", "True", "true"),
         captioner=captioner if captioner and os.path.isfile(captioner) else "",
-        caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {})
+        caption_overrides=dict(raw_ovr) if isinstance(raw_ovr, dict) else {},
+        caption_concept=str((load_state().get("captions") or {}).get("concept") or ""))
     # auto-recaption's trigger word per folder: a sub-folder's or another subject's own (the Captions tab's for it, else
     # the word its captions open with), never the training folder's
     trig = {f"{rel}/": subject_trigger(f, ext) for rel, f in launch.run_subfolders(desc, inputs)}

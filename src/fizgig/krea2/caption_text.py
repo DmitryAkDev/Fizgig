@@ -119,6 +119,27 @@ OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION = (
     "State only what is visible — no speculation, no style commentary."
 )
 
+# --- concept captioning ----------------------------------------------------------------------
+# A concept (a pose, an action, an effect, a kind of composition) recurs across pictures that otherwise differ,
+# and nothing in one picture says which part of it is the concept - so the user names it once (the Captions tab's
+# "The concept is" box) and it goes into the instruction at {concept}. Named in the same words in every caption
+# (after the trigger) it binds; worded differently each time, it doesn't. Everything else is described, so what
+# varies stays steerable rather than baking into the concept - the person and Style doctrine both.
+CONCEPT_CAPTION_INSTRUCTION = (
+    "Every image in this set shows {concept}. Write one factual training caption for this image as a "
+    "single sentence. Begin with '{concept}', in exactly those words, and never describe it any other "
+    "way; then describe everything else in order: the subject and what it looks like, the setting, the "
+    "camera viewpoint and framing, the lighting. Use the same order and the same plain phrasing every "
+    "time. Never open with 'This image shows', 'The image depicts' or any similar preamble. "
+    "State only what is visible — no speculation, no proper names, no style or quality commentary."
+)
+
+
+def with_concept(text, concept):
+    """An instruction with the concept's words in place of {concept} (any instruction: an edited one may use it)."""
+    return str(text).replace("{concept}", str(concept or "").strip() or "the same concept")
+
+
 # --- style captioning ------------------------------------------------------------------------
 # The identity instructions above are written for a dataset where the subject is a person and the
 # lighting, viewpoint and clothing all VARY — you name them so they stay steerable. A style dataset
@@ -166,6 +187,7 @@ CAPTION_TASKS = {
     "object_detailed": ("Detailed description (object or product)", OBJECT_DETAILED_DESCRIPTION_INSTRUCTION, 160),
     "exhaustive": ("Exhaustive detail (person or character)", DETAILED_CAPTION_INSTRUCTION, 240),
     "object_exhaustive": ("Exhaustive detail (object or product)", OBJECT_EXHAUSTIVE_CAPTION_INSTRUCTION, 240),
+    "concept":    ("Training caption (concept: a pose, action or effect)", CONCEPT_CAPTION_INSTRUCTION, 120),
     # Style last.
     "style":      ("Style — contents only (trigger word names the style)",
                    STYLE_CAPTION_INSTRUCTION, 160),
@@ -178,10 +200,11 @@ RECAPTION_CHOICES = [(key, label) for key, (label, _text, _tokens) in CAPTION_TA
 RECAPTION_DEFAULTS = ("training", "exhaustive")
 
 
-def recaption_instruction(key, overrides=None):
-    """(label, instruction, edited) of a recaption choice: the Captions tab's edited text when there is one."""
+def recaption_instruction(key, overrides=None, concept=""):
+    """(label, instruction, edited) of a recaption choice: the Captions tab's edited text when there is one, with the
+    Captions tab's concept in place of {concept}."""
     labels = dict(RECAPTION_CHOICES)
     key = key if key in labels else DEFAULT_CAPTION_TASK
     shipped = CAPTION_TASKS.get(key, CAPTION_TASKS[DEFAULT_CAPTION_TASK])[1]
     edited = str((overrides or {}).get(key, "") or "").strip()
-    return labels[key], edited or shipped, bool(edited)
+    return labels[key], with_concept(edited or shipped, concept), bool(edited)

@@ -339,8 +339,9 @@ def form(desc):
             _row("RECAPTION_FIRST", "First try uses", "choice",
                  "The Captions tab's instruction for that task, as you've edited it there. The defaults are the "
                  "person or character versions: for an object or product, pick the (object or product) Training "
-                 "caption here and its Exhaustive detail for the second try; for a style, Style for both; for "
-                 "anything else, Custom with your own instruction.",
+                 "caption here and its Exhaustive detail for the second try; for a pose, an action or an effect, "
+                 "the concept task (it uses the words in the Captions tab's The concept is box); for a style, "
+                 "Style for both; for anything else, Custom with your own instruction.",
                  [label for _key, label in _recaption_choices()]),
             _row("RECAPTION_SECOND", "Second try uses", "choice",
                  "Used when the first new caption didn't help. Set separately from the first try.",
@@ -1320,7 +1321,7 @@ def _option_values(desc, values):
 
 
 def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, samples_dir, inference_int8=False,
-           captioner="", caption_overrides=None):
+           captioner="", caption_overrides=None, caption_concept=""):
     """The launch plan's inputs from the form's values, as the desktop's _family_launch_inputs builds them."""
     v = {**DEFAULTS, **({"SAMPLE_PROMPT": desc.sample_prompt} if desc.sample_prompt else {}), **values}
     kind = _kind(desc, v)
@@ -1363,7 +1364,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
                     "warmup": b("KREA2_WARMUP_LOOK") and desc.loss_watch,
                     "recaption": b("KREA2_AUTO_RECAPTION") and desc.loss_watch},
         captioner=captioner, caption_trigger=s("CAPTION_TRIGGER_WORD"),
-        caption_overrides=caption_overrides,
+        caption_overrides=caption_overrides, caption_concept=caption_concept,
         recaption_tasks=(_recaption_key(s("RECAPTION_FIRST"), "training"),
                          _recaption_key(s("RECAPTION_SECOND"), "exhaustive")),
         samples={"enabled": b("SAMPLE_ENABLED"), "every": s("SAMPLE_EVERY_N_EPOCHS"), "later": b("SAMPLE_LATER"),

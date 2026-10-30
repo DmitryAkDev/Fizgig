@@ -6496,7 +6496,7 @@ S.cap = {page: 0, items: [], opts: null, lastState: ""};
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
-    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value};
+    skipCjk: $("capSkipCjk").checked, perPage: $("capPerPage").value, concept: $("capConcept").value.trim()};
 }
 const saveCapSoon = debounce(() => { S.capSaved = capSettings(); api("/api/state", {captions: S.capSaved}).catch(() => {}); }, 600);
 const qwenOn = () => !!S.cap.opts && S.cap.opts.qwen_available && $("capModel").value === S.cap.opts.qwen_model;
@@ -6523,6 +6523,8 @@ async function loadCaptionOptions() {
   if (saved.perPage) { $("capPerPage").value = saved.perPage; CAP_PAGE = Number(saved.perPage) || 12; }
   fillTasks(saved.task);
   if (saved.tokens) $("capTokens").value = saved.tokens;
+  if (saved.concept !== undefined) $("capConcept").value = saved.concept;
+  capConceptShow();
   $("capSongCard").style.display = o.song_words ? "" : "none";
   // a model that trains on no pictures or clips (ACE-Step): the AI card has nothing to caption, the song card does
   const media = (S.fam && S.fam.media) || ["photo"];
@@ -6546,7 +6548,15 @@ function fillTasks(want) {
   $("capInstrBox").style.display = "none";
 }
 
+// the Concept task's box: shown with it (or with any instruction that uses {concept})
+function capConceptShow() {
+  const t = qwenOn() && qwenTask();
+  const on = !!t && t.instruction.includes("{concept}") && $("capTask").closest(".field-row").style.display !== "none";
+  for (const id of ["capConceptRow", "capConceptHint"]) $(id).style.display = on ? "" : "none";
+}
+
 function onCapTask() {
+  capConceptShow();
   const t = qwenOn() && qwenTask();
   if (t) $("capTokens").value = t.tokens;            // each Qwen task suggests its own length
   if ($("capInstrBox").style.display !== "none") openInstr();
@@ -6583,7 +6593,8 @@ const capExt = () => {                    // Training > Other Options > Caption 
 function capJobBody(extra = {}) {
   const t = qwenOn() && qwenTask();
   return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value, ext: capExt(),
-    instruction: t ? t.instruction : "", max_tokens: Number($("capTokens").value) || 120,
+    instruction: t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "",
+    max_tokens: Number($("capTokens").value) || 120,
     trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
 }
 
@@ -6798,6 +6809,7 @@ function wireCaptions() {
   $("capPerPage").addEventListener("change", () => {
     CAP_PAGE = Number($("capPerPage").value) || 12; S.cap.page = 0; renderCaptions(); saveCapSoon(); });
   $("capTask").addEventListener("change", onCapTask);
+  $("capConcept").addEventListener("input", saveCapSoon);
   for (const id of ["capTrigger", "capTokens", "capOverwrite", "capSongWords", "capSkipCjk"])
     $(id).addEventListener("change", saveCapSoon);
   // a trigger word typed here fills auto-recaption's on the Training tab (an empty one leaves it alone)
