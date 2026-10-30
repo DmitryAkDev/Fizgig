@@ -2216,7 +2216,8 @@ async function loadGallery() {
   // is playing - the 15 s refresh used to rebuild the gallery and stop it
   const sig = [run, view, training(), ...g.items.map((it) => it.name + "@" + it.time)].join("|");
   const playing = [...host.querySelectorAll("video, audio")].some((m) => !m.paused);
-  if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) { likenessShow(dir, g.items, run, view); return; }
+  if (S.gal && S.gal.sig === sig || (playing && S.gal && S.gal.run === run)) {
+    likenessShow(dir, g.items, run, view); styleShow(dir, g.items); return; }
   host.innerHTML = "";
   host.classList.toggle("gallery-as-grid", view === "grid");
   // the newest epoch's clips download at once (the ones you'll play); the rest when the pointer comes to them
@@ -2228,6 +2229,7 @@ async function loadGallery() {
     host.append(previewFigure(withLora(it, g.loras, S.fam && S.fam.key), g.prompts || [], eager, g.epoch_prompts));
   S.gal = {items: g.items, run, sig};
   likenessShow(dir, g.items, run, view);
+  styleShow(dir, g.items);
   const others = g.runs.filter((r) => r !== run).length;
   $("galleryInfo").textContent = g.items.length ?
     `${g.items.length} preview${g.items.length === 1 ? "" : "s"} of ${run} in ${dir}` +
@@ -2243,6 +2245,25 @@ const LIK_PICS = /\.(png|jpe?g|webp)$/i;
 const ARC_PEAK = "Peak ArcFace is about 72%: that's what two photos of the same person score against each other, " +
   "so no picture reaches 100%.";
 function arcPeak(label) { return !label || String(label).startsWith("ArcFace") ? ARC_PEAK : ""; }
+
+// the gallery's Style score (web/gallery_style.py): each preview against the training pictures' look as a whole
+async function styleShow(dir, items) {
+  let d;
+  try { d = await api(`/api/style?dir=${encodeURIComponent(dir)}&dataset=${encodeURIComponent(S.imageFolder || "")}`); }
+  catch (e) { return; }
+  S.sty = {dir, on: d.on};
+  $("styBtn").classList.toggle("active", d.on);
+  $("styBtn").textContent = d.on ? "🎨 Style score: on" : "🎨 Style score";
+  $("styStatus").textContent = d.on && d.status ? "🎨 " + d.status : "";
+  for (const fig of document.querySelectorAll("#gallery .gallery-item")) {
+    fig.querySelector(".sty-badge")?.remove();
+    if (!d.on || !(fig.title in d.scores)) continue;
+    const s = d.scores[fig.title];
+    fig.append(el("span", {class: `sty-badge ${s == null ? "na" : s >= 0.7 ? "good" : s >= 0.4 ? "mid" : "bad"}`,
+      title: "Style score: how close this preview is to the training pictures' look", text: s == null ? "style ?" :
+      `style ${Math.round(s * 100)}%`}));
+  }
+}
 
 async function likenessShow(dir, items, run, view) {
   S.lik.dir = dir;
@@ -9004,6 +9025,13 @@ function wire() {
   $("btnStart").addEventListener("click", () => start("/api/start"));
   $("galleryRun").addEventListener("change", () => { S.galleryRun = $("galleryRun").value; loadGallery(); });
   $("likBtn").addEventListener("click", likenessPicker);
+  $("styBtn").addEventListener("click", async () => {       // the Style score on or off for the shown run's folder
+    const dir = S.lik && S.lik.dir;
+    if (!dir) return;
+    try { await api("/api/style", {dir, dataset: S.imageFolder || "", on: !(S.sty && S.sty.on)}); }
+    catch (e) { $("styStatus").textContent = e.message; return; }
+    styleShow(dir, []);
+  });
   // Gizmo is a window on the Fizgig computer: offered only to a page open there (not a phone, not a pod)
   const gizmoHere = !!(S.uploadRoot && S.uploadRoot.local && !S.onPod);
   $("gizmoCard").style.display = gizmoHere ? "" : "none";
