@@ -4242,6 +4242,10 @@ class Handler(BaseHTTPRequestHandler):
                 _, folder, *_ = _caption_args(b)
                 return self.json(captions.find_replace(folder, str(b.get("find") or ""), str(b.get("replace") or ""),
                                                        bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
+            if path == "/api/captions/add":
+                _, folder, *_ = _caption_args(b)
+                return self.json(captions.add_text(folder, b.get("start"), b.get("end"), b.get("trigger"),
+                                                   bool(b.get("apply")), captions.caption_ext(b.get("ext"))))
             if path == "/api/captions/translate":
                 prefs, folder, *_ = _caption_args(b)
                 _caption_gpu_check(1.0)

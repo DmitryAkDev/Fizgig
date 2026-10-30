@@ -1201,6 +1201,17 @@ input[type="range"] {
   content: "Applies on Resume"; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
   font-size: 7.5pt; font-weight: 600; letter-spacing: 0.02em; color: var(--text-on-color); background: var(--accent);
 }
+/* the Captions tab's table view */
+.captions-grid.captions-as-table { display: block; }
+.captions-table { width: 100%; border-collapse: collapse; background: var(--bg-surface); border-radius: 8px; }
+.captions-table th, .captions-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left;
+  vertical-align: top; font-size: 10pt; }
+.captions-table th.cap-th { cursor: pointer; color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
+.captions-table th.cap-th:hover { color: var(--text-primary); }
+.captions-table .cap-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; display: block; }
+.captions-table .cap-name { max-width: 180px; overflow-wrap: anywhere; }
+.captions-table .cap-num { white-space: nowrap; color: var(--text-secondary); }
+.captions-table textarea.cap-cell-text { width: 100%; min-width: 260px; max-width: none; resize: vertical; }
 .form-row textarea, .caption-card textarea {
   width: 100%; max-width: 720px; background: var(--bg-inset); color: var(--text-primary);
   border: 1px solid var(--border); font-family: var(--font-family); font-size: 10pt; padding: 6px;

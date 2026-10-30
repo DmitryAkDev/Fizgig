@@ -239,6 +239,41 @@ def find_replace(folder, find, replace, apply, ext=".txt"):
     return {"changes": changes, "applied": bool(apply)}
 
 
+def add_text(folder, start, end, trigger, apply, ext=".txt"):
+    """Text added to the start and/or end of every .txt caption (not songs' lyrics): the changes, and (apply)
+    written. The start goes after the trigger word when a caption opens with it, so captions stay trigger-first; a
+    caption that already has the text is left as it is."""
+    start, end, trigger = (str(x or "").strip().strip(",").strip() for x in (start, end, trigger))
+    if not (start or end):
+        raise ValueError("Type what to add to the start or the end first.")
+    has = lambda cap, t: re.search(r"(?<!\w)" + re.escape(t) + r"(?!\w)", cap, re.IGNORECASE)
+    changes = []
+    for fp in sorted(glob.glob(os.path.join(glob.escape(folder), "*" + ext))):
+        if fp.lower().endswith(".lyrics.txt"):
+            continue
+        try:
+            old = read_text(fp)
+        except OSError:
+            continue
+        new = old.strip()
+        if start and not has(new, start):
+            m = re.match(r"\s*" + re.escape(trigger) + r"(?!\w)\s*,?\s*", new, re.IGNORECASE) if trigger else None
+            new = (new[:m.end()].rstrip(" ,") + ", " + start + (", " + new[m.end():] if new[m.end():] else "")
+                   if m else start + (", " + new if new else ""))
+        if end and not has(new, end):
+            new = (new.rstrip(" .,") + ", " if new else "") + end
+        if new == old.strip():
+            continue
+        changes.append({"name": os.path.basename(fp), "old": old[:300], "new": new[:300]})
+        if apply:
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(new)
+    if apply:
+        _log(f"Added to {len(changes)} captions" + (f": '{start}' at the start" if start else "")
+             + (f"{' and' if start else ':'} '{end}' at the end" if end else ""))
+    return {"changes": changes, "applied": bool(apply)}
+
+
 # ---- the AI worker -------------------------------------------------------------------------------------------
 def _worker_config(model, captioner, clips):
     cfg = {"backend": "qwen" if model == QWEN_MODEL else "florence", "include_video": bool(clips)}

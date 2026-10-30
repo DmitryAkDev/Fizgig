@@ -6723,12 +6723,19 @@ function renderCaptions() {
     items = [...items].sort((a, b) => (px(a) == null) - (px(b) == null) ||
       (sort === "small" ? px(a) - px(b) : px(b) - px(a)) || a.name.localeCompare(b.name));
   }
+  const ts = S.cap.tsort;                       // the table's column sort (its header), over the Sort box
+  if ($("capView").value === "table" && ts) {
+    const v = CAP_COLS.find((c) => c.key === ts.key).sort;
+    items = [...items].sort((a, b) => ((v(a) > v(b)) - (v(a) < v(b))) * ts.dir || a.name.localeCompare(b.name));
+  }
   const pages = Math.max(1, Math.ceil(items.length / CAP_PAGE));
   S.cap.page = Math.min(S.cap.page, pages - 1);
   const missing = all.filter((i) => i.caption === null).length;
   $("captionsSummary").textContent = `${all.length} files${missing ? `, ${missing} without a caption` : ""}` +
     (q ? ` · ${items.length} match` : "") + (pages > 1 ? ` · page ${S.cap.page + 1} of ${pages}` : "");
   $("capPrev").disabled = S.cap.page === 0; $("capNext").disabled = S.cap.page >= pages - 1;
+  host.classList.toggle("captions-as-table", $("capView").value === "table");
+  if ($("capView").value === "table") { host.append(captionsTable(items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE), ext)); return; }
   for (const it of items.slice(S.cap.page * CAP_PAGE, (S.cap.page + 1) * CAP_PAGE)) {
     const src = `/api/media?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`;
     const ta = el("textarea", {rows: 4});
@@ -6790,6 +6797,56 @@ function renderCaptions() {
       el("div", {class: "field-row"}, save, recap, speech, maskBtn, remove, status)));
     host.append(card);
   }
+}
+
+// the table view: one row a file, sorted by a click on a column's head (again: the other way)
+const capWords = (i) => (i.caption || "").trim() ? (i.caption || "").trim().split(/\s+/).length : 0;
+const CAP_COLS = [
+  {key: "name", label: "File", sort: (i) => i.name.toLowerCase()},
+  {key: "caption", label: "Caption", sort: (i) => (i.caption || "").toLowerCase()},
+  {key: "words", label: "Words", sort: capWords},
+  {key: "size", label: "Size", sort: (i) => (i.size ? i.size[0] * i.size[1] : -1)},
+  {key: "mask", label: "Mask", sort: (i) => (i.mask ? 1 : 0)},
+];
+function captionsTable(items, ext) {
+  const ts = S.cap.tsort || {key: "name", dir: 1};
+  const head = el("tr", {}, el("th", {}), ...CAP_COLS.map((c) => el("th", {class: "cap-th",
+    text: c.label + (ts.key === c.key ? (ts.dir > 0 ? " ▲" : " ▼") : ""), title: "Sort by this column",
+    onclick: () => { S.cap.tsort = {key: c.key, dir: ts.key === c.key ? -ts.dir : 1}; S.cap.page = 0; renderCaptions(); }})));
+  const rows = items.map((it) => {
+    const ta = el("textarea", {rows: 2, class: "cap-cell-text"});
+    ta.value = it.caption ?? "";
+    it._ta = ta;                                 // the live refresh while captioning runs fills it too
+    const words = el("td", {class: "cap-num", text: String(capWords(it))});
+    ta.addEventListener("change", async () => {  // saved when you leave the box, as typed
+      try {
+        await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
+        it.caption = ta.value; words.textContent = String(capWords(it));
+      } catch (e) { ta.title = e.message; }
+    });
+    const thumb = it.size ? el("img", {class: "cap-thumb", loading: "lazy",
+      src: `/api/thumb?path=${encodeURIComponent(it.path)}&t=${encodeURIComponent(TOKEN)}`}) : el("span", {text: ""});
+    return el("tr", {}, el("td", {}, thumb), el("td", {class: "cap-name", text: mediaLabel(it), title: it.name}),
+      el("td", {}, ta), words,
+      el("td", {class: "cap-num", text: it.size ? `${it.size[0]}×${it.size[1]}` : ""}),
+      el("td", {class: "cap-num", text: it.mask ? "yes" : ""}));
+  });
+  return el("table", {class: "captions-table"}, head, ...rows);
+}
+
+async function addText(apply) {
+  const host = $("frChanges");
+  try {
+    const r = await api("/api/captions/add", {family: S.family, folder: S.imageFolder, start: $("frStart").value,
+      end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt()});
+    host.innerHTML = "";
+    $("frStatus").textContent = r.changes.length ? (apply ? `Added to ${r.changes.length} captions.` :
+      `${r.changes.length} captions would change:`) : "Every caption already has that.";
+    if (!apply) for (const c of r.changes.slice(0, 100)) host.append(el("div", {class: "checkpoint-row"},
+      el("span", {class: "checkpoint-name", text: c.name}),
+      el("span", {class: "field-hint", text: "Before: " + c.old}), el("span", {class: "field-hint", text: "After: " + c.new})));
+    if (apply) loadCaptions();
+  } catch (e) { $("frStatus").textContent = e.message; }
 }
 
 async function capRemove(it, card, status) {
@@ -6866,6 +6923,9 @@ function wireCaptions() {
   $("capStop").addEventListener("click", () => capRun("/api/captions/stop", {}));
   $("capUnload").addEventListener("click", () => capRun("/api/captions/unload", {}));
   $("frPreview").addEventListener("click", () => findReplace(false));
+  $("frAddPreview").addEventListener("click", () => addText(false));
+  $("frAdd").addEventListener("click", () => addText(true));
+  $("capView").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });
   $("frApply").addEventListener("click", held($("frApply"), () => findReplace(true)));
   $("capSearch").addEventListener("input", debounce(() => { S.cap.page = 0; renderCaptions(); }, 250));
   $("capSort").addEventListener("change", () => { S.cap.page = 0; renderCaptions(); });

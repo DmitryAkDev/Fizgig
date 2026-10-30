@@ -555,9 +555,9 @@
             </div>
           </div>
           <div class="section-card">
-            <div class="card-title">Find &amp; Replace</div>
+            <div class="card-title">Find, Replace &amp; Add</div>
             <div class="card-desc">Across every .txt caption in the training folder (not songs' .lyrics.txt), ignoring upper and lower case.
-              Preview shows each change first; nothing is written until Replace.</div>
+              Preview shows each change first; nothing is written until Replace or Add.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Find:</span>
                 <input type="text" id="frFind" class="w-path"></div>
@@ -566,6 +566,14 @@
               <div class="field-row"><button class="btn" id="frPreview">Preview</button>
                 <button class="btn btn-primary" id="frApply">Replace in all captions</button>
                 <span class="field-hint" id="frStatus"></span></div>
+              <div class="field-row"><span class="field-label">Add to the start:</span>
+                <input type="text" id="frStart" class="w-path" placeholder="after the trigger word, e.g. photo"></div>
+              <div class="field-row"><span class="field-label">Add to the end:</span>
+                <input type="text" id="frEnd" class="w-path" placeholder="e.g. soft window light"></div>
+              <div class="field-hint">Added after the trigger word when a caption starts with it, so the trigger stays
+                first. A caption that already has the words is left as it is.</div>
+              <div class="field-row"><button class="btn" id="frAddPreview">Preview</button>
+                <button class="btn btn-primary" id="frAdd">Add to all captions</button></div>
               <div id="frChanges" class="checkpoint-list"></div>
             </div>
           </div>
@@ -583,6 +591,9 @@
                 <select id="capSort" class="w-combo" title="Smallest first finds pictures too small to train on.">
                   <option value="name">By file name</option><option value="small">By size, smallest first</option>
                   <option value="large">By size, largest first</option></select></div>
+              <div class="field-row"><span class="field-label">View:</span>
+                <select id="capView" class="w-combo" title="Table: one row each, sortable by any column">
+                  <option value="cards">Cards</option><option value="table">Table</option></select></div>
               <div class="field-row"><span class="field-label">Per page:</span>
                 <select id="capPerPage" class="w-combo"><option>12</option><option>24</option><option>48</option>
                   <option>96</option><option>200</option></select></div>
