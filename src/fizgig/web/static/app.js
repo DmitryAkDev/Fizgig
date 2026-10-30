@@ -8823,8 +8823,9 @@ function wireLightbox() {
       const fig = i.closest(".gallery-item, .caption-card");
       const cap = fig && fig.querySelector("figcaption, .caption-card-title");
       const label = cap ? [...cap.childNodes].map((n) => n.textContent).filter(Boolean).join(" · ") : "";
+      const m = /_e(\d{6})_(\d{2})_/.exec((fig && fig.title) || "");     // a preview: its epoch and prompt number
       return {src: fullPicture(i.currentSrc || i.src), name: label || i.alt, cap: fig && fig._cap,
-              mode: (fig && fig._mode) || ""};
+              mode: (fig && fig._mode) || "", ep: m ? Number(m[1]) : null, idx: m ? Number(m[2]) : null};
     });
     lightboxShow(imgs.indexOf(img));
   });
@@ -8864,8 +8865,22 @@ function wireLightbox() {
     if (typing && e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("lightboxCapSave").click(); }
     else if (e.key === "Escape") lightboxClose();
     else if (typing) return;                     // the arrows move the cursor in the caption
-    else if (e.key === "ArrowLeft") lightboxStep(S.lb.at - 1);
-    else if (e.key === "ArrowRight") lightboxStep(S.lb.at + 1);
+    else if (e.key.startsWith("Arrow")) {
+      // previews: ← → the same prompt an epoch earlier / later, ↑ ↓ the prompt before / after at the same epoch;
+      // any other pictures step in order
+      const d = {ArrowLeft: -1, ArrowRight: 1, ArrowUp: -1, ArrowDown: 1}[e.key];
+      const cur = S.lb.list[S.lb.at], across = e.key === "ArrowLeft" || e.key === "ArrowRight";
+      if (!cur || cur.ep == null) { if (across) lightboxStep(S.lb.at + d); return; }
+      e.preventDefault();
+      const same = across ? (p) => p.idx === cur.idx : (p) => p.ep === cur.ep;
+      const key = across ? (p) => p.ep : (p) => p.idx;
+      let best = -1;
+      S.lb.list.forEach((p, i) => {
+        if (p.ep == null || !same(p) || (key(p) - key(cur)) * d <= 0) return;
+        if (best < 0 || Math.abs(key(p) - key(cur)) < Math.abs(key(S.lb.list[best]) - key(cur))) best = i;
+      });
+      if (best >= 0) lightboxStep(best);
+    }
   });
 }
 
