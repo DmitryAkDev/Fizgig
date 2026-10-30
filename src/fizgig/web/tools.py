@@ -203,8 +203,41 @@ def profile_prefill(lora):
             baselines = paths
     except (OSError, ValueError, AttributeError):
         pass
-    return {"prompt": f"{trig + ', ' if trig else ''}a portrait photo of a person, natural light",
-            "class_prompt": "a portrait photo of a person, natural light", "baselines": baselines}
+    prompt, class_prompt = _run_sample_prompt(lora, trig)
+    if not prompt:                       # no run on record (a downloaded LoRA): a portrait, as most profiled LoRAs are
+        prompt = f"{trig + ', ' if trig else ''}a portrait photo of a person, natural light"
+        class_prompt = "a portrait photo of a person, natural light"
+    return {"prompt": prompt, "class_prompt": class_prompt, "baselines": baselines}
+
+
+def _run_sample_prompt(lora, trig):
+    """(prompt, the same prompt without the trigger) from the run's first Samples prompt - what its owner set up to
+    look at this LoRA, a person or a style - or ("", "") when the run isn't in history. A Fizgig LoRA Isolation run's
+    prompts use joined words (zwxemwoman) a bleed check can't strip, so it keeps the portrait."""
+    from fizgig.web import history
+    name = re.sub(r"-\d{6}$", "", os.path.splitext(os.path.basename(lora))[0])       # an epoch file: its run's name
+    norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
+    try:
+        run = next((r for r in history.runs() if (r.get("lora") or "") == name
+                    and norm(r.get("output_dir")) == norm(os.path.dirname(lora))), None)
+    except Exception:
+        run = None
+    vals = (run or {}).get("values") or {}
+    if not run or vals.get("FAMILY_MULTI_PERSON"):
+        return "", ""
+    first = next((ln.strip() for ln in str(vals.get("SAMPLE_PROMPT") or "").splitlines() if ln.strip()), "")
+    if not first:
+        return "", ""
+    word = trig or str(vals.get("CAPTION_TRIGGER_WORD") or "").strip()
+    if not word and run.get("image_folder"):                         # the word the captions start with
+        try:
+            from fizgig.families.multi_person import caption_trigger
+            word = caption_trigger(run["image_folder"], vals.get("DATASET_CAPTION_EXT") or ".txt") or ""
+        except Exception:
+            word = ""
+    bare = re.sub(rf"(?i)\b{re.escape(word)}\b", "", first) if word else first
+    bare = re.sub(r"\s*,\s*(,\s*)+", ", ", bare).strip(" ,")              # the comma the trigger leaves behind
+    return first, bare
 
 
 def run_profile(job):

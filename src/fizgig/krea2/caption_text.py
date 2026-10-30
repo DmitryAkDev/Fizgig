@@ -77,6 +77,22 @@ DETAILED_DESCRIPTION_INSTRUCTION = (
     "State only what is visible — no speculation, no names, no style commentary."
 )
 
+# --- object / concept captioning -------------------------------------------------------------
+# The identity instructions above are written for a person (viewpoint, face visible, pose, clothing).
+# A product, object or concept set has none of those, and the person wording made the captioner look
+# for them (#244). Rather than branch the person instruction - which would move every person caption
+# and both auto-recaption tries - objects get their own task. No SUBJECT_RULE: its woman/man examples
+# would pull a small captioner back toward people.
+OBJECT_CAPTION_INSTRUCTION = (
+    "Write one factual training caption for this image as a single sentence, covering these in "
+    "order: the main subject by its specific plain name, with its shape, colors, materials and any "
+    "text on it; how it is placed or what it is doing; the camera viewpoint and framing (e.g. "
+    "'close-up', 'from above', 'partly cropped'); the setting; the lighting. Use the same order and "
+    "the same plain phrasing every time. " + NO_PREAMBLE_RULE +
+    "Name anything prominent a viewer would notice. State only what is visible — no speculation, no "
+    "proper names, no style or quality commentary."
+)
+
 # --- style captioning ------------------------------------------------------------------------
 # The identity instructions above are written for a dataset where the subject is a person and the
 # lighting, viewpoint and clothing all VARY — you name them so they stay steerable. A style dataset
@@ -118,8 +134,9 @@ CAPTION_TASKS = {
     "short":      ("Short caption", SHORT_CAPTION_INSTRUCTION, 60),
     "detailed":   ("Detailed description", DETAILED_DESCRIPTION_INSTRUCTION, 160),
     "exhaustive": ("Exhaustive detail", DETAILED_CAPTION_INSTRUCTION, 240),
-    # Style last: the four above are the identity path, which is the common case and the one
-    # auto-recaption uses.
+    # The four above are the identity path (a person), the common case and auto-recaption's defaults.
+    "object":     ("Training caption for an object or concept", OBJECT_CAPTION_INSTRUCTION, 120),
+    # Style last.
     "style":      ("Style — contents only (trigger word names the style)",
                    STYLE_CAPTION_INSTRUCTION, 160),
 }

@@ -163,12 +163,12 @@ def kind_sets(desc, kind):
 
 # what each kind is, under the choice (the desktop's _KIND_HINTS; a family words its own in kind_notes)
 KIND_HINTS = {
-    "standard": "A normal LoRA: a person, a style or a concept, learned from your captioned photos.",
+    "standard": "A normal LoRA: a person, a style or a concept, learned from your captioned pictures.",
     "edit": "Teach the model an edit (a grade, a look, a relight) from pairs of the same photo: the original, and "
             "your edited version. The LoRA learns to make that edit to new photos.",
     "slider": "A dial: at strength +1 the LoRA moves a picture toward one look, at -1 toward the other, and "
               "anything in between. Previews show -1, 0 and +1 side by side.",
-    "finetune": "The whole model learns your photos, not a LoRA on top of it. The result is a full model file "
+    "finetune": "The whole model learns your pictures, not a LoRA on top of it. The result is a full model file "
                 "(large), loaded in place of the base. Needs plenty of system memory (the Log says how much).",
 }
 SLIDER_SOURCES = {"pairs": "Photo pairs", "prompts": "Prompts"}
@@ -197,12 +197,12 @@ SUBJECT_COUNTS = ("1 subject",) + CONCEPT_COUNTS
 # the Subjects card's "Your subject and other people": off / DOP / Fizgig LoRA Isolation (DOP + multi-person, the measured recipe)
 PEOPLE_MODES = ("Off - a normal LoRA", "Leave the rest of the model alone",
                 "Fizgig LoRA Isolation")
-PEOPLE_HINT = ("Off: your subject's face can leak onto other people, even in prompts that don't use its trigger "
-               "word.\n"
+PEOPLE_HINT = ("Off: your subject can leak into prompts that don't use its trigger word (a face onto other "
+               "people, a style onto every picture).\n"
                "Leave the rest of the model alone: ask for \"a man at a party\" without the trigger word and you get "
                "a stranger, just as the model made before you trained. Your subject only appears when you call for "
-               "them. With one person, use it when your subject must stay out of prompts without the trigger "
-               "word; otherwise use Off.\n"
+               "it. With one subject, use it when it must stay out of prompts without the trigger word; otherwise "
+               "use Off.\n"
                "Fizgig LoRA Isolation: your subjects can stand together in one picture, or next to "
                "a person the model already knows well, and every face stays right. Best for people, and needs two or "
                "more subjects in the LoRA. "
@@ -222,10 +222,11 @@ KIND_HINT = ("What each subject is decides what Fizgig adds to its training.\n"
              "A style or look: paper cut, a lighting style. Its trigger word stays as written, and the look only "
              "appears when you use it.")
 KIND_ROWS = ("FAMILY_SUBJECT_KIND", "FAMILY_SUBJECT_KIND2", "FAMILY_SUBJECT_KIND3", "FAMILY_SUBJECT_KIND4")
-SUBJECTS_HINT = ("Each subject is a folder of their photos, with their own trigger word in every caption - that is "
-                 "how the LoRA tells them apart. Caption each folder first.\n"
-                 "Up to 4 people work well, with 2 or 3 of them in one picture. With a person the model already knows "
-                 "well in the picture too: 2 subjects is reliable, 3 is hit and miss.")
+SUBJECTS_HINT = ("Each subject is a folder of its own training {files}, with its own trigger word in every caption - "
+                 "that is how the LoRA tells them apart. Caption each folder first.")
+# measured on people, so only where the family has the people modes (not a music model)
+SUBJECTS_PEOPLE_HINT = ("For people: up to 4 work well, with 2 or 3 of them in one picture. With a person the model "
+                        "already knows well in the picture too: 2 is reliable, 3 is hit and miss.")
 
 def form(desc):
     opts = [o for o in desc.options if o.kind != "fixed"]
@@ -327,7 +328,7 @@ def form(desc):
                  "check", "Images that stay hard without improving train more gently (x0.7, then x0.5 down to x0.1); "
                  "mined-out ones ease off (x0.6) and healthy learned ones get a gentle boost (x1.1). Batch size 1."),
             _row("KREA2_WARMUP_LOOK", "Warm up look outliers (unusual angles ease in at low LR - needs a Look "
-                 "Filter scan)", "check", "Images the Image Prep Look Filter scored as look outliers (tight angles, "
+                 "Filter scan)", "check", "Person LoRAs: images the Image Prep Look Filter scored as look outliers (tight angles, "
                  "profiles - real but unusual) start at x0.4 and ramp to x1.0 over the first ~4 epochs, so they refine "
                  "the identity instead of fighting it while it forms. Run the Look Filter (with 3 baselines) on this "
                  "folder first: it saves the scores with the dataset. Without them this does nothing."),
@@ -337,8 +338,8 @@ def form(desc):
                  "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
             _row("RECAPTION_FIRST", "First try uses", "choice",
                  "The Captions tab's instruction for that task, as you've edited it there. The defaults are written "
-                 "for a person (viewpoint, whether the face shows): for a style or a concept, set both tries to suit "
-                 "your LoRA, e.g. Style, or Custom with your own instruction.",
+                 "for a person (viewpoint, whether the face shows): for an object or concept, set both tries to "
+                 "Training caption for an object or concept; for a style, Style; or Custom with your own instruction.",
                  [label for _key, label in _recaption_choices()]),
             _row("RECAPTION_SECOND", "Second try uses", "choice",
                  "Used when the first new caption didn't help. Set separately from the first try.",
@@ -350,7 +351,8 @@ def form(desc):
     if desc.identity_blocks:
         a, b = desc.identity_blocks[0], desc.identity_blocks[-1]
         params.append(_row("FAMILY_FAST_ID", "Fast Identity Mode", "check",
-                           f"Trains only the identity blocks ({a}-{b}): about 1.5x faster."))
+                           f"For a person or character LoRA: trains only the identity blocks ({a}-{b}), about 1.5x "
+                           "faster. Leave it off for a style or concept."))
     params += by_section("training", "after", "lora")
     # who the LoRA is of and how it treats other people: the Subjects card (after Training Parameters)
     mc = dict(desc.multi_concept_defaults or {})
@@ -358,8 +360,11 @@ def form(desc):
         _row("_subjects_intro", "With 1 subject and Off, this is ordinary LoRA training. The other choices keep your "
              "subjects apart from everyone else, using Fizgig's own techniques together with DOP (Differential "
              "Output Preservation) from @ostris's AI-Toolkit.", "note"),
-        _row("FAMILY_SUBJECTS", "Who is this LoRA of?", "radio",
-             " ".join(t for t in (SUBJECTS_HINT, desc.multi_concept_hint) if t), SUBJECT_COUNTS,
+        _row("FAMILY_SUBJECTS", "Who or what is this LoRA of?", "radio",
+             " ".join(t for t in ("\n".join(t for t in (SUBJECTS_HINT.format(files="pictures" if pictures else
+                                                                            "files"),
+                                                      SUBJECTS_PEOPLE_HINT if desc.subject_isolation else "") if t),
+                                  desc.multi_concept_hint) if t), SUBJECT_COUNTS,
              default=SUBJECT_COUNTS[0],
              sets={SUBJECT_COUNTS[0]: {"FAMILY_MULTICONCEPT": False},
                    **{c: {**mc, "FAMILY_MULTICONCEPT": True, "FAMILY_CONCEPT_COUNT": c} for c in CONCEPT_COUNTS}})
@@ -399,7 +404,7 @@ def form(desc):
                  hint="The word your captions use for this subject, e.g. zwxem.\n"
                       "The box shows the word Fizgig found. Type over it only if that is wrong."),
             _row("FAMILY_DOP_CLASS" + ("" if n == 1 else str(n)), f"Subject {n} - what they are",
-                 hint="One word: woman, man, girl, boy, dog, cat ...\n"
+                 hint="One word: woman, man, girl, boy, dog, cat, car ...\n"
                       "The box shows what Fizgig found. Type over it only if that is wrong."))],
         # how often and how strongly the trigger-free pass runs is the tested recipe (every second step, x2): no control
         # last, under everything that changes them: what training will use, per subject (one of its own captions)
@@ -422,7 +427,8 @@ def form(desc):
     if desc.masked_training:
         add("masks", "Masked training", "training", [
             _row("MASKED_TRAINING", "Train on the parts your masks show", "check",
-                 "For pictures where only part of the frame matters - the person, not the room around them.\n\n"
+                 "For pictures where only part of the frame matters - the subject, not the room around it (a person, a "
+                 "product, a pet).\n\n"
                  "Save a black-and-white mask beside a picture, named after it with -masklabel added: photo.jpg -> "
                  "photo-masklabel.png. White is trained fully, grey partly, black only as much as the setting "
                  "below. The picture itself still trains whole.\n\n"
@@ -489,7 +495,7 @@ def form(desc):
             _row("FAMILY_SLIDER_SOURCE", "Slider from", "radio", choices=[SLIDER_SOURCES[x] for x in srcs],
                  default=SLIDER_SOURCES[srcs[0]]) if len(srcs) > 1 else None,
             _row("_slider_plus_dir", "1. +1 end folder", "shown", "Photos showing the +1 end of the dial (e.g. the "
-                 "person smiling). The captions go in this folder (step 3). It is the training folder on the Start "
+                 "person smiling, or the room in warm light). The captions go in this folder (step 3). It is the training folder on the Start "
                  "tab: choosing it here changes it there too.", sets_training_folder=True),
             _row("FAMILY_SLIDER_DIR", "2. -1 end folder", "folder",
                  "The same shots showing the -1 end (e.g. not smiling), each with the same file name as its +1 photo. "
@@ -506,7 +512,8 @@ def form(desc):
                        "with a comma if you want one. One person: describe them, e.g. \"a close-up photo of a young "
                        "woman with short dark hair,\" - the dial changes the expression and keeps her the same. Anyone: "
                        "keep it general, e.g. \"a close-up photo of a person who is\" - the practice pictures show a "
-                       "different person each time, so the dial learns only the change and works on anyone."),
+                       "different person each time, so the dial learns only the change and works on anyone. Something "
+                       "else: describe it the same way, e.g. \"a photo of a living room,\" for a lighting dial."),
             prompt_row("FAMILY_SLIDER_POS", "2. The +1 end adds",
                        "e.g. \"happy\" - with the general line above the prompt reads \"a close-up photo of a person "
                        "who is happy\"."),
@@ -556,7 +563,8 @@ def form(desc):
             _row("FAMILY_FT_FUSED", "Free each gradient as soon as it's used (less memory - recommended)", "check"),
             *by_section("training", mode="finetune"),
             *([_row("FAMILY_FT_REG_DIR", "Regularisation images (optional)", "folder", "A folder of ordinary photos "
-                    "of the broader class (men, women, people) with normal detailed captions. They hold the model's "
+                    "of the broader class (people for a person, cars for a car, plain photos of the same kinds of "
+                    "scene for a style) with normal detailed captions. They hold the model's "
                     "sense of that class in place while your images train - a full fine-tune moves every weight, so "
                     "nothing else bounds that drift. Use real photos, not model output: generated images anchor the "
                     "model to its own artifacts. Leave empty to train without one.", upload=True, start="data"),
@@ -656,11 +664,14 @@ def form(desc):
         _row("SAMPLE_ENABLED", "Make previews while training", "check"),
         _row("_prompts_note", " ".join(t for k, t in desc.samples_text if k == "prompts"), "note")
         if any(k == "prompts" for k, _t in desc.samples_text) else None,
-        _row("SAMPLE_PROMPT", "Prompts", "text", " ".join(t for k, t in desc.samples_text if k == "banner") or
-             "One prompt per line: Enter starts the next. The numbers are the gallery's Prompt 1, 2, 3…",
+        _row("SAMPLE_PROMPT", "Prompts", "text", default=desc.sample_prompt or None, hint=" ".join(
+             t for k, t in desc.samples_text if k == "banner") or
+             "One prompt per line: Enter starts the next. Write them as your captions are, trigger word first, e.g. "
+             "\"zwxem, a woman in a garden\" or \"zwxem, a harbour at dusk\". The numbers are the gallery's Prompt "
+             "1, 2, 3…",
              lines=True),
         _row("_overtrain_tip", "Tip - catch overtraining early: give one prompt something your dataset doesn't have, "
-             "a pose, angle or setting none of your photos show. Early epochs follow it. When the LoRA starts to "
+             "a pose, angle, setting or subject none of your pictures show. Early epochs follow it. When the LoRA starts to "
              "overtrain, that's the first thing to fail, as the previews drift back to your photos. The last epoch that "
              "still follows it is a good one to keep.", "note") if pictures else None,
         # the switches side by side (the grid tiles ticks), then the Turbo box, then the boxes they change
@@ -968,8 +979,8 @@ def state(desc, values, image_folder="", captioner="", speed_file=False, checkpo
     # one-subject form on Isolation moves to Leave the rest of the model alone (the nearest: it keeps the DOP pass)
     one_sub = kind == "standard" and (concept_count(values) if values.get("FAMILY_MULTICONCEPT") else 1) == 1
     if one_sub:
-        disabled_choices["FAMILY_PEOPLE_MODE"] = {PEOPLE_MODES[2]: "Needs two or more subjects: add one under Who is "
-                                                                   "this LoRA of?"}
+        disabled_choices["FAMILY_PEOPLE_MODE"] = {PEOPLE_MODES[2]: "Needs two or more subjects: add one under Who or "
+                                                                   "what is this LoRA of?"}
         if values.get("FAMILY_MULTI_PERSON"):
             force.update(FAMILY_MULTI_PERSON=False, FAMILY_DOP=True)
             values = {**values, "FAMILY_MULTI_PERSON": False, "FAMILY_DOP": True}
@@ -1310,7 +1321,7 @@ def _option_values(desc, values):
 def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, samples_dir, inference_int8=False,
            captioner="", caption_overrides=None):
     """The launch plan's inputs from the form's values, as the desktop's _family_launch_inputs builds them."""
-    v = {**DEFAULTS, **values}
+    v = {**DEFAULTS, **({"SAMPLE_PROMPT": desc.sample_prompt} if desc.sample_prompt else {}), **values}
     kind = _kind(desc, v)
     b = lambda k: bool(v.get(k))
     s = lambda k: str(v.get(k, "") if v.get(k) is not None else "").strip()

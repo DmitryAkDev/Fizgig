@@ -57,7 +57,7 @@
         "Judge a run by its previews, not its loss.",
         "Studio fixes a finished LoRA block by block.",
         "Image Prep's Look Filter finds faces that don't match.",
-        "Masked training learns the person, not the room.",
+        "Masked training learns your subject, not the room.",
         "LoRA Royale: pick the best epoch by eye.",
         "Context LoRA: train alongside another LoRA.",
         "Watch a run from your phone: Preferences → Web UI."
@@ -365,8 +365,8 @@
                     <input type="text" id="maskSamInclude" class="w-path" placeholder="e.g. person" value="person"></div>
                   <div class="field-row"><span class="field-label">Leave these out:</span>
                     <input type="text" id="maskSamExclude" class="w-path" placeholder="optional, e.g. glasses, phone"></div>
-                  <div class="field-hint">A few words for each thing, separated by commas. Everything in Mask these is
-                    white, then anything in Leave these out is taken away.</div>
+                  <div class="field-hint">A few words for each thing, separated by commas (person, the handbag, the dog).
+                    Everything in Mask these is white, then anything in Leave these out is taken away.</div>
                   <div class="field-row"><button class="btn" id="maskSamPreview">Preview on 2 random pictures</button>
                     <span class="field-hint" id="maskSamPrevState"></span></div>
                   <div class="mask-sam-previews" id="maskSamPreviews"></div>
@@ -439,8 +439,9 @@
           </div>
           <div class="section-card" id="lookCard">
             <div class="card-title">Final step: Look Consistency Filter (faces)</div>
-            <div class="card-desc">Run this last, after every other prep stage: it scores the finished training
-              folder. Pick three baseline pictures that nail the look you want; every picture's face is scored against
+            <div class="card-desc">For a person or character LoRA: it scores faces, so skip it for a style, object or
+              place. Run it last, after every other prep stage: it scores the finished training folder. Pick three
+              baseline pictures that best show the face you're training; every picture's face is scored against
               all three and averaged (face similarity; for anime, furry or drawn characters see "Anime/furry/drawn
               characters" in step 1), so no one photo's angle, expression or light sets the bar.
               It finds pictures that drifted off-look, the near-misses a loss curve can't see. Click pictures to mark
@@ -494,6 +495,9 @@
               <div class="field-row"><span class="field-label">Task:</span>
                 <select id="capTask" class="w-combo-lg"></select>
                 <button class="btn" id="capEditInstr">Edit instructions…</button></div>
+              <div class="field-hint" id="capTaskHint">Training caption is written for a person. For an object or a
+                concept, pick Training caption for an object or concept; for a style, pick Style - it leaves the look
+                unnamed so the trigger word carries it.</div>
               <div id="capInstrBox" style="display:none">
                 <div class="field-hint" id="capInstrHint"></div>
                 <textarea id="capInstr" rows="8"></textarea>
@@ -611,7 +615,7 @@
                 <span class="seg" id="galleryView">
                   <button class="btn btn-sm" data-view="list">Newest first</button>
                   <button class="btn btn-sm" data-view="grid">Prompt × epoch</button></span>
-                <button class="btn btn-sm" id="likBtn" title="Score every preview's face against three photos of your subject from the training images (ArcFace, on the CPU - training keeps the GPU). Identity likeness only: overbaking and skin still need your eyes.">🎯 Likeness…</button>
+                <button class="btn btn-sm" id="likBtn" title="For a person or character LoRA: scores the face in every preview against three photos of your subject from the training images (on the CPU - training keeps the GPU). Faces only: judge a style or object LoRA, and overbaking and skin on any LoRA, by eye.">🎯 Likeness…</button>
                 <button class="btn btn-sm" id="rvBtn" title="Scrub this run epoch by epoch, one prompt at a time; play it, save a frame or a clip">🎞 Visualiser</button>
                 <span class="field-hint" id="likStatus"></span>
               </div>
@@ -872,7 +876,7 @@
                   <figcaption id="stTweakCap">Tweaked (current sliders)</figcaption></figure>
               </div>
               <div class="field-hint" id="stPreviewHint">Click either picture to see both full size (← → switches between them).</div>
-              <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: ArcFace similarity to your reference photo. Grid: the model's patch lattice showing through (rising = overbake). Detail: face texture energy (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
+              <div class="st-metrics" id="stMetrics" style="display:none" title="Paired numbers for the two renders on screen (same seed and prompt, only the blocks differ - where such measures are honest). Likeness: face similarity to your reference photo (a person LoRA). Grid: the model's patch lattice showing through (rising = overbake). Detail: texture energy in the face, or the whole picture when there is none (down = plastic, up = fried). Clipped: blown pixels. Sat: saturation.">
                 <button class="btn btn-sm" id="stMetRefPick">📷 Reference…</button><span class="field-hint" id="stMetRefName">(none)</span>
                 <button class="btn btn-sm" id="stMetRefClear" title="No reference photo">✕</button>
                 <span class="st-chip" id="stMetLike"></span><span class="st-chip" id="stMetGrid"></span>
@@ -967,8 +971,8 @@
         <section id="tab-profiler" class="tab-panel">
           <div class="tab-banner">
             <h1>Profiler</h1>
-            <p>See what a LoRA actually does: which blocks carry the likeness, which cause bleed, and how much rank it
-              really uses. Studio shows every report inline when it loads the same LoRA.</p>
+            <p>See what a LoRA actually does: how much each block changes the picture, which carry the likeness (a person
+              LoRA) and which cause bleed, and how much rank it really uses. Studio shows every report inline when it loads the same LoRA.</p>
           </div>
           <div class="section-card">
             <div class="card-title">LoRA File</div>
@@ -983,8 +987,9 @@
           <div class="section-card">
             <div class="card-title">What to measure</div>
             <div class="card-desc">Find out what each block of the LoRA does: it renders the LoRA, then again with each block
-              group switched off, and reports how much each changes the picture, carries the likeness and causes bleed
-              (other people starting to look like your subject). Weights only is instant and shows how much rank the LoRA
+              group switched off, and reports how much each changes the picture and, with subject photos, carries the likeness
+              and causes bleed (the LoRA showing up without its trigger, e.g. other people taking your subject's
+              face). Weights only is instant and shows how much rank the LoRA
               really uses.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Mode:</span>
@@ -993,15 +998,16 @@
                 <label class="radio-label"><input type="radio" name="pfMode" value="thorough"> Thorough (2 seeds, steadier)</label></div>
               <div id="pfRender">
                 <div class="field-row"><span class="field-label">Prompt:</span><input type="text" id="pfPrompt" class="w-path"
-                  placeholder='with the trigger word, e.g. "zwxem, a portrait photo of a woman"'></div>
+                  placeholder='with the trigger word, e.g. "zwxem, a portrait photo of a woman" or "zwxem, a harbour at dusk"'></div>
                 <div class="field-row"><span class="field-label">Bleed check:</span><input type="text" id="pfClass" class="w-path"
                   placeholder="optional: the same prompt WITHOUT the trigger"></div>
-                <div class="field-hint pf-hint">With the LoRA loaded the bleed check should still look like anyone; the report
-                  shows which blocks pull it toward your subject.</div>
+                <div class="field-hint pf-hint">With the LoRA loaded the bleed check should still look like the base model's
+                  picture; the report shows which blocks pull it toward your LoRA.</div>
                 <div class="field-row"><span class="field-label">Subject photos:</span><span id="pfPhotos"></span>
                   <span id="pfPhotoBtns"></span><button class="btn btn-sm" id="pfPhotosClear">Clear</button></div>
                 <div class="field-hint pf-hint">Optional, for a person LoRA: three photos of the subject turn on the likeness
-                  and bleed scores (face recognition). Taken from the run's sample gallery when it has them.</div>
+                  and bleed scores (face recognition). Taken from the run's sample gallery when it has them. For a style or
+                  object LoRA, leave it empty: the report measures picture change.</div>
                 <div class="field-row"><span class="field-label">Size:</span>
                   <select id="pfSize" class="w-combo st-small-select"><option>512</option><option selected>768</option><option>1024</option></select></div>
               </div>
@@ -1090,8 +1096,9 @@
           </div>
           <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Likeness score</div>
-            <div class="card-desc">Choose up to 3 photos of your subject - Fizgig scores each epoch's face against
-              each of them (ArcFace, on the CPU), shows the mean, and highlights the closest match in gold.</div>
+            <div class="card-desc">For a person or character LoRA: choose up to 3 photos of your subject - Fizgig scores
+              each epoch's face against each of them (face recognition, on the CPU), shows the mean, and highlights
+              the closest match in gold. No face to score: skip this card and judge the crossfade by eye.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Subject photos:</span>
                 <span class="ry-like-refs" id="ryLikeRefs"></span><button class="btn" id="ryLikePick">Choose…</button>
@@ -1105,7 +1112,7 @@
           </div>
           <div data-ry="epochs" class="section-card ry-folder-only">
             <div class="card-title">Export the morph</div>
-            <div class="card-desc">Save the crossfade as a looping clip - face resolving epoch by epoch, with a
+            <div class="card-desc">Save the crossfade as a looping clip - the LoRA resolving epoch by epoch, with a
               Fizgig · LoRA Royale tag. Made to share.</div>
             <div class="card-content">
               <div class="field-row"><span class="field-label">Format:</span>
@@ -1815,8 +1822,8 @@
         <button class="btn" data-close="likModal">✕</button></div>
       <div class="modal-body">
         <div class="field-hint">From <span id="likFrom">the training images</span> (<span id="likFolder"></span>).
-          <button class="btn btn-sm" id="likFolderPick">Another folder…</button> Pick clear, typical shots of the
-          face: each render is scored against every photo you pick and the mean shown, so one odd photo can't skew it.</div>
+          <button class="btn btn-sm" id="likFolderPick">Another folder…</button> Faces only (a person, or an anime
+          or furry character). Pick clear, typical shots of the face: each render is scored against every photo you pick and the mean shown, so one odd photo can't skew it.</div>
         <div class="lik-grid" id="likGrid"></div>
         <div class="field-row"><button class="btn btn-primary" id="likStart" disabled>Start scoring</button>
           <button class="btn" id="likClear">Stop and clear scores</button>

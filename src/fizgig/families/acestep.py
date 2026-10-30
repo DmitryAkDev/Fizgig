@@ -110,6 +110,7 @@ ACESTEP15 = FamilyDescription(
                    "can start copying them: the same song on every seed. Try the final LoRA at a lower strength, "
                    "around 0.5 - you keep the learned detail without the copying."),               # music sets are small: 10 clips x accumulation 4 is ~3 steps an epoch
     song_captions="chiptune, 8-bit, instrumental, square wave lead, arpeggios",
+    sample_prompt="chiptune, 8-bit, instrumental, square wave lead, arpeggios",   # a song, not "A high quality photo"
     finetune=True,                    # the whole DiT trains, a window at a time on a 4-bit trunk (families/ft.py)
     ft_learning_rate=1e-5,
     ft_regularisation=False,          # no "broad class" photos for a song set

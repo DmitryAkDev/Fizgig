@@ -228,10 +228,9 @@ function triggerCheckBlock() {
   const d = el("details", {class: "tc-box"},
     el("summary", {text: "Check a trigger word (optional)"}),
     el("div", {class: "field-hint", text:
-      `Fizgig LoRA Isolation joins each subject's trigger word to what the subject is: "zwxem, a woman" trains as one ` +
-      `word, zwxemwoman. Some words join badly: the text encoder splits them so the subject word is no longer whole ` +
-      `(fyxo + woman reads as f | yx | ow | oman), and the LoRA learns that subject less cleanly. This checks a word ` +
-      `with ${name}'s text encoder, the one this LoRA trains with, before you caption.`}),
+      `Checks how a trigger word reads to ${name}'s text encoder, the one this LoRA trains with, before you ` +
+      `caption. Fizgig LoRA Isolation joins it to what the subject is ("zwxem, a woman" trains as zwxemwoman), and ` +
+      `some words join badly: fyxo + woman reads as f | yx | ow | oman, and the LoRA learns that subject less cleanly.`}),
     el("div", {class: "field-row"}, el("span", {class: "field-label", text: "Trigger word to check:"}), word),
     el("div", {class: "field-row"}, el("span", {class: "field-label", text: "The subject is:"}), cls),
     el("div", {class: "field-hint", text: "The word Fizgig joins on: the same trigger can join cleanly with one " +
@@ -2730,7 +2729,7 @@ function imageLossCaption(im, run, live) {
     catch (e) { box.replaceChildren(el("div", {class: "problems", text: e.message})); return; }
     const ta = el("textarea", {rows: 5, class: "il-cap-text"});
     ta.value = r.caption;
-    const say = el("div", {class: "field-hint", text: "Caption what the picture actually shows - viewpoint (from behind, side profile), pose, what's in the way."});
+    const say = el("div", {class: "field-hint", text: "Caption what the picture actually shows - viewpoint (from behind, side profile), pose, lighting, what's in the way."});
     const save = el("button", {class: "btn btn-sm btn-primary", text: live ? "Save and queue for re-encode" : "Save caption", onclick: async () => {
       try {
         const res = await api("/api/runs/caption", {id: run.id, key: im.key, caption: ta.value, ext: capExt()});
@@ -3100,7 +3099,7 @@ async function royaleScore() {
     const r = await api("/api/royale/score", {refs: S.ry.likeRefs || []});
     S.ry.scores = r.scores; S.ry.best = r.best;
     royaleGrid();
-    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject photos."; $("ryBest").disabled = true; return; }
+    if (r.best == null) { $("ryLikeStatus").textContent = "No faces detected in the renders or subject photos. Likeness needs a face: for a style or object LoRA, judge the epochs by eye."; $("ryBest").disabled = true; return; }
     $("ryBest").disabled = false;
     $("ryLikeStatus").textContent = `Best: ${ryLabel(r.best).toLowerCase()} (${r.scores[r.best].toFixed(3)})` +
       (r.no_face ? `  (${r.no_face} no-face)` : "") +
@@ -3981,7 +3980,7 @@ function maskSamShow(r) {
   $("maskMethod").querySelectorAll("button").forEach((b) => b.classList.toggle("active", (b.dataset.sam === "1") === on));
   $("maskMethodHint").textContent = on ? "Meta's Segment Anything: type what to mask (\"person\", \"hair\", " +
     "\"the dog\") and it finds it, with sharper edges. A 1.75 GB download, once; it runs on the GPU." :
-    "Google's person finder: pick a part of the person below. Small and quick, on the CPU.";
+    "Google's person finder: pick a part of the person below. Small and quick, on the CPU. For an object, an animal or anything else, use SAM 3.1.";
   $("maskRunHint").textContent = on ? "It runs on the GPU, a fraction of a second a picture once loaded (several " +
     "seconds a picture without a GPU). Make masks when nothing is training." :
     "It runs on the CPU, a fraction of a second a picture. The first time, it downloads Google's person finder (16 MB).";
@@ -4523,7 +4522,7 @@ async function lookPickOpen() {
   host.replaceChildren(el("div", {class: "field-hint", text: "Loading the folder's pictures…"}));
   const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`).catch(() => ({items: []}));
   const pics = r.items.filter((it) => /\.(png|jpe?g|webp|bmp)$/i.test(it.name));
-  host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best nail the look you want."}),
+  host.replaceChildren(el("div", {class: "field-hint look-pick-hint", text: "Click the 3 pictures that best show the face you're training."}),
     ...pics.map((it) => el("button", {class: "look-tile pick" + (S.prep.bases.includes(it.path) ? " chosen" : ""),
       title: it.name, onclick: (e) => {
         const i = S.prep.bases.indexOf(it.path);
@@ -4828,7 +4827,7 @@ function studioSlots() {
   $("stFramesTitle").textContent = ref ? "Reference Images" : "First / Last Frame";
   $("stFramesDesc").textContent = ref ? "Optional: up to two photos the clip should look like (this checkpoint's " +
     "references), each cropped to the clip's shape - you place the crop when you pick one. Say <Picture 1> and " +
-    "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along a beach\"." :
+    "<Picture 2> in the prompt for them, e.g. \"the woman in <Picture 1> walks along the beach in <Picture 2>\"." :
     "Optional: photos the clip starts and ends on (a still uses the first only), each cropped to the clip's shape - " +
     "you place the crop when you pick one.";
   const host = $("stFrameSlots");
@@ -5578,9 +5577,9 @@ async function studioMetrics() {
   try { m = await api(`/api/studio/metrics?ref=${encodeURIComponent(ref)}`); } catch (e) { m = {error: e.message}; }
   if (gen !== S.st.metGen) return;                    // a newer pair is on screen: these numbers aren't its
   if (m.error) { put("like", `metrics failed: ${String(m.error).slice(0, 60)}`, "bad"); for (const k of ["grid", "tex", "clip", "sat"]) put(k, ""); return; }
-  if (!m.ref_set) put("like", "Likeness: set a reference photo →");
-  else if (!m.ref_face) put("like", "Likeness: no face in reference", "bad");
-  else if (m.like_base == null || m.like_tweak == null) put("like", "Likeness: no face in render");
+  if (!m.ref_set) put("like", "Face likeness: set a reference photo →");
+  else if (!m.ref_face) put("like", "Face likeness: no face in reference", "bad");
+  else if (m.like_base == null || m.like_tweak == null) put("like", "Face likeness: no face in render");
   else {
     const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
     put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
@@ -6495,7 +6494,7 @@ async function loadCaptionOptions() {
   document.querySelector("#capAll").closest(".section-card").style.display = pictures ? "" : "none";
   for (const id of ["capModel", "capTask", "capTokens"]) $(id).closest(".field-row").style.display = pictures ? "" : "none";
   $("capModelHint").style.display = pictures ? "" : "none";
-  if (!pictures) $("capInstrBox").style.display = "none";
+  if (!pictures) { $("capInstrBox").style.display = "none"; $("capTaskHint").style.display = "none"; }
   if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
 }
 
@@ -6506,6 +6505,7 @@ function fillTasks(want) {
   for (const l of labels) task.append(el("option", {value: l, text: l}));
   task.value = labels.includes(want) ? want : (qwenOn() ? o.default_qwen_task : "<DETAILED_CAPTION>");
   $("capEditInstr").style.display = qwenOn() ? "" : "none";
+  $("capTaskHint").style.display = qwenOn() && $("capTask").closest(".field-row").style.display !== "none" ? "" : "none";
   $("capInstrBox").style.display = "none";
 }
 
