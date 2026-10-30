@@ -279,6 +279,52 @@ def uncached_pictures(toml_text):
     return n
 
 
+def start_checks(desc, st, image_folder):
+    """Warnings for Start, each one line, never a block (Start anyway goes on): pictures with no caption, captions
+    without the trigger word, a learning rate outside the model's usual band (description start_lr_bands)."""
+    out = []
+    folder = str(image_folder or "").strip()
+    if folder and os.path.isdir(folder) and not slider_on(desc, st, "prompts"):
+        from fizgig.dataset.image_dataset import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
+        exts = {e.lower() for e in (*IMAGE_EXTENSIONS, *VIDEO_EXTENSIONS, *AUDIO_EXTENSIONS)}
+        cap = _s(st.get("DATASET_CAPTION_EXT")) or ".txt"
+        cap = cap if cap.startswith(".") else "." + cap
+        items = sorted(f for f in os.listdir(folder) if os.path.splitext(f)[1].lower() in exts and not is_mask_file(f))
+        texts = {}
+        for f in items:
+            p = os.path.join(folder, os.path.splitext(f)[0] + cap)
+            try:
+                with open(p, encoding="utf-8", errors="replace") as fh:
+                    texts[f] = fh.read()
+            except OSError:
+                texts[f] = None
+        none = [f for f, t in texts.items() if t is None or not t.strip()]
+        if none:
+            out.append(f"{len(none)} of {len(items)} pictures {'has' if len(none) == 1 else 'have'} no caption ({', '.join(none[:3])}"
+                       f"{', ...' if len(none) > 3 else ''}): {'it trains' if len(none) == 1 else 'they train'} on an empty caption.")
+        trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+        if trig and trig.lower() != "trigger_word" and not multi_person_on(desc, st):
+            pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+            lack = [f for f, t in texts.items() if t and t.strip() and not pat.search(t)]
+            if lack:
+                out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
+                           f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
+                           + ("that picture trains" if len(lack) == 1 else "those pictures train") + " without it.")
+    if not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower():
+        kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
+        band = next(((lo, hi) for k, lo, hi in (desc.start_lr_bands or ()) if k == kind), None)
+        try:
+            lr = float(_s(st.get("LEARNING_RATE")))
+        except ValueError:
+            lr = None
+        if band and lr is not None and not band[0] <= lr <= band[1]:
+            what = {"finetune": "a fine-tune", "slider": "a slider"}.get(kind, "a LoRA")
+            e = lambda x: (lambda m, x_: f"{float(m):g}e{int(x_)}")(*f"{x:.1e}".split("e"))   # 3e-5, not 3e-05
+            out.append(f"Learning rate {e(lr)} is {'below' if lr < band[0] else 'above'} {desc.display_name}'s usual "
+                       f"range for {what} ({e(band[0])} to {e(band[1])}, from its presets).")
+    return out
+
+
 def caches(desc, inputs):
     """Whether the cache stages run: not on a resume (the cache is already built) unless it trains at a different
     size from now on (recache: the latents that still fit are kept), not for a prompt slider (no photos), not with

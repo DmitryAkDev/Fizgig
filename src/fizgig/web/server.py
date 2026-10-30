@@ -3872,11 +3872,19 @@ class Handler(BaseHTTPRequestHandler):
                 r = _run_form(history.get(str(b.get("id") or "")))
                 return self.json(r, 400 if r.get("error") else 200)
             if path == "/api/plan":
-                _, _, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
+                desc, inputs, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
                 return self.json({"problems": plan.problems, "stages": [{"name": s.name, "cmd": s.cmd}
                                                                          for s in plan.stages],
-                                  "dataset_toml": plan.dataset_toml})
+                                  "dataset_toml": plan.dataset_toml,
+                                  "warnings": launch.start_checks(desc, inputs, b.get("image_folder") or "")
+                                  if desc is not None and not plan.problems else []})
             if path == "/api/start":
+                if not b.get("anyway"):          # the Start checks first: warnings come back, nothing starts
+                    desc, inputs, plan = _plan(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or "")
+                    warn = launch.start_checks(desc, inputs, b.get("image_folder") or "") \
+                        if desc is not None and not plan.problems else []
+                    if warn:
+                        return self.json({"warnings": warn})
                 return self.json(_start(b.get("family", ""), b.get("values") or {}, b.get("image_folder") or ""))
             if path == "/api/resume":                    # as the desktop's Resume Training
                 with _lock:

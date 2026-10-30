@@ -1516,8 +1516,19 @@ async function check() {
   try {
     const p = await api("/api/plan", runBody());
     showProblems(p.problems, "✓ All good - nothing missing, Start Training will work. It will run: " +
-      p.stages.map((s) => s.name).join(" → ") + ".");
+      p.stages.map((s) => s.name).join(" → ") + "." +
+      ((p.warnings || []).length ? "\n\nWorth a look before you start:\n• " + p.warnings.join("\n• ") : ""));
   } catch (e) { showProblems([e.message]); }
+}
+
+// the Start checks' warnings (launch.start_checks): shown with Start anyway, never a block
+function showWarnings(list, body) {
+  const box = $("problems");
+  box.classList.remove("ok");
+  box.replaceChildren(el("div", {text: "Worth a look before you start:\n• " + list.join("\n• ")}),
+    el("div", {class: "field-row"},
+      el("button", {class: "btn btn-primary btn-sm", text: "Start anyway", onclick: () => start("/api/start", {...body, anyway: true})}),
+      el("button", {class: "btn btn-sm", text: "Cancel", onclick: () => box.replaceChildren()})));
 }
 
 async function start(path, body) {
@@ -1526,7 +1537,8 @@ async function start(path, body) {
   const btn = path === "/api/start" ? $("btnStart") : null;
   if (btn) { btn.disabled = true; btn.dataset.label = btn.dataset.label || btn.textContent; btn.textContent = "Starting…"; }
   try {
-    const r = await api(path, path === "/api/start" ? runBody() : (body || {}));
+    const r = await api(path, path === "/api/start" ? {...runBody(), ...(body || {})} : (body || {}));
+    if (r.warnings && r.warnings.length) { showWarnings(r.warnings, body || {}); return; }
     showProblems(r.problems || (r.error ? [r.error] : []));    // stays up: the run line below refreshes itself
     // the form went to a run that started: it isn't the queued run being edited any more (Save to queue would have
     // put this run's settings in its place)

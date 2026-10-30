@@ -175,6 +175,7 @@ OPTIONS = (
 
 MINIMAX = FamilyDescription(
     key="minimax",
+    start_lr_bands=(("slider", 7e-5, 6e-4),),
     arch_id="minimaxh3",
     display_name="MiniMax H3",
     gui_label="MiniMax H3",
