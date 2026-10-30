@@ -1546,16 +1546,26 @@ async function start(path, body) {
 // a clip family's clip size): then a choice - as it was, or at the new size (the cache is made again first, keeping
 // what still fits). Training at a bigger size for the last epochs, say.
 const SIZE_KEYS = {DATASET_MEGAPIXELS: "Target Megapixels", CLIP_MEGAPIXELS: "Clip Megapixels"};
+// what Resume takes from the form as it is now (server.py _RESUME_SAMPLE_KEYS); the rest trains on as the run began
+const RESUME_KEYS = ["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH", "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE",
+  "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP", "FAMILY_PREVIEW_LOOK",
+  "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
+  "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
+  "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"];
+
+// while this model's run is paused, the rows Resume uses are marked "Applies on Resume"
+function resumeMarks() {
+  const r = S.run || {}, on = r.state === "paused" && r.family === S.family && r.resume_mode !== "ft";
+  const keys = new Set([...RESUME_KEYS, ...Object.keys(SIZE_KEYS)]);
+  document.querySelectorAll(".form-row[data-key]").forEach((row) =>
+    row.classList.toggle("row-resume", on && keys.has(row.dataset.key)));
+}
+
 async function resumeClick() {
   const r = S.run || {}, was = r.values || {}, box = $("resumeChoice");
   // the previews as the Samples tab has them now (prompts, seed, size, steps, CFG, Turbo strength, the preview
   // checkpoint tick), block swap, the save schedule and the learning rate go with the resume
-  const samples = r.family === S.family ? Object.fromEntries(["SAMPLE_PROMPT", "SAMPLE_SEED", "SAMPLE_WIDTH",
-    "SAMPLE_HEIGHT", "SAMPLE_STEPS", "SAMPLE_CFG_SCALE", "FAMILY_TURBO_STRENGTH", "SAMPLE_CHECKPOINT", "BLOCKS_SWAP",
-    "FAMILY_PREVIEW_LOOK",
-    "SAMPLE_EVERY_N_EPOCHS", "SAMPLE_LATER", "SAMPLE_UNTIL_EPOCH", "SAMPLE_EVERY_AFTER",
-    "SAVE_EVERY_N_EPOCHS", "SAVE_LATER", "SAVE_UNTIL_EPOCH", "SAVE_EVERY_AFTER",
-    "LEARNING_RATE", "ADAPTIVE_LR_MIN", "ADAPTIVE_LR_MAX"]
+  const samples = r.family === S.family ? Object.fromEntries(RESUME_KEYS
     .filter((k) => k in S.values).map((k) => [k, S.values[k]])) : {};
   const diff = r.family === S.family ? Object.keys(SIZE_KEYS).filter((k) => S.values[k] !== undefined &&
     String(S.values[k]).trim() !== "" && Number(S.values[k]) !== Number(was[k])) : [];
@@ -1582,6 +1592,7 @@ const RUN_LABELS = {idle: "Idle", starting: "Starting", running: "Running", paus
 
 async function pollRun() {
   try { S.run = await api("/api/run"); } catch (e) { return; }
+  resumeMarks();
   if (training() !== S.wasTraining) {             // the LoRA lists' Studio buttons show only between runs
     if (S.wasTraining !== undefined && $("tab-training").classList.contains("active")) loadCheckpoints();
     S.wasTraining = training();

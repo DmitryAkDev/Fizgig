@@ -1192,6 +1192,15 @@ input[type="range"] {
   content: "New"; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
   font-size: 7.5pt; font-weight: 600; letter-spacing: 0.04em; color: var(--text-on-color); background: var(--accent);
 }
+/* a paused run: the rows Resume takes from the form (app.js resumeMarks) */
+.form-row.row-resume {
+  padding: 6px 10px; margin: 4px 0; border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent); border-left: 3px solid var(--accent);
+}
+.form-row.row-resume .field-label::after {
+  content: "Applies on Resume"; margin-left: 8px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+  font-size: 7.5pt; font-weight: 600; letter-spacing: 0.02em; color: var(--text-on-color); background: var(--accent);
+}
 .form-row textarea, .caption-card textarea {
   width: 100%; max-width: 720px; background: var(--bg-inset); color: var(--text-primary);
   border: 1px solid var(--border); font-family: var(--font-family); font-size: 10pt; padding: 6px;

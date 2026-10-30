@@ -265,10 +265,11 @@ def form(desc):
     ])
     ks = kinds(desc)
     params = [
-        _row("_when_read", "These settings are read when a run starts. A paused run resumes with its own settings"
-             + (" (only a new picture size is offered)" if pictures else "") + "; a dataset or caption change needs a "
-             "fresh run." + (" The previews' prompts can change while it trains, on the Samples tab." if pictures else ""),
-             "note"),
+        _row("_when_read", "These settings are read when a run starts. A paused run resumes with its own settings, "
+             "except the ones marked Applies on Resume while it's paused: the learning rate, the save schedule, block "
+             "swap" + (", the picture size and the Samples tab's previews" if pictures else "") + ". A dataset or "
+             "caption change needs a fresh run." + (" The previews' prompts can also change while it trains, on the "
+             "Samples tab." if pictures else ""), "note"),
         _row("FAMILY_KIND", "Kind of training", "radio", choices=[label for _, label in ks], default=ks[0][1],
              sets={label: kind_sets(desc, k) for k, label in ks if kind_sets(desc, k)}) if len(ks) > 1 else None,
         _row("TRAIN_SUBFOLDERS", "Also train on its sub-folders", "check", SUBFOLDERS_HINT, default=False),
