@@ -4587,8 +4587,7 @@ async function prepSummary() {
   if (crops) $("prepNoFaces").style.display = "none";
   else $("prepNoFaces").style.display = S.prep.opts.face_tools ? "none" : "";
   const side = Math.floor(Math.sqrt(p.mp * 1e6) / 16) * 16;
-  $("prepMpHint").textContent = crops ? `MP: crops of ${side}×${side}, made now so you can check them on the Captions ` +
-    "tab. Each run makes its own at Start, at the size it trains at; a picture smaller than the crop trains whole." :
+  $("prepMpHint").textContent = crops ? `MP (crops of ${side}×${side})` :
     "MP (larger images shrink to fit; smaller are left alone)";
   $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
