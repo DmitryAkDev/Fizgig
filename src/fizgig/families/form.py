@@ -338,8 +338,9 @@ def form(desc):
                  "caption to bring it back. Needs the Krea 2 text encoder set in Preferences."),
             _row("RECAPTION_FIRST", "First try uses", "choice",
                  "The Captions tab's instruction for that task, as you've edited it there. The defaults are written "
-                 "for a person (viewpoint, whether the face shows): for an object or concept, set both tries to "
-                 "Training caption for an object or concept; for a style, Style; or Custom with your own instruction.",
+                 "for a person (viewpoint, whether the face shows): for an object or product, set both tries to "
+                 "Training caption for an object or product; for a style, Style; for anything else, Custom with "
+                 "your own instruction.",
                  [label for _key, label in _recaption_choices()]),
             _row("RECAPTION_SECOND", "Second try uses", "choice",
                  "Used when the first new caption didn't help. Set separately from the first try.",

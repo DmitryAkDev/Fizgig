@@ -5582,7 +5582,7 @@ async function studioMetrics() {
   else if (m.like_base == null || m.like_tweak == null) put("like", "Face likeness: no face in render");
   else {
     const lb = m.like_base * 100, lt = m.like_tweak * 100, d = lt - lb;
-    put("like", `Likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
+    put("like", `Face likeness ${lb.toFixed(0)}% ${d > 0.5 ? "▲" : d < -0.5 ? "▼" : "→"} ${lt.toFixed(0)}%`, d > 0.5 ? "good" : d < -0.5 ? "bad" : "");
   }
   $(chips.like).title = m.embedder ? `Look match: ${m.embedder} (scores are on its own scale)` : "";
   put("grid", `Grid ${m.grid_base.toFixed(2)} → ${m.grid_tweak.toFixed(2)}`, m.grid_delta > 0.05 ? "bad" : m.grid_delta < -0.05 ? "good" : "");
@@ -6494,7 +6494,8 @@ async function loadCaptionOptions() {
   document.querySelector("#capAll").closest(".section-card").style.display = pictures ? "" : "none";
   for (const id of ["capModel", "capTask", "capTokens"]) $(id).closest(".field-row").style.display = pictures ? "" : "none";
   $("capModelHint").style.display = pictures ? "" : "none";
-  if (!pictures) { $("capInstrBox").style.display = "none"; $("capTaskHint").style.display = "none"; }
+  if (!pictures) $("capInstrBox").style.display = "none";
+  $("capTaskHint").style.display = pictures && qwenOn() ? "" : "none";       // fillTasks ran while the row was hidden
   if (o.song_words) { $("capSongWords").placeholder = "e.g. " + o.song_words; $("capSongWords").value = saved.songWords || ""; }
 }
 

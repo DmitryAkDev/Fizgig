@@ -77,9 +77,9 @@ DETAILED_DESCRIPTION_INSTRUCTION = (
     "State only what is visible — no speculation, no names, no style commentary."
 )
 
-# --- object / concept captioning -------------------------------------------------------------
+# --- object / product captioning -------------------------------------------------------------
 # The identity instructions above are written for a person (viewpoint, face visible, pose, clothing).
-# A product, object or concept set has none of those, and the person wording made the captioner look
+# A product or object set has none of those, and the person wording made the captioner look
 # for them (#244). Rather than branch the person instruction - which would move every person caption
 # and both auto-recaption tries - objects get their own task. No SUBJECT_RULE: its woman/man examples
 # would pull a small captioner back toward people.
@@ -135,7 +135,7 @@ CAPTION_TASKS = {
     "detailed":   ("Detailed description", DETAILED_DESCRIPTION_INSTRUCTION, 160),
     "exhaustive": ("Exhaustive detail", DETAILED_CAPTION_INSTRUCTION, 240),
     # The four above are the identity path (a person), the common case and auto-recaption's defaults.
-    "object":     ("Training caption for an object or concept", OBJECT_CAPTION_INSTRUCTION, 120),
+    "object":     ("Training caption for an object or product", OBJECT_CAPTION_INSTRUCTION, 120),
     # Style last.
     "style":      ("Style — contents only (trigger word names the style)",
                    STYLE_CAPTION_INSTRUCTION, 160),

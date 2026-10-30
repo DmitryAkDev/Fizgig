@@ -170,7 +170,7 @@ def run_ablation(engine, *, prompt, class_prompt="", seeds=(1,), width=768, heig
 
     res = {"blocks": ablation_order(engine), "windows": windows(engine), "conds": [(c, l) for c, l, _ in conds],
            "seeds": list(seeds), "size": [width, height], "prompt": prompt, "class_prompt": class_prompt,
-           "thumbs": {}, "pics": {}, "scores": {}}
+           "thumbs": {}, "pics": {}, "scores": {}, "photos": base is not None}
     state = engine.default_state(width, height)
     # exact attention for a measurement: comfy-kitchen's INT8 kernel (~1.6% per call) would ride on every score
     _i8a_was = getattr(engine, "int8_attention", False)
@@ -416,7 +416,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                          + f'<div class="note" style="margin-top:6px">{_html.escape(text)}</div></div>')
         # likeness rows show only where a group has a face score (block_profile's faces test): the explanations follow
         faced = any(trig.get(w, {}).get("score") is not None for w, _, _ in abl["windows"])
-        photos = abl["gain"].get("trigger") is not None              # subject photos were given
+        photos = bool(abl.get("photos"))                                # subject photos were given
         parts.append('<div class="card"><h2>Each group of blocks on its own</h2><p class="lead">Each picture is '
                      "the LoRA with <b>only this group switched on</b>. " + (
                      "The percentages are shares of what the whole "
@@ -425,8 +425,8 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                      "without the trigger 31% as like your subject as the whole LoRA does. This section shows where "
                      "likeness and bleed come from." if faced else
                      "<i>Changes the picture by 40%</i> means these blocks alone move the picture 40% as far as the "
-                     "whole LoRA does." + ("" if photos else
-                     " Add subject photos (a person LoRA) to also see likeness and bleed.")) + "</p>"
+                     "whole LoRA does." + (" No face was found in the renders, so likeness and bleed aren't shown."
+                     if photos else " Add subject photos (a person LoRA) to also see likeness and bleed.")) + "</p>"
                      f'<div class="grid">{"".join(head + cells)}</div></div>')
         cells = []
         for w, l, bs in abl["windows"]:
@@ -440,8 +440,8 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                      "<i>Likeness drops by 19%</i> means the face loses 19% of what the LoRA added; <i>Bleed drops "
                      "by 24%</i> means a prompt without the trigger looks 24% less like your subject (the good "
                      "direction); <i>about the same</i> means the other blocks make up for this group." if faced else
-                     "<i>Picture changes by 19%</i> means leaving this group out moves the picture that far from the "
-                     "whole LoRA's; a small change means the other blocks make up for it.") + "</p>"
+                     "<i>Picture changes by 19%</i> means leaving this group out moves the picture by 19% of the "
+                     "change the whole LoRA makes; a small change means the other blocks make up for it.") + "</p>"
                      f'<div class="grid">{"".join(cells)}</div></div>')
         offs = [c for c, _ in abl["conds"] if c.startswith("off:")]
         if offs:
@@ -475,6 +475,7 @@ def write_report(desc, lora_path, stats, abl, output_html, labels):
                      f'{len(abl["seeds"])} seed(s) · {abl["size"][0]}×{abl["size"][1]}. '
                      + (f"Likeness and bleed are measured by face recognition "
                         f"({_html.escape(str(abl.get('embedder') or 'ArcFace'))}) against your subject photos. "
+                        if faced else "No face was found in the renders, so only picture change is measured. "
                         if photos else "No subject photos, so only picture change is measured. ")
                      + "Groups overlap in what they do, so "
                      "the percentages don't add up to 100%; anything under 10% either way is within "

@@ -212,31 +212,41 @@ def profile_prefill(lora):
 
 def _run_sample_prompt(lora, trig):
     """(prompt, the same prompt without the trigger) from the run's first Samples prompt - what its owner set up to
-    look at this LoRA, a person or a style - or ("", "") when the run isn't in history. A Fizgig LoRA Isolation run's
-    prompts use joined words (zwxemwoman) a bleed check can't strip, so it keeps the portrait."""
+    look at this LoRA, a person or a style - or ("", "") when the run isn't in history or that prompt doesn't hold
+    the trigger (the untouched default prompt). A Fizgig LoRA Isolation run's prompts use joined
+    words (zwxemwoman) a bleed check can't strip, and Edit and Slider runs don't preview with these prompts, so
+    those keep the portrait."""
     from fizgig.web import history
+    from fizgig.families import registry
+    from fizgig.families.form import _kind
     name = re.sub(r"-\d{6}$", "", os.path.splitext(os.path.basename(lora))[0])       # an epoch file: its run's name
-    norm = lambda p: os.path.normcase(os.path.abspath(p or "."))
     try:
-        run = next((r for r in history.runs() if (r.get("lora") or "") == name
-                    and norm(r.get("output_dir")) == norm(os.path.dirname(lora))), None)
+        run = next((r for r in reversed(history.runs()) if history._same_run(r, name, os.path.dirname(lora))), None)
     except Exception:
         run = None
     vals = (run or {}).get("values") or {}
     if not run or vals.get("FAMILY_MULTI_PERSON"):
         return "", ""
+    desc = registry.get(run.get("family") or "")
+    if desc and _kind(desc, vals) in ("edit", "slider"):
+        return "", ""
     first = next((ln.strip() for ln in str(vals.get("SAMPLE_PROMPT") or "").splitlines() if ln.strip()), "")
     if not first:
         return "", ""
-    word = trig or str(vals.get("CAPTION_TRIGGER_WORD") or "").strip()
-    if not word and run.get("image_folder"):                         # the word the captions start with
+    words = [trig, str(vals.get("CAPTION_TRIGGER_WORD") or "").strip()]      # a phrase trigger: also each part
+    words += [w.strip() for w in trig.split(",") if w.strip()] if "," in trig else []
+    if run.get("image_folder"):                                      # the word the captions start with
         try:
             from fizgig.families.multi_person import caption_trigger
-            word = caption_trigger(run["image_folder"], vals.get("DATASET_CAPTION_EXT") or ".txt") or ""
+            words.append(caption_trigger(run["image_folder"], vals.get("DATASET_CAPTION_EXT") or ".txt") or "")
         except Exception:
-            word = ""
-    bare = re.sub(rf"(?i)\b{re.escape(word)}\b", "", first) if word else first
-    bare = re.sub(r"\s*,\s*(,\s*)+", ", ", bare).strip(" ,")              # the comma the trigger leaves behind
+            pass
+    word = next((w for w in words if w and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", first, re.I)), "")
+    if not word:
+        return "", ""
+    bare = re.sub(r"(?<!\w)" + re.escape(word) + r"(?!\w)", "", first, flags=re.I)    # as sample_caption
+    bare = re.sub(r"\s+([,.])", r"\1", bare)
+    bare = re.sub(r"\s*,\s*(,\s*)*", ", ", bare).strip(" ,")            # the comma the trigger leaves behind
     return first, bare
 
 
