@@ -79,7 +79,7 @@ On one computer the transfers cost next to nothing, so a training share pays eve
 
 ### Your home GPU helping a pod
 
-A pod can't reach your home computer, so your home computer connects to it instead. On the home computer, open **Helpers** > **Help another Fizgig with this GPU**, then press **Help it with previews** or **Help it train** beside the pod. The pod shows there once it's on the **Pods** tab. Starting a run on the home computer stops its helping, and the pod's run carries on alone.
+A pod can't reach your home computer, so your home computer connects to it instead. On the home computer, open **Helpers** > **Help another Fizgig with this GPU**, then press **Help it with previews** or **Help it train** beside the pod. The pod shows there once it's on the **Pods** tab. Leave its password box empty: with your RunPod API key on the Pods tab, Fizgig finds the pod's password itself. Starting a run on the home computer stops its helping, and the pod's run carries on alone.
 
 <p align="center"><img src="assets/screenshots/helpers_pod.png" alt="Help another Fizgig with this GPU: home helping a pod train, its verdict, and the pod's checkpoints ready to bring home" width="800"></p>
 

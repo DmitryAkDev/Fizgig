@@ -1189,6 +1189,14 @@ def finish(name, ok, error=""):
     return {"ok": True}
 
 
+def _pod_password(url):
+    """A pod of this account's password, found as Add does (its RunPod settings, else its start-up log), or ""."""
+    if "proxy.runpod.net" not in url:
+        return ""
+    from fizgig.web import pod_stop, pods
+    return pods.login_password(pod_stop.api_key(_srv().load_prefs()), url)
+
+
 def help_start(url, password="", mode="previews"):
     """This computer helps the run at `url` with its previews, or (mode "share") trains its share of each epoch;
     it connects, so the other end needn't reach it."""
@@ -1196,6 +1204,7 @@ def help_start(url, password="", mode="previews"):
     s = _srv()
     cookies = dict(s.load_prefs().get("helper_out_cookies") or {})
     c = Client(url, cookies.get(url, ""))
+    password = password or ("" if c.cookie else _pod_password(url))
     if password:
         c.login(password)
         cookies[url] = c.cookie
@@ -1203,7 +1212,7 @@ def help_start(url, password="", mode="previews"):
     try:
         i = c.call("/api/helper/info")
     except PermissionError:
-        raise ValueError("Its password is needed.")
+        raise ValueError("Its password is needed: type it into the box beside it.")
     from fizgig.web import pods
     if (pods._build_word(s.about_info().get("commit") or "", i.get("commit")) or "same") != "same":
         raise ValueError("It runs a different Fizgig version: update both, then try again.")
@@ -1357,6 +1366,7 @@ def remote_checkpoints(url, password=""):
     """The run at `url`: its name and its saved checkpoints, newest first (password: log in to it first, and keep
     the login)."""
     url, c = _client_for(url)
+    password = password or ("" if c.cookie else _pod_password(url))
     if password:
         c.login(password)
         s = _srv()
@@ -1635,6 +1645,7 @@ def home_set(url, on=None, previews=None, delete=None, password=""):
     (its previews too), and delete the pod once its run has finished and everything is home and checked."""
     url, c = _client_for(url)
     s = _srv()
+    password = password or ("" if c.cookie else _pod_password(url))
     if password:
         c.login(password)
         cookies = dict(s.load_prefs().get("helper_out_cookies") or {})

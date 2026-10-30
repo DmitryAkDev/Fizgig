@@ -7901,7 +7901,10 @@ function helpDraw() {
   const out = d.out || [];
   $("helpOut").replaceChildren(...out.flatMap((o) => {
     const mine = d.helping && d.helping.url === o.url;
-    const pw = el("input", {type: "password", class: "w-combo-md", placeholder: "its password", autocomplete: "off"});
+    const isPod = /proxy\.runpod\.net/.test(o.url || "");
+    const pw = el("input", {type: "password", class: "w-combo-md", autocomplete: "off",
+      placeholder: isPod ? "password: leave empty" : "its password",
+      title: isPod ? "Fizgig finds a pod's password itself. Type it only if Fizgig says it couldn't." : ""});
     // its checkpoints list stays as it is across redraws (the ticks too); asked again only when it's opened
     const kept = S.help.remote === o.url && S.help.panel && S.help.panel.url === o.url;
     const panel = kept ? S.help.panel.box : el("div", {class: "helper-remote", style: S.help.remote === o.url ? "" : "display:none"});

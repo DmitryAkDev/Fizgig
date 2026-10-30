@@ -167,7 +167,7 @@ Model files download from the **Preferences** tab: one **Download models for me*
 
 1. **[⚡ Deploy on RunPod](https://console.runpod.io/deploy?type=GPU&gpu=RTX+5090&count=1&template=bdrdew7hxw&ref=vkb387ep)**, and add a **300 GB Volume disk** before **Deploy Pod**: RunPod doesn't add one for you ([how](docker/README.md#give-it-a-disk-on-runpods-deploy-page)).
 2. Wait for **Ready** in the pod's **Logs** tab; the password is printed under it.
-3. **Connect → HTTP port 8081**, and log in with that password.
+3. **Connect → HTTP port 8081**, and log in with that password. (Opened from Fizgig on your own computer, with your RunPod API key on its Pods tab, the pod logs you in by itself.)
 4. **Preferences → Download models for me**, upload your training folder on the **Start** tab, and press **Start** on the **Training** tab.
 
 Prefer Vast.ai? The same image runs there: **[Fizgig on Vast.ai](https://cloud.vast.ai/?ref_id=757773&creator_id=757773&name=Fizgig%20LoRa%20Training%20and%20Fine-tuning)** ([guide](docs/VAST.md)).
