@@ -7748,8 +7748,11 @@ function helpActivity(h) {
     "round" : "preview round"}` : "Ready: it starts with this computer's next run", "", null];
   if (a.kind === "models") return [`Getting ${a.what ? a.what + " " : "models "}${a.for ? `for ${a.for} ` : ""}` +
     `(${a.got.toFixed(1)} of ${a.total.toFixed(1)} GB): the job starts when it has them`, "", a.got / a.total];
-  if (a.kind === "previews") return [`Rendering ${a.run ? a.run + "'s " : ""}previews for epoch ${a.epoch}` +
-    (a.queued ? ` · ${a.queued} more queued` : ""), "", a.progress];
+  // each step of a round says what it is (sending the LoRA, loading the model there the first time - minutes for a
+  // big model - waiting its turn), not "Rendering" all through
+  if (a.kind === "previews") return [(a.text ? `${a.text} · ` : "Rendering ") +
+    `${a.run ? a.run + "'s " : ""}previews for epoch ${a.epoch}` + (a.queued ? ` · ${a.queued} more queued` : ""),
+    "", a.progress];
   if (a.kind === "share") return [a.text || `Training its share of epoch ${a.epoch}` +
     (a.images ? ` (${a.images} images)` : ""), "", a.progress];
   if (a.kind === "check") return ["Rendering a check picture", "", a.progress];
@@ -7761,7 +7764,7 @@ function helpJob(h, kind) {
     (kind !== "share" || h.share_ready !== false);
   const title = kind === "previews" ? "Previews" : "Training share";
   const what = kind === "previews" ? "Renders this computer's previews, so training doesn't stop for them." :
-    "Trains its share of each epoch's images alongside this GPU, then the two combine.";
+    "Trains its share of each epoch's images alongside this GPU, then the two combine. Switched on while a run trains, it joins at the next epoch it's ready for.";
   const stat = kind === "previews" ? h.previews_stat : h.share_stat;
   const box = el("input", {type: "checkbox", class: "switch", ...(on ? {checked: true} : {}), ...(usable ? {} : {disabled: true})});
   const job = el("label", {class: `helper-job${on ? " on" : ""}${usable ? "" : " off-limits"}`},

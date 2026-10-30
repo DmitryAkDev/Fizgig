@@ -1064,7 +1064,8 @@ def _send_round(h, lv, rd, out_dir, run):
             raise ValueError(st.get("error") or "the helper lost the job")
         w = st.get("worker") or {}
         act(kind="previews", progress=.3 if st["state"] != "rendering" else min(.95, .3 + (time.time() - t0) / 120),
-            text=w.get("text") if st["state"] == "loading" else "")
+            text=(f"Loading the model there, the first round only ({w.get('text') or 'starting'})"
+                  if st["state"] == "loading" else "Waiting its turn there" if st["state"] == "queued" else ""))
         if not os.path.isdir(rd):
             return
         time.sleep(1.5)
@@ -1853,7 +1854,7 @@ def _home_once(url, row, st):
         st["text"] += ", and the pod was stopped (its own setting), its files still on it"
         return 300
     if not (finished and row.get("delete") and want):
-        return 300 if state in ("completed", "", "idle", "stopped", "failed") else 60
+        return 300 if state in ("completed", "", "idle", "stopped", "failed") else (15 if row.get("move") else 60)   # a moved run: little left for Bring back
     # A: never while the pod still works for a computer (previews, a share, a move on its way), or trains anything
     i = c.call("/api/helper/info", timeout=20)
     if (i.get("sharing") or i.get("helping") or i.get("training") or (i.get("worker") or {}).get("state") in
