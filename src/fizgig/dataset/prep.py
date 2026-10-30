@@ -23,7 +23,8 @@ from fizgig.dataset.masks import is_mask_file
 
 IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.tif'}
 LOOK_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
-MODES = ("Auto Prep (Face Crops)", "Resize Only", "Face Crop Only")
+MODES = ("Auto Prep (Face Crops)", "Resize Only", "Face Crop Only", "Detail Crops (Style)")
+FACE_MODES = ("Auto Prep (Face Crops)", "Face Crop Only")
 MEGAPIXELS = ["0.25", "0.37", "0.5", "0.75", "1.0", "1.5", "2.0", "2.4", "3.0", "4.2"]
 FACE_TARGETS = ["Largest Face", "Largest Male Face", "Largest Female Face"]
 
@@ -149,15 +150,22 @@ def summary(folder, mode, replace, prep_mp, train_mp=None):
         what = f"{count} → {sized}, plus one face close-up each{f' (≈{n * 2} files)' if n else ''}"
     elif mode == "Face Crop Only":
         what = f"{count} → replaced by just the cropped face from each photo, saved as PNG"
+    elif mode == "Detail Crops (Style)":
+        from fizgig.dataset.detail_crops import DIR, side
+        what = (f"{count} stay as they are; each gets one {side(prep_mp)}×{side(prep_mp)} crop at its own scale "
+                f"(from its full-size original when there is one) in {DIR}, and the folder trains those crops too, at "
+                f"whatever size each run trains at")
     else:
         what = f"{count} → {sized}"
     originals = ("Your original files are replaced ⚠ there is no undo." if replace else
                  "Your originals are moved to the 'originals' subfolder — nothing is deleted.")
+    if mode == "Detail Crops (Style)":
+        originals = "Your pictures aren't changed."
     lines = [f"{what}. Everything lands in your training folder. {originals}"]
-    if mode != "Resize Only" and median_area is not None and median_area <= area:
+    if mode in FACE_MODES and median_area is not None and median_area <= area:
         lines.append(f"⚠ Your images are already at or below {prep_mp:g} MP — face close-ups cut from them will be "
                      f"soft. If you have higher-res versions, prep from those instead.")
-    if mode != "Resize Only":
+    if mode in FACE_MODES:
         lines.append("Next: eyeball the face close-ups on the Captions tab and Remove any blurry ones before "
                      "captioning.")
     warn = ""
@@ -301,9 +309,19 @@ class Prep:
         self._originals = {}
         area = target_area(prep_mp)
         face_mode = face_mode_of(face_label)
-        if self.detector is not None and mode != "Resize Only" and getattr(self.detector, "backend_name",
+        if self.detector is not None and mode in FACE_MODES and getattr(self.detector, "backend_name",
                                                                              "insightface") != "insightface":
             self.log(f"Face finder: {self.detector.describe()}\n")      # only when it isn't the usual one
+        if mode == "Detail Crops (Style)":           # the folder switched to detail crops, and this size's made now
+            from fizgig.dataset import detail_crops
+            detail_crops.switch(folder, True)
+            self.log("Mode: Detail crops (for a style)\n\nThis folder now trains detail crops too: each picture's "
+                     "crop at the size each run trains at, made at Start (captioned there with the Style task).\n")
+            todo = detail_crops.make(folder, prep_mp, log=lambda t: self.log(t + "\n"))
+            self.log(f"\nThe {prep_mp:g} MP crops are in {detail_crops.size_dir(folder, prep_mp)}"
+                     + (f"; {len(todo)} have no caption yet - caption them on the Captions tab (Show: detail crops), "
+                        "or Start captions them" if todo else "") + ".\n")
+            return
         if mode == "Auto Prep (Face Crops)":
             self.auto_prep(folder, folder, area, face_mode, face_padding, replace)
         elif mode == "Face Crop Only":

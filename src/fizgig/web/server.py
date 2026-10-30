@@ -1027,7 +1027,7 @@ def _plan(family_key, values, image_folder, resume="", ft_continue=None, models=
         caption_concept=str((load_state().get("captions") or {}).get("concept") or ""))
     # auto-recaption's trigger word per folder: a sub-folder's or another subject's own (the Captions tab's for it, else
     # the word its captions open with), never the training folder's
-    trig = {f"{rel}/": subject_trigger(f, ext) for rel, f in launch.run_subfolders(desc, inputs)}
+    trig = {launch.item_prefix(rel): subject_trigger(f, ext) for rel, f in launch.run_subfolders(desc, inputs)}
     if inputs.get("multiconcept"):
         trig.update({f"s{i}:": str(values.get(f"DOP_FOLDER_TRIGGER{i}") or "")
                      for i, f in enumerate(inputs.get("extra_folders") or [], start=2) if f})
@@ -1268,7 +1268,15 @@ def dataset_zip(folder, captions_only, ext) -> str:
         os.path.splitext(e.name)[1].lower() in MEDIA or re.fullmatch(r"fizgig_\w+\.json", e.name)))]
     if not keep:
         raise ValueError(f"No {ext} captions in that folder." if captions_only else "That folder is empty.")
-    return _zip_file("dataset_", [(e.path, e.name) for e in sorted(keep, key=lambda e: e.name)])
+    files = [(e.path, e.name) for e in sorted(keep, key=lambda e: e.name)]
+    from fizgig.dataset import detail_crops
+    if detail_crops.is_on(folder):                # its detail crops, in their folders (an upload puts them back there)
+        for _label, d in detail_crops.sizes(folder):
+            sub = f"{detail_crops.DIR}/{os.path.basename(d)}/"
+            files += [(e.path, sub + e.name) for e in sorted(os.scandir(d), key=lambda e: e.name) if e.is_file()
+                      and (e.name.lower().endswith(ext) or (not captions_only and os.path.splitext(e.name)[1].lower()
+                                                            in MEDIA))]
+    return _zip_file("dataset_", files)
 
 
 def samples_zip(folder, name) -> str:
@@ -2434,12 +2442,18 @@ def _finish_upload(name, ext, dest, tmp, single):
                     except ValueError:
                         badname.append(base)
                         continue
-                    if base in saved or os.path.exists(os.path.join(dest, base)):
-                        replaced.append(base)
-                    with z.open(info) as src, open(os.path.join(dest, base), "wb") as out:
+                    # a detail crop goes back in its folder (fizgig_detail_crops/<size>/): it shares its picture's name
+                    parts, into, key = info.filename.replace("\\", "/").split("/"), dest, base
+                    if len(parts) >= 3 and parts[-3] == "fizgig_detail_crops" and re.fullmatch(r"\d+(\.\d+)?mp",
+                                                                                               parts[-2]):
+                        into, key = os.path.join(dest, parts[-3], parts[-2]), "/".join(parts[-3:-1] + [base])
+                        os.makedirs(into, exist_ok=True)
+                    if key in saved or os.path.exists(os.path.join(into, base)):
+                        replaced.append(key)
+                    with z.open(info) as src, open(os.path.join(into, base), "wb") as out:
                         while chunk := src.read(1 << 20):
                             out.write(chunk)
-                    saved.append(base)
+                    saved.append(key)
         except zipfile.BadZipFile:
             raise ValueError(f"{name}: not a readable zip.")
         finally:
@@ -3322,7 +3336,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(p)
         if path == "/api/captions":
             return self._captions((qs.get("folder") or [""])[0], (qs.get("ext") or [".txt"])[0],
-                                  (qs.get("family") or [""])[0])
+                                  (qs.get("family") or [""])[0], (qs.get("root") or [""])[0])
         return self.json({"error": "not found"}, 404)
 
     def _log_stream(self, since):
@@ -3456,7 +3470,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.json({"items": [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
                                      "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]})
 
-    def _captions(self, folder, ext, family=""):
+    def _captions(self, folder, ext, family="", root=""):
         out = []
         try:
             names = sorted(os.listdir(folder))
@@ -3477,7 +3491,9 @@ class Handler(BaseHTTPRequestHandler):
             mask = mask_for_stem(folder, stem, lower)        # masked training: the picture's mask, shown on its row
             out.append((n, p, {"caption": text, "size": _media_size(p),
                                **({"mask": os.path.basename(mask)} if mask else {})}))
-        return self.json({"items": pair_songs(out)})
+        from fizgig.dataset import detail_crops      # the Captions tab's Show: the folder's detail crop sizes
+        return self.json({"items": pair_songs(out),
+                          "crops": [{"label": l, "path": p.replace("\\", "/")} for l, p in detail_crops.sizes(root or folder)]})
 
     # -- POST
     def do_POST(self):

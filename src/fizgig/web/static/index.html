@@ -279,6 +279,14 @@
                   Face close-ups only</label>
                 <div class="field-hint radio-hint">Keep only the cropped face from each photo: the full shot is not
                   kept.</div>
+                <label class="radio-label"><input type="radio" name="prepMode" value="Detail Crops (Style)">
+                  Detail crops — for a style</label>
+                <div class="field-hint radio-hint">Your pictures stay as they are, and each also trains as one square
+                  crop at its own scale, so brushwork, canvas grain and texture aren't shrunk away. The crop is a random
+                  spot (moved off flat areas), the same at every size; crops are made at Start for the size each run
+                  trains at, and captioned there with the Style task. Run it once per folder: it switches the folder
+                  over and makes the crops at the Target megapixels below, so you can check them on the Captions
+                  tab.</div>
                 <div class="field-row prep-opts">
                   <span class="field-label">Target megapixels:</span><select id="prepMp" class="w-combo"></select>
                   <span class="field-hint">MP (larger images shrink to fit; smaller are left alone)</span>
@@ -586,6 +594,8 @@
                 <input type="text" id="captionExt" class="w-num" value=".txt">
                 <a class="btn" id="dsZip" title="The training folder's pictures, clips and songs with their captions, in one zip">⬇ Folder (.zip)</a>
                 <a class="btn" id="dsZipCaps" title="Just the caption files, in one zip">⬇ Captions only (.zip)</a></div>
+              <div class="field-row" id="capShowRow" style="display:none"><span class="field-label">Show:</span>
+                <select id="capShow" class="w-combo" title="The training folder's pictures, or its detail crops at one size (Image Prep's Detail crops): every tool on this tab works on the ones shown"></select></div>
               <div class="field-row"><span class="field-label">Search:</span>
                 <input type="text" id="capSearch" class="w-path" placeholder="file name or caption text"></div>
               <div class="field-row"><span class="field-label">Sort:</span>

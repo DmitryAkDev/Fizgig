@@ -544,6 +544,10 @@ class FamilyDescription:
     # Megapixels, blended into the full size; its own cache folder (a latent file is named by the picture's size,
     # not the training size). Off for clips (H3) and a family with no pictures (ACE-Step)
     resolution_stages: bool = True
+    # Detail crops (dataset/detail_crops.py): a training folder switched to them in Image Prep also trains one square
+    # crop of each picture at its own scale (brushwork 1:1), at the size the run trains at; off for clips (H3) and a
+    # family with no pictures (ACE-Step)
+    detail_crops: bool = True
     network_hint: str = ""            # the line under Network Type in place of the LoRA / LoKR trade
     ema_hint: str = ""                # the line under Weight averaging (EMA) in place of the shared one
     ema_section: str = ""             # "other": the EMA row sits in Other Options (MiniMax H3's place)

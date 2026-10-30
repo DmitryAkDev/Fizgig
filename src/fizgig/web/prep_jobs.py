@@ -141,7 +141,7 @@ def start(folder, mode, mp, face_label, padding, replace):
         raise ValueError("Choose the training folder on the Start tab first.")
     if mode not in prep.MODES:
         raise ValueError("Pick what to do.")
-    if mode != "Resize Only" and not faces_available():
+    if mode in prep.FACE_MODES and not faces_available():
         raise ValueError("Face detection isn't installed on this machine: run install_fizgig.py to add it.")
     with _lock:
         if _job["state"] == "running":
@@ -152,7 +152,7 @@ def start(folder, mode, mp, face_label, padding, replace):
 
     def work():
         try:
-            det = _face_detector() if mode != "Resize Only" else None
+            det = _face_detector() if mode in prep.FACE_MODES else None
             prep.Prep(_log, det).run(mode, folder, float(mp), face_label, float(padding), bool(replace))
             _log("\nDone.\n")
             end = "done"

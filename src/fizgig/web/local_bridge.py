@@ -69,6 +69,9 @@ def local_files(folder, subfolders=False):
     if subfolders:
         from fizgig.families import launch
         dirs += [(rel + "/", d) for rel, d in launch.subfolders(p)]
+    from fizgig.dataset import detail_crops
+    if detail_crops.is_on(p):                # its detail crops, in their folders (their captions may be hand-edited)
+        dirs += [(f"{detail_crops.DIR}/{os.path.basename(d)}/", d) for _label, d in detail_crops.sizes(p)]
     files = []
     for rel, d in dirs:
         for e in sorted(os.scandir(d), key=lambda e: e.name.lower()):

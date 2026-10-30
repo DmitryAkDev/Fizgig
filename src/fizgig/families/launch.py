@@ -310,6 +310,25 @@ def start_checks(desc, st, image_folder):
                 out.append(f"{len(lack)} caption{'s don' if len(lack) != 1 else ' doesn'}'t contain the trigger word "
                            f"'{trig}' ({', '.join(lack[:3])}{', ...' if len(lack) > 3 else ''}): "
                            + ("that picture trains" if len(lack) == 1 else "those pictures train") + " without it.")
+    trig = _s(st.get("CAPTION_TRIGGER_WORD"))
+    for rel, d in (detail_crop_folders(desc, st) if trig and trig.lower() != "trigger_word" else []):
+        # the detail crops for this size: a caption edited without the trigger (the crop stage writes it in)
+        pat = re.compile(r"(?<!\w)" + re.escape(trig) + r"(?!\w)", re.I)
+        ext = _s(st.get("DATASET_CAPTION_EXT")) or ".txt"
+        lack = []
+        for f in (sorted(os.listdir(d)) if os.path.isdir(d) else []):
+            if not f.lower().endswith(ext.lower()):
+                continue
+            try:
+                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+            except OSError:
+                continue
+            if text.strip() and not pat.search(text):
+                lack.append(f)
+        if lack:
+            out.append(f"{len(lack)} detail crop caption{'s' if len(lack) != 1 else ''} in {rel} don't contain the "
+                       f"trigger word '{trig}': those crops train without it.")
     if not st.get("ADAPTIVE_LR") and "automagic" not in _s(st.get("OPTIMIZER_TYPE")).lower():
         kind = "finetune" if ft_on(desc, st) else "slider" if slider_on(desc, st) else "lora"
         band = next(((lo, hi) for k, lo, hi in (desc.start_lr_bands or ()) if k == kind), None)
@@ -554,7 +573,7 @@ def _media_count(folder):
 
 # Folders Fizgig itself makes inside a training folder: never trained on as sub-folders. Image Prep's Keep them safe
 # (originals, then originals_2, _3... on later runs), Exclude by look and the desktop's Remove. Matched in any case.
-OWN_SUBFOLDERS = {"excluded_by_look", "originals", "removed"}
+OWN_SUBFOLDERS = {"excluded_by_look", "originals", "removed", "fizgig_detail_crops"}
 _OWN_NUMBERED = re.compile(r"originals(_\d+)?", re.IGNORECASE)
 
 
@@ -593,17 +612,84 @@ def subfolders(folder, skip=(), skipped=None):
 
 
 def run_subfolders(desc, st, skipped=None):
-    """The run's sub-folders (subfolders), or [] when the tick is off or doesn't apply."""
-    if not subfolders_on(desc, st):
+    """The run's sub-folders (subfolders, when the tick is on and applies), then its detail crops folder for the size
+    it trains at (detail_crops_on): each its own dataset block, item prefix and cache folder, so the per-image loss,
+    auto-recaption, a move and a training share treat a crop like a sub-folder's picture."""
+    subs = subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
+                                                   ft_reg_dir(desc, st)), skipped) if subfolders_on(desc, st) else []
+    return subs + detail_crop_folders(desc, st)
+
+
+def item_prefix(rel):
+    """A sub-folder's item prefix in the dataset TOML (its key in the per-image loss and the auto-recaption triggers).
+    Detail crops share one for every size, so a crop keeps one loss history through Start at a smaller size and maps
+    to the folder of the size the run trains at."""
+    return "fizgig_detail_crops/" if rel.split("/")[0] == "fizgig_detail_crops" else rel + "/"
+
+
+def detail_crops_on(desc, st):
+    """The training folder is switched to Detail crops (Image Prep) and this run can take them: a standard LoRA of a
+    family with the ability (not an edit, a slider, a fine-tune or Fizgig LoRA Isolation)."""
+    from fizgig.dataset import detail_crops
+    folder = _s(st.get("image_folder"))
+    if not (desc.detail_crops and folder and detail_crops.is_on(folder)):
+        return False
+    return not (edit_on(desc, st) or slider_on(desc, st) or ft_on(desc, st) or multi_person_on(desc, st))
+
+
+def detail_crop_folders(desc, st):
+    """[(relative path, folder)] of the detail crops for the size this dataset trains at (st's megapixels)."""
+    if not detail_crops_on(desc, st):
         return []
-    return subfolders(_s(st.get("image_folder")), (_s(st.get("LORA_OUTPUT_DIR")), _s(st.get("cache_root")),
-                                                   ft_reg_dir(desc, st)), skipped)
+    from fizgig.dataset import detail_crops
+    try:
+        mp = float(st.get("megapixels") or st.get("DATASET_MEGAPIXELS") or 0)
+    except (TypeError, ValueError):
+        return []
+    if mp <= 0:
+        return []
+    d = detail_crops.size_dir(_s(st.get("image_folder")), mp)
+    try:
+        os.makedirs(d, exist_ok=True)            # a size not made yet: the Detail crops stage fills it before caching
+    except OSError:
+        pass
+    return [(f"{detail_crops.DIR}/{detail_crops.size_name(mp)}", d)]
+
+
+def detail_crop_sizes(desc, inputs):
+    """The sizes a run's detail crops are made at: its Target Megapixels, and Start at a smaller size's."""
+    if not detail_crops_on(desc, inputs):
+        return []
+    try:
+        out = [float(inputs.get("megapixels"))]
+    except (TypeError, ValueError):
+        return []
+    smp = stage_mp(desc, inputs)
+    return out + ([smp] if smp else [])
+
+
+def detail_crops_problem(desc, inputs):
+    """Detail crops that still need captions, with no captioner to write them: why it can't start, or ""."""
+    from fizgig.dataset import detail_crops
+    if _s(inputs.get("captioner")) and os.path.isfile(_s(inputs.get("captioner"))):
+        return ""
+    folder, ext = _s(inputs.get("image_folder")), _s(inputs.get("caption_ext")) or ".txt"
+    for mp in detail_crop_sizes(desc, inputs):
+        d = detail_crops.size_dir(folder, mp)
+        pics = detail_crops.pictures(folder)
+        have = {os.path.splitext(n)[0] for n in os.listdir(d) if n.endswith(ext)} if os.path.isdir(d) else set()
+        if any(os.path.splitext(n)[0] not in have for n in pics):
+            return ("Detail crops need captions, written by the captioner: set the Krea 2 text encoder (or a secondary "
+                    "captioning model) in Preferences, or switch Detail crops off for this folder in Image Prep.")
+    return ""
 
 
 def own_skipped_line(desc, st):
     """The run log's one line naming the Fizgig folders the sub-folder tick left out, or "" (none, or tick off)."""
     skipped = []
     run_subfolders(desc, st, skipped)
+    if detail_crops_on(desc, st):                # its detail crops train (as their own block): not "left out"
+        skipped = [s for s in skipped if s.split("/")[0] != "fizgig_detail_crops"]
     if not skipped:
         return ""
     return "[sub-folders] Not trained (Fizgig's own folders): " + ", ".join(skipped[:6]) + (
@@ -1219,7 +1305,7 @@ def dataset_toml(desc, inputs, cache_suffix=""):
         del lines[head:]
     for rel, f in subs:                  # Also train on its sub-folders: each its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"',
-                  f'item_prefix = "{_toml_str(rel + "/")}"']
+                  f'item_prefix = "{_toml_str(item_prefix(rel))}"']
         if root:
             lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for n, f in enumerate(extra, start=2):   # Multi Concept: each subject its own block and cache folder
@@ -1484,6 +1570,8 @@ def start_problems(desc, inputs):
                                       check_captions=not slider_on(desc, inputs, "prompts"), media_exts=exts)
         out += clip_problems(desc, _s(v.get("image_folder")))
     for rel, f in subs:                  # Also train on its sub-folders: each one's captions and clips too
+        if rel.split("/")[0] == "fizgig_detail_crops":
+            continue                     # the Detail crops stage makes and captions them (detail_crops_problem)
         out += checks.training_folder(f, _s(v.get("caption_ext", ".txt")), media_exts=exts,
                                       label=f"the sub-folder {rel}")
         out += clip_problems(desc, f)
@@ -1539,6 +1627,9 @@ def plan(desc, inputs):
         inputs["ADAPTIVE_LR"] = False
         inputs["loss_watch"] = {**(inputs.get("loss_watch") or {}), "per_image_lr": False, "warmup": False}
     p = LaunchPlan(problems=start_problems(desc, inputs))
+    _cp = detail_crops_problem(desc, inputs) if not p.problems else ""
+    if _cp:
+        p.problems.append(_cp)
     if not p.problems:
         try:
             p.dataset_toml = dataset_toml(desc, inputs)
@@ -1578,6 +1669,20 @@ def plan(desc, inputs):
         if n:                           # a resume expects its cache; deleted by hand, it's made again (only what's gone)
             inputs["recache"] = True
             p.console.append(f"[cache] {n} picture(s) have no cache - caching them before the run resumes.\n")
+    crop_sizes = detail_crop_sizes(desc, inputs)
+    if crop_sizes:                      # before caching: the crops (and their captions) the dataset blocks name
+        from fizgig.krea2.caption_text import recaption_instruction
+        instr = os.path.splitext(inputs["DATASET_CONFIG"])[0] + "_crops_instruction.txt"
+        p.files.append((instr, recaption_instruction("style", inputs.get("caption_overrides") or {})[1]))
+        cmd = [inputs["python"], os.path.join(inputs["repo_dir"], "src", "fizgig", "scripts", "detail_crops.py"),
+               "--folder", _s(inputs.get("image_folder")), "--captioner", _s(inputs.get("captioner")),
+               "--instruction_file", instr, "--ext", _s(inputs.get("caption_ext")) or ".txt"]
+        for mp in crop_sizes:
+            cmd += ["--mp", f"{mp:g}"]
+        trig = _s(inputs.get("caption_trigger"))
+        if trig and trig.lower() != "trigger_word":
+            cmd += ["--trigger", trig]
+        p.stages.append(Stage("Detail crops", cmd))
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]

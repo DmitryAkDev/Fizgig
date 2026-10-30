@@ -3576,12 +3576,26 @@ def _move_extras(values):
 
 
 def _run_subfolders(folder, values):
-    """[(relative path, folder)] of the run's sub-folders when it trains them (Also train on its sub-folders)."""
-    if not (values or {}).get("TRAIN_SUBFOLDERS"):
-        return []
+    """[(relative path, folder)] of the run's sub-folders when it trains them (Also train on its sub-folders), and its
+    detail crops for each size it trains at (Target Megapixels, Start at a smaller size's): they go with a move or a
+    training share as a sub-folder does."""
     from fizgig.families import launch
-    return launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
-                                      str(values.get("FAMILY_FT_REG_DIR") or "")))
+    subs = launch.subfolders(folder, (str(values.get("LORA_OUTPUT_DIR") or ""),
+                                      str(values.get("FAMILY_FT_REG_DIR") or ""))) \
+        if (values or {}).get("TRAIN_SUBFOLDERS") else []
+    from fizgig.dataset import detail_crops
+    if not detail_crops.is_on(folder):
+        return subs
+    crops = []
+    for k in ("DATASET_MEGAPIXELS", "STAGE_MP"):
+        try:
+            mp = float(str((values or {}).get(k) or "0").split(" ")[0])
+        except ValueError:
+            continue
+        d = detail_crops.size_dir(folder, mp) if mp > 0 else ""
+        if d and os.path.isdir(d) and all(c[1] != d for c in crops):
+            crops.append((f"{detail_crops.DIR}/{detail_crops.size_name(mp)}", d))
+    return subs + crops
 
 
 def _safe_rel(rel):

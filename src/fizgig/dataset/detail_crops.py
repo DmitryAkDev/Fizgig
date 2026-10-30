@@ -1,0 +1,205 @@
+"""Detail crops, for a style LoRA: one square crop of each training picture at the picture's own scale, so brushwork,
+canvas grain and texture train 1:1 instead of being shrunk away with the whole picture. They live in the training
+folder's fizgig_detail_crops/<size>mp/ folder (one per Target Megapixels that has trained), each crop named as its
+picture (its caption and its cropped mask beside it), and train alongside the pictures themselves, which keep the
+composition. Switched on per training folder (fizgig_detail_crops.json, written by Image Prep's Detail crops); made at
+Start for the size the run trains at (families/launch.py's Detail crops stage), so changing Target Megapixels or
+Start at a smaller size never trains a crop shrunk.
+
+The spot is random but fixed per picture (seeded from its name), so every size of one picture's crop shares a centre,
+and a re-run makes the same crops (their captions and caches are kept). A spot that falls on a nearly flat area (a plain
+sky) moves to the picture's most detailed one. No torch: Pillow and numpy only."""
+
+import hashlib
+import json
+import os
+import random
+
+DIR = "fizgig_detail_crops"            # the folder in a training folder; Fizgig's own, so sub-folders skip it
+SETTINGS = "fizgig_detail_crops.json"   # its switch, in the training folder (fizgig_*.json travels with a move)
+MANIFEST = ".crops.json"               # per size folder: each crop's source picture and box
+PICS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+FLAT = 0.6                              # a spot with under 60% of the picture's mean detail counts as flat
+
+
+def is_on(folder) -> bool:
+    try:
+        with open(os.path.join(folder, SETTINGS), encoding="utf-8") as f:
+            return bool(json.load(f).get("on"))
+    except (OSError, ValueError):
+        return False
+
+
+def switch(folder, on=True):
+    with open(os.path.join(folder, SETTINGS), "w", encoding="utf-8") as f:
+        json.dump({"on": bool(on)}, f)
+
+
+def side(mp) -> int:
+    """The crop's side at a Target Megapixels: the dataset TOML's resolution (a square of that area on the 16 grid)."""
+    return int((float(mp) * 1_000_000) ** 0.5) // 16 * 16
+
+
+def size_name(mp) -> str:
+    return f"{float(mp):g}mp"
+
+
+def size_dir(folder, mp) -> str:
+    return os.path.join(folder, DIR, size_name(mp))
+
+
+def sizes(folder):
+    """[(label, path)] of the crop sizes made so far, smallest first."""
+    root = os.path.join(folder, DIR)
+    try:
+        names = [n for n in os.listdir(root) if n.endswith("mp") and os.path.isdir(os.path.join(root, n))]
+    except OSError:
+        return []
+    def mp(n):
+        try:
+            return float(n[:-2])
+        except ValueError:
+            return 0.0
+    return [(f"{mp(n):g} MP", os.path.join(root, n)) for n in sorted(names, key=mp) if mp(n) > 0]
+
+
+def pictures(folder):
+    from fizgig.dataset.masks import is_mask_file
+    try:
+        return sorted(n for n in os.listdir(folder) if n.lower().endswith(PICS) and not is_mask_file(n)
+                      and os.path.isfile(os.path.join(folder, n)))
+    except OSError:
+        return []
+
+
+def source(folder, name):
+    """The picture to crop from: its full-size original when Image Prep kept one (originals/, originals_2/... - the
+    biggest), else the training picture itself."""
+    stem = os.path.splitext(name)[0].lower()
+    best, area = os.path.join(folder, name), -1
+    try:
+        dirs = [d for d in os.listdir(folder) if d.lower() == "originals" or d.lower().startswith("originals_")]
+    except OSError:
+        dirs = []
+    for d in dirs:
+        try:
+            for f in os.listdir(os.path.join(folder, d)):
+                if os.path.splitext(f)[0].lower() == stem and f.lower().endswith(PICS):
+                    from PIL import Image
+                    with Image.open(os.path.join(folder, d, f)) as im:
+                        a = im.size[0] * im.size[1]
+                    if a > area:
+                        best, area = os.path.join(folder, d, f), a
+        except OSError:
+            continue
+    return best
+
+
+def _detail(gray):
+    """A detail map: the gradient size of a small grey copy (texture, strokes, edges are high; a flat sky low)."""
+    import numpy as np
+    g = np.asarray(gray, dtype=np.float32)
+    return np.abs(np.diff(g, axis=0))[:, :-1] + np.abs(np.diff(g, axis=1))[:-1, :]
+
+
+def spot(name, w, h, s, gray=None):
+    """The crop's top-left corner for a picture of w x h and a crop of side s: random, seeded from the file name; a
+    nearly flat spot moves to the most detailed window (gray: the picture's grey copy, for that test)."""
+    rnd = random.Random(int(hashlib.sha1(name.encode("utf-8")).hexdigest()[:12], 16))
+    fx, fy = rnd.random(), rnd.random()                   # the centre, as a share of the picture: the same at every size
+    x = min(max(0, round(fx * w - s / 2)), w - s)          # (a crop near an edge slides in to fit)
+    y = min(max(0, round(fy * h - s / 2)), h - s)
+    if gray is None:
+        return x, y
+    import numpy as np
+    k = gray.width / w                                     # the grey copy's scale
+    d = _detail(gray)
+    win = max(2, int(s * k))
+    mean = float(d.mean()) or 1e-6
+
+    def at(px, py):
+        a, b = int(py * k), int(px * k)
+        return float(d[a:a + win, b:b + win].mean())
+    if at(x, y) >= FLAT * mean:
+        return x, y
+    best, bx, by = -1.0, x, y
+    for i in range(7):                                     # the most detailed of a 7 x 7 grid of spots
+        for j in range(7):
+            px, py = round(i / 6 * (w - s)), round(j / 6 * (h - s))
+            v = at(px, py)
+            if v > best:
+                best, bx, by = v, px, py
+    return bx, by
+
+
+def make(folder, mp, log=print, ext=".txt"):
+    """The crops for one size, made where missing or out of date (the picture changed). A picture smaller than the
+    crop has none (it trains whole). A crop whose picture left the folder goes, with its caption. Returns the crops with
+    no caption yet."""
+    from PIL import Image
+    from fizgig.dataset.masks import mask_for_stem
+    from fizgig.utils.upright import open_upright
+    s = side(mp)
+    out = size_dir(folder, mp)
+    os.makedirs(out, exist_ok=True)
+    mpath = os.path.join(out, MANIFEST)
+    try:
+        with open(mpath, encoding="utf-8") as f:
+            man = json.load(f)
+    except (OSError, ValueError):
+        man = {}
+    pics = pictures(folder)
+    stems = {os.path.splitext(n)[0] for n in pics}
+    for stem in [k for k in man if k not in stems]:        # its picture is gone: so is its crop
+        for n in os.listdir(out):
+            if os.path.splitext(n)[0] in (stem, stem + "-masklabel"):
+                try:
+                    os.remove(os.path.join(out, n))
+                except OSError:
+                    pass
+        man.pop(stem, None)
+    made = skipped = 0
+    for n in pics:
+        stem = os.path.splitext(n)[0]
+        src = source(folder, n)                            # its full-size original when Image Prep kept one
+        mt = os.path.getmtime(src)
+        dst = os.path.join(out, stem + ".png")
+        if man.get(stem, {}).get("mtime") == mt and os.path.isfile(dst):
+            continue
+        try:
+            im = open_upright(src).convert("RGB")
+        except Exception as e:
+            log(f"[detail crops] {n}: can't read it ({e})")
+            continue
+        w, h = im.size
+        if min(w, h) < s:                                  # smaller than the crop: it trains whole, no crop
+            skipped += 1
+            man.pop(stem, None)
+            continue
+        gray = im.convert("L")
+        gray.thumbnail((256, 256))
+        x, y = spot(stem, w, h, s, gray)
+        im.crop((x, y, x + s, y + s)).save(dst)
+        mk = mask_for_stem(folder, stem)
+        if mk:                                             # masked training: the mask cut at the same spot
+            try:
+                m = Image.open(mk)
+                if m.size != (w, h):
+                    m = m.resize((w, h))
+                m.crop((x, y, x + s, y + s)).save(os.path.join(out, stem + "-masklabel.png"))
+            except Exception:
+                pass
+        if man.get(stem) and man[stem].get("box") != [x, y, s]:   # a new crop: its old caption no longer fits
+            try:
+                os.remove(os.path.join(out, stem + ext))
+            except OSError:
+                pass
+        man[stem] = {"mtime": mt, "box": [x, y, s], "source": n}
+        made += 1
+    with open(mpath, "w", encoding="utf-8") as f:
+        json.dump(man, f)
+    if made or skipped:
+        log(f"[detail crops] {size_name(mp)}: {made} made" + (f", {skipped} picture(s) smaller than "
+            f"{s}x{s} train whole" if skipped else ""))
+    return [os.path.join(out, stem + ".png") for stem in sorted(man)
+            if not os.path.isfile(os.path.join(out, stem + ext))]

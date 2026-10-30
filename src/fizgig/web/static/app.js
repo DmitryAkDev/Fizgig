@@ -4577,7 +4577,7 @@ function meTool(t) {
 }
 
 async function prepSummary() {
-  const p = prepSettings(), faceOn = p.mode !== "Resize Only";
+  const p = prepSettings(), faceOn = ["Auto Prep (Face Crops)", "Face Crop Only"].includes(p.mode);
   document.querySelectorAll(".prep-face select, .prep-face input").forEach((i) => { i.disabled = !faceOn || !S.prep.opts.face_tools; });
   $("prepTest").disabled = !faceOn || !S.prep.opts.face_tools;
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
@@ -6686,6 +6686,11 @@ function wireStudio() {
 let CAP_PAGE = 12;                         // Per page (the desktop's sizes), remembered with the tab's settings
 S.cap = {page: 0, items: [], opts: null, lastState: ""};
 
+// the folder the Captions tab works on: the training folder, or one of its detail crop sizes (Show)
+function capFolder() {
+  return S.capShow && S.capShowFor === S.imageFolder ? S.capShow : S.imageFolder;
+}
+
 function capSettings() {
   return {trigger: $("capTrigger").value, model: $("capModel").value, task: $("capTask").value,
     tokens: $("capTokens").value, overwrite: $("capOverwrite").checked, songWords: $("capSongWords").value,
@@ -6785,7 +6790,7 @@ const capExt = () => {                    // Training > Other Options > Caption 
 
 function capJobBody(extra = {}) {
   const t = qwenOn() && qwenTask();
-  return {family: S.family, folder: S.imageFolder, model: $("capModel").value, task: $("capTask").value, ext: capExt(),
+  return {family: S.family, folder: capFolder(), model: $("capModel").value, task: $("capTask").value, ext: capExt(),
     instruction: t ? t.instruction.split("{concept}").join($("capConcept").value.trim() || "the same concept") : "",
     max_tokens: Number($("capTokens").value) || 120,
     trigger: $("capTrigger").value, overwrite: $("capOverwrite").checked, ...extra};
@@ -6803,7 +6808,7 @@ async function capRun(path, body) {
 // while captioning runs: the captions written so far fill in every few seconds - never over one you're editing
 async function captionsLive() {
   if (!S.imageFolder || !document.querySelector("#tab-captions.active")) return;
-  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
+  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&ext=${encodeURIComponent(capExt())}&family=${encodeURIComponent(S.family || "")}`)
     .catch(() => null);
   if (!r || !r.items) return;
   const now = new Map(r.items.map((i) => [i.name, i]));
@@ -6867,12 +6872,20 @@ async function loadCaptions() {
     `&ext=${encodeURIComponent(capExt())}&t=${encodeURIComponent(TOKEN)}`;
   $("dsZip").href = zipUrl(false); $("dsZipCaps").href = zipUrl(true);
   for (const id of ["dsZip", "dsZipCaps"]) $(id).style.display = S.imageFolder ? "" : "none";
-  $("capFolder").textContent = (S.imageFolder ? `Folder: ${S.imageFolder}  (set on the Start tab)` :
+  $("capFolder").textContent = (S.imageFolder ? `Folder: ${capFolder()}` + (capFolder() !== S.imageFolder ?
+    "  (its detail crops)" : "  (set on the Start tab)") :
     "Choose the training folder on the Start tab first.") + subfoldersHint();
   if (!S.imageFolder) { $("captionsSummary").textContent = "Choose the training folder on the Start tab."; return; }
   const ext = $("captionExt").value.trim() || ".txt";
-  const r = await api(`/api/captions?folder=${encodeURIComponent(S.imageFolder)}&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
+  const r = await api(`/api/captions?folder=${encodeURIComponent(capFolder())}&root=${encodeURIComponent(S.imageFolder)}` +
+    `&ext=${encodeURIComponent(ext)}&family=${encodeURIComponent(S.family || "")}`);
   S.cap.items = r.items;
+  // Show: the pictures, or a detail crop size (they caption, re-caption and edit like any picture)
+  const crops = r.crops || [], sel = $("capShow");
+  $("capShowRow").style.display = crops.length ? "" : "none";
+  sel.replaceChildren(el("option", {value: "", text: "Pictures (the training folder)"}),
+    ...crops.map((c) => el("option", {value: c.path, text: `Detail crops, ${c.label}`})));
+  sel.value = crops.some((c) => c.path === capFolder()) ? capFolder() : "";
   renderCaptions();
 }
 
@@ -6908,7 +6921,7 @@ function renderCaptions() {
     it._ta = ta;                                 // for the live refresh while captioning runs
     const status = el("span", {class: "field-hint"});
     const saveCap = async () => {
-      await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
+      await api("/api/captions/save", {folder: capFolder(), name: it.name, text: ta.value, ext});
       it.caption = ta.value;
       status.textContent = "Saved";
     };
@@ -6927,7 +6940,7 @@ function renderCaptions() {
     const speechRun = kind === "mp4" && !/_mute$/i.test(it.name.replace(/\.[^.]+$/, "")) ? async (say = (t) => { status.textContent = t; }) => {
       say("Transcribing… (the first time downloads Whisper, ~300 MB)");
       try {
-        const r = await api("/api/captions/transcribe", {family: S.family, folder: S.imageFolder, name: it.name});
+        const r = await api("/api/captions/transcribe", {family: S.family, folder: capFolder(), name: it.name});
         if (!r.text) { say("Whisper heard no words in this clip."); return; }
         const cap = ta.value.trim().replace(/\.$/, "");
         ta.value = (cap ? cap + " " : "") + `saying "${r.text}"`;
@@ -6985,7 +6998,7 @@ function captionsTable(items, ext) {
     const words = el("td", {class: "cap-num", text: String(capWords(it))});
     ta.addEventListener("change", async () => {  // saved when you leave the box, as typed
       try {
-        await api("/api/captions/save", {folder: S.imageFolder, name: it.name, text: ta.value, ext});
+        await api("/api/captions/save", {folder: capFolder(), name: it.name, text: ta.value, ext});
         it.caption = ta.value; words.textContent = String(capWords(it));
       } catch (e) { ta.title = e.message; }
     });
@@ -7002,7 +7015,7 @@ function captionsTable(items, ext) {
 async function addText(apply) {
   const host = $("frChanges");
   try {
-    const r = await api("/api/captions/add", {family: S.family, folder: S.imageFolder, start: $("frStart").value,
+    const r = await api("/api/captions/add", {family: S.family, folder: capFolder(), start: $("frStart").value,
       end: $("frEnd").value, trigger: $("capTrigger").value, apply, ext: capExt()});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Added to ${r.changes.length} captions.` :
@@ -7016,7 +7029,7 @@ async function addText(apply) {
 
 async function capRemove(it, card, status) {
   // out of the training set (into removed/), with an Undo on the spot
-  const folder = S.imageFolder;
+  const folder = capFolder();
   try {
     const r = await api("/api/captions/remove", {folder, name: it.name, ext: $("captionExt").value.trim() || ".txt"});
     S.cap.items = S.cap.items.filter((x) => x !== it);
@@ -7036,7 +7049,7 @@ async function capRemove(it, card, status) {
 async function findReplace(apply) {
   const host = $("frChanges");
   try {
-    const r = await api("/api/captions/replace", {family: S.family, folder: S.imageFolder, find: $("frFind").value,
+    const r = await api("/api/captions/replace", {family: S.family, folder: capFolder(), find: $("frFind").value,
       replace: $("frReplace").value, apply, ext: capExt()});
     host.innerHTML = "";
     $("frStatus").textContent = r.changes.length ? (apply ? `Replaced in ${r.changes.length} captions.` :
@@ -7050,6 +7063,9 @@ async function findReplace(apply) {
 
 function wireCaptions() {
   $("captionsReload").addEventListener("click", loadCaptions);
+  $("capShow").addEventListener("change", () => {      // the pictures, or a detail crop size: the whole tab follows
+    S.capShow = $("capShow").value; S.capShowFor = S.imageFolder; S.cap.page = 0; loadCaptions();
+  });
   // the box is the Training tab's Caption Extension (one setting, as in the desktop app): a change here is that
   $("captionExt").addEventListener("change", () => {
     S.values.DATASET_CAPTION_EXT = $("captionExt").value.trim() || ".txt";
@@ -8650,6 +8666,9 @@ async function uploadFiles(picked, opts = {}) {
   const keepSubs = !!(S.values || {}).TRAIN_SUBFOLDERS;
   const sub = (f) => {
     const parts = String(f.webkitRelativePath || f.rel || "").split("/").slice(1, -1).map(tidyName).filter(Boolean);
+    // its detail crops keep their folders whatever the tick: each size's crops share their pictures' names
+    const i = parts.indexOf("fizgig_detail_crops");
+    if (i >= 0 && parts.length === i + 2) return parts.slice(i).join("/");
     return keepSubs ? parts.join("/") : "";
   };
   const seen = new Map();
