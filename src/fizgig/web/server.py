@@ -3366,13 +3366,18 @@ class Handler(BaseHTTPRequestHandler):
             items = [e for e in os.scandir(folder) if e.is_file() and e.name.lower().endswith(".safetensors")]
         except OSError:
             return self.json({"items": []})
-        now = time.time()
-        items = [e for e in items if now - e.stat().st_mtime > 5]       # not one still being written
-        items.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+        now, stats = time.time(), []
+        for e in items:
+            try:                                 # one deleted while this reads (a run moved away clears its files)
+                st = e.stat()
+            except OSError:
+                continue
+            if now - st.st_mtime > 5:            # not one still being written
+                stats.append((e, st))
+        stats.sort(key=lambda x: x[1].st_mtime, reverse=True)
         base = lambda n: (lambda m: m.group(1) if m else n)(_CKPT.match(n[:-len(".safetensors")]))
-        return self.json({"items": [{"name": e.name, "path": e.path, "size": e.stat().st_size,
-                                     "time": e.stat().st_mtime, "kind": _checkpoint_kind(e.path),
-                                     "run": base(e.name)} for e in items]})
+        return self.json({"items": [{"name": e.name, "path": e.path, "size": st.st_size, "time": st.st_mtime,
+                                     "kind": _checkpoint_kind(e.path), "run": base(e.name)} for e, st in stats]})
 
     def _captions(self, folder, ext, family=""):
         out = []

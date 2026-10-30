@@ -98,8 +98,12 @@ async function boot() {
   }
   await chooseFamily(st.family && S.schema.order.includes(st.family) ? st.family : S.schema.order[0]);
   showTab("start");                // Fizgig always opens on Start (its News card), never the last tab used
-  // the forms are there: the page is usable. The cover stays at least 3.5 s from the page opening, so its tip can be read
-  setTimeout(() => $("bootCover").classList.add("done"), Math.max(0, 3500 - performance.now()));
+  // the forms are there: the page is usable. The cover stays at least 3.5 s from the page opening, so its tip can be
+  // read - once a window: switching it between this computer and a pod (window.name stays across the switch, whatever
+  // the address) shows the cover only while the page loads
+  const switched = window.name === "fizgig-window";
+  window.name = "fizgig-window";
+  setTimeout(() => $("bootCover").classList.add("done"), switched ? 0 : Math.max(0, 3500 - performance.now()));
   newsCard();
   wire();
   $("podsTabBtn").style.display = S.onPod ? "none" : "";      // on a pod there's nothing to connect to
@@ -1705,7 +1709,9 @@ function moveDraw(mv) {
     if (rm.state === "running") kids.push(el("button", {class: "btn btn-sm", text: "Bring it back now",
       title: "Stopped there now and brought back from its last save (the epochs since it are trained again here)",
       onclick: go("/api/helpers/move_back", {now: true})}));
-    if (mv.url) kids.push(el("a", {class: "btn btn-sm", href: mv.url, target: "_blank", rel: "noopener", text: `Open ${mv.to}`}));
+    // as the Pods tab's Open: in the app window it switches over there (a pod logs you in); in a browser, a new tab
+    if (mv.url) kids.push(el("button", {class: "btn btn-sm", text: inApp() ? `Open ${mv.to}` : `Open ${mv.to} ↗`,
+      onclick: () => podOpen({url: mv.url, name: mv.to})}));
     if (["away", "login", "gone", "failed", "stopped"].includes(rm.state) || mv.error)
       kids.push(el("button", {class: "btn btn-sm", text: "Carry on here",
         title: `For a ${mv.to} that won't come back (a pod deleted): carries on here from this computer's last save - ` +
@@ -7709,7 +7715,10 @@ async function helpLoad(quiet) {
 // one line for what a helper is doing now, and how far along it is (0-1, or null for no bar)
 function helpActivity(h) {
   const a = h.activity;
-  if (h.state === "login") return ["Its password changed or its login ran out: add it again with its password", "warn", null];
+  if (h.state === "login") return [/proxy\.runpod\.net/.test(h.url || "") ?
+    "Its login ran out and Fizgig couldn't find its password to log in again: Remove it, then add it again with " +
+    "the password from the pod's log on RunPod" :
+    "Its password changed or its login ran out: Remove it, then add it again with its password", "warn", null];
   if (h.state === "away") return ["Not answering: is it on, awake and running Fizgig?", "muted", null];
   if (h.build && h.build !== "same" && h.match && h.state === "busy") return [`Training its own run (${h.training}). ` +
     h.match, "muted", null];
@@ -7866,6 +7875,13 @@ async function helpCall(path, body) {
   helpLoad(true);
 }
 
+// the Help another Fizgig with this GPU card's buttons: what they say shows in that card, kept across redraws
+async function helpOutCall(body) {
+  try { const r = await api("/api/helpers/help", body); S.help.outSay = (r && r.say) || ""; }
+  catch (e) { S.help.outSay = e.message; }
+  helpLoad(true);
+}
+
 function helpDraw() {
   const d = S.help.data || {};
   const hs = d.helpers || [];
@@ -7916,20 +7932,20 @@ function helpDraw() {
       el("div", {class: "pod-main"}, el("div", {class: "pod-name", text: o.name}),
         el("div", {class: "field-hint", text: mine ? d.helping.text : o.url.replace(/^https?:\/\/|\/$/g, "")})),
       el("div", {class: "pod-btns"}, ...(mine || o.logged_in ? [] : [pw]), mine ?
-        el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpCall("/api/helpers/help", {url: o.url, on: false})}) :
+        el("button", {class: "btn btn-sm", text: "Stop helping", onclick: () => helpOutCall({url: o.url, on: false})}) :
         el("button", {class: "btn btn-primary btn-sm", text: "Help it with previews",
-          ...(d.helping ? {disabled: true} : {}), onclick: () => helpCall("/api/helpers/help",
+          ...(d.helping ? {disabled: true} : {}), onclick: () => helpOutCall(
             {url: o.url, on: true, password: pw.value})}),
         el("button", {class: "btn btn-sm", text: "Help it train", title: "EXPERIMENTAL: train a share of each epoch's " +
           "images of its run on this GPU (its training folder comes here, and this computer makes the run's cache)", ...(d.helping ? {disabled: true} : {}),
-          onclick: () => helpCall("/api/helpers/help", {url: o.url, on: true, password: pw.value, mode: "share"})}),
+          onclick: () => helpOutCall({url: o.url, on: true, password: pw.value, mode: "share"})}),
         el("button", {class: "btn btn-sm", text: "Its checkpoints…", title: "Its run's checkpoints: fetch the ones you " +
           "pick and try your own prompts on them in LoRA Royale, on this GPU (type its password first if asked)",
           onclick: () => { S.help.remotePw = pw.value; S.help.remote = S.help.remote === o.url ? "" : o.url;
             S.help.panel = null; helpDraw(); }}))),
       ...linkRow, panel];
   }));
-  $("helpOutNote").textContent = [...(d.home_done || []),
+  $("helpOutNote").textContent = [S.help.outSay || "", ...(d.home_done || []),
     out.length ? "" : "Your pods show here (the Pods tab), once one is running Fizgig."].filter(Boolean).join(". ");
   helpStrips();
   // this Fizgig is a helper right now: say so at the top, whatever it's doing

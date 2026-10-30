@@ -570,6 +570,32 @@ def set_jobs(hid, previews=None, share=None, every=None, send_cache=None, wait=N
     return {"ok": True}
 
 
+_relogged = {}            # helper id -> when its login was last tried again
+
+
+def _relogin(h, c):
+    """A pod helper whose login ran out (it restarted on a new session key): logged in again with its password,
+    found as Add finds it, and its info - or None (not a pod, no password to find, tried in the last 5 minutes)."""
+    if time.time() - _relogged.get(h["id"], 0) < 300:
+        return None
+    _relogged[h["id"]] = time.time()
+    pw = _pod_password(h["url"])
+    if not pw:
+        return None
+    try:
+        c.login(pw)
+        i = c.call("/api/helper/info", timeout=6)
+    except Exception:
+        return None
+    rows = _helpers()
+    for r in rows:
+        if r.get("id") == h["id"]:
+            r["cookie"] = c.cookie
+    _save(rows)
+    h["cookie"] = c.cookie
+    return i
+
+
 def _check(h, mine):
     """One helper's state now: ready / away / login / elsewhere, its GPU and build, and how far away it is."""
     c = Client(h["url"], h.get("cookie", ""))
@@ -577,7 +603,9 @@ def _check(h, mine):
     try:
         i = c.call("/api/helper/info", timeout=6)
     except PermissionError:
-        return {"state": "login"}
+        i = _relogin(h, c)
+        if i is None:
+            return {"state": "login"}
     except Exception:
         return {"state": "away"}
     from fizgig.web import pods
@@ -1216,6 +1244,11 @@ def help_start(url, password="", mode="previews"):
     from fizgig.web import pods
     if (pods._build_word(s.about_info().get("commit") or "", i.get("commit")) or "same") != "same":
         raise ValueError("It runs a different Fizgig version: update both, then try again.")
+    name = i.get("name") or url
+    if s._gpu_training():                # this GPU has its own run: it can't help another
+        raise ValueError(f"This computer is training its own run, so its GPU can't help {name} now. To have {name} "
+                         "make this run's previews, turn on Previews on its tile under Your helpers.")
+    idle = not (c.call("/api/run") or {}).get("running")      # set up ahead of its run: it waits for one
     _out.clear()                         # a loop still going for the last start sees a new generation, and ends
     _gen[0] += 1
     share = mode == "share"
@@ -1223,6 +1256,8 @@ def help_start(url, password="", mode="previews"):
                 text="Connecting for its training share" if share else "Waiting for its next preview round")
     threading.Thread(target=_out_share_loop if share else _out_loop, args=(c, dict(_out)), daemon=True,
                      name="helpers-out").start()
+    if idle:
+        return {"say": f"Nothing is training on {name} yet. This GPU starts helping when a run starts there."}
     return {"say": f"Training a share of {_out['name']}'s run (experimental)." if share else
             f"Helping {_out['name']} with its previews."}
 
