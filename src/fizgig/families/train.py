@@ -1053,7 +1053,8 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  ft_epochs_done=0, ft_fused_backward=False, reg_lr_multiplier=0.2, preview_checkpoint=None,
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
-                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0):
+                 lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0,
+                 caption_dropout=0.0):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1397,6 +1398,29 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 if len(dop_cond) < len(caps):
                     logger.info(f"[dop] {len(caps) - len(dop_cond)} image(s) have no trigger in the caption - "
                                 "they train as usual, with no preservation step")
+    # ---- caption dropout: the empty caption, encoded once, trains in place of the picture's on that share of steps
+    uncond = None
+    caption_dropout = float(caption_dropout or 0.0)
+    if caption_dropout > 0:
+        why = ("a slider trains a dial, not a caption" if slider else
+               "it needs the text encoder (--text_encoder)" if not te_path else
+               f"{desc.display_name} has its own" if not desc.caption_dropout else "")
+        cache_dirs = [getattr(ds, "cache_directory", "") for ds in group.datasets if getattr(ds, "cache_directory", "")]
+        if why or not cache_dirs:
+            logger.warning(f"[caption dropout] off: {why or 'no text cache folder'}")
+        else:
+            from fizgig.families import cache as _cache
+            up = os.path.join(cache_dirs[0], f"uncond_{desc.arch_id}_te.safetensors")
+            if not _cache.cond_file_matches(up, ""):
+                te = driver.load_text_encoder(te_path, device)
+                try:
+                    _cache.save_cond_file(desc, up, "", driver.encode_text(te, [""])[0], "uncond")
+                finally:
+                    driver.unload_text_encoder(te)
+                    del te
+                    torch.cuda.empty_cache()
+            uncond = _load_dop_cond(up)
+            logger.info(f"[caption dropout] {caption_dropout:g} of steps train with no caption")
     dop_every = max(1, int(dop_every or 1))
     if dop_cond:
         # each new shape compiles its own graph. The DOP pass's trigger-free captions bring text lengths the run's
@@ -2529,6 +2553,9 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                 loss, _info = torch.tensor(_l), {"t": _t}
             else:
                 cond = driver.batch_cond(batch, device)
+                # caption dropout: this step's draw from the step number, so a resumed run drops the same steps
+                if uncond is not None and random.Random(global_step * 7919 + 17).random() < caption_dropout:
+                    cond = {**cond, **{k: v.to(device) for k, v in uncond.items()}}
                 refs = [batch[k].to(device) for k in sorted((k for k in batch if k.startswith("latents_control_")),
                                                             key=lambda k: int(k.rsplit("_", 1)[1]))]
                 # per-step routing (a family's step_frozen_blocks): those blocks' trainable weights sit out this
@@ -2866,6 +2893,8 @@ def setup_parser():
                    help="experimental: items whose name contains PATTERN train at MULT x the LR on their step")
     p.add_argument("--dop_ft_samples", type=int, default=8,
                    help="DOP on a fine-tune: the original model's predictions made per image before the first step")
+    p.add_argument("--caption_dropout", type=float, default=0.0,
+                   help="the share of steps that train with no caption (the empty caption's encoding, made once)")
     p.add_argument("--masked_training", action="store_true",
                    help="weight each picture's loss by its mask (photo-masklabel.png beside photo.png): white counts "
                         "fully, grey partly, black at --mask_floor; pictures without a mask train as normal")
@@ -2940,7 +2969,7 @@ def main():
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
         share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
-        mask_prior=a.mask_prior)
+        mask_prior=a.mask_prior, caption_dropout=a.caption_dropout)
 
 
 if __name__ == "__main__":

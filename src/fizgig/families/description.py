@@ -533,6 +533,9 @@ class FamilyDescription:
     # masked training (fizgig/dataset/masks.py): the driver's training_loss takes loss_mask; opt in, so a family added
     # later never gets a tick its driver can't honour
     masked_training: bool = False
+    # caption dropout (families/train.py): a share of steps trains on the empty caption's encoding, made once at the
+    # start with the family's own text encoder; off for a family with its own (H3) or no pictures (ACE-Step)
+    caption_dropout: bool = True
     network_hint: str = ""            # the line under Network Type in place of the LoRA / LoKR trade
     ema_hint: str = ""                # the line under Weight averaging (EMA) in place of the shared one
     ema_section: str = ""             # "other": the EMA row sits in Other Options (MiniMax H3's place)

@@ -37,6 +37,17 @@ SIZES = ("512", "640", "768", "1024", "1280", "1536")
 KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo pairs)"),
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
+CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
+CAPTION_DROPOUT_HINT = ("Trains this share of steps with no caption, so the LoRA leans less on the trigger word and "
+                        "the caption's exact words. 0.05 is the usual choice.")
+
+
+def caption_dropout_share(label):
+    """The Caption dropout choice as a share of steps (0 = off)."""
+    try:
+        return max(0.0, min(0.5, float(str(label or "0").split(" ")[0])))
+    except ValueError:
+        return 0.0
 
 # the desktop app's self.settings defaults (lora_trainer_gui.py), for the keys these forms carry
 DEFAULTS = {
@@ -610,6 +621,8 @@ def form(desc):
         _row("LR_SCHEDULER", "LR Scheduler", "choice", choices=["constant", "constant_with_warmup", "cosine",
                                                                  "cosine_with_restarts", "linear", "polynomial"]),
         _row("LR_WARMUP_STEPS", "Warmup steps"),
+        _row("CAPTION_DROPOUT", "Caption dropout", "choice", CAPTION_DROPOUT_HINT, CAPTION_DROPOUTS,
+             default=CAPTION_DROPOUTS[0]) if desc.caption_dropout and pictures else None,
         *by_section("training", "other", "lora"),
         _row("METADATA_TITLE", "Title"), _row("METADATA_AUTHOR", "Author"),
         _row("METADATA_DESCRIPTION", "Description"), _row("METADATA_LICENSE", "License"),
@@ -1352,6 +1365,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         FAMILY_TRAINING_ADAPTER=b("FAMILY_TRAINING_ADAPTER"),
         FAMILY_TURBO_STRENGTH=s("FAMILY_TURBO_STRENGTH"), FAMILY_TURBO_STEPS=s("FAMILY_TURBO_STEPS"),
         FAMILY_TURBO_PACE=s("FAMILY_TURBO_PACE"), FAMILY_PREVIEW_LOOK=b("FAMILY_PREVIEW_LOOK"),
+        CAPTION_DROPOUT=caption_dropout_share(s("CAPTION_DROPOUT")) if desc.caption_dropout else 0.0,
         MASKED_TRAINING=b("MASKED_TRAINING") and desc.masked_training, MASK_FLOOR=s("MASK_FLOOR"),
         MASK_PRIOR=s("MASK_PRIOR"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,

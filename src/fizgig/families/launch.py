@@ -735,6 +735,8 @@ def train_command(desc, inputs, plan):
         cmd += ["--context_lora_path", ctx,
                 "--context_lora_strength", _s(st.get("CONTEXT_LORA_STRENGTH") or "1.0") or "1.0"]
     mp_subs = [x[1] for x in multi_person_subjects(desc, st) if x[1]] if multi_person_on(desc, st) else []
+    if float(st.get("CAPTION_DROPOUT") or 0) > 0 and desc.caption_dropout and not slider_on(desc, st, "prompts"):
+        cmd += ["--caption_dropout", f"{float(st['CAPTION_DROPOUT']):g}"]
     if masked_on(desc, st):
         cmd += ["--masked_training", "--mask_floor", f"{mask_floor(st):g}"]
         if mask_prior(desc, st):
