@@ -289,7 +289,7 @@
                   tab.</div>
                 <div class="field-row prep-opts">
                   <span class="field-label">Target megapixels:</span><select id="prepMp" class="w-combo"></select>
-                  <span class="field-hint">MP (larger images shrink to fit; smaller are left alone)</span>
+                  <span class="field-hint" id="prepMpHint">MP (larger images shrink to fit; smaller are left alone)</span>
                 </div>
                 <div class="field-row prep-opts prep-face">
                   <span class="field-label">Face:</span><select id="prepFace" class="w-combo"></select>
@@ -321,13 +321,13 @@
                 </details>
                 <div class="field-hint" id="prepNoFaces" style="display:none">Face detection isn't installed on the
                   Fizgig computer: run install_fizgig.py there to add it. Resize only still works.</div>
-                <div class="field-hint">Sizing is by target area (megapixels), not longest side: this matches how
+                <div class="field-hint" id="prepSizingNote">Sizing is by target area (megapixels), not longest side: this matches how
                   training buckets your images, so prepping costs you no resolution. Aspect ratio is kept; nothing is
                   cropped.</div>
                 <div class="problems" id="prepMpWarn"></div>
               </div>
             </div>
-            <div class="section-card">
+            <div class="section-card" id="prepOriginals">
               <div class="card-title">2 · Your originals</div>
               <div class="card-content">
                 <label class="radio-label"><input type="radio" name="prepReplace" value="0" checked>
@@ -341,11 +341,11 @@
               <div class="card-content"><div class="prep-summary" id="prepSummary"></div></div>
             </div>
             <div class="section-card">
-              <div class="card-title">3 · Run it</div>
+              <div class="card-title" id="prepRunTitle">3 · Run it</div>
               <div class="card-content">
                 <div class="field-row"><button class="btn btn-primary" id="prepRun">✨ Prepare Images Now</button>
                   <span class="field-hint" id="prepState"></span></div>
-                <div class="field-row"><span class="field-hint">Want to check first?</span>
+                <div class="field-row" id="prepTestRow"><span class="field-hint">Want to check first?</span>
                   <button class="btn btn-sm" id="prepTest">Test face detection on one photo…</button>
                   <span class="field-hint">optional and safe: shows the crop, writes nothing</span></div>
                 <div id="prepTestResult"></div>

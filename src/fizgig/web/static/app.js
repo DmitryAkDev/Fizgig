@@ -4580,6 +4580,17 @@ async function prepSummary() {
   const p = prepSettings(), faceOn = ["Auto Prep (Face Crops)", "Face Crop Only"].includes(p.mode);
   document.querySelectorAll(".prep-face select, .prep-face input").forEach((i) => { i.disabled = !faceOn || !S.prep.opts.face_tools; });
   $("prepTest").disabled = !faceOn || !S.prep.opts.face_tools;
+  // Detail crops leave the pictures alone and use no face: no face rows, no originals choice, the size is the crop's
+  const crops = p.mode === "Detail Crops (Style)";
+  for (const id of ["prepOriginals", "prepSizingNote", "prepChars", "prepTestRow"]) $(id).style.display = crops ? "none" : "";
+  document.querySelectorAll(".prep-face").forEach((r) => { r.style.display = crops ? "none" : ""; });
+  if (crops) $("prepNoFaces").style.display = "none";
+  else $("prepNoFaces").style.display = S.prep.opts.face_tools ? "none" : "";
+  const side = Math.floor(Math.sqrt(p.mp * 1e6) / 16) * 16;
+  $("prepMpHint").textContent = crops ? `MP: crops of ${side}×${side}, made now so you can check them on the Captions ` +
+    "tab. Each run makes its own at Start, at the size it trains at; a picture smaller than the crop trains whole." :
+    "MP (larger images shrink to fit; smaller are left alone)";
+  $("prepRunTitle").textContent = crops ? "2 · Run it" : "3 · Run it";
   if (!S.imageFolder) { $("prepSummary").textContent = ""; return; }
   const r = await api(`/api/prep/summary?folder=${encodeURIComponent(S.imageFolder)}&mode=${encodeURIComponent(p.mode)}` +
     `&mp=${p.mp}&replace=${p.replace ? 1 : 0}&train_mp=${encodeURIComponent(S.values.DATASET_MEGAPIXELS || "")}`).catch(() => null);
@@ -4588,8 +4599,8 @@ async function prepSummary() {
   $("prepMain").style.display = r.audio_only ? "none" : "";
   $("prepSummary").replaceChildren(...r.lines.map((t) => el("div", {text: t})));
   $("prepMpWarn").textContent = r.warn || "";
-  if (!S.prep.running) $("prepRun").textContent = r.count ? `✨ Prepare ${r.count} Image${r.count === 1 ? "" : "s"} Now` :
-    "✨ Prepare Images Now";
+  if (!S.prep.running) $("prepRun").textContent = crops ? "✨ Make Detail Crops Now" :
+    r.count ? `✨ Prepare ${r.count} Image${r.count === 1 ? "" : "s"} Now` : "✨ Prepare Images Now";
 }
 
 async function pollPrep() {

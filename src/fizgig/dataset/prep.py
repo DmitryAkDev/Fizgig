@@ -151,16 +151,19 @@ def summary(folder, mode, replace, prep_mp, train_mp=None):
     elif mode == "Face Crop Only":
         what = f"{count} → replaced by just the cropped face from each photo, saved as PNG"
     elif mode == "Detail Crops (Style)":
-        from fizgig.dataset.detail_crops import DIR, side
-        what = (f"{count} stay as they are; each gets one {side(prep_mp)}×{side(prep_mp)} crop at its own scale "
-                f"(from its full-size original when there is one) in {DIR}, and the folder trains those crops too, at "
-                f"whatever size each run trains at")
+        from fizgig.dataset.detail_crops import DIR, side, size_name
+        s = side(prep_mp)
+        lines = [f"Your {n or ''} pictures stay as they are. Each gets one {s}×{s} crop at its own scale (from its "
+                 f"full-size original when there is one), in {DIR}/{size_name(prep_mp)}. From now on this folder "
+                 f"trains its crops too: each run makes its own at Start, at the size it trains at."]
+        if median_size and min(median_size) < s:
+            lines.append(f"⚠ Your typical picture ({median_size[0]}×{median_size[1]}) is smaller than a {s}×{s} crop: "
+                         f"those train whole, with no crop. Detail crops work from pictures bigger than training size.")
+        return {"lines": [" ".join(lines[0].split())] + lines[1:], "warn": "", "count": n}
     else:
         what = f"{count} → {sized}"
     originals = ("Your original files are replaced ⚠ there is no undo." if replace else
                  "Your originals are moved to the 'originals' subfolder — nothing is deleted.")
-    if mode == "Detail Crops (Style)":
-        originals = "Your pictures aren't changed."
     lines = [f"{what}. Everything lands in your training folder. {originals}"]
     if mode in FACE_MODES and median_area is not None and median_area <= area:
         lines.append(f"⚠ Your images are already at or below {prep_mp:g} MP — face close-ups cut from them will be "

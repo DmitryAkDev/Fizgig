@@ -19,7 +19,8 @@ DIR = "fizgig_detail_crops"            # the folder in a training folder; Fizgig
 SETTINGS = "fizgig_detail_crops.json"   # its switch, in the training folder (fizgig_*.json travels with a move)
 MANIFEST = ".crops.json"               # per size folder: each crop's source picture and box
 PICS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
-FLAT = 0.6                              # a spot with under 60% of the picture's mean detail counts as flat
+RULE = 3                                # the spot rule's version: a crop made by an older one is made again
+FLAT = 0.4                              # a spot with under 40% of the detail of the picture's busiest spot counts as flat
 
 
 def is_on(folder) -> bool:
@@ -102,34 +103,37 @@ def _detail(gray):
     return np.abs(np.diff(g, axis=0))[:, :-1] + np.abs(np.diff(g, axis=1))[:-1, :]
 
 
-def spot(name, w, h, s, gray=None):
-    """The crop's top-left corner for a picture of w x h and a crop of side s: random, seeded from the file name; a
-    nearly flat spot moves to the most detailed window (gray: the picture's grey copy, for that test)."""
+def centre(name, w, h, gray=None):
+    """The crop's centre in a picture of w x h, the same for every crop size: random, seeded from the file name; a
+    nearly flat spot (judged in a window the size of the smallest crop) moves to the most detailed one (gray: the
+    picture's grey copy, for that test)."""
     rnd = random.Random(int(hashlib.sha1(name.encode("utf-8")).hexdigest()[:12], 16))
-    fx, fy = rnd.random(), rnd.random()                   # the centre, as a share of the picture: the same at every size
-    x = min(max(0, round(fx * w - s / 2)), w - s)          # (a crop near an edge slides in to fit)
-    y = min(max(0, round(fy * h - s / 2)), h - s)
+    cx, cy = rnd.random() * w, rnd.random() * h
     if gray is None:
-        return x, y
-    import numpy as np
+        return cx, cy
     k = gray.width / w                                     # the grey copy's scale
     d = _detail(gray)
-    win = max(2, int(s * k))
-    mean = float(d.mean()) or 1e-6
+    r = min(side(0.25), w, h)                              # the window the test looks through
+    win = max(2, int(r * k))
 
-    def at(px, py):
-        a, b = int(py * k), int(px * k)
-        return float(d[a:a + win, b:b + win].mean())
-    if at(x, y) >= FLAT * mean:
-        return x, y
-    best, bx, by = -1.0, x, y
+    def at(x, y):                                          # the detail in the window around (x, y)
+        a = int(min(max(0, y - r / 2), h - r) * k)
+        b = int(min(max(0, x - r / 2), w - r) * k)
+        return float(d[a:a + win, b:b + win].mean()) or 1e-6
+    best, bx, by = -1.0, cx, cy
     for i in range(7):                                     # the most detailed of a 7 x 7 grid of spots
         for j in range(7):
-            px, py = round(i / 6 * (w - s)), round(j / 6 * (h - s))
-            v = at(px, py)
+            x, y = r / 2 + i / 6 * (w - r), r / 2 + j / 6 * (h - r)
+            v = at(x, y)
             if v > best:
-                best, bx, by = v, px, py
-    return bx, by
+                best, bx, by = v, x, y
+    # flat next to the picture's busiest part (not its average: a dark background can be most of a portrait)
+    return (cx, cy) if at(cx, cy) >= FLAT * best else (bx, by)
+
+
+def spot(cx, cy, w, h, s):
+    """The top-left corner of a crop of side s around (cx, cy); near an edge it slides in to fit."""
+    return min(max(0, round(cx - s / 2)), w - s), min(max(0, round(cy - s / 2)), h - s)
 
 
 def make(folder, mp, log=print, ext=".txt"):
@@ -164,7 +168,7 @@ def make(folder, mp, log=print, ext=".txt"):
         src = source(folder, n)                            # its full-size original when Image Prep kept one
         mt = os.path.getmtime(src)
         dst = os.path.join(out, stem + ".png")
-        if man.get(stem, {}).get("mtime") == mt and os.path.isfile(dst):
+        if man.get(stem, {}).get("mtime") == mt and man[stem].get("rule") == RULE and os.path.isfile(dst):
             continue
         try:
             im = open_upright(src).convert("RGB")
@@ -178,7 +182,7 @@ def make(folder, mp, log=print, ext=".txt"):
             continue
         gray = im.convert("L")
         gray.thumbnail((256, 256))
-        x, y = spot(stem, w, h, s, gray)
+        x, y = spot(*centre(stem, w, h, gray), w, h, s)
         im.crop((x, y, x + s, y + s)).save(dst)
         mk = mask_for_stem(folder, stem)
         if mk:                                             # masked training: the mask cut at the same spot
@@ -194,7 +198,7 @@ def make(folder, mp, log=print, ext=".txt"):
                 os.remove(os.path.join(out, stem + ext))
             except OSError:
                 pass
-        man[stem] = {"mtime": mt, "box": [x, y, s], "source": n}
+        man[stem] = {"mtime": mt, "box": [x, y, s], "source": n, "rule": RULE}
         made += 1
     with open(mpath, "w", encoding="utf-8") as f:
         json.dump(man, f)
