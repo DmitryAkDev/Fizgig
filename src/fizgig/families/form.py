@@ -38,6 +38,11 @@ KINDS = (("standard", "Standard LoRA"), ("edit", "Edit (original + edited photo 
          ("slider", "Slider (a dial between two looks)"), ("finetune", "Fine-tune the whole model"))
 FT_REG_MULT = ("0.05", "0.1", "0.2", "0.3", "0.5", "0.75", "1.0")
 CAPTION_DROPOUTS = ("Off", "0.05", "0.10 (strong)")
+STAGE_MPS = ("Off", "0.25", "0.37", "0.5", "0.75")
+STAGE_UNTILS = ("20%", "30%", "50%")
+STAGE_HINT = ("Trains the first part of the run at this smaller size, then the full Target Megapixels: those epochs "
+              "run faster. Below Target Megapixels only; standard LoRAs (not edits, sliders or fine-tunes). Caching "
+              "makes the smaller size's cache too.")
 CAPTION_DROPOUT_HINT = ("Trains this share of steps with no caption, so the LoRA leans less on the trigger word and "
                         "the caption's exact words. 0.05 is the usual choice.")
 
@@ -322,6 +327,11 @@ def form(desc):
              "far more memory and time than a photo of the same size, so e.g. photos at 1.0 with clips at 0.25 "
              "keeps caching and training fast. A clip that would not fit in your card's free memory is cached "
              "smaller still.", MEGAPIXELS, "0.25") if "clip" in desc.media else None,
+        _row("STAGE_MP", "Start at a smaller size", "choice", STAGE_HINT, STAGE_MPS, default="Off")
+        if pictures and desc.resolution_stages else None,
+        _row("STAGE_UNTIL", "For the first", "choice", "Of the run's epochs, at the smaller size; the change to the "
+             "full size blends over a tenth of the run.", STAGE_UNTILS, default="30%")
+        if pictures and desc.resolution_stages else None,
     ]
     if len(desc.network_types) > 1:
         params += [_row("NETWORK_TYPE", "Network Type", "choice",
@@ -1371,6 +1381,7 @@ def inputs(desc, values, *, models, python, repo_dir, image_folder, cache_root, 
         MASK_PRIOR=s("MASK_PRIOR"),
         python=python, repo_dir=repo_dir, models=models, image_folder=image_folder,
         caption_ext=s("DATASET_CAPTION_EXT") or ".txt", batch_size=1, megapixels=s("DATASET_MEGAPIXELS"),
+        STAGE_MP=s("STAGE_MP") if desc.resolution_stages else "", STAGE_UNTIL=s("STAGE_UNTIL"),
         clip_megapixels=s("CLIP_MEGAPIXELS") if "clip" in desc.media else "",
         enable_bucket=b("ENABLE_BUCKET"), no_upscale=b("BUCKET_NO_UPSCALE"), cache_root=cache_root,
         blocks_swap=s("BLOCKS_SWAP"), enable_cache=b("ENABLE_CACHE"), resuming=bool(s("RESUME_TRAINING")),

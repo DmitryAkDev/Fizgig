@@ -1054,7 +1054,7 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                  preview_checkpoint_cache="auto", preview_int8=False, family_options=None,
                  dop=False, dop_trigger=None, dop_class="", dop_weight=1.0, dop_every=1, dop_ft_samples=8,
                  lr_boost=None, share_worker=None, masked_training=False, mask_floor=0.1, mask_prior=0.0,
-                 caption_dropout=0.0):
+                 caption_dropout=0.0, stage_dataset_config=None, stage_until=0.3, stage_blend=0.1):
     desc = get_family(family)
     if desc is None or not desc.training_ready:
         raise RuntimeError(f"unknown or untrainable family {family!r}")
@@ -1220,12 +1220,45 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
                                "gradient, at the memory of batch 1).")
     loader = DataLoader(group, batch_size=1, shuffle=True, num_workers=0,
                         collate_fn=(lambda b: b[0]) if slider_prompts else _Collator(shared_epoch, group))
+    # Start at a smaller size: the first stage_until of the epochs draw from this dataset (its own cache folder),
+    # blending into the full size over stage_blend of the run
+    low_loader = None
+    if stage_dataset_config and not slider and not finetune and share_worker is None:
+        _lbp = BlueprintGenerator(ConfigSanitizer()).generate(load_user_config(stage_dataset_config),
+                                                              argparse.Namespace(), architecture=arch)
+        low_group = generate_dataset_group_by_blueprint(_lbp.dataset_group, training=True, num_timestep_buckets=None,
+                                                        shared_epoch=shared_epoch)
+        if low_group.num_train_items == 0:
+            logger.warning("[stages] the smaller size has no cache - this run trains at the full size throughout")
+        else:
+            low_loader = DataLoader(low_group, batch_size=1, shuffle=True, num_workers=0,
+                                    collate_fn=_Collator(shared_epoch, low_group))
+            logger.info(f"[stages] the first {float(stage_until) * 100:.0f}% of the epochs at the smaller size "
+                        f"({low_group.num_train_items} items), blending into the full size over "
+                        f"{float(stage_blend) * 100:.0f}% of the run")
+    low_iter = [None]
+
+    def _low_share(epoch):
+        """This epoch's share of steps at the smaller size: 1 before the blend, 0 after, a straight line between."""
+        if low_loader is None:
+            return 0.0
+        x = (epoch + 0.5) / max(1, max_train_epochs)
+        a, b = float(stage_until) - float(stage_blend) / 2, float(stage_until) + float(stage_blend) / 2
+        return 1.0 if x <= a else 0.0 if x >= b else (b - x) / (b - a)
+
+    def _low_batch():
+        try:
+            return next(low_iter[0])
+        except (StopIteration, TypeError):
+            low_iter[0] = iter(low_loader)
+            return next(low_iter[0])
     steps_per_epoch = len(loader)
     logger.info(f"{desc.display_name} training: {group.num_train_items} items, {max_train_epochs} epochs, "
                 f"{steps_per_epoch} steps/epoch")
     _launch = uuid.uuid4().hex[:12]      # this launch: a re-run of the same name is a new training share
     # what keeps this run on one GPU (the share's half would train without it), for the Helpers tab to say so
     _share_off = ("a fine-tune" if finetune else
+                  "Start at a smaller size" if low_loader is not None else
                   "Your subject and other people" if dop else
                   "Track how each image trains and the per-image options" if (
                       log_per_image_loss or per_image_lr or auto_recaption or warmup_look_outliers) else "")
@@ -2307,7 +2340,17 @@ def train_family(family, dit_path, dataset_config, output_dir, output_name, *, n
         share didn't come back - the helper's images of each of the round's epochs again (only: those keys), so
         both sides stay in step: every image trains every epoch whatever happens to the helper."""
         nonlocal global_step
+        low = _low_share(epoch)
+        if low > 0 and low < 1:
+            logger.info(f"[stages] epoch {epoch + 1}: {low * 100:.0f}% of steps at the smaller size")
+        elif low == 1 and epoch == 0:
+            logger.info("[stages] training at the smaller size")
+        elif low_loader is not None and epoch > 0 and _low_share(epoch - 1) > 0 and low == 0:
+            logger.info(f"[stages] epoch {epoch + 1}: the full size from here")
         for i, batch in enumerate(loader):
+            # the step's size from the epoch and the step, so a resumed run draws the same
+            if low and random.Random((epoch + 1) * 100003 + i).random() < low:
+                batch = _low_batch()
             yield i, batch, None
         sn = share_now[0]
         if share_worker is not None or sn is None or epoch + 1 != sn["last"]:
@@ -2893,6 +2936,11 @@ def setup_parser():
                    help="experimental: items whose name contains PATTERN train at MULT x the LR on their step")
     p.add_argument("--dop_ft_samples", type=int, default=8,
                    help="DOP on a fine-tune: the original model's predictions made per image before the first step")
+    p.add_argument("--stage_dataset_config", default=None,
+                   help="Start at a smaller size: that size's dataset TOML (its own cache folder)")
+    p.add_argument("--stage_until", type=float, default=0.3,
+                   help="the share of the run at the smaller size (the change blends over --stage_blend of it)")
+    p.add_argument("--stage_blend", type=float, default=0.1, help="the share of the run the change blends over")
     p.add_argument("--caption_dropout", type=float, default=0.0,
                    help="the share of steps that train with no caption (the empty caption's encoding, made once)")
     p.add_argument("--masked_training", action="store_true",
@@ -2969,7 +3017,8 @@ def main():
         dop_ft_samples=a.dop_ft_samples,
         lr_boost=[(x.split("=", 1)[0], float(x.split("=", 1)[1])) for x in a.lr_boost if "=" in x] or None,
         share_worker=a.share_worker, masked_training=a.masked_training, mask_floor=a.mask_floor,
-        mask_prior=a.mask_prior, caption_dropout=a.caption_dropout)
+        mask_prior=a.mask_prior, caption_dropout=a.caption_dropout, stage_dataset_config=a.stage_dataset_config,
+        stage_until=a.stage_until, stage_blend=a.stage_blend)
 
 
 if __name__ == "__main__":

@@ -312,6 +312,7 @@ MINIMAX = FamilyDescription(
     # the old H3 recipe on the box's click: a stronger caption dropout (each subject must answer to its own trigger)
     multi_concept_defaults=(("H3_CAPTION_DROPOUT", "0.10 (strong)"),),
     caption_dropout=False,                   # its own Caption dropout option (the cached uncond embed)
+    resolution_stages=False,                 # clips train at their own size: not measured with stages
     multi_concept_hint="See the MiniMax section of the README.",
     int8_attention=True,              # workbench renders: comfy-kitchen's INT8 attention
     activation_cache=True,            # Turbo Preview: step-1 replay, identical to a full render

@@ -725,11 +725,12 @@ def _dedupe_flags(cmd):
     return out[::-1]
 
 
-def cache_command(desc, inputs, stage):
-    """families/cache.py: latents with the family's VAE, text with its text encoder."""
+def cache_command(desc, inputs, stage, config=""):
+    """families/cache.py: latents with the family's VAE, text with its text encoder (config: another dataset TOML,
+    Start at a smaller size's)."""
     model = _model(inputs, desc, "vae" if stage == "latents" else "text_encoder")
     cmd = [inputs["python"], os.path.join(inputs["repo_dir"], desc.cache_script), "--family", desc.key,
-           "--stage", stage, "--dataset_config", inputs["DATASET_CONFIG"], "--model", model]
+           "--stage", stage, "--dataset_config", config or inputs["DATASET_CONFIG"], "--model", model]
     cmd += option_tokens(desc, inputs)[1]
     if stage == "latents":
         cmd.append("--skip_existing")   # validated against the current bucket
@@ -1140,7 +1141,33 @@ def cache_dir_for(cache_root, image_dir):
     return os.path.join(cache_root, f"{nm}-{h}")
 
 
-def dataset_toml(desc, inputs):
+STAGE_BLEND = 0.1      # the share of the run the change from the smaller size to the full one blends over
+
+
+def stage_mp(desc, inputs):
+    """Start at a smaller size: its Target Megapixels, or 0 (off, not below Target Megapixels, or a run it isn't for:
+    an edit, a slider, a fine-tune, Fizgig LoRA Isolation)."""
+    try:
+        smp = float(_s(inputs.get("STAGE_MP")) or 0)
+        full = float(inputs.get("megapixels") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if not (desc.resolution_stages and 0.25 <= smp < full):
+        return 0.0
+    if edit_on(desc, inputs) or slider_on(desc, inputs) or ft_on(desc, inputs) or multi_person_on(desc, inputs):
+        return 0.0
+    return smp
+
+
+def stage_until(inputs):
+    """The share of the run at the smaller size (the For the first choice)."""
+    try:
+        return max(0.05, min(0.9, float(_s(inputs.get("STAGE_UNTIL")).rstrip("%") or 30) / 100))
+    except ValueError:
+        return 0.3
+
+
+def dataset_toml(desc, inputs, cache_suffix=""):
     """The dataset TOML for the run: the training folder at Target Megapixels (a square of that area on the
     16-pixel grid), an edit's originals or a slider's -1 end as its control folder, and its own cache folder.
     Raises ValueError on a Target Megapixels that is not a number. Batch size is always 1 (one image a step)."""
@@ -1187,32 +1214,32 @@ def dataset_toml(desc, inputs):
         lines.append(f'control_directory = "{_s(inputs.get("FAMILY_SLIDER_DIR")).replace(chr(92), "/")}"')
     root = _s(inputs.get("cache_root"))
     if root and folder:
-        lines.append(f'cache_directory = "{cache_dir_for(root, folder).replace(chr(92), "/")}"')
+        lines.append(f'cache_directory = "{(cache_dir_for(root, folder) + cache_suffix).replace(chr(92), "/")}"')
     if subs and not _media_count(folder):     # everything is in the sub-folders: the training folder has no block
         del lines[head:]
     for rel, f in subs:                  # Also train on its sub-folders: each its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"',
                   f'item_prefix = "{_toml_str(rel + "/")}"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for n, f in enumerate(extra, start=2):   # Multi Concept: each subject its own block and cache folder
         lines += ["", "[[datasets]]", f'image_directory = "{f.replace(chr(92), "/")}"', f'item_prefix = "s{n}:"']
         if reps.get(f, 1) > 1:
             lines.append(f"num_repeats = {reps[f]}")
         _fuse(f)
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, f).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, f) + cache_suffix).replace(chr(92), "/")}"')
     for f, (_s_, w) in mp.items():        # multi-person mode: each person's composites, already captioned fused
         if _s_["kind"] != "person":
             continue
         lines += ["", "[[datasets]]", f'image_directory = "{w.replace(chr(92), "/")}"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, w).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, w) + cache_suffix).replace(chr(92), "/")}"')
     reg = ft_reg_dir(desc, inputs)
     if reg:                              # a fine-tune's regularisation set: its own block (and cache folder)
         lines += ["", "[[datasets]]", f'image_directory = "{reg.replace(chr(92), "/")}"', 'item_prefix = "reg:"']
         if root:
-            lines.append(f'cache_directory = "{cache_dir_for(root, reg).replace(chr(92), "/")}"')
+            lines.append(f'cache_directory = "{(cache_dir_for(root, reg) + cache_suffix).replace(chr(92), "/")}"')
         lines.append("is_reg = true")
     return "\n".join(lines) + "\n"
 
@@ -1524,6 +1551,13 @@ def plan(desc, inputs):
     if p.problems:
         return p                        # nothing to write or run
     p.files.append((inputs["DATASET_CONFIG"], p.dataset_toml))
+    smp = stage_mp(desc, inputs)
+    stage_cfg = ""
+    if smp:                             # Start at a smaller size: that size's dataset, in its own cache folder
+        stage_cfg = os.path.splitext(inputs["DATASET_CONFIG"])[0] + f"_stage{smp:g}.toml"
+        p.files.append((stage_cfg, dataset_toml(desc, {**inputs, "megapixels": smp}, f"-{smp:g}mp")))
+        p.console.append(f"[stages] the first {stage_until(inputs) * 100:.0f}% of the epochs at {smp:g} MP, then "
+                         f"{float(inputs['megapixels']):g} MP\n")
     own = own_skipped_line(desc, inputs)
     if own:
         p.console.append(own)
@@ -1547,5 +1581,11 @@ def plan(desc, inputs):
     if caches(desc, inputs):
         p.stages += [Stage("Cache Preparation", cache_command(desc, inputs, "latents")),
                      Stage("Text Encoder Caching", cache_command(desc, inputs, "text"))]
+    if stage_cfg:
+        if caches(desc, inputs):
+            p.stages += [Stage(f"Cache Preparation ({smp:g} MP)", cache_command(desc, inputs, "latents", stage_cfg)),
+                         Stage(f"Text Encoder Caching ({smp:g} MP)", cache_command(desc, inputs, "text", stage_cfg))]
+        train += ["--stage_dataset_config", stage_cfg, "--stage_until", f"{stage_until(inputs):g}",
+                  "--stage_blend", f"{STAGE_BLEND:g}"]
     p.stages.append(Stage("Training", train))
     return p

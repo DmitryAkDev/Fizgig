@@ -540,6 +540,10 @@ class FamilyDescription:
     # "finetune" and "slider" - a third of the lowest shipped preset to three times the highest; a rate outside is a
     # warning at Start, never a block. A kind left out has no rule (an optimizer that sets its own rate has none)
     start_lr_bands: tuple = ()
+    # Start at a smaller size (families/train.py): the first share of a standard LoRA's epochs at a smaller Target
+    # Megapixels, blended into the full size; its own cache folder (a latent file is named by the picture's size,
+    # not the training size). Off for clips (H3) and a family with no pictures (ACE-Step)
+    resolution_stages: bool = True
     network_hint: str = ""            # the line under Network Type in place of the LoRA / LoKR trade
     ema_hint: str = ""                # the line under Weight averaging (EMA) in place of the shared one
     ema_section: str = ""             # "other": the EMA row sits in Other Options (MiniMax H3's place)
