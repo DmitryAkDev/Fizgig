@@ -4774,6 +4774,7 @@ def run_server(host, port=None, password=None, password_arg=False, open_browser=
     _restore_pause()                                   # a run paused before the restart can still be resumed
     __import__("fizgig.web.helpers", fromlist=["x"]).ensure_home()   # pods' checkpoints still coming home
     __import__("fizgig.web.helpers", fromlist=["x"]).local_restore()  # this computer's other GPU, as a helper
+    __import__("fizgig.web.helpers", fromlist=["x"]).ensure_auto()    # your RunPod pods, as helpers by themselves
     if os.environ.get("FIZGIG_PARENT_PID"):          # this is that second Fizgig: it goes when the first does
         threading.Thread(target=_follow_first, daemon=True).start()
     if str(load_prefs().get("update_check", "1")) != "0":     # Preferences > Network: Check for new releases

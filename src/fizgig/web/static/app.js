@@ -8105,6 +8105,8 @@ function helpCard(h) {
       el("div", {class: "pod-main"},
         el("div", {class: "helper-name"}, h.name,
           ...(where ? [el("span", {class: `helper-tag ${cls}`, text: where})] : []),
+          ...(h.auto ? [el("span", {class: "helper-tag", text: "Added by itself",
+            title: "One of your RunPod pods: added once it started, and taken off the list when the pod is deleted. Tick a job to use it"})] : []),
           ...(h.inbound ? [el("span", {class: "helper-tag in", text: "Connected from its side",
             title: "It connected to this Fizgig (a pod can't reach a home computer, so the home computer does the connecting)"})] : [])),
         el("div", {class: "field-hint", text: sub})),

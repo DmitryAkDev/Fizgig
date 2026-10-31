@@ -452,7 +452,8 @@ def _norm(url):
     return url
 
 
-def add(url, password):
+def add(url, password, auto=False):
+    """A helper added (`auto`: one of your pods, added by itself once it answered: see _auto_pods)."""
     url = _norm(url)
     c = Client(url)
     prefs = _srv().load_prefs()
@@ -487,10 +488,13 @@ def add(url, password):
         if _norm(h.get("url") or url) != url:
             _readdress(_norm(h["url"]), url, c.cookie)
     rows.append({"id": hid, "url": url, "name": name, "cookie": c.cookie, "where": _where(url),
-                 "previews": any(h.get("previews") for h in old), "share": any(h.get("share") for h in old)})
+                 "previews": any(h.get("previews") for h in old), "share": any(h.get("share") for h in old), "auto": auto,
+                 "ours": url in {_norm(a["url"]) for a in _acct.get("all") or []}})
     for h in old:
         _live.pop(h["id"], None)
     _save(rows)
+    if not auto:                         # added by hand: one removed before may come back by itself again
+        _srv().update_prefs({"helpers_declined": [u for u in prefs.get("helpers_declined") or [] if u != url]})
     _live.pop(hid, None)
     ensure_lead()
     threading.Thread(target=measure_link, args=(url, c.cookie), daemon=True).start()
@@ -530,6 +534,11 @@ def _readdress(old, new, cookie):
 
 
 def remove(hid):
+    h = next((x for x in _helpers() if x.get("id") == hid), None)
+    if h and _where(h.get("url") or "") == "pod":      # removed by hand: _auto_pods doesn't add it back
+        prefs = _srv().load_prefs()
+        _srv().update_prefs({"helpers_declined": ([u for u in prefs.get("helpers_declined") or [] if u != h["url"]]
+                                                  + [h["url"]])[-50:]})
     _save([h for h in _helpers() if h.get("id") != hid])
     _live.pop(hid, None)
     return {"say": "Removed."}
@@ -642,7 +651,7 @@ def listing(look=False):
         lv = _live.get(h["id"]) or {"state": "away"}
         st = lv.get("state")
         rows.append({"id": h["id"], "name": h.get("name"), "url": h.get("url"), "where": h.get("where"),
-                     "previews": h.get("previews"), "share": h.get("share"),
+                     "previews": h.get("previews"), "share": h.get("share"), "auto": bool(h.get("auto")),
                      "state": st, "training": lv.get("training"), "gpu": lv.get("gpu"), "vram": lv.get("vram"),
                      "ping_ms": lv.get("ping_ms"), "build": lv.get("build"), "elsewhere": lv.get("elsewhere"),
                      "match": lv.get("match", ""),
@@ -738,7 +747,7 @@ def _pods_to_help():
         return []
 
 
-_acct = {"at": 0.0, "rows": None, "key": "", "busy": False}
+_acct = {"at": 0.0, "rows": None, "all": None, "key": "", "busy": False}
 _lan_seen = {"at": 0.0, "rows": []}
 _found_lock = threading.Lock()
 
@@ -774,11 +783,16 @@ def _account_rows(key):
     def ask():
         from fizgig.web import pods
         try:
-            rows = [p for p in pods.account(key) if p.get("running")]
+            every = pods.account(key)    # stopped ones too: a pod missing from it was deleted
+            rows = [p for p in every if p.get("running")]
         except ValueError:
-            rows = None                  # a refused key: the saved pods are listed instead
+            rows = every = None          # a refused key: the saved pods are listed instead
+        except Exception:                # RunPod didn't answer: the last copy stays, asked again next time
+            with _found_lock:
+                _acct["busy"] = False
+            return
         with _found_lock:
-            _acct.update(rows=rows, at=time.time(), key=key, busy=False)
+            _acct.update(rows=rows, all=every, at=time.time(), key=key, busy=False)
     threading.Thread(target=ask, daemon=True, name="helpers-account").start()
     return _acct["rows"] if _acct["key"] == key else None
 
@@ -824,6 +838,66 @@ def _found(look=False):
     return out
 
 
+_auto = {"thread": None, "tried": {}}    # url -> when adding it last failed
+
+
+def _auto_pods():
+    """Your RunPod pods as helpers, with no adding: each running Fizgig pod on the account is added once its Fizgig
+    answers, Previews and Training share off (a tick away on the Helpers tab), and one deleted from the account goes
+    from the list. One removed by hand stays removed until it's added by hand again."""
+    from fizgig.web import pod_stop, pods
+    s = _srv()
+    prefs = s.load_prefs()
+    key = pod_stop.api_key(prefs)
+    if not key:
+        return
+    running = _account_rows(key)
+    every = _acct.get("all") if _acct["key"] == key else None
+    if running is None or every is None:
+        return                           # not known yet (or a refused key): nothing added, nothing removed
+    known = {_norm(a["url"]) for a in every}
+    gone = [h for h in _helpers() if (h.get("auto") or h.get("ours")) and _norm(h["url"]) not in known]
+    if gone:
+        _save([h for h in _helpers() if h not in gone])
+        for h in gone:
+            _live.pop(h["id"], None)
+            logger.info(f"[helpers] {h.get('name')}: its pod was deleted, so it's no longer a helper")
+    mine = {_norm(h["url"]) for h in _helpers()}
+    declined = set(prefs.get("helpers_declined") or [])
+    for a in running:
+        url = _norm(a["url"])
+        if url in mine or url in declined or time.time() - _auto["tried"].get(url, 0) < 120:
+            continue
+        if pods.probe(url, 6.0) != "ready":
+            continue                     # still starting: asked again next time round
+        try:
+            add(url, "", auto=True)
+        except Exception as e:
+            _auto["tried"][url] = time.time()
+            logger.info(f"[helpers] adding pod {a.get('name') or url} by itself: {_plain(e)}")
+            continue
+        logger.info(f"[helpers] pod {a.get('name') or url} added as a helper (its jobs are off until you tick one)")
+
+
+def _auto_loop():
+    while True:
+        try:
+            _auto_pods()
+        except Exception:
+            logger.exception("[helpers] adding pods")
+        time.sleep(30.0)
+
+
+def ensure_auto():
+    """Started with the server, on a computer (a pod, or this computer's second Fizgig on another GPU, adds none)."""
+    s = _srv()
+    if s.on_pod() or os.environ.get("FIZGIG_PARENT_PID"):
+        return
+    if _auto["thread"] is None or not _auto["thread"].is_alive():
+        _auto["thread"] = threading.Thread(target=_auto_loop, daemon=True, name="helpers-auto")
+        _auto["thread"].start()
+
+
 def ensure_lead():
     """The lead's two threads: one checks the helpers and keeps the trainer's note fresh, one sends the rounds (a
     round can take minutes; the note must not go stale meanwhile)."""
@@ -856,7 +930,9 @@ def _check_loop():
                         continue
                 lv["misses"] = 0
                 lv.update(r)
-                if r.get("pod") and r.get("state") == "ready" and r.get("build") not in ("", "same", None) and \
+                if r.get("pod") and not (h.get("previews") or h.get("share")):
+                    lv["match"] = ""         # on the list with no job: it stays on its own Fizgig until one is ticked
+                elif r.get("pod") and r.get("state") == "ready" and r.get("build") not in ("", "same", None) and \
                         _lead["mine"]:
                     _match_pod(h, lv, _lead["mine"])
                 elif r.get("pod") and r.get("state") == "busy" and r.get("build") not in ("", "same", None):
